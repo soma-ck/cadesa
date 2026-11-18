@@ -5,7 +5,9 @@ import {
   checkCmd,
   critiqueCmd,
   explainCmd,
+  fontsCmd,
   InputError,
+  metricsCmd,
   parseWidths,
   SWEEP,
   liftCmd,
@@ -31,9 +33,18 @@ Usage:
   cadesa lift     <file.css> [--out <file.cadesa.yaml>] [--fixture <fixture.html>]
   cadesa lift     --tailwind <page.html> --css <compiled.css> [--out <file.cadesa.yaml>]
                     a Tailwind page → a source plus the page with generated classes and ids
+  cadesa fonts    <page.html> --css <file.css> | --tailwind <compiled.css> | --source <src.yaml> [--measure]
+                    every font the page's text is set in, whether Cadesa has metrics for it, and
+                    where it comes from (@font-face file, Google Fonts, system font). --measure
+                    measures each one it can (Playwright + Chrome; Google Fonts are downloaded);
+                    add --system to also measure installed system fonts (machine-specific)
   cadesa metrics  <font-file> --family <name> [--weight <n>] [--out .cadesa/metrics]
                     measure a font once in Chromium so the engine can measure text set in it
                     (omit --weight for a variable font; repeat per face for static fonts)
+  cadesa metrics  --google <family> [--weights 400,700]   a Google font by name (its variable
+                    wght axis when it has one), downloaded into .cadesa/fonts/
+  cadesa metrics  --system --family <name> [--weights 400,700]   the font installed on this machine
+  cadesa metrics  --auto <page.html> --css <file.css>   same as cadesa fonts ... --measure
   cadesa mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
 
   render, whatif, explain and check also accept --css <file.css> instead of --source:
@@ -65,6 +76,11 @@ async function main(argv: string[]) {
       id: { type: "string" },
       family: { type: "string" },
       weight: { type: "string" },
+      weights: { type: "string" },
+      google: { type: "string" },
+      measure: { type: "boolean", default: false },
+      auto: { type: "boolean", default: false },
+      system: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
       lines: { type: "boolean", default: false },
       svg: { type: "string" },
@@ -77,19 +93,36 @@ async function main(argv: string[]) {
     const { serve } = await import("./mcp.js");
     return serve();
   }
+  const asyncResult = async (r: Promise<Result>) => {
+    const res = await r;
+    process.stdout.write(values.json ? JSON.stringify(res.data, null, 2) + "\n" : res.text);
+    if (!res.ok) process.exitCode = 1;
+  };
+  const fontsInput = () => ({
+    source: values.css || values.tailwind ? undefined : values.source,
+    css: values.tailwind ? undefined : values.css,
+    tailwind: values.tailwind,
+    fixture: input!,
+    widths: parseWidths(values.widths ?? SWEEP),
+    system: values.system,
+    out: values.out,
+  });
+  if (cmd === "fonts") {
+    if (!input) throw new InputError("fonts needs <page.html>");
+    if (!values.source && !values.css && !values.tailwind) throw new InputError("fonts needs --css <file.css>, --tailwind <compiled.css> or --source <source.cadesa.yaml>");
+    return asyncResult(fontsCmd({ ...fontsInput(), measure: values.measure }));
+  }
   if (cmd === "metrics") {
-    const { generateMetrics, writeMetrics } = await import("./metrics.js");
-    if (!input) throw new InputError("metrics needs <font-file>");
-    if (!values.family) throw new InputError("metrics needs --family <name> (the font-family name your CSS uses)");
+    if (values.auto) {
+      if (!input) throw new InputError("metrics --auto needs <page.html> (with --css, --tailwind or --source)");
+      if (!values.source && !values.css && !values.tailwind) throw new InputError("metrics --auto needs --css <file.css>, --tailwind <compiled.css> or --source <source.cadesa.yaml>");
+      return asyncResult(fontsCmd({ ...fontsInput(), measure: true }));
+    }
     const weight = values.weight ? Number(values.weight) : undefined;
     if (weight !== undefined && !(weight >= 1 && weight <= 1000)) throw new InputError(`invalid --weight "${values.weight}"`);
-    const m = await generateMetrics({ font: input, family: values.family, weight });
-    const file = writeMetrics(m, values.out ?? ".cadesa/metrics");
-    const pairs = Object.values(m.kerning).reduce((n, k) => n + Object.keys(k).length, 0);
-    process.stdout.write(
-      `wrote ${file}: ${m.family} (${m.kind}${weight ? ` ${weight}` : ", 100–900"}), ${m.chars.length} glyphs, ${pairs} kerning pairs\n`,
-    );
-    return;
+    const weights = values.weights?.split(",").map((w) => Number(w.trim()));
+    if (weights?.some((w) => !(w >= 1 && w <= 1000))) throw new InputError(`invalid --weights "${values.weights}"`);
+    return asyncResult(metricsCmd({ font: input, family: values.family, weight, google: values.google, system: values.system, weights, out: values.out }));
   }
 
   const need = (v: string | undefined, what: string) => {

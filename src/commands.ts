@@ -17,6 +17,20 @@ import { formatCheck, formatExplain, formatImpact, formatLift, formatRender, for
 import { impact, type WidthImpact } from "./lift/impact.js";
 import { lift, type LiftResult } from "./lift/lift.js";
 import { readFileSync } from "node:fs";
+import {
+  describeMetrics,
+  fontReport,
+  fontUses,
+  formatFonts,
+  formatMeasured,
+  measureGoogle,
+  measureReport,
+  measureSystem,
+  pageFontSources,
+  type FontReport,
+  type Measured,
+} from "./fonts.js";
+import { generateMetrics, launchChromium, writeMetrics } from "./metrics.js";
 
 export interface Result {
   text: string;
@@ -164,12 +178,14 @@ export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; 
   }
   const imp = impactFor(s, layouts);
   const label = p.label;
+  const fonts = fontsOf(s, layouts);
   return {
     text:
       formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts }) +
       (imp ? "\n" + formatImpact(imp.impacts) : "") +
-      (written.length ? `\nwireframe: ${written.join(", ")}\n` : ""),
-    data: { source: label, fixture: s.fixture, layouts, impact: imp?.impacts },
+      (written.length ? `\nwireframe: ${written.join(", ")}\n` : "") +
+      fontsNote(fonts, s, true),
+    data: { source: label, fixture: s.fixture, layouts, impact: imp?.impacts, fonts: fontsData(fonts) },
     ok: !layouts.some((l) => l.issues.some((i) => i.severity === "error")),
   };
 }
@@ -207,11 +223,133 @@ export function checkCmd(s: SourceInput & { fixture: string; widths: number[] })
     visit(p.fixture.body);
     for (const f of findings) if (lines.has(f.id)) f.message += ` [${s.fixture}:${lines.get(f.id)}]`;
   }
+  const fonts = fontsOf(s, layouts);
   return {
-    text: formatCheck(findings, s.widths),
-    data: { findings },
+    text: formatCheck(findings, s.widths) + fontsNote(fonts, s, false),
+    data: { findings, fonts: fontsData(fonts) },
     ok: !findings.some((f) => f.severity === "error"),
   };
+}
+
+// ------------------------------------------------------------------ fonts
+
+/** The fonts a laid-out page's text uses, and what Cadesa knows about each. */
+function fontsOf(s: SourceInput & { fixture: string }, layouts: Layout[]): FontReport[] {
+  return fontReport(fontUses(layouts), pageFontSources(s.fixture, [s.css, s.tailwind].filter((x): x is string => !!x)));
+}
+
+const fontsData = (r: FontReport[]) =>
+  r.map((f) => ({
+    family: f.family,
+    stack: f.stack,
+    status: f.status,
+    weights: f.weights,
+    boxes: f.boxes.length,
+    ...(f.metrics && { metrics: f.metrics.file, bundled: f.metrics.bundled, measuredFrom: f.metrics.files ?? f.metrics.source }),
+    ...(f.note && { note: f.note }),
+  }));
+
+const flags = (s: SourceInput & { fixture: string }) =>
+  `${s.fixture}${s.tailwind ? ` --tailwind ${s.tailwind}` : s.css ? ` --css ${s.css}` : s.source ? ` --source ${s.source}` : ""}`;
+
+/**
+ * For render and check: which metrics measured the text, and which fonts couldn't be measured.
+ * check says nothing when every font has metrics that aren't machine-specific.
+ */
+function fontsNote(r: FontReport[], s: SourceInput & { fixture: string }, always: boolean): string {
+  const missing = r.filter((f) => f.status !== "measured" && f.boxes.length);
+  const machine = r.filter((f) => f.metrics?.machineSpecific);
+  if (!always && !missing.length && !machine.length) return "";
+  const out = ["", always ? "text measured with:" : "fonts:"];
+  for (const f of r.filter((f) => f.status === "measured")) if (always || f.metrics!.machineSpecific) out.push(`  ✓ ${f.family}: ${describeMetrics(f.metrics!)}`);
+  for (const f of machine) out.push(`    ! ${f.metrics!.machineSpecific}`);
+  for (const f of missing)
+    out.push(
+      `  ✗ ${f.family}: no metrics (${f.boxes.length} text box${f.boxes.length === 1 ? "" : "es"} assumed to be one line) · ${
+        f.status === "file" ? "@font-face file in the page" : f.status === "google" ? "Google Fonts" : f.note
+      }`,
+    );
+  if (missing.some((f) => f.status !== "system")) out.push(`  measure them: cadesa fonts ${flags(s)} --measure`);
+  else if (missing.length) out.push(`  system fonts differ by machine; cadesa fonts ${flags(s)} --measure --system measures this machine's`);
+  return out.join("\n") + "\n";
+}
+
+/**
+ * `cadesa fonts`: every font the page's text is set in, whether Cadesa has metrics for it, and
+ * where it comes from. With `measure`, measures each one it can (Playwright + Chromium), writing
+ * metrics where `cadesa metrics` does.
+ */
+export async function fontsCmd(
+  s: SourceInput & { fixture: string; widths: number[]; measure?: boolean; system?: boolean; out?: string; via?: "cli" | "mcp" },
+): Promise<Result> {
+  const p = pageOf(s);
+  const model = modelOf(load(s));
+  let report = fontsOf(s, renderPage(model, p, s.widths));
+  let measured: Measured[] | undefined;
+  let text = "";
+  if (s.measure) {
+    measured = await measureReport(report, { out: s.out, system: s.system });
+    text += formatMeasured(measured) + (measured.length ? "\n" : "");
+    report = fontsOf(s, renderPage(model, p, s.widths));
+  }
+  const measurable = report.some((f) => f.status === "file" || f.status === "google" || f.sameFiles === false);
+  const system = report.some((f) => (f.status === "system" || f.status === "unknown") && !!f.stack);
+  const how = (extra: string) => (s.via === "mcp" ? `call cadesa_fonts again with measure: true${extra ? ", system: true" : ""}` : `cadesa fonts ${flags(s)} --measure${extra}`);
+  const hint = s.measure
+    ? system && !s.system
+      ? `system fonts (and fonts the page doesn't load) differ by machine; to measure what this machine's browser uses anyway (machine-specific metrics): ${how(" --system")}`
+      : undefined
+    : measurable
+      ? `measure them (needs Playwright and Chrome/Chromium; Google Fonts are downloaded): ${how("")}`
+      : system
+        ? `system fonts (and fonts the page doesn't load) differ by machine; to measure what this machine's browser uses anyway (machine-specific metrics): ${how(" --system")}`
+        : undefined;
+  text += formatFonts(s.fixture, report, hint);
+  return {
+    text,
+    data: { fonts: fontsData(report), ...(measured && { measured }) },
+    ok: !measured?.some((m) => m.error),
+  };
+}
+
+/** `cadesa metrics`: measure one font (a file, a Google font by name, or an installed font). */
+export async function metricsCmd(s: {
+  font?: string;
+  family?: string;
+  weight?: number;
+  google?: string;
+  system?: boolean;
+  weights?: number[];
+  out?: string;
+}): Promise<Result> {
+  const out = s.out ?? join(".cadesa", "metrics");
+  let measured: Measured;
+  if (s.google) {
+    const browser = await launchChromium();
+    try {
+      measured = await measureGoogle(s.google, { out, cacheDir: join(dirname(out), "fonts"), browser, weights: s.weights });
+    } finally {
+      await browser.close();
+    }
+  } else if (s.system) {
+    if (!s.family) throw new InputError("metrics --system needs --family <installed font name>");
+    const browser = await launchChromium();
+    try {
+      measured = await measureSystem(s.family, s.weights?.length ? s.weights : [400, 700], { out, browser });
+    } finally {
+      await browser.close();
+    }
+  } else {
+    if (!s.font) throw new InputError("metrics needs <font-file>, --google <family> or --system --family <name>");
+    if (!s.family) throw new InputError("metrics needs --family <name> (the font-family name your CSS uses)");
+    const m = await generateMetrics({ font: s.font, family: s.family, weight: s.weight });
+    const file = writeMetrics(m, out);
+    const pairs = Object.values(m.kerning).reduce((n, k) => n + Object.keys(k).length, 0);
+    const text = `wrote ${file}: ${m.family} (${m.kind}${s.weight ? ` ${s.weight}` : ", 100–900"}), ${m.chars.length} glyphs, ${pairs} kerning pairs${m.missing ? `; no glyph for ${[...m.missing].map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}` : ""}\n`;
+    return { text, data: { file, family: m.family, kind: m.kind, weights: m.weights, files: m.files }, ok: true };
+  }
+  if (measured.error) return { text: `✖ ${measured.family}: ${measured.error}\n`, data: measured, ok: false };
+  return { text: formatMeasured([measured]), data: measured, ok: true };
 }
 
 export function critiqueCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {

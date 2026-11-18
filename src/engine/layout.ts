@@ -113,7 +113,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const runs = raw.map((r) => (t.uppercase ? r.toUpperCase() : r));
     const shown = runs.join(" ");
     const why = !m
-      ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; run cadesa metrics <font-file>`
+      ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`
       : m.unsupported(shown).length
         ? `characters outside the measured set: ${m.unsupported(shown).map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`
         : m.weightIssue(t.weight);

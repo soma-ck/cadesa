@@ -12,7 +12,9 @@ import {
   critiqueCmd,
   cssCmd,
   explainCmd,
+  fontsCmd,
   InputError,
+  metricsCmd,
   parseWidths,
   SWEEP,
   liftCmd,
@@ -37,6 +39,9 @@ Existing CSS: cadesa_lift converts it (or pass css instead of source to any read
 exactly predicted for the original CSS; the report says which declaration or browser default is responsible.
 Tailwind pages: pass the page as fixture and the compiled Tailwind CSS as tailwind to any read tool; utilities are
 lifted the same way, with generated ids (cadesa_lift with tailwind shows them and the source).
+Fonts: text is measured from per-font metrics (Inter is bundled). If a report says a font "has no Cadesa metrics"
+(text assumed to be one line), call cadesa_fonts on the page: it says where each font comes from, and with
+measure=true measures them (once; needs Playwright + Chrome) so every box can be predicted.
 
 Language: tokens.{space,size,color,radius,font}, text roles {font,size,weight,lineHeight,color}, breakpoints
 (max-width, desktop-first), styles.<component> with layout {pattern: stack|cluster, gap}, padding (token or
@@ -71,6 +76,17 @@ const pageShape = {
   widths: z.array(z.number().positive()).default([390, 1280]).describe("Viewport widths in px"),
   format: z.enum(["text", "json"]).default("text").describe("text is compact and readable; json has every field"),
 };
+
+async function respondAsync(run: () => Promise<Result>, format: "text" | "json" = "text") {
+  try {
+    const r = await run();
+    return respond(() => r, format);
+  } catch (e) {
+    return respond(() => {
+      throw e;
+    }, format);
+  }
+}
 
 function respond(run: () => Result, format: "text" | "json" = "text") {
   try {
@@ -180,6 +196,48 @@ export function createServer(): McpServer {
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     (a) => respond(() => liftCmd(a), a.format),
+  );
+
+  server.registerTool(
+    "cadesa_fonts",
+    {
+      title: "Find and measure the page's fonts",
+      description:
+        "List every font family the page's text is set in (the first family of each font stack), whether Cadesa has metrics for it (and which file they came from), and where each one without metrics comes from: an @font-face with a local file, a Google Fonts link, or a system font (which differs by machine). Text in a font without metrics is assumed to be one line and flagged, so content-sized boxes can't be sized: run this first when render or check reports that. With measure=true, measures every font it can, once, in Chromium (needs Playwright and Chrome/Chromium; Google Fonts and remote @font-face files are downloaded into .cadesa/fonts/) and writes .cadesa/metrics/<family>.metrics.json, which every later command uses.",
+      inputSchema: {
+        ...pageShape,
+        widths: sweepWidths,
+        measure: z.boolean().default(false).describe("Measure the fonts that can be measured and write their metrics"),
+        system: z
+          .boolean()
+          .default(false)
+          .describe("With measure: also measure system fonts as installed on this machine (the metrics are machine-specific)"),
+        out: z.string().optional().describe("Where to write metrics (default .cadesa/metrics)"),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    (a) => respondAsync(() => fontsCmd({ ...a, css: a.tailwind ? undefined : a.css, via: "mcp" }), a.format),
+  );
+
+  server.registerTool(
+    "cadesa_metrics",
+    {
+      title: "Measure one font",
+      description:
+        "Measure one font once in Chromium and write .cadesa/metrics/<family>.metrics.json: a font file (font + family, and weight for a static face), a Google font by name (google; its variable wght axis when it has one, else its static weights), or the font installed on this machine under a name (system + family; machine-specific). Needs Playwright and Chrome/Chromium. To measure everything a page uses, use cadesa_fonts with measure=true instead.",
+      inputSchema: {
+        font: z.string().optional().describe("Path to a .woff2/.woff/.ttf/.otf file"),
+        family: z.string().optional().describe("The font-family name the CSS uses"),
+        weight: z.number().min(1).max(1000).optional().describe("A static face's weight (omit for a variable font)"),
+        google: z.string().optional().describe('A Google Fonts family name, e.g. "Open Sans"'),
+        system: z.boolean().default(false).describe("Measure the installed font named family (machine-specific)"),
+        weights: z.array(z.number().min(1).max(1000)).optional().describe("Static weights to measure (google: those available; system: default 400 and 700)"),
+        out: z.string().optional().describe("Where to write metrics (default .cadesa/metrics)"),
+        format: pageShape.format,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    (a) => respondAsync(() => metricsCmd(a), a.format),
   );
 
   server.registerTool(
