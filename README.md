@@ -203,8 +203,8 @@ The engine ([`src/engine/`](src/engine/)) is the spec: its box tree depends only
 | --- | --- | --- |
 | `npm run fuzz` | **differential fuzzer**: random pages covering the whole language | 39,597 pages at 148,328 widths: **688,902 boxes, 0 disagreements** (0 again on fresh seeds) |
 | `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 19,056 boxes marked exact match (400 left `≈`) |
-| `conformance:bootstrap` | four Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` | all 10,845 boxes marked exact match; one page fully exact, the rest held back mostly by font vertical metrics |
-| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard | all 8,118 boxes marked exact match, every 10px from 320 to 1440px |
+| `conformance:bootstrap` | six Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` (navbar collapse, grid, cards, tables, `d-*` utilities) | all 13,303 boxes marked exact match; one page fully exact, the rest held back mostly by font vertical metrics. Where a box is `≈` but `check` treats its size as known, the size matches too |
+| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms | all 9,912 boxes marked exact match, every 10px from 320 to 1440px |
 | `conformance:fonts` | Roboto (variable, from Google Fonts) and Lato (two static faces via `@font-face`) | 5,474 of 5,474, and the line count of all 4,347 text boxes, over 161 widths |
 | `conformance:landing` | grid, text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
