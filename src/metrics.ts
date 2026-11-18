@@ -19,14 +19,28 @@ export interface MetricsFile {
   chars: string;
   advances: Record<string, number[]>;
   kerning: Record<string, Record<string, number>>;
+  /**
+   * The characters whose pairs were measured. Older files measured ASCII only, and looked up an
+   * accented letter's kerning through its base letter.
+   */
+  kernChars?: string;
+  /**
+   * Variable fonts: the advance of every character at every integer weight from `from` to `to`.
+   * Browsers round each interpolated advance to a whole font unit, so interpolating between the
+   * sampled weights is off by up to half a unit per glyph; this table is exact. Each entry of
+   * `deltas` is one character's advance changes from one weight to the next, comma-separated
+   * (`base` holds the advances at `from`).
+   */
+  fine?: { from: number; to: number; base: number[]; deltas: string[] };
 }
 
-const UNITS = 10000;
+const UNITS = 1_000_000;
 const SIZE = 1000;
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => String.fromCodePoint(a + i));
 const EXTRA = ["\u2018", "\u2019", "\u201C", "\u201D", "\u2013", "\u2014", "\u2026", "\u2022", "\u20AC", "\u2122", "\u202F", "\u2009", "\u2007"];
 export const CHARS = [...range(0x20, 0x7e), ...range(0xa0, 0xff), ...EXTRA].join("");
-const KERN_CHARS = [...range(0x20, 0x7e), ...EXTRA].join("");
+// Every pair is measured: accented and other Latin-1 letters kern differently from their base letters.
+const KERN_CHARS = CHARS;
 
 const FORMATS: Record<string, string> = { ".woff2": "woff2", ".woff": "woff", ".ttf": "truetype", ".otf": "opentype" };
 
@@ -88,10 +102,25 @@ export async function generateMetrics(opts: {
         }
         kerning[w] = k;
       }
-      return { advances, kerning, loaded: document.fonts.check(WEIGHTS[0] + " 16px __cadesa") };
+      let fine;
+      if (WEIGHTS.length > 1) {
+        const from = WEIGHTS[0], to = WEIGHTS[WEIGHTS.length - 1];
+        const rows = [];
+        for (let w = from; w <= to; w++) {
+          await document.fonts.load(w + " " + SIZE + "px __cadesa");
+          ctx.font = w + " " + SIZE + "px __cadesa";
+          rows.push([...CHARS].map((c) => Math.round((ctx.measureText(c).width / SIZE) * UNITS)));
+        }
+        fine = {
+          from, to, base: rows[0],
+          deltas: [...CHARS].map((_, i) => rows.slice(1).map((r, k) => r[i] - rows[k][i]).join(",")),
+        };
+      }
+      return { advances, kerning, fine, loaded: document.fonts.check(WEIGHTS[0] + " 16px __cadesa") };
     })(${JSON.stringify({ CHARS, KERN_CHARS, WEIGHTS: weights, SIZE, UNITS })})`)) as {
       advances: Record<string, number[]>;
       kerning: Record<string, Record<string, number>>;
+      fine?: MetricsFile["fine"];
       loaded: boolean;
     };
     if (!result.loaded) throw new Error(`${opts.font} did not load in Chromium`);
@@ -105,6 +134,8 @@ export async function generateMetrics(opts: {
       chars: CHARS,
       advances: result.advances,
       kerning: result.kerning,
+      kernChars: KERN_CHARS,
+      ...(result.fine && { fine: result.fine }),
     };
   } finally {
     await browser.close();

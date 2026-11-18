@@ -30,7 +30,7 @@ describe("field report #2 regressions", () => {
     const words = box(phone, "words");
     expect(words.lines!.map((l) => l.text)).toEqual(["4 000 000+", "mots"]);
     expect(box(phone, "french").lines![0].text).toBe("100 % en");
-    expect(phone.issues.map((i) => i.message)).toContain('"4 000 000+" in #words can\'t wrap and overflows by 13.85px at 390px');
+    expect(phone.issues.map((i) => i.message)).toContain('"4 000 000+" in #words can\'t wrap and overflows by 13.86px at 390px');
   });
 
   it("3. a layer stretched by its parent re-centers its children", () => {

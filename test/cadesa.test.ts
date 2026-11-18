@@ -180,7 +180,10 @@ describe("text", () => {
 
   it("finds break opportunities after spaces, between hyphenated words, and around dashes", () => {
     expect(pieces("a well-known fix — done")).toEqual(["a ", "well-", "known ", "fix ", "— ", "done"]);
-    expect(pieces("pages 10-20")).toEqual(["pages ", "10-20"]);
+    // Chromium breaks after "-" before a digit only when an ASCII letter or digit precedes it.
+    expect(pieces("pages 10-20")).toEqual(["pages ", "10-", "20"]);
+    expect(pieces("x -1")).toEqual(["x ", "-1"]);
+    expect(pieces("self\u00adcontained")).toEqual(["self\u00ad", "contained"]);
     expect(pieces("a—b")).toEqual(["a", "—", "b"]);
   });
 
@@ -214,7 +217,8 @@ describe("text", () => {
   it("sizes cluster items to their text (max-content + padding)", () => {
     const [, desktop] = render(modelOf(src()), fixture, [390, 1280]);
     const save = box(desktop, "save");
-    expect(save.w).toBeCloseTo(inter.measure("Save changes", 15, 600)! + 40, 6);
+    // max-content is rounded up to a layout unit (1/64 px), as Chromium does.
+    expect(save.w).toBeCloseTo(Math.ceil(inter.measure("Save changes", 15, 600)! * 64) / 64 + 40, 6);
     expect(box(desktop, "cancel").x).toBeCloseTo(save.x + save.w + 12, 6);
   });
 
