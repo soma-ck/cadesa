@@ -1,0 +1,49 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node: [20, 22, 24]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build:ts
+      - name: CLI smoke test (no browser)
+        run: |
+          node lib/cli.js build settings.cascade.yaml --out dist/settings.css
+          git diff --exit-code dist/settings.css
+          node lib/cli.js whatif fixtures/settings.html --source settings.cascade.yaml --set styles.settings-panel.when.narrow.padding=panel
+
+  conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: Engine vs. Chromium (2 fixtures × 4 widths)
+        run: npm run conformance
+      - name: Line-break sweep (247 widths)
+        run: npm run conformance:sweep
+      - name: Lifted hand-written CSS vs. the original
+        run: npm run conformance:lift
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance
+          path: artifacts/
