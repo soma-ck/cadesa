@@ -35,6 +35,8 @@ Workflow for a style change:
 4. Edit the .cadesa.yaml file, then cadesa_check and cadesa_build.
 Existing CSS: cadesa_lift converts it (or pass css instead of source to any read tool). Boxes marked ≈ are not
 exactly predicted for the original CSS; the report says which declaration or browser default is responsible.
+Tailwind pages: pass the page as fixture and the compiled Tailwind CSS as tailwind to any read tool; utilities are
+lifted the same way, with generated ids (cadesa_lift with tailwind shows them and the source).
 
 Language: tokens.{space,size,color,radius,font}, text roles {font,size,weight,lineHeight,color}, breakpoints
 (max-width, desktop-first), styles.<component> with layout {pattern: stack|cluster, gap}, padding (token or
@@ -61,7 +63,11 @@ const sweepWidths = z
 
 const pageShape = {
   ...sourceShape,
-  fixture: z.string().describe("Path to the HTML fixture that uses the component classes"),
+  tailwind: z
+    .string()
+    .optional()
+    .describe("Path to the compiled Tailwind CSS for a Tailwind page; fixture is then that page, lifted on the fly (boxes it can't predict exactly are marked ≈)"),
+  fixture: z.string().describe("Path to the HTML fixture that uses the component classes (or the Tailwind page, with tailwind)"),
   widths: z.array(z.number().positive()).default([390, 1280]).describe("Viewport widths in px"),
   format: z.enum(["text", "json"]).default("text").describe("text is compact and readable; json has every field"),
 };
@@ -164,7 +170,8 @@ export function createServer(): McpServer {
       description:
         "Convert plain CSS (BEM classes: .block, .block__element) into a Cadesa source. Reports every declaration it could not lift and what it can affect (geometry, text, visual, paint, state). With a fixture, reports per width which boxes are still exactly predicted and which may differ from the original CSS, and why. Writes the source only when `out` is given.",
       inputSchema: {
-        css: z.string().describe("Path to the CSS file"),
+        css: z.string().describe("Path to the CSS file (with tailwind: the compiled Tailwind CSS)"),
+        tailwind: z.string().optional().describe("Path to a Tailwind page (HTML) to lift with css; writes the page with generated classes and ids next to out"),
         out: z.string().optional().describe("Write the lifted .cadesa.yaml here"),
         fixture: z.string().optional().describe("HTML fixture for box-level impact"),
         widths: pageShape.widths,

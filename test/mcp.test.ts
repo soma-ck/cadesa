@@ -44,6 +44,18 @@ describe("MCP server", () => {
     expect(r.text).toContain("1280px\n  ✓ unchanged");
   });
 
+  it("takes a Tailwind page with its compiled CSS", async () => {
+    const tw = { fixture: "fixtures/tailwind/blog.html", tailwind: "fixtures/tailwind/compiled.css" };
+    const r = await call("cadesa_render", { ...tw, widths: [1280] });
+    expect(r.isError).toBe(false);
+    expect(r.text).toContain("#article");
+    const w = await call("cadesa_whatif", { ...tw, widths: [1280], changes: { "styles.div.slots.div-2.layout.gap": "spacing-4" } });
+    expect(w.isError).toBe(false);
+    expect(w.text).toMatch(/#article-2/);
+    const l = await call("cadesa_lift", { css: "fixtures/tailwind/compiled.css", tailwind: "fixtures/tailwind/blog.html", widths: [390] });
+    expect(l.text).toContain("styles:");
+  });
+
   it("returns structured JSON on request", async () => {
     const r = await call("cadesa_render", { ...page, widths: [390], format: "json" });
     const data = JSON.parse(r.text);
