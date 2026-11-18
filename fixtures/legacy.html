@@ -1,0 +1,30 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cascadio fixture: hand-written CSS</title>
+    <!-- Hand-written CSS. `cascadio lift` converts what it can and reports what it can't. -->
+    <link rel="stylesheet" href="legacy.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+      body { margin: 0; background: #eef0f3; }
+    </style>
+  </head>
+  <body>
+    <article class="profile-card" data-fixture="card">
+      <h2 class="profile-card__name" data-fixture="name">Ada Okonkwo-Lindqvist</h2>
+      <p class="profile-card__bio" data-fixture="bio">Design engineer building accessible component libraries and the tooling that keeps them honest.</p>
+      <div class="profile-card__actions" data-fixture="actions">
+        <button class="profile-card__follow" data-fixture="follow" type="button">Follow</button>
+        <button class="profile-card__message" data-fixture="message" type="button">Send message</button>
+      </div>
+      <p class="profile-card__meta" data-fixture="meta">Joined March 2024 · 1,284 followers</p>
+      <span class="profile-card__badge" data-fixture="badge">Pro</span>
+    </article>
+  </body>
+</html>

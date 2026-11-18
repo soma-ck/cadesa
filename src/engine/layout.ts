@@ -91,7 +91,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const inset = insetsOf(props);
 
     // Children that are Cascadio slots; anything else inside a text box is inline text.
-    const classed = n.children.filter((k) => k.classes.some((cl) => cl.startsWith("ca-")));
+    const classed = n.children.filter((k) => k.classes.some((cl) => cl.startsWith(`${model.prefix}${c.name}__`)));
     const isText = !!props.text && classed.length === 0;
     const measureText = isText && n.text ? text(n, props, id, assumptions) : undefined;
 
@@ -259,13 +259,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
 
   /** The slot name of a fixture element inside component `c`, or null (reported) if it can't be laid out. */
   function slotOf(n: FixtureNode, c: Component): string | null {
-    const prefix = `ca-${c.name}__`;
+    const prefix = `${model.prefix}${c.name}__`;
     const cls = n.classes.find((k) => k.startsWith(prefix));
     if (!cls) {
       issues.push({
         severity: "error",
         id: idOf(n),
-        message: `<${n.tag}> inside .ca-${c.name} has no ${prefix}<slot> class; the engine only lays out declared slots`,
+        message: `<${n.tag}> inside .${model.prefix}${c.name} has no ${prefix}<slot> class; the engine only lays out declared slots`,
       });
       return null;
     }
@@ -286,16 +286,19 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const boxes: Box[] = [];
   let y = 0;
   for (const n of fixture.body) {
-    const cls = n.classes.find((k) => k.startsWith("ca-") && !k.includes("__"));
-    const c = cls ? model.components.get(cls.slice(3)) : undefined;
+    const p = model.prefix;
+    const candidates = n.classes.filter((k) => k.startsWith(p) && !k.includes("__")).map((k) => k.slice(p.length));
+    const name = candidates.find((k) => model.components.has(k));
+    const c = name ? model.components.get(name) : undefined;
     if (!c) {
+      const guess = p ? candidates[0] : undefined;
       issues.push({
         severity: "error",
         id: idOf(n),
-        message: cls
-          ? `fixture uses .${cls} but styles.${cls.slice(3)} is not declared`
+        message: guess
+          ? `fixture uses .${p}${guess} but styles.${guess} is not declared`
           : `<${n.tag}> at the page level has no Cascadio component class`,
-        suggestion: cls ? closest(cls.slice(3), model.components.keys()) : undefined,
+        suggestion: guess ? closest(guess, model.components.keys()) : undefined,
       });
       continue;
     }

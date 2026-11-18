@@ -5,6 +5,7 @@ import {
   checkCmd,
   explainCmd,
   InputError,
+  liftCmd,
   renderCmd,
   validateCmd,
   whatifCmd,
@@ -23,7 +24,11 @@ Usage:
   cascadio whatif   <fixture.html> --source <source.cascade.yaml> --set <path=value> [--set ...]
   cascadio explain  <fixture.html> --source <source.cascade.yaml> --id <fixture-id>
   cascadio check    <fixture.html> --source <source.cascade.yaml>
+  cascadio lift     <file.css> [--out <file.cascade.yaml>] [--fixture <fixture.html>]
   cascadio mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
+
+  render, whatif, explain and check also accept --css <file.css> instead of --source:
+  the CSS is lifted on the fly, and boxes it can't predict exactly are marked ≈.
 
 Options:
   --widths   viewport widths in px, comma-separated (default 390,1280)
@@ -39,6 +44,8 @@ async function main(argv: string[]) {
     options: {
       out: { type: "string" },
       source: { type: "string" },
+      css: { type: "string" },
+      fixture: { type: "string" },
       widths: { type: "string", default: "390,1280" },
       set: { type: "string", multiple: true },
       id: { type: "string" },
@@ -65,7 +72,8 @@ async function main(argv: string[]) {
       return n;
     });
   const page = () => ({
-    source: need(values.source, "--source <source.cascade.yaml>"),
+    source: values.css ? undefined : need(values.source, "--source <source.cascade.yaml> or --css <file.css>"),
+    css: values.css,
     fixture: need(input, "<fixture.html>"),
     widths: widths(),
   });
@@ -89,6 +97,9 @@ async function main(argv: string[]) {
       break;
     case "check":
       r = checkCmd(page());
+      break;
+    case "lift":
+      r = liftCmd({ css: need(input, "<file.css>"), out: values.out, fixture: values.fixture, widths: widths() });
       break;
     default:
       throw new InputError(`unknown command "${cmd}"`);

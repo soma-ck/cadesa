@@ -111,9 +111,39 @@ Cascadio ships an MCP server, so Claude Code, Cursor, Codex and other MCP client
 | `cascadio_render` | "Where is every box, and where does the text wrap?" |
 | `cascadio_explain` | "Why is this value what it is, and which YAML path do I edit?" |
 | `cascadio_check` | "Is anything overflowing, too small to tap, or low contrast?" |
+| `cascadio_lift` | "Turn this existing CSS into Cascadio. What couldn't be converted, and which boxes does that affect?" |
 | `cascadio_validate` / `cascadio_css` / `cascadio_build` | Validate, preview the CSS, write the CSS. |
 
-Every read tool accepts `sourceText`, so an agent can evaluate an unsaved draft. The server's instructions teach the language and the render → explain → whatif → edit loop. This repo includes a [`.mcp.json`](.mcp.json) that runs the server from source.
+Every read tool accepts `sourceText`, so an agent can evaluate an unsaved draft, or `css` to work directly on existing CSS. The server's instructions teach the language and the render → explain → whatif → edit loop. This repo includes a [`.mcp.json`](.mcp.json) that runs the server from source.
+
+## Already have CSS? Lift it
+
+`cascadio lift` converts plain BEM-style CSS (`.block`, `.block__element`) into a Cascadio source. Whatever doesn't fit isn't guessed. It is reported per box: for each width, which boxes the engine still predicts exactly, which may differ from the original CSS, and which declaration or browser default is responsible.
+
+```console
+$ cascadio lift fixtures/legacy.css --fixture fixtures/legacy.html --widths 390,1280 --out legacy.cascade.yaml
+lift fixtures/legacy.css: 49 of 54 declarations lifted · 1 component · 17 tokens · 1 breakpoint
+
+box impact (≈ = may differ from the original CSS)
+390px
+  ✓ exact (5): #name #bio #actions #follow #message
+  ≈ #meta size
+      fixtures/legacy.css: <p> keeps the browser's default margin (no margin set); Cascadio's reset removes it
+  ≈ #badge size+position
+      fixtures/legacy.css:78 position: absolute: position: absolute takes the box out of normal flow
+  · no effect in the default state: fixtures/legacy.css:59 background: #1d4ed8: interactive state
+1280px
+  ✓ exact (0): none
+  ≈ #name size
+      fixtures/legacy.css:106 max-width: 560px: @media (min-width: 1024px) is not modelled
+  ...
+```
+
+A `:hover` rule can't move anything in the default state, while a `min-width` query moves every box at the widths where it applies. A coverage percentage would hide that difference, so lift reports per box instead.
+
+Every read command and MCP tool also accepts `--css <file.css>` in place of `--source`. The CSS is lifted on the fly, uncertain boxes are marked `≈`, and `check` findings on them are reported as inconclusive.
+
+**Verified against Chromium:** `npm run conformance:lift` loads the fixture with the *original* hand-written CSS. Every box lift marked exact matched, 15 of 15 at 0.000–0.011px. Every box it marked uncertain really did differ, 17 of 17. Lifting Cascadio's own output gives back the same source, and a test checks that its layout is identical at 49 widths.
 
 ## The source
 
@@ -172,7 +202,7 @@ Invalid source never produces CSS. The same input always produces byte-identical
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)` after base rules; replaces, never merges |
 | `intent` | sentence | a CSS comment; metadata for inspection |
 
-Class contract: `.ca-<component>` on the root and `.ca-<component>__<slot>` on slots. Slot rules are scoped to the root. Each component gets a scoped reset, so browser defaults can't move boxes the engine doesn't know about.
+Class contract: `.ca-<component>` on the root and `.ca-<component>__<slot>` on slots. Set a top-level `prefix: ""` to drop the `ca-` (lift does this to keep existing class names). Slot rules are scoped to the root. Each component gets a scoped reset, so browser defaults can't move boxes the engine doesn't know about.
 
 ## How exact is "exact"?
 
@@ -232,7 +262,7 @@ React, Svelte, server templates and static HTML work the same way, because Casca
 ## Roadmap
 
 - **Bring your own font:** `cascadio metrics <font.woff2>` to measure any font the way Inter is measured.
-- **`lift`:** convert existing CSS into Cascadio. This starts with a round-trip test on Cascadio's own output, then moves to hand-written CSS, where uncertainty is reported per box (which boxes an unliftable rule could move) rather than as a coverage score.
+- **More of CSS:** grid, `min-width` breakpoints, and a `row` pattern, so lift leaves less behind.
 - **Benchmark:** agents fixing a mobile layout bug with Cascadio vs. plain CSS, on the same fixture with the same edit budget. It measures attempts to fix and desktop regressions.
 
 ## Development
@@ -242,6 +272,7 @@ npm test             # validation, determinism, golden CSS, engine, whatif
 npm run typecheck
 npm run conformance        # optional: engine vs. Chromium, 2 fixtures × 4 widths
 npm run conformance:sweep  # optional: 247 widths, line-break boundaries
+npm run conformance:lift   # optional: lifted hand-written CSS vs. the original in Chromium
 ```
 
 ## License

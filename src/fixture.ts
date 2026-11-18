@@ -4,6 +4,7 @@ import { parse } from "parse5";
 export interface FixtureNode {
   tag: string;
   classes: string[];
+  attrs: Record<string, string>;
   fixtureId?: string;
   line?: number;
   /** Collapsed text of this element's own text nodes and descendants. */
@@ -38,6 +39,7 @@ function convert(n: P5Node): FixtureNode {
   return {
     tag: n.tagName!,
     classes: (attr(n, "class") ?? "").split(/\s+/).filter(Boolean),
+    attrs: Object.fromEntries((n.attrs ?? []).map((a) => [a.name, a.value])),
     fixtureId: attr(n, "data-fixture"),
     line: n.sourceCodeLocation?.startLine,
     text: textOf(n).replace(/\s+/g, " ").trim(),

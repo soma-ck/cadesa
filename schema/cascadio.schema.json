@@ -7,6 +7,12 @@
   "required": ["version"],
   "properties": {
     "version": { "const": 1 },
+    "prefix": {
+      "type": "string",
+      "pattern": "^(?:[a-z][a-z0-9]*-)?$",
+      "default": "ca-",
+      "description": "Class prefix: .<prefix><component> and .<prefix><component>__<slot>. Use \"\" to keep existing BEM class names."
+    },
     "tokens": {
       "type": "object",
       "additionalProperties": false,

@@ -26,7 +26,8 @@
     "conformance": "tsx scripts/conformance.ts",
     "demo": "tsx src/cli.ts build settings.cascade.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cascade.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel",
     "conformance:sweep": "tsx scripts/conformance.ts --fixtures fixtures/settings-long.html --widths $(seq -s, 260 3 1000) --out artifacts/sweep",
-    "metrics": "tsx scripts/gen-metrics.ts"
+    "metrics": "tsx scripts/gen-metrics.ts",
+    "conformance:lift": "tsx scripts/conformance.ts --lift fixtures/legacy.css --fixtures fixtures/legacy.html --out artifacts/legacy"
   },
   "keywords": [
     "css",
@@ -40,6 +41,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "parse5": "8.1.1",
+    "postcss": "8.5.32",
     "yaml": "2.9.1",
     "zod": "4.6.7"
   },

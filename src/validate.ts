@@ -1,6 +1,7 @@
 import { closest, type Diagnostic } from "./diagnostics.js";
 import type { PathSeg, Source } from "./load.js";
 import {
+  DEFAULT_PREFIX,
   LENGTH_CATEGORIES,
   PROP_ORDER,
   ROOT_FONT_PX,
@@ -24,7 +25,8 @@ const LENGTH = /^(?:\d+(?:\.\d+)?|\.\d+)(rem|px)$/;
 const COLOR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const IDENT_HELP = "a lowercase kebab-case name, e.g. section-title";
 
-const TOP_KEYS = ["version", "tokens", "text", "breakpoints", "styles"];
+const TOP_KEYS = ["version", "prefix", "tokens", "text", "breakpoints", "styles"];
+const PREFIX = /^(?:[a-z][a-z0-9]*-)?$/;
 const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color"];
 const ROOT_PROPS = PROP_ORDER as string[];
 const SLOT_PROPS = ROOT_PROPS.filter((p) => p !== "maxWidth");
@@ -88,6 +90,8 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   if (!top) return { diagnostics };
   keys(top, [], TOP_KEYS);
   if (top.version !== 1) err(["version"], "unsupported or missing version", { expected: "1", got: top.version });
+  if (top.prefix !== undefined && (typeof top.prefix !== "string" || !PREFIX.test(top.prefix)))
+    err(["prefix"], "invalid class prefix", { expected: 'a lowercase prefix ending in "-", or "" for none (default "ca-")', got: top.prefix });
 
   // ---- tokens
   const tokens = new Map<string, Token>();
@@ -342,5 +346,6 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   }
 
   if (diagnostics.length) return { diagnostics };
-  return { model: { file: src.file, tokens, text, breakpoints, components }, diagnostics };
+  const prefix = typeof top.prefix === "string" ? top.prefix : DEFAULT_PREFIX;
+  return { model: { file: src.file, prefix, tokens, text, breakpoints, components }, diagnostics };
 }

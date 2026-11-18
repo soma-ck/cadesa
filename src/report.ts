@@ -1,6 +1,8 @@
 import type { Finding } from "./check.js";
 import type { Box, Issue, Layout } from "./engine/layout.js";
 import type { Explanation } from "./explain.js";
+import type { WidthImpact } from "./lift/impact.js";
+import type { LiftResult } from "./lift/lift.js";
 import type { WhatIf } from "./project.js";
 import { fmtPx, type Resolved } from "./resolve.js";
 
@@ -37,15 +39,23 @@ function header(l: Layout) {
 
 export function formatRender(
   layouts: Layout[],
-  meta: { source: string; fixture: string; ms: number; lines?: boolean },
+  meta: { source: string; fixture: string; ms: number; lines?: boolean; impacts?: WidthImpact[] },
 ): string {
   const out = [`${meta.source} × ${meta.fixture} · computed in ${meta.ms}ms, no browser`, ""];
   for (const l of layouts) {
     out.push(header(l));
+    const imp = meta.impacts?.find((i) => i.width === l.width);
+    const uncertain = new Set(imp?.uncertain.map((u) => u.id));
     const rows: { cells: string[]; lines?: Box["lines"] }[] = [];
     const visit = (b: Box, depth: number) => {
       rows.push({
-        cells: [`${"  ".repeat(depth + 1)}#${b.id}`, b.tag, `${fmtPx(b.x)},${fmtPx(b.y)}`, `${fmtPx(b.w)}×${fmtPx(b.h)}`, summary(b)],
+        cells: [
+          `${"  ".repeat(depth + 1)}#${b.id}`,
+          b.tag,
+          `${fmtPx(b.x)},${fmtPx(b.y)}`,
+          `${uncertain.has(b.id) ? "≈" : ""}${fmtPx(b.w)}×${fmtPx(b.h)}`,
+          summary(b),
+        ],
         lines: meta.lines && b.lines && b.lines.length > 1 ? b.lines : undefined,
       });
       b.children.forEach((c) => visit(c, depth + 1));
@@ -133,5 +143,37 @@ export function formatCheck(findings: Finding[], widths: number[]): string {
   const errors = findings.filter((f) => f.severity === "error").length;
   const warnings = findings.length - errors;
   out.push(`${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}`);
+  return out.join("\n") + "\n";
+}
+
+export function formatImpact(impacts: WidthImpact[]): string {
+  const out: string[] = ["box impact (≈ = may differ from the original CSS)"];
+  for (const i of impacts) {
+    out.push(`${i.width}px`);
+    out.push(`  ✓ exact (${i.exact.length}): ${i.exact.map((x) => `#${x}`).join(" ") || "none"}`);
+    for (const u of i.uncertain) {
+      out.push(`  ≈ #${u.id} ${u.effects.filter((e) => e !== "paint").join("+")}`);
+      for (const r of u.reasons.filter((r) => !r.startsWith("moved by") && !r.startsWith("resized by")).slice(0, 3)) out.push(`      ${r}`);
+      const via = u.reasons.filter((r) => r.startsWith("moved by") || r.startsWith("resized by"));
+      if (via.length) out.push(`      ${[...new Set(via.map((r) => r.split(":")[0]))].join(", ")}`);
+    }
+    for (const p of i.paintOnly) out.push(`  ◐ #${p.id} colors only: ${p.reasons[0]}`);
+    for (const n of i.noEffect) out.push(`  · no effect in the default state: ${n}`);
+  }
+  return out.join("\n") + "\n";
+}
+
+export function formatLift(r: LiftResult, meta: { out?: string; impacts?: WidthImpact[] }): string {
+  const s = r.stats;
+  const out = [
+    `lift ${r.file}: ${s.declarations - s.unlifted} of ${s.declarations} declarations lifted · ${s.components} component${s.components === 1 ? "" : "s"} · ${s.tokens} tokens · ${s.breakpoints} breakpoint${s.breakpoints === 1 ? "" : "s"}`,
+  ];
+  if (meta.out) out.push(`wrote ${meta.out}`);
+  if (r.unlifted.length) {
+    out.push("", "not lifted:");
+    for (const u of r.unlifted)
+      out.push(`  ${u.line ? `${r.file}:${u.line}` : r.file} ${u.selector}${u.decl ? ` { ${u.decl} }` : ""}`, `      ${u.kind}: ${u.reason}${u.when ? ` (${u.when.raw})` : ""}`);
+  }
+  if (meta.impacts) out.push("", formatImpact(meta.impacts).trimEnd());
   return out.join("\n") + "\n";
 }

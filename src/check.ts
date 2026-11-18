@@ -3,6 +3,7 @@
  * YAML path to edit. Checks that can't be decided from the source say "inconclusive".
  */
 import type { Box, Issue, Layout } from "./engine/layout.js";
+import type { WidthImpact } from "./lift/impact.js";
 import { fmtPx } from "./resolve.js";
 
 export interface Finding extends Issue {
@@ -26,9 +27,14 @@ export function contrast(a: string, b: string): number {
   return (x + 0.05) / (y + 0.05);
 }
 
-export function check(layouts: Layout[]): Finding[] {
+/** With `impacts` (from a lift), findings on boxes the engine can't predict exactly are inconclusive. */
+export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
   const out: Finding[] = [];
   for (const l of layouts) {
+    const imp = impacts?.find((i) => i.width === l.width);
+    const geometryUnknown = new Set(imp?.uncertain.map((u) => u.id));
+    const paintUnknown = new Set([...(imp?.uncertain ?? []), ...(imp?.paintOnly ?? [])].filter((u) => u.effects.includes("paint")).map((u) => u.id));
+    const start = out.length;
     for (const i of l.issues) out.push({ ...i, check: "layout", width: l.width });
     const visit = (b: Box, bg?: { color: string; path: string }) => {
       const here = b.props.background ? { color: b.props.background.value, path: b.props.background.steps.at(-1)!.path } : bg;
@@ -97,6 +103,14 @@ export function check(layouts: Layout[]): Finding[] {
       for (const k of b.children) visit(k, here);
     };
     for (const b of l.boxes) visit(b);
+    for (const f of out.slice(start)) {
+      const unknown = f.check === "contrast" ? paintUnknown.has(f.id) || geometryUnknown.has(f.id) : geometryUnknown.has(f.id);
+      if (unknown && !f.inconclusive) {
+        f.inconclusive = true;
+        f.severity = "warning";
+        f.message += " (inconclusive: this box isn't exactly predicted for the original CSS)";
+      }
+    }
   }
   return out;
 }

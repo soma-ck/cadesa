@@ -104,8 +104,12 @@ export interface Component {
   when: Override[];
 }
 
+export const DEFAULT_PREFIX = "ca-";
+
 export interface Model {
   file: string;
+  /** Class prefix: `.${prefix}${component}` and `.${prefix}${component}__${slot}`. */
+  prefix: string;
   tokens: Map<string, Token>; // key: `${category}.${name}`
   text: Map<string, TextRole>;
   breakpoints: Breakpoint[];

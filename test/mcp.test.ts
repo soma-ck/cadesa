@@ -27,6 +27,7 @@ describe("MCP server", () => {
       "cascadio_check",
       "cascadio_css",
       "cascadio_explain",
+      "cascadio_lift",
       "cascadio_render",
       "cascadio_validate",
       "cascadio_whatif",
@@ -68,5 +69,13 @@ describe("MCP server", () => {
   it("returns the compiled CSS without writing", async () => {
     const r = await call("cascadio_css", { source: "settings.cascade.yaml" });
     expect(r.text).toBe(readFileSync("dist/settings.css", "utf8"));
+  });
+
+  it("lifts CSS and renders it with uncertainty marks", async () => {
+    const l = await call("cascadio_lift", { css: "fixtures/legacy.css", fixture: "fixtures/legacy.html", widths: [390] });
+    expect(l.text).toContain("49 of 54 declarations lifted");
+    expect(l.text).toContain("✓ exact (5): #name #bio #actions #follow #message");
+    const r = await call("cascadio_render", { css: "fixtures/legacy.css", fixture: "fixtures/legacy.html", widths: [390] });
+    expect(r.text).toMatch(/#meta +p +16,228 +≈358×18/);
   });
 });

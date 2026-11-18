@@ -18,7 +18,9 @@ import { chromium } from "playwright";
 import { compile } from "../src/compile.js";
 import { walk } from "../src/engine/layout.js";
 import { parseFixture } from "../src/fixture.js";
-import { loadSourceFile } from "../src/load.js";
+import { loadSource, loadSourceFile } from "../src/load.js";
+import { impact } from "../src/lift/impact.js";
+import { lift } from "../src/lift/lift.js";
 import { modelOf, render } from "../src/project.js";
 
 const { values } = parseArgs({
@@ -29,6 +31,8 @@ const { values } = parseArgs({
     widths: { type: "string", default: "320,390,768,1280" },
     tolerance: { type: "string", default: "0.5" },
     out: { type: "string", default: "artifacts" },
+    /** Verify a lift instead: the fixture links this hand-written CSS, which the engine sees only through lift. */
+    lift: { type: "string" },
   },
 });
 
@@ -37,11 +41,16 @@ const tolerance = Number(values.tolerance);
 const widths = values.widths!.split(",").map(Number);
 const sha = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 
-// 1. Build, so we know exactly which bytes the browser must receive.
-const model = modelOf(loadSourceFile(values.source!));
-const css = compile(model);
-mkdirSync(join(root, values.css!, ".."), { recursive: true });
-writeFileSync(values.css!, css);
+// 1. Build, so we know exactly which bytes the browser must receive. With --lift, the original CSS
+//    is served untouched and the engine works from its lift.
+const lifted = values.lift ? lift(values.lift, readFileSync(values.lift, "utf8")) : undefined;
+const model = lifted ? modelOf(loadSource(`${values.lift} (lifted)`, lifted.yaml)) : modelOf(loadSourceFile(values.source!));
+const cssFile = values.lift ?? values.css!;
+const css = lifted ? readFileSync(values.lift!, "utf8") : compile(model);
+if (!lifted) {
+  mkdirSync(join(root, values.css!, ".."), { recursive: true });
+  writeFileSync(values.css!, css);
+}
 const builtSha = sha(css);
 
 // 2. Serve the repo and record every stylesheet byte stream the page actually loads.
@@ -69,11 +78,16 @@ console.log(`browser: ${browser.version()}${executablePath ? ` (${executablePath
 console.log(`tolerance: ±${tolerance}px\n`);
 
 let checked = 0;
+const flaggedSame: string[] = [];
+const flaggedDiff: string[] = [];
 for (const fixtureFile of values.fixtures!.split(",")) {
 const fixture = parseFixture(fixtureFile);
 const name = fixtureFile.replace(/^.*\//, "").replace(/\.html$/, "");
 console.log(`── ${fixtureFile}`);
-for (const layout of render(model, fixture, widths)) {
+const layouts = render(model, fixture, widths);
+const impacts = lifted ? impact(lifted, fixture, layouts) : undefined;
+for (const layout of layouts) {
+  const uncertain = new Set(impacts?.find((i) => i.width === layout.width)?.uncertain.map((u) => u.id));
   const page = await browser.newPage({ viewport: { width: layout.width, height: 900 } });
   await page.goto(`http://127.0.0.1:${port}/${fixtureFile}`);
   await page.evaluate("document.fonts.ready");
@@ -101,7 +115,8 @@ for (const layout of render(model, fixture, widths)) {
       `${+r.x.toFixed(2)},${+r.y.toFixed(2)} ${+r.w.toFixed(2)}×${+r.h.toFixed(2)}`;
     const delta = c ? Math.max(...(["x", "y", "w", "h"] as const).map((k) => Math.abs(b[k] - c[k]))) : Infinity;
     const ok = delta <= tolerance;
-    if (!ok) failures++;
+    const flagged = uncertain.has(b.id);
+    if (!ok && !flagged) failures++;
     const lh = b.props.text ? b.props.text.value.sizePx * b.props.text.value.lineHeight : 0;
     const note = b.assumptions.length
       ? "  (text: 1 line assumed)"
@@ -110,9 +125,10 @@ for (const layout of render(model, fixture, widths)) {
         : "";
     checked++;
     console.log(
-      `  ${ok ? "✓" : "✖"} #${b.id.padEnd(12)} ${fmt(b).padEnd(26)} ${(c ? fmt(c) : "missing").padEnd(26)} ${c ? delta.toFixed(3) : "-"}${note}`,
+      `  ${ok ? (flagged ? "≈" : "✓") : flagged ? "≈" : "✖"} #${b.id.padEnd(12)} ${fmt(b).padEnd(26)} ${(c ? fmt(c) : "missing").padEnd(26)} ${c ? delta.toFixed(3) : "-"}${note}`,
     );
-    report.push({ fixture: fixtureFile, width: layout.width, id: b.id, lines: b.lines?.length, engine: { x: b.x, y: b.y, w: b.w, h: b.h }, chromium: c, delta, ok });
+    if (flagged) (ok ? flaggedSame : flaggedDiff).push(`${layout.width}px #${b.id}`);
+    report.push({ fixture: fixtureFile, width: layout.width, id: b.id, lines: b.lines?.length, flagged, engine: { x: b.x, y: b.y, w: b.w, h: b.h }, chromium: c, delta, ok });
   }
   console.log("");
 }
@@ -122,15 +138,23 @@ await browser.close();
 server.close();
 
 // 3. The page must have loaded the emitted stylesheet byte-for-byte, and nothing else.
-const cssPath = resolve(root, values.css!);
+const cssPath = resolve(root, cssFile);
 const loadedSha = served.get(cssPath);
 const bytesOk = loadedSha === builtSha && served.size === 1;
 if (!bytesOk) failures++;
 console.log(
   bytesOk
-    ? `✓ stylesheet: the fixture loaded ${values.css} unchanged (sha256 ${builtSha.slice(0, 12)})`
-    : `✖ stylesheet: expected only ${values.css} (sha256 ${builtSha.slice(0, 12)}), page loaded ${JSON.stringify([...served])}`,
+    ? `✓ stylesheet: the fixture loaded ${cssFile} unchanged (sha256 ${builtSha.slice(0, 12)})`
+    : `✖ stylesheet: expected only ${cssFile} (sha256 ${builtSha.slice(0, 12)}), page loaded ${JSON.stringify([...served])}`,
 );
 writeFileSync(join(values.out!, "conformance.json"), JSON.stringify({ tolerance, cssSha256: builtSha, boxes: report }, null, 2) + "\n");
-console.log(failures ? `\n✖ ${failures} mismatch(es) of ${checked} boxes` : `\n✓ engine and Chromium agree on all ${checked} boxes`);
+if (lifted) {
+  const exact = checked - flaggedSame.length - flaggedDiff.length;
+  console.log(
+    failures
+      ? `\n✖ ${failures} box(es) marked exact differ from Chromium`
+      : `\n✓ all ${exact} boxes marked exact agree with Chromium`,
+  );
+  console.log(`≈ ${flaggedSame.length + flaggedDiff.length} boxes marked uncertain: ${flaggedDiff.length} differ, ${flaggedSame.length} happen to match`);
+} else console.log(failures ? `\n✖ ${failures} mismatch(es) of ${checked} boxes` : `\n✓ engine and Chromium agree on all ${checked} boxes`);
 process.exitCode = failures ? 1 : 0;

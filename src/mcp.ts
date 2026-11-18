@@ -12,6 +12,7 @@ import {
   cssCmd,
   explainCmd,
   InputError,
+  liftCmd,
   renderCmd,
   validateCmd,
   whatifCmd,
@@ -29,6 +30,8 @@ Workflow for a style change:
 3. cascadio_whatif your candidate edit: it applies in memory and reports which boxes move at every width,
    new or fixed issues, and confirms widths that did not change. Iterate here; nothing is written.
 4. Edit the .cascade.yaml file, then cascadio_check and cascadio_build.
+Existing CSS: cascadio_lift converts it (or pass css instead of source to any read tool). Boxes marked ≈ are not
+exactly predicted for the original CSS; the report says which declaration or browser default is responsible.
 
 Language: tokens.{space,size,color,radius,font}, text roles {font,size,weight,lineHeight,color}, breakpoints
 (max-width, desktop-first), styles.<component> with layout {pattern: stack|cluster, gap}, padding (token or
@@ -37,7 +40,11 @@ slots.<slot> (same props), and when.<breakpoint> overrides that replace properti
 HTML uses class="ca-<component>" on the root and "ca-<component>__<slot>" on slots; data-fixture="id" names boxes.`;
 
 const sourceShape = {
-  source: z.string().describe("Path to the .cascade.yaml source"),
+  source: z.string().optional().describe("Path to the .cascade.yaml source (or pass css instead)"),
+  css: z
+    .string()
+    .optional()
+    .describe("Path to a plain CSS file to lift on the fly instead of a Cascadio source; boxes it can't predict exactly are marked ≈"),
   sourceText: z
     .string()
     .optional()
@@ -130,6 +137,24 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
+    "cascadio_lift",
+    {
+      title: "Lift CSS into Cascadio",
+      description:
+        "Convert plain CSS (BEM classes: .block, .block__element) into a Cascadio source. Reports every declaration it could not lift and what it can affect (geometry, text, visual, paint, state). With a fixture, reports per width which boxes are still exactly predicted and which may differ from the original CSS, and why. Writes the source only when `out` is given.",
+      inputSchema: {
+        css: z.string().describe("Path to the CSS file"),
+        out: z.string().optional().describe("Write the lifted .cascade.yaml here"),
+        fixture: z.string().optional().describe("HTML fixture for box-level impact"),
+        widths: pageShape.widths,
+        format: pageShape.format,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
+    },
+    (a) => respond(() => liftCmd(a), a.format),
+  );
+
+  server.registerTool(
     "cascadio_validate",
     {
       title: "Validate source",
@@ -157,10 +182,10 @@ export function createServer(): McpServer {
     {
       title: "Build CSS",
       description: "Compile a Cascadio source and write the CSS file. Invalid sources write nothing.",
-      inputSchema: { ...sourceShape, out: z.string().describe("Output .css path") },
+      inputSchema: { source: z.string().describe("Path to the .cascade.yaml source"), sourceText: sourceShape.sourceText, out: z.string().describe("Output .css path") },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
-    (a) => respond(() => buildCmd(a)),
+    (a) => respond(() => buildCmd({ ...a, css: undefined })),
   );
 
   return server;
