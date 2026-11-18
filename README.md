@@ -114,7 +114,12 @@ Cadesa ships an MCP server, so Claude Code, Cursor, Codex and other MCP clients 
 | `cadesa_lift` | "Turn this existing CSS into Cadesa. What couldn't be converted, and which boxes does that affect?" |
 | `cadesa_validate` / `cadesa_css` / `cadesa_build` | Validate, preview the CSS, write the CSS. |
 
-Every read tool accepts `sourceText`, so an agent can evaluate an unsaved draft, or `css` to work directly on existing CSS. The server's instructions teach the language and the render → explain → whatif → edit loop. This repo includes a [`.mcp.json`](.mcp.json) that runs the server from source.
+Every read tool accepts `sourceText`, so an agent can evaluate an unsaved draft, or `css` to work directly on existing CSS. The server's instructions teach the language and the render → explain → whatif → edit loop. This repo includes a [`.mcp.json`](.mcp.json) that runs the server from source. To use a local checkout from every project before it's published:
+
+```sh
+npm run build:ts
+claude mcp add --scope user cadesa -- node /path/to/cadesa/lib/cli.js mcp
+```
 
 ## Already have CSS? Lift it
 
@@ -273,7 +278,24 @@ React, Svelte, server templates and static HTML work the same way, because Cades
 ## Roadmap
 
 - **More of CSS:** grid, `min-width` breakpoints, and a `row` pattern, so lift leaves less behind.
-- **Benchmark:** agents fixing a mobile layout bug with Cadesa vs. plain CSS, on the same fixture with the same edit budget. It measures attempts to fix and desktop regressions.
+
+## Benchmark: Cadesa vs. plain CSS
+
+[`bench/`](bench/) measures whether the engine actually helps an agent. There are three mobile layout bugs: buttons that should stack, mobile padding that is too wide, and buttons that overflow at 320px. Each bug runs in two arms that start from identical pixels:
+
+| | Plain CSS arm | Cadesa arm |
+| --- | --- | --- |
+| Edits | `component.css` | `component.cadesa.yaml` |
+| Screenshots at mobile and 1280px | ✓ | ✓ |
+| `render` / `whatif` / `explain` / `check` | | ✓ |
+
+Each round is one headless `claude -p` run that makes one edit. The harness then measures the page in **Chromium, not with Cadesa's engine**, and records whether the mobile goal is met and whether any box moved at 1280px. Both arms get the same factual feedback, up to N rounds. The scores are attempts to fix and desktop regressions.
+
+```sh
+npm run bench -- --trials 5 --rounds 4 --model sonnet
+```
+
+Results land in `bench/results/`. *No published numbers yet:* run it and see.
 
 ## Development
 
@@ -283,6 +305,7 @@ npm run typecheck
 npm run conformance        # optional: engine vs. Chromium, 2 fixtures × 4 widths
 npm run conformance:sweep  # optional: 247 widths, line-break boundaries
 npm run conformance:lift   # optional: lifted hand-written CSS vs. the original in Chromium
+npm run bench              # optional: agent benchmark (uses the claude CLI and model usage)
 ```
 
 ## License
