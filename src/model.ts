@@ -16,8 +16,10 @@ export interface Token {
   name: string;
   path: string;
   raw: string;
-  /** Pixel value for length tokens. */
+  /** Pixel value for length tokens (not for a percentage size token). */
   px?: number;
+  /** A size token in percent ("50%"): of the containing block's content width. */
+  pct?: number;
 }
 
 export interface TextRole {
@@ -49,7 +51,8 @@ export interface Ref {
   path: string;
 }
 
-export type Pattern = "stack" | "cluster" | "grid" | "layer";
+/** flow: block flow (display: block); vertical margins collapse between siblings and through the box. */
+export type Pattern = "stack" | "cluster" | "grid" | "layer" | "flow";
 
 export type Align = "start" | "center" | "end" | "stretch";
 export type TextAlign = "start" | "center" | "end";
@@ -71,9 +74,22 @@ export interface PaddingProp {
   inline?: Ref;
 }
 
+/**
+ * Outer spacing per side (space tokens; a missing side is 0). `margin: s` sets every side,
+ * `{ block, inline }` each axis, `{ top, right, bottom, left }` each side (a side beats its axis).
+ */
+export interface MarginProp {
+  path: string;
+  top?: Ref;
+  right?: Ref;
+  bottom?: Ref;
+  left?: Ref;
+}
+
 export interface Props {
   layout?: LayoutProp;
   padding?: PaddingProp;
+  margin?: MarginProp;
   background?: Ref;
   border?: Ref;
   radius?: Ref;
@@ -96,6 +112,7 @@ export interface Props {
 export const PROP_ORDER: (keyof Props)[] = [
   "layout",
   "padding",
+  "margin",
   "background",
   "backdrop",
   "border",

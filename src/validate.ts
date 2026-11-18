@@ -11,6 +11,7 @@ import {
   type Component,
   type Length,
   type LayoutProp,
+  type MarginProp,
   type Model,
   type Override,
   type Props,
@@ -35,6 +36,15 @@ function asLength(v: unknown): string | undefined {
   if (LENGTH.test(t)) return t;
   if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(t)) return `${t}px`;
   return undefined;
+}
+
+/** A percentage size token: "50%", "33.333%" (0–100). Returns the number or undefined. */
+function asPercent(v: unknown): number | undefined {
+  if (typeof v !== "string") return undefined;
+  const m = /^\s*(\d+(?:\.\d+)?|\.\d+)%\s*$/.exec(v);
+  if (!m) return undefined;
+  const n = parseFloat(m[1]);
+  return n > 0 && n <= 100 ? n : undefined;
 }
 
 const NAMED_COLORS: Record<string, string> = { white: "#ffffff", black: "#000000", transparent: "#00000000" };
@@ -139,10 +149,16 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
       for (const [name, value] of Object.entries(cat)) {
         const path = [...catPath, name];
         if (!ident(name, path)) continue;
-        if (LENGTH_CATEGORIES.has(category)) {
+        const pct = category === "size" ? asPercent(value) : undefined;
+        if (pct !== undefined) {
+          tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: `${pct}%`, pct });
+        } else if (LENGTH_CATEGORIES.has(category)) {
           const len = asLength(value);
           if (!len) {
-            err(path, `invalid ${category} length`, { expected: "a length in rem or px, e.g. 1.5rem or 24px (a plain number is px)", got: value });
+            err(path, `invalid ${category} length`, {
+              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px)${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%"' : ""}`,
+              got: value,
+            });
             continue;
           }
           tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: len, px: parseLength(len).px });
@@ -193,6 +209,16 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
       return undefined;
     }
     return { kind, name: value, path: path.join(".") };
+  };
+
+  /** A size token that must be a fixed length (a percentage of the width can't size it). */
+  const fixedRef = (value: unknown, path: PathSeg[], what: string): Ref | undefined => {
+    const r = ref(value, path, "size");
+    if (r && tokens.get(tokenKey("size", r.name))!.pct !== undefined) {
+      err(path, `"${r.name}" is a percentage; ${what} needs a length`, { expected: "a size token in px or rem", got: value });
+      return undefined;
+    }
+    return r;
   };
 
   // ---- text roles
@@ -299,10 +325,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const l = obj(v, p, "a layout");
           if (!l) break;
           keys(l, p, ["pattern", "gap", "align", "min"]);
-          const PATTERNS = ["stack", "cluster", "grid", "layer"];
+          const PATTERNS = ["stack", "cluster", "grid", "layer", "flow"];
           if (!PATTERNS.includes(l.pattern as string)) {
             err([...p, "pattern"], l.pattern === undefined ? 'missing required key "pattern"' : "unsupported layout pattern", {
-              expected: "stack, cluster, grid or layer",
+              expected: "stack, cluster, grid, layer or flow",
               got: l.pattern,
               suggestion: typeof l.pattern === "string" ? closest(l.pattern, PATTERNS) : undefined,
             });
@@ -314,16 +340,20 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
               err(p, 'a grid needs "min": the minimum column width (a size token)', { expected: "layout: { pattern: grid, min: <size token>, gap: <space token> }" });
               break;
             }
-            min = ref(l.min, [...p, "min"], "size");
+            min = fixedRef(l.min, [...p, "min"], "the grid's minimum column width");
             if (!min) break;
           } else if (l.min !== undefined) {
             err([...p, "min"], "min only applies to a grid", { expected: "remove min, or use pattern: grid" });
             break;
           }
+          if (l.pattern === "flow" && l.gap !== undefined) {
+            err([...p, "gap"], "a flow has no gap (block flow spaces its children with their margins)", { expected: "remove gap, or give the children margin: { top/bottom }, or use pattern: stack" });
+            break;
+          }
           const gap = l.gap === undefined ? undefined : ref(l.gap, [...p, "gap"], "space");
           if (l.gap !== undefined && !gap) break;
-          if (l.align !== undefined && (l.pattern === "stack" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
-            err([...p, "align"], l.pattern === "stack" ? "align doesn't apply to a stack (stack children always stretch)" : "invalid align", {
+          if (l.align !== undefined && (l.pattern === "stack" || l.pattern === "flow" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
+            err([...p, "align"], l.pattern === "stack" || l.pattern === "flow" ? `align doesn't apply to a ${l.pattern} (its children always stretch)` : "invalid align", {
               expected: "start, center, end or stretch",
               got: l.align,
             });
@@ -347,6 +377,32 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           }
           break;
         }
+        case "margin": {
+          const SIDES = ["top", "right", "bottom", "left"] as const;
+          if (isObj(v)) {
+            keys(v, p, ["block", "inline", ...SIDES]);
+            if (!Object.keys(v).length) {
+              err(p, "empty margin", { expected: "a space token, { block, inline } or { top, right, bottom, left } space tokens" });
+              break;
+            }
+            const axis = (k: "block" | "inline") => (v[k] === undefined ? undefined : ref(v[k], [...p, k], "space"));
+            const block = axis("block");
+            const inline = axis("inline");
+            const m: MarginProp = { path: p.join(".") };
+            let ok = (v.block === undefined || !!block) && (v.inline === undefined || !!inline);
+            for (const s of SIDES) {
+              const own = v[s] === undefined ? undefined : ref(v[s], [...p, s], "space");
+              if (v[s] !== undefined && !own) ok = false;
+              const r = own ?? (s === "top" || s === "bottom" ? block : inline);
+              if (r) m[s] = r;
+            }
+            if (ok) out.margin = m;
+          } else {
+            const r = ref(v, p, "space");
+            if (r) out.margin = { path: p.join("."), top: r, right: r, bottom: r, left: r };
+          }
+          break;
+        }
         case "background":
           out.background = ref(v, p, "color");
           break;
@@ -363,7 +419,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           out.measure = ref(v, p, "size");
           break;
         case "height":
-          out.height = ref(v, p, "size");
+          out.height = fixedRef(v, p, "a height");
           break;
         case "text":
           out.text = ref(v, p, "text");
@@ -486,7 +542,13 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
       ...[...c.slots.values()].map((s) => [s.path, s.props] as const),
       ...c.when.flatMap((w) => [[w.path, w.props] as const, ...[...w.slots].map(([s, p]) => [`${w.path}.slots.${s}`, p] as const)]),
     ])
+    {
       if (p.aspect && p.height) err([...where.split("."), "aspect"], "aspect and height both set the height", { expected: "keep one of them" });
+      if (p.maxWidth && (p.margin?.left || p.margin?.right))
+        err([...where.split("."), "margin"], "maxWidth centers the box with auto inline margins; it can't also have a left or right margin", {
+          expected: "margin: { block: <space> } (top and bottom only), or measure instead of maxWidth",
+        });
+    }
 
   let page: Model["page"];
   if (top.page !== undefined) {

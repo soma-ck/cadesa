@@ -43,7 +43,7 @@ describe("validation", () => {
     const ds = diagnosticsOf(
       sourceText
         .replace("section-title:", "Section_Title:")
-        .replace("pattern: cluster", "pattern: flow")
+        .replace("pattern: cluster", "pattern: flex")
         .replace("      narrow:\n", "      narorw:\n"),
     );
     const paths = ds.map((d) => d.path);

@@ -83,6 +83,7 @@ const PROPS: (keyof ResolvedProps)[] = [
   "shadow",
   "gap",
   "padding",
+  "margin",
   "background",
   "border",
   "radius",

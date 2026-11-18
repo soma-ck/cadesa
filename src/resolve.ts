@@ -37,6 +37,28 @@ export interface ResolvedText {
   underline: boolean;
 }
 
+/** A percentage of the containing block's content width (a size token like "50%"). */
+export interface Pct {
+  pct: number;
+}
+
+export interface Sides {
+  top: number;
+  right: number;
+  bottom: number;
+  left: number;
+}
+
+/**
+ * A size in px: a length as is, a percentage of `base` as Chromium resolves it (in float32, then
+ * truncated to a layout unit).
+ */
+export function sizeAt(v: number | Pct, base: number): number {
+  if (typeof v === "number") return v;
+  const f = Math.fround;
+  return Math.trunc(f(f(f(base) * f(v.pct)) / 100) * 64) / 64;
+}
+
 export interface ResolvedProps {
   pattern?: Resolved<Pattern>;
   min?: Resolved<number>;
@@ -51,9 +73,10 @@ export interface ResolvedProps {
   background?: Resolved<string>;
   border?: Resolved<string>;
   radius?: Resolved<number>;
-  maxWidth?: Resolved<number>;
-  measure?: Resolved<number>;
-  width?: Resolved<number | "fill">;
+  margin?: Resolved<Sides>;
+  maxWidth?: Resolved<number | Pct>;
+  measure?: Resolved<number | Pct>;
+  width?: Resolved<number | "fill" | Pct>;
   height?: Resolved<number>;
   text?: Resolved<ResolvedText>;
 }
@@ -107,6 +130,12 @@ export function resolveElement(model: Model, component: Component, slot: string 
       const t = model.tokens.get(tokenKey(r.kind, r.name))!;
       return { value: layoutUnit(t.px!), display: `${fmtPx(t.px!)}px`, steps: [tokenStep(r), ...pre, src(r.path)] };
     };
+    /** A size token: a length, or a percentage of the containing block's width. */
+    const sizeOf = (r: Ref): Resolved<number | Pct> => {
+      const t = model.tokens.get(tokenKey(r.kind, r.name))!;
+      if (t.pct === undefined) return lengthOf(r);
+      return { value: { pct: t.pct }, display: `${t.pct}% of the parent's width`, steps: [tokenStep(r), ...pre, src(r.path)] };
+    };
     const colorOf = (r: Ref): Resolved<string> => {
       const t = model.tokens.get(tokenKey(r.kind, r.name))!;
       return { value: t.raw, display: t.raw, steps: [tokenStep(r), ...pre, src(r.path)] };
@@ -118,7 +147,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const l = p.layout!;
         out.pattern = { value: l.pattern, display: l.pattern, steps: [...pre, src(`${l.path}.pattern`)] };
         out.gap = l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
-        if (l.pattern !== "stack") {
+        if (l.pattern !== "stack" && l.pattern !== "flow") {
           const def = l.pattern === "cluster" ? "center" : "stretch";
           const a = l.align ?? def;
           out.align = { value: a, display: l.align ? a : `${def} (default)`, steps: [...pre, src(l.align ? `${l.path}.align` : l.path)] };
@@ -144,9 +173,29 @@ export function resolveElement(model: Model, component: Component, slot: string 
         };
         break;
       }
-      case "radius":
+      case "margin": {
+        const m = p.margin!;
+        const sides = (["top", "right", "bottom", "left"] as const).map((s) => (m[s] ? lengthOf(m[s]!) : undefined));
+        const [top, right, bottom, left] = sides.map((x) => x?.value ?? 0);
+        const tokens = sides.filter((x) => x).map((x) => x!.steps[0]);
+        const px = (n: number) => `${fmtPx(n)}px`;
+        out.margin = {
+          value: { top, right, bottom, left },
+          display:
+            top === bottom && left === right
+              ? top === left
+                ? px(top)
+                : `${px(top)} ${px(left)}`
+              : `${px(top)} ${px(right)} ${px(bottom)} ${px(left)}`,
+          steps: [...tokens.filter((t, k) => tokens.findIndex((u) => u.path === t.path) === k), ...pre, src(m.path)],
+        };
+        break;
+      }
       case "measure":
       case "maxWidth":
+        out[key] = sizeOf(p[key]!);
+        break;
+      case "radius":
       case "height":
         out[key] = lengthOf(p[key]!);
         break;
@@ -176,7 +225,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
         out.width =
           "keyword" in w
             ? { value: "fill", display: "fill", steps: [...pre, src(w.path)] }
-            : lengthOf(w);
+            : sizeOf(w);
         break;
       }
       case "text": {

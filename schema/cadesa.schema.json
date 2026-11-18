@@ -23,7 +23,7 @@
           "$ref": "#/$defs/lengthTokens"
         },
         "size": {
-          "$ref": "#/$defs/lengthTokens"
+          "$ref": "#/$defs/sizeTokens"
         },
         "radius": {
           "$ref": "#/$defs/lengthTokens"
@@ -271,8 +271,10 @@
                 "stack",
                 "cluster",
                 "grid",
-                "layer"
-              ]
+                "layer",
+                "flow"
+              ],
+              "description": "flow: block flow; children stack and their vertical margins collapse (no gap or align)"
             },
             "align": {
               "enum": [
@@ -281,7 +283,7 @@
                 "end",
                 "stretch"
               ],
-              "description": "cluster (default center), grid and layer (default stretch)"
+              "description": "cluster (default center), grid and layer (default stretch); not stack or flow"
             },
             "gap": {
               "$ref": "#/$defs/ref",
@@ -314,6 +316,39 @@
             }
           ]
         },
+        "margin": {
+          "description": "space token (every side), or { block, inline } and/or { top, right, bottom, left } space tokens (a side beats its axis; a missing side is 0). Collapses in a flow; adds to the outer size in a stack, cluster, grid or layer",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "block": {
+                  "$ref": "#/$defs/ref"
+                },
+                "inline": {
+                  "$ref": "#/$defs/ref"
+                },
+                "top": {
+                  "$ref": "#/$defs/ref"
+                },
+                "right": {
+                  "$ref": "#/$defs/ref"
+                },
+                "bottom": {
+                  "$ref": "#/$defs/ref"
+                },
+                "left": {
+                  "$ref": "#/$defs/ref"
+                }
+              }
+            }
+          ]
+        },
         "background": {
           "$ref": "#/$defs/ref",
           "description": "color token"
@@ -328,11 +363,11 @@
         },
         "width": {
           "$ref": "#/$defs/ref",
-          "description": "size token, or fill (stretch inside a stack)"
+          "description": "size token (a length or a percentage of the parent), or fill (stretch inside a stack)"
         },
         "height": {
           "$ref": "#/$defs/ref",
-          "description": "size token"
+          "description": "size token (a length, not a percentage)"
         },
         "text": {
           "$ref": "#/$defs/ref",
@@ -347,11 +382,11 @@
         },
         "maxWidth": {
           "$ref": "#/$defs/ref",
-          "description": "size token; caps the width and centers the box"
+          "description": "size token (a length or a percentage); caps the width and centers the box"
         },
         "measure": {
           "$ref": "#/$defs/ref",
-          "description": "size token; caps the width, stays left-aligned"
+          "description": "size token (a length or a percentage); caps the width, stays left-aligned"
         },
         "aspect": {
           "oneOf": [
@@ -396,6 +431,24 @@
         }
       ],
       "unevaluatedProperties": false
+    },
+    "sizeTokens": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/ident"
+      },
+      "additionalProperties": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/length"
+          },
+          {
+            "type": "string",
+            "pattern": "^\\s*(?:\\d+(?:\\.\\d+)?|\\.\\d+)%\\s*$",
+            "description": "a percentage of the parent's content width (width, maxWidth and measure only)"
+          }
+        ]
+      }
     }
   }
 }

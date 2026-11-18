@@ -33,7 +33,9 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.layout) {
     const l = p.layout;
     const gap = `gap: ${l.gap ? v(l.gap) : "0"}`;
-    if (l.pattern === "stack" || l.pattern === "cluster") {
+    // Block flow: children stack in normal flow and their vertical margins collapse.
+    if (l.pattern === "flow") out.push("display: block");
+    else if (l.pattern === "stack" || l.pattern === "cluster") {
       const stack = l.pattern === "stack";
       out.push(
         "display: flex",
@@ -63,6 +65,14 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
         ? `padding: ${v(block)}`
         : `padding: ${block ? v(block) : "0"} ${inline ? v(inline) : "0"}`,
     );
+  }
+  if (p.margin) {
+    // Every side, so an override replaces the whole margin. With maxWidth (margin-inline: auto),
+    // only top and bottom: the validator rejects inline margins next to it.
+    const side = (r?: Ref) => (r ? v(r) : "0");
+    const m = p.margin;
+    if (ctx.eff.maxWidth) out.push(`margin-top: ${side(m.top)}`, `margin-bottom: ${side(m.bottom)}`);
+    else out.push(`margin: ${side(m.top)} ${side(m.right)} ${side(m.bottom)} ${side(m.left)}`);
   }
   // background-color, not the shorthand: an override that changes only the color must not erase a backdrop.
   if (p.background) out.push(`background-color: ${v(p.background)}`);
@@ -129,6 +139,9 @@ function rules(model: Model, selector: string, p: Props, ctx: Ctx, indent = ""):
   if (p.layout?.pattern === "layer") out.push(rule(`${selector} > *`, ["grid-area: 1 / 1"], indent));
   // An override that turns a layer into another pattern must release its children from the one cell.
   else if (p.layout && ctx.layerBefore) out.push(rule(`${selector} > *`, ["grid-area: auto"], indent));
+  // A flow's children are blocks, whatever their tag (a <span> or <a> slot would otherwise be
+  // inline). No specificity, so a child's own display (flex, grid) still wins.
+  if (p.layout?.pattern === "flow") out.push(rule(`:where(${selector} > *)`, ["display: block"], indent));
   return out.filter(Boolean);
 }
 
@@ -141,6 +154,10 @@ function usedTokens(model: Model, c: Component): string[] {
       p.layout?.min,
       p.padding?.block,
       p.padding?.inline,
+      p.margin?.top,
+      p.margin?.right,
+      p.margin?.bottom,
+      p.margin?.left,
       p.background,
       p.backdrop,
       p.border,

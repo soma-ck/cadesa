@@ -139,7 +139,7 @@ function genText(r: Rng, short: boolean): Text {
 }
 
 type Kind = "box" | "text" | "media" | "empty";
-type Parent = "page" | "stack" | "cluster" | "grid" | "layer";
+type Parent = "page" | "stack" | "cluster" | "grid" | "layer" | "flow";
 
 interface Gen {
   r: Rng;
@@ -148,6 +148,7 @@ interface Gen {
   ids: number;
   spaces: string[];
   sizes: string[];
+  pcts: string[];
   colors: string[];
   roles: string[];
 }
@@ -181,6 +182,15 @@ function genTokens(g: Gen) {
   g.doc.tokens = { space, size, color, radius: { round: "8px" }, font, paint: { band: "linear-gradient(90deg, #3730a3, #0f766e)" }, shadow: { lift: "0 8px 24px #0002" } };
   g.spaces = Object.keys(space);
   g.sizes = Object.keys(size);
+  // Percentage size tokens: widths, maxWidth and measure only (never a height or a grid minimum).
+  const np = r.weighted([[0, 2], [1, 3], [2, 2], [3, 1]]);
+  for (let i = 1; i <= np; i++)
+    size[`p${i}`] = r.weighted([
+      [`${r.pick([10, 20, 25, 30, 33.333, 40, 50, 60, 66.667, 75, 80, 90, 100])}%`, 3],
+      [`${r.float(5, 100, 2)}%`, 2],
+      [`${r.int(1, 100)}%`, 1],
+    ]);
+  g.pcts = Object.keys(size).filter((k) => k.startsWith("p"));
   g.colors = Object.keys(color);
 
   const text: Obj = {};
@@ -217,14 +227,16 @@ function genTokens(g: Gen) {
 
 function genLayout(g: Gen, parentDepth: number): Obj {
   const { r } = g;
-  const pattern = r.weighted([["stack", 4], ["cluster", 3], ["grid", 2], ["layer", 1.5]] as [string, number][]);
+  const pattern = r.weighted([["stack", 4], ["cluster", 3], ["grid", 2], ["layer", 1.5], ["flow", 3.5]] as [string, number][]);
   const l: Obj = { pattern };
   if (pattern === "grid") l.min = r.pick(g.sizes);
-  if (r.chance(0.7)) l.gap = r.pick(g.spaces);
-  if (pattern !== "stack" && r.chance(0.5)) l.align = r.pick(["start", "center", "end", "stretch"]);
+  if (pattern !== "flow" && r.chance(0.7)) l.gap = r.pick(g.spaces);
+  if (pattern !== "stack" && pattern !== "flow" && r.chance(0.5)) l.align = r.pick(["start", "center", "end", "stretch"]);
   void parentDepth;
   return l;
 }
+
+const inlineMargin = (m: unknown) => typeof m === "string" || (!!m && typeof m === "object" && ["inline", "left", "right"].some((k) => k in (m as Obj)));
 
 /** Props for an element of `kind`. */
 function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
@@ -242,9 +254,19 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
   if (r.chance(0.08 * s)) p.shadow = "lift";
   if (r.chance(0.08 * s)) p.backdrop = "band";
   const wantWidth = parent === "cluster" && kind !== "text" ? 0.97 : 0.2;
-  if (r.chance(wantWidth * s)) p.width = r.chance(parent === "stack" ? 0.4 : parent === "cluster" ? 0.01 : 0.1) ? "fill" : r.pick(g.sizes);
-  if (r.chance((parent === "page" ? 0.35 : parent === "cluster" ? 0.02 : 0.12) * s)) p.maxWidth = r.pick(g.sizes);
-  if (r.chance(0.12 * s)) p.measure = r.pick(g.sizes);
+  // A width, maxWidth or measure: sometimes a percentage of the parent's width.
+  const size = () => (g.pcts.length && r.chance(0.3) ? r.pick(g.pcts) : r.pick(g.sizes));
+  if (r.chance(wantWidth * s)) p.width = r.chance(parent === "stack" ? 0.4 : parent === "cluster" ? 0.01 : 0.1) ? "fill" : size();
+  if (r.chance((parent === "page" ? 0.35 : parent === "cluster" ? 0.02 : 0.12) * s)) p.maxWidth = size();
+  if (r.chance(0.12 * s)) p.measure = size();
+  // Margins: common in block flow (where they collapse), sometimes anywhere else.
+  if (r.chance((parent === "flow" || parent === "page" ? 0.5 : 0.2) * s)) {
+    const sp = () => r.pick(g.spaces);
+    const block = !!p.maxWidth || r.chance(0.5);
+    p.margin = block
+      ? r.weighted<Obj>([[{ block: sp() }, 3], [{ top: sp() }, 2], [{ bottom: sp() }, 2], [{ top: sp(), bottom: sp() }, 2]])
+      : r.weighted<Obj | string>([[sp(), 2], [{ block: sp(), inline: sp() }, 2], [{ inline: sp() }, 1], [{ left: sp() }, 1], [{ top: sp(), right: sp(), bottom: sp(), left: sp() }, 1], [{ inline: sp(), top: sp() }, 1]]);
+  }
   if (kind === "media") {
     if (r.chance(0.85)) p.aspect = r.pick(["16:9", "4:3", "1:1", "3:2", "2:3", "21:9", 1.5, 0.75, "1.91:1"]);
     else if (r.chance(0.8)) p.height = r.pick(g.sizes);
@@ -261,6 +283,7 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
     const out: Obj = {};
     for (const k of keep.length ? keep : [r.pick(keys)]) out[k] = p[k];
     if (out.aspect !== undefined && out.height !== undefined) delete out.height;
+    if (out.maxWidth !== undefined && inlineMargin(out.margin)) delete out.margin;
     return out;
   }
   if (p.aspect !== undefined && p.height !== undefined) delete p.height;
@@ -373,7 +396,8 @@ function genOverrides(g: Gen) {
       // cluster leaves children without widths, which the engine flags).
       if (o.layout && style.layout && r.chance(0.6)) o.layout = { ...o.layout, pattern: style.layout.pattern, ...(style.layout.pattern === "grid" ? { min: o.layout.min ?? style.layout.min } : {}) };
       if (o.layout && o.layout.pattern !== "grid") delete o.layout.min;
-      if (o.layout?.pattern === "stack") delete o.layout.align;
+      if (o.layout?.pattern === "stack" || o.layout?.pattern === "flow") delete o.layout.align;
+      if (o.layout?.pattern === "flow") delete o.layout.gap;
       const slots: Obj = {};
       for (const s of Object.keys(style.slots)) if (r.chance(0.35)) slots[s] = genProps(g, slotKind(style, s), "stack", true);
       if (Object.keys(slots).length) o.slots = slots;
@@ -385,7 +409,7 @@ function genOverrides(g: Gen) {
 
 export function genCase(seed: number): Case {
   const r = rng(seed);
-  const g: Gen = { r, doc: { version: 1, styles: {} }, comps: [], ids: 0, spaces: [], sizes: [], colors: [], roles: [] };
+  const g: Gen = { r, doc: { version: 1, styles: {} }, comps: [], ids: 0, spaces: [], sizes: [], pcts: [], colors: [], roles: [] };
   genTokens(g);
   const body: Node[] = [];
   const nRoots = r.weighted([[1, 5], [2, 3], [3, 1]]);
@@ -573,7 +597,7 @@ function removeAt(body: Node[], path: number[]) {
   list.splice(path.at(-1)!, 1);
 }
 
-const PROP_KEYS = new Set(["layout", "padding", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "fit", "text", "textAlign"]);
+const PROP_KEYS = new Set(["layout", "padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "fit", "text", "textAlign"]);
 
 /** Every smaller variant of a case, biggest reductions first. */
 function* candidates(c: Case): Generator<Case> {

@@ -11,7 +11,7 @@
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import type { Component, Model, Pattern } from "../model.js";
-import { activeBreakpoints, fmtPx, resolveElement, type ResolvedProps } from "../resolve.js";
+import { activeBreakpoints, fmtPx, resolveElement, sizeAt, type ResolvedProps, type Sides } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
 const EPS = 0.001;
@@ -64,6 +64,39 @@ const CONTROLS = new Set(["button", "input", "select", "textarea"]);
 /** margin-inline: auto (from maxWidth) centers a box narrower than its cell; otherwise it starts at the left. */
 const centered = (b: Box, cell: number) => (b.props.maxWidth && b.w < cell ? (cell - b.w) / 2 : 0);
 
+/** Children one under another (a stack or block flow): a child that changes size moves only those after it. */
+const inLine = (b: Box) => b.props.pattern?.value === "stack" || b.props.pattern?.value === "flow";
+
+const NO_MARGIN: Sides = { top: 0, right: 0, bottom: 0, left: 0 };
+const marginOf = (p: ResolvedProps): Sides => p.margin?.value ?? NO_MARGIN;
+/** Height including the vertical margins (a flex or grid item's outer size; they never collapse there). */
+const outerH = (b: Box) => {
+  const m = marginOf(b.props);
+  return m.top + b.h + m.bottom;
+};
+
+/** How a block's vertical margins take part in its parent's block flow. */
+interface Collapse {
+  /** Its top margin, joined with its first child's when they collapse through it. */
+  top: number;
+  bottom: number;
+  /** Nothing in it separates its top and bottom margins: they collapse through it into one. */
+  empty: boolean;
+  /** An empty block's own top margin (where its border box sits). */
+  at: number;
+}
+
+interface FlowResult {
+  boxes: Box[];
+  contentH: number;
+  /** Margins that collapse through the top (first child) and bottom (last child) of the box. */
+  top: number;
+  bottom: number;
+  /** Only empty children: their margins all collapse into `pending`. */
+  empty: boolean;
+  pending: number;
+}
+
 /**
  * The height of one line box. Chromium multiplies a unitless line-height by the font size in
  * layout units (1/64 px, rounded to nearest) and rounds the product down to a layout unit; every
@@ -100,6 +133,37 @@ interface Arrangement {
 export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const issues: Issue[] = [];
   const arrangement = new WeakMap<Box, Arrangement>();
+  const collapse = new WeakMap<Box, Collapse>();
+
+  /**
+   * Block flow: children one under another, each as wide as the content box minus its margins.
+   * Adjoining vertical margins collapse to the largest: between siblings, through empty blocks, and
+   * (throughTop / throughBottom) with the parent's own margins when nothing separates them.
+   */
+  function flow(boxes: Box[], cell: number, throughTop: boolean, end: "escape" | "drop" | "keep"): FlowResult {
+    let cursor = 0;
+    let strut = 0;
+    let atTop = true;
+    let top = 0;
+    for (const b of boxes) {
+      const c = collapse.get(b)!;
+      b.x = marginOf(b.props).left + centered(b, cell);
+      if (c.empty) {
+        b.y = atTop && throughTop ? 0 : cursor + Math.max(strut, c.at);
+        strut = Math.max(strut, c.top);
+        continue;
+      }
+      if (atTop && throughTop) {
+        top = Math.max(strut, c.top);
+        b.y = 0;
+      } else b.y = cursor + Math.max(strut, c.top);
+      atTop = false;
+      cursor = b.y + b.h;
+      strut = c.bottom;
+    }
+    if (atTop) return { boxes, contentH: throughTop ? 0 : strut, top: strut, bottom: 0, empty: true, pending: strut };
+    return { boxes, contentH: end === "keep" ? cursor + strut : cursor, top, bottom: end === "escape" ? strut : 0, empty: false, pending: 0 };
+  }
   /** Boxes the engine can't guarantee beyond their own assumptions and errors, and why. */
   const sources = new Map<Box, string>();
   let auto = 0;
@@ -191,10 +255,20 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const isText = !!props.text && classed.length === 0;
     const measureText = isText && n.text ? text(n, props, id, assumptions) : undefined;
 
+    const m = marginOf(props);
+    if (props.maxWidth && (m.left || m.right))
+      issues.push({
+        severity: "error",
+        id,
+        path: props.margin!.steps.at(-1)!.path,
+        message: `#${id} has maxWidth (centered by auto inline margins) and a left or right margin; keep one of them`,
+      });
+
     // ---- width
     let w: number;
     const pw = props.width?.value;
     if (typeof pw === "number") w = pw;
+    else if (pw !== undefined && pw !== "fill") w = sizeAt(pw, avail);
     else if (parent === "cluster") {
       if (pw === "fill") {
         issues.push({
@@ -204,14 +278,22 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           message: `#${id} has width: fill inside a cluster; fill only stretches inside a stack`,
         });
       }
-      if (pw === undefined && props.aspect) w = avail; // aspect compiles to width: 100%
-      else if (measureText) {
+      // aspect compiles to width: 100%. With inline margins the line is too full, and the item
+      // shrinks to fit, but no narrower than its automatic minimum: its min-content width, at most
+      // the 100%. That is measured for a text run only.
+      if (pw === undefined && props.aspect) {
+        w = Math.max(0, avail - m.left - m.right);
+        if (w < avail) {
+          if (measureText) w = Math.max(w, Math.min(avail, Math.ceil(measureText(Infinity).minContent * 64 - TEXT_EPS) / 64 + 2 * inset.x));
+          else assumptions.push("an aspect box with left or right margins in a cluster shrinks to its line, down to a minimum width the engine doesn't measure");
+        }
+      } else if (measureText) {
         // Flex item with flex-basis: auto → max-content, shrinking no further than min-content.
         const t = measureText(Infinity);
         // Intrinsic widths are rounded up to a layout unit, so the text fits the box it sizes. A
         // width within the metrics' precision of a whole unit is on it ("i" at 8px is 134/64 px).
         const up = (v: number) => Math.ceil(v * 64 - TEXT_EPS) / 64;
-        w = Math.max(Math.min(up(t.maxContent) + 2 * inset.x, avail), up(t.minContent) + 2 * inset.x);
+        w = Math.max(Math.min(up(t.maxContent) + 2 * inset.x, avail - m.left - m.right), up(t.minContent) + 2 * inset.x);
       } else {
         issues.push({
           severity: "error",
@@ -221,9 +303,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         });
         w = 0;
       }
-    } else w = avail; // page block, stack, grid cell, layer: stretch
-    if (props.maxWidth && w > props.maxWidth.value) w = props.maxWidth.value;
-    if (props.measure && w > props.measure.value) w = props.measure.value;
+    } else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
+    else w = Math.max(0, avail - m.left - m.right); // page, flow, stack, grid cell, layer: stretch inside the margins
+    const maxW = Math.min(props.maxWidth ? sizeAt(props.maxWidth.value, avail) : Infinity, props.measure ? sizeAt(props.measure.value, avail) : Infinity);
+    if (w > maxW) w = maxW;
     // box-sizing: border-box never makes a box narrower than its padding and border.
     w = Math.max(w, 2 * inset.x);
     if (props.maxWidth && parent === "cluster")
@@ -275,6 +358,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
 
     /** Rows of children (grid rows, cluster lines, the layer cell) whose heights `arrange` distributes. */
     let rows: Box[][] | undefined;
+    // Block flow in block flow: with no padding or border in between, this box's top margin and
+    // its first child's are one margin (likewise at the bottom while its height is auto).
+    const throughTop = (parent === "flow" || parent === "page") && inset.y === 0;
+    const throughBottom = throughTop && !props.height && !props.aspect;
+    let escaped: FlowResult | undefined;
 
     if (kids.length && pattern === "grid") {
       const min = props.min!.value;
@@ -289,36 +377,48 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       rows = [];
       for (let r = 0; r < measured.length; r += cols) {
         const row = measured.slice(r, r + cols);
-        row.forEach((b, i) => (b.x = colX[i] + centered(b, colW[i])));
+        row.forEach((b, i) => (b.x = colX[i] + marginOf(b.props).left + centered(b, colW[i])));
         rows.push(row);
       }
     } else if (kids.length && pattern === "layer") {
       const measured = kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "layer"));
-      for (const b of measured) b.x = centered(b, innerW);
+      for (const b of measured) b.x = marginOf(b.props).left + centered(b, innerW);
       rows = [measured];
     } else if (kids.length && pattern === "stack") {
+      // A column flexbox: margins add to each item's outer size and never collapse.
       let y = 0;
       kids.forEach((k, i) => {
         const b = measure(k.node, k.comp, k.slot, innerW, "stack");
-        b.x = centered(b, innerW);
-        b.y = y;
-        y += b.h + (i < kids.length - 1 ? gap : 0);
+        const km = marginOf(b.props);
+        b.x = km.left + centered(b, innerW);
+        b.y = y + km.top;
+        y += km.top + b.h + km.bottom + (i < kids.length - 1 ? gap : 0);
         children.push(b);
       });
       contentH = y;
+    } else if (kids.length && pattern === "flow") {
+      // A box sized by its aspect ratio keeps its last child's bottom margin neither inside nor out (Chromium drops it).
+      const end = throughBottom ? "escape" : throughTop && props.aspect && !props.height ? "drop" : "keep";
+      const f = flow(kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "flow")), innerW, throughTop, end);
+      children.push(...f.boxes);
+      contentH = f.contentH;
+      escaped = f;
     } else if (kids.length && pattern === "cluster") {
       const measured = kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "cluster"));
       rows = [];
       let line: Box[] = [];
       let lineW = 0;
       for (const b of measured) {
-        const needed = line.length ? lineW + gap + b.w : b.w;
+        const km = marginOf(b.props);
+        const outer = km.left + b.w + km.right;
+        const needed = line.length ? lineW + gap + outer : outer;
         if (line.length && needed > innerW + EPS) {
           rows.push(line);
           line = [];
         }
-        b.x = line.length ? lineW + gap : 0;
-        lineW = b.x + b.w;
+        const start = line.length ? lineW + gap : 0;
+        b.x = start + km.left;
+        lineW = start + outer;
         line.push(b);
       }
       rows.push(line);
@@ -342,7 +442,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     if (rows) {
       children.push(...rows.flat());
-      contentH = rows.reduce((s, r) => s + Math.max(...r.map((b) => b.h)), 0) + gap * (rows.length - 1);
+      contentH = rows.reduce((s, r) => s + Math.max(...r.map(outerH)), 0) + gap * (rows.length - 1);
     }
 
     // aspect: the height follows the width. Media elements take exactly that; other boxes grow if
@@ -352,7 +452,6 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let h = props.height?.value ?? contentH + 2 * inset.y;
     if (props.aspect && !props.height) {
       const ratioH = w / props.aspect.value;
-      const maxW = Math.min(props.maxWidth?.value ?? Infinity, props.measure?.value ?? Infinity);
       const contentMin = parent === "stack" ? Math.min(contentH + 2 * inset.y, maxW / props.aspect.value) : contentH + 2 * inset.y;
       h = media ? ratioH : Math.max(ratioH, contentMin);
     }
@@ -360,20 +459,20 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // A box shorter than its content shrinks the items that may shrink: an <hr> clips its overflow
     // (overflow: hidden), so its automatic minimum height is 0 and a stack, grid or layer that is
     // too short squeezes it. The engine doesn't model that.
-    const tallKids = rows ? rows.reduce((s, r) => s + Math.max(...r.map((b) => b.h)), 0) + gap * (rows.length - 1) : contentH;
+    const tallKids = rows ? rows.reduce((s, r) => s + Math.max(...r.map(outerH)), 0) + gap * (rows.length - 1) : contentH;
     // Nor how a box whose height is set (height, aspect) sizes around one.
     if (tallKids + 2 * inset.y > h + EPS || props.height || props.aspect)
       for (const k of rows ? rows.flat() : children)
         if (k.tag === "hr") k.assumptions.push("an <hr> in a box with a set height may shrink (it clips its overflow)");
     // Without aspect (whose width: 100% wins), a media element with only a height takes its width
     // from its width attribute, or at the page level from the file's own ratio, instead of stretching.
-    if (media && props.height && !props.aspect && typeof pw !== "number" && !props.maxWidth && parent !== "cluster") {
+    if (media && props.height && !props.aspect && (pw === undefined || pw === "fill") && !props.maxWidth && parent !== "cluster") {
       if (n.attrs.width) assumptions.push(`its width comes from the width="${n.attrs.width}" attribute, not the layout; add aspect or a width token`);
-      else if (parent === "page") assumptions.push("at the page level its width follows the image file; add aspect or a width token");
+      else if (parent === "page" || parent === "flow") assumptions.push(`${parent === "page" ? "at the page level" : "in block flow"} its width follows the image file; add aspect or a width token`);
     }
     // A form control is as wide as its content unless something sets its width.
-    if (parent === "page" && CONTROLS.has(n.tag) && typeof pw !== "number" && !props.maxWidth)
-      assumptions.push(`a <${n.tag}> at the page level is as wide as its content; give it a width token or maxWidth`);
+    if ((parent === "page" || parent === "flow") && CONTROLS.has(n.tag) && (pw === undefined || pw === "fill") && !props.maxWidth)
+      assumptions.push(`a <${n.tag}> ${parent === "page" ? "at the page level" : "in block flow"} is as wide as its content; give it a width token or maxWidth`);
     if (media && !props.aspect && !props.height)
       issues.push({
         severity: "warning",
@@ -399,12 +498,30 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       assumptions,
       children,
     };
+    // A block with nothing in it (no height, padding, border, lines or non-empty child) lets its
+    // own top and bottom margins collapse through it. Flex and grid containers, form controls,
+    // media and <hr> (overflow: hidden) never do.
+    const empty =
+      h === 0 && inset.y === 0 && !props.height && !props.aspect && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" &&
+      !(isText && n.text) && (pattern === undefined ? !kids.length : pattern === "flow" && !!escaped?.empty);
+    const inner = escaped?.empty ? escaped.pending : 0;
+    collapse.set(
+      box,
+      empty
+        ? { top: Math.max(m.top, m.bottom, inner), bottom: Math.max(m.top, m.bottom, inner), empty: true, at: Math.max(m.top, inner) }
+        : {
+            top: throughTop && escaped ? Math.max(m.top, escaped.top) : m.top,
+            bottom: throughBottom && escaped ? Math.max(m.bottom, escaped.bottom) : m.bottom,
+            empty: false,
+            at: 0,
+          },
+    );
     if (skipped.length)
       sources.set(box, `contains ${skipped.map((k) => `<${k.tag}>`).join(", ")} that the engine doesn't lay out`);
     if (rows) {
       arrangement.set(box, {
         rows,
-        heights: rows.map((r) => Math.max(...r.map((b) => b.h))),
+        heights: rows.map((r) => Math.max(...r.map(outerH))),
         gap,
         align: props.align?.value ?? (pattern === "cluster" ? "center" : "stretch"),
         insetY: inset.y,
@@ -450,9 +567,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     a.rows.forEach((row, r) => {
       const rowH = a.heights[r] + extra;
       for (const c of row) {
+        // Items are aligned by their margin boxes.
+        const m = marginOf(c.props);
         // stretch grows every item without a fixed height, aspect ratio or not.
-        if (a.align === "stretch" && !c.props.height) grow(c, rowH);
-        c.y = y + (a.align === "center" ? (rowH - c.h) / 2 : a.align === "end" ? rowH - c.h : 0);
+        if (a.align === "stretch" && !c.props.height) grow(c, rowH - m.top - m.bottom);
+        const free = rowH - outerH(c);
+        c.y = y + m.top + (a.align === "center" ? free / 2 : a.align === "end" ? free : 0);
       }
       y += rowH + a.gap;
     });
@@ -517,7 +637,6 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
 
   const boxes: Box[] = [];
   let unknownOnPage: string | undefined;
-  let y = 0;
   for (const n of fixture.body) {
     const p = model.prefix;
     const candidates = n.classes.filter((k) => k.startsWith(p) && !k.includes("__")).map((k) => k.slice(p.length));
@@ -536,12 +655,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       unknownOnPage ??= `<${n.tag}> on the page isn't a Cadesa component; its height and margins are unknown`;
       continue;
     }
-    const b = measure(n, c, undefined, width, "page");
-    b.x = centered(b, width); // max-width + margin-inline: auto; otherwise left-aligned
-    b.y = y;
-    y += b.h;
-    boxes.push(b);
+    boxes.push(measure(n, c, undefined, width, "page"));
   }
+  // The body is block flow: page-level boxes stack, their margins collapsing. Its own (zero) margins
+  // collapse with theirs, so the body starts below the first margin (below all of them when every
+  // page-level box is empty); the root element contains it.
+  const body = flow(boxes, width, true, "escape");
+  for (const b of boxes) b.y += body.empty ? body.pending : body.top;
   // Its margins can collapse through empty boxes above it too, so every page-level box is unsure.
   if (unknownOnPage) for (const b of boxes) sources.set(b, unknownOnPage);
 
@@ -567,13 +687,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     for (let b: Box | undefined = src; b; b = parentOf.get(b)) {
       const parent = parentOf.get(b);
       const sibs = parent ? parent.children : boxes;
-      const loose = parent && parent.props.pattern?.value !== "stack";
+      const loose = parent && !inLine(parent);
       const i = sibs.indexOf(b);
       sibs.forEach((s, j) => (j > i || (loose && j !== i)) && flag(s, why, true));
       // A parent that is resized also moves its whole subtree when its own parent aligns it by size
       // (cluster lines, grid rows and the layer cell); in a stack or on the page it stays put.
       const grand = parent && parentOf.get(parent);
-      if (parent) flag(parent, why, !!grand && grand.props.pattern?.value !== "stack");
+      if (parent) flag(parent, why, !!grand && !inLine(grand));
     }
   }
   for (const [b, why] of flagged) if (!b.assumptions.length && !issues.some((i) => i.severity === "error" && i.id === b.id)) b.assumptions.push(why);
