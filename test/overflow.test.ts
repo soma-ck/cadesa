@@ -125,6 +125,24 @@ styles:
     expect(check(l, [resized]).find((x) => x.check === "clipped")?.inconclusive).toBe(true);
   });
 
+  it("keeps a tap target's size conclusive when something uncertain above it only moves it", () => {
+    const yaml = `
+tokens: { size: { s: 32px } }
+styles:
+  p:
+    layout: { pattern: flow }
+    slots:
+      close: { width: s, height: s }
+`;
+    const html = `<div class="ca-p" data-fixture="p"><button class="ca-p__close" data-fixture="close" type="button"></button></div>`;
+    const l = render(modelOf(loadSource("t.yaml", yaml)), parseFixture("t.html", html), [400]);
+    const moved = { width: 400, exact: [], uncertain: [{ id: "close", effects: ["position" as const], reasons: ["moved by #top: x.css:1 something above"] }], paintOnly: [], noEffect: [] };
+    const tap = (imp: typeof moved) => check(l, [imp]).find((x) => x.check === "tap-target")!;
+    expect(tap(moved).message).toMatch(/^#close is 32×32px; 44×44px is recommended/);
+    expect(tap(moved).inconclusive).toBeUndefined();
+    expect(tap({ ...moved, uncertain: [{ id: "close", effects: ["size" as const], reasons: ["x.css:2 .close { min-height: 3em }: min-height is not modelled"] }] }).inconclusive).toBe(true);
+  });
+
   it("reports nowrap text that spills out of a box that doesn't clip it", () => {
     const yaml = `
 tokens: { size: { w: 120px }, color: { ink: "#111111" }, font: { ui: "Inter, sans-serif" } }

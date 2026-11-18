@@ -137,16 +137,21 @@ export function contrast(a: string, b: string): number {
 const PROPAGATED = /^(?:moved by|resized by|stretched with|geometry depends on) /;
 
 /**
- * Boxes whose width (or the width of their text) may differ from the browser's. Coarser than "≈":
- * a box that is only moved down by something uncertain above it keeps its width. A width can be
- * wrong when the box itself is uncertain, when its parent's width is, when it sits in a cluster
- * (its width comes from its content and its siblings') next to anything uncertain, or when it is
- * sized to its content (width: fit) and something inside is uncertain.
+ * Boxes whose width, or whose width or height, may differ from the browser's. Finer than "≈", which
+ * also covers boxes that only move: a box moved down by something uncertain above it keeps its size.
+ *
+ * A width can be wrong when the box itself is uncertain, when its parent's width is, when it sits
+ * in a cluster (its width comes from its content and its siblings') next to anything uncertain, or
+ * when it is sized to its content (width: fit) and something inside is uncertain. Its height also
+ * when its width is, when anything inside it is, or when it shares a row (cluster, grid, layer, a
+ * stack whose items grow) with something uncertain.
  */
-export function widthUncertainty(l: Layout, imp?: WidthImpact): Set<string> {
+export function sizeUncertainty(l: Layout, imp?: WidthImpact): { width: Set<string>; size: Set<string> } {
   const own = new Set<string>();
   for (const u of imp?.uncertain ?? []) if (u.reasons.some((r) => !PROPAGATED.test(r))) own.add(u.id);
   for (const b of walk(l.boxes)) if (b.assumptions.some((a) => !PROPAGATED.test(a))) own.add(b.id);
+  // A box the engine reports an error on (content it can't measure, an unsupported margin) isn't known either.
+  for (const i of l.issues) if (i.severity === "error") own.add(i.id);
   const inside = new Map<Box, boolean>();
   const anyInside = (b: Box): boolean => {
     let r = inside.get(b);
@@ -165,8 +170,19 @@ export function widthUncertainty(l: Layout, imp?: WidthImpact): Set<string> {
     for (const k of b.children) visit(k, b, unknown);
   };
   for (const b of l.boxes) visit(b, undefined, false);
-  return out;
+  const sized = new Set((imp?.uncertain ?? []).filter((u) => u.effects.includes("size")).map((u) => u.id));
+  const size = new Set<string>();
+  const visitSize = (b: Box, parent: Box | undefined) => {
+    const pat = parent?.props.pattern?.value;
+    const sharesRow = !!parent && (pat === "cluster" || pat === "grid" || pat === "layer" || (pat === "stack" && parent.children.some((k) => k.props.grow)));
+    if (out.has(b.id) || sized.has(b.id) || anyInside(b) || (sharesRow && parent!.children.some(anyInside))) size.add(b.id);
+    for (const k of b.children) visitSize(k, b);
+  };
+  for (const b of l.boxes) visitSize(b, undefined);
+  return { width: out, size };
 }
+
+export const widthUncertainty = (l: Layout, imp?: WidthImpact) => sizeUncertainty(l, imp).width;
 
 /**
  * With `impacts` (from a lift), findings on boxes the engine can't predict exactly are inconclusive.
@@ -179,7 +195,7 @@ export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Partial
     // Boxes the lift can't guarantee, and boxes the engine itself flags (unmeasured text, a scrollbar...).
     const geometryUnknown = new Set([...(imp?.uncertain.map((u) => u.id) ?? []), ...[...walk(l.boxes)].filter((b) => b.assumptions.length).map((b) => b.id)]);
     const paintUnknown = new Set([...(imp?.uncertain ?? []), ...(imp?.paintOnly ?? [])].filter((u) => u.effects.includes("paint")).map((u) => u.id));
-    const widthUnknown = widthUncertainty(l, imp);
+    const { width: widthUnknown, size: sizeUnknown } = sizeUncertainty(l, imp);
     const byId = new Map([...walk(l.boxes)].map((b) => [b.id, b]));
     const start = out.length;
     for (const i of l.issues) out.push({ ...i, check: "layout", width: l.width });
@@ -264,7 +280,10 @@ export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Partial
             ? false
             : horizontal
               ? widthUnknown.has(f.id) || !!byId.get(f.id)?.children.some((k) => widthUnknown.has(k.id))
-              : geometryUnknown.has(f.id);
+              : // A tap target's size, and text taller than its box, don't depend on where the box is.
+                f.check === "tap-target" || f.check === "clipped" || (f.check === "layout" && /^content of #/.test(f.message))
+                ? sizeUnknown.has(f.id)
+                : geometryUnknown.has(f.id);
       if (unknown && !f.inconclusive) {
         f.inconclusive = true;
         f.severity = "warning";
