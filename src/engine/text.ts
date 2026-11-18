@@ -344,7 +344,11 @@ export function layoutText(
     }
     const last = cs.slice(from).join("");
     const lw = w(last);
-    const ok = used + lw <= maxWidth + 1 / 64 + TEXT_EPS / 64;
+    // A line ending in a soft hyphen's "-" gets no slack (and how much isn't pinned down: flagged).
+    const hyphenated = trimSpaces(last).endsWith(SHY);
+    const ok = used + lw <= maxWidth + (hyphenated ? 0 : 1 / 64) + TEXT_EPS / 64;
+    if (hyphenated && !ok && used + lw <= maxWidth + 1 / 64 + TEXT_EPS / 64)
+      approximate ??= "a line ending in a soft hyphen fits within a layout unit";
     const at = consumed + from;
     if (ok && at > 0 && !edges.includes(at) && all[at - 1] !== " " && used + lw > maxWidth + 1e-6)
       approximate ??= "a line after a break inside a word fits within a layout unit";

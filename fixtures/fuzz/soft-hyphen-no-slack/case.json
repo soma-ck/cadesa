@@ -1,0 +1,10 @@
+{
+  "note": "A line ending in a soft hyphen gets no 1/64 px slack; within that window the box is flagged",
+  "seed": 2003399,
+  "widths": [
+    981
+  ],
+  "flagged": [
+    "n17"
+  ]
+}
