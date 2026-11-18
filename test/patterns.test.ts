@@ -95,6 +95,15 @@ describe("the cascade on Bootstrap-like markup", () => {
     expect(t.lifted.unlifted.filter((u) => u.className && /inline runs/.test(u.reason))).toEqual([]);
   });
 
+  it("takes text-align back to start below a breakpoint (text-md-end), and ignores flex alignment on a block container", () => {
+    const t = pageOf(
+      `<div class="menu"><p class="count">248 products</p></div>`,
+      `.menu { align-items: center; justify-content: space-between } p { margin: 0 } @media (min-width: 768px) { .count { text-align: right } }`,
+    );
+    expect(t.yaml).toMatch(/textAlign: start/);
+    expect(t.lifted.unlifted.filter((u) => u.kind !== "none" && u.kind !== "state")).toEqual([]);
+  });
+
   it("resolves inherit on a property that doesn't inherit (Bootstrap's .navbar > .container { flex-wrap: inherit })", () => {
     const t = pageOf(`<nav class="bar"><div class="inner"><a href="#">One</a><a href="#">Two</a></div></nav>`, `.bar { display: flex; flex-wrap: nowrap } .bar > .inner { display: flex; flex-wrap: inherit }`);
     expect(t.yaml).toMatch(/inner: \{ layout: \{ pattern: cluster, align: stretch, wrap: false \} \}/);

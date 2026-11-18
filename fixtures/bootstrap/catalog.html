@@ -1,0 +1,130 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: an Angular + Bootstrap product catalog</title>
+    <link rel="stylesheet" href="bootstrap.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      [_nghost-pln-c10] { display: block; }
+      .product-name[_ngcontent-pln-c10] { font-size: 1rem; font-weight: 600; }
+      .price[_ngcontent-pln-c10] { font-size: 1.25rem; font-weight: 600; margin-bottom: 0; }
+    </style>
+  </head>
+  <body>
+    <app-root _nghost-pln-c10="" ng-version="17.3.12">
+      <nav class="navbar navbar-expand-md navbar-light bg-white border-bottom">
+        <div class="container">
+          <a class="navbar-brand" href="#">Catalog</a>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#nav" aria-controls="nav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="nav">
+            <ul class="navbar-nav ms-auto">
+              <li class="nav-item"><a class="nav-link active" href="#">Products</a></li>
+              <li class="nav-item"><a class="nav-link" href="#">Suppliers</a></li>
+              <li class="nav-item"><a class="nav-link" href="#">Price lists</a></li>
+            </ul>
+          </div>
+        </div>
+      </nav>
+      <main class="container my-4">
+        <nav aria-label="breadcrumb">
+          <ol class="breadcrumb">
+            <li class="breadcrumb-item"><a href="#">Home</a></li>
+            <li class="breadcrumb-item"><a href="#">Products</a></li>
+            <li class="breadcrumb-item active" aria-current="page">Fasteners</li>
+          </ol>
+        </nav>
+        <div class="row align-items-center mb-3">
+          <div class="col-12 col-md-6">
+            <h1 class="page-title">Fasteners</h1>
+          </div>
+          <div class="col-12 col-md-6 text-md-end">
+            <p class="text-muted mb-0">248 products in 12 groups</p>
+          </div>
+        </div>
+        <div class="row">
+          <div class="col-lg-3 d-none d-lg-block">
+            <div class="list-group">
+              <a href="#" class="list-group-item list-group-item-action active" aria-current="true">All fasteners</a>
+              <a href="#" class="list-group-item list-group-item-action">Bolts</a>
+              <a href="#" class="list-group-item list-group-item-action">Nuts</a>
+              <a href="#" class="list-group-item list-group-item-action">Washers and spacers</a>
+            </div>
+          </div>
+          <div class="col-12 col-lg-9">
+            <div class="row row-cols-1 row-cols-sm-2 row-cols-xl-3 g-3">
+              <div class="col">
+                <div class="card h-100">
+                  <div class="card-body">
+                    <h2 class="product-name">Hex bolt M8 × 40</h2>
+                    <p class="card-text text-muted">Zinc plated steel, class 8.8, sold per hundred.</p>
+                    <p class="price">€14.90</p>
+                  </div>
+                </div>
+              </div>
+              <div class="col">
+                <div class="card h-100">
+                  <div class="card-body">
+                    <h2 class="product-name">Flange nut M8</h2>
+                    <p class="card-text text-muted">Serrated flange, stainless A2.</p>
+                    <p class="price">€9.40</p>
+                  </div>
+                </div>
+              </div>
+              <div class="col">
+                <div class="card h-100">
+                  <div class="card-body">
+                    <h2 class="product-name">Washer DIN 125 M8</h2>
+                    <p class="card-text text-muted">Flat washer, pack of five hundred.</p>
+                    <p class="price">€6.10</p>
+                  </div>
+                </div>
+              </div>
+              <div class="col">
+                <div class="card h-100">
+                  <div class="card-body">
+                    <h2 class="product-name">Threaded rod M8 × 1000</h2>
+                    <p class="card-text text-muted">DIN 976, galvanised.</p>
+                    <p class="price">€3.75</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="row mt-4">
+              <div class="col-md-8 offset-md-2">
+                <div class="alert alert-info mb-0">Prices exclude VAT. Orders over €250 ship free.</div>
+              </div>
+            </div>
+            <div class="row g-0 mt-4 border">
+              <div class="col-6 col-md-3 p-3 border-end">
+                <p class="stat-label text-muted">In stock</p>
+                <p class="stat-value">231</p>
+              </div>
+              <div class="col-6 col-md-3 p-3">
+                <p class="stat-label text-muted">Low</p>
+                <p class="stat-value">12</p>
+              </div>
+              <div class="col-6 col-md-3 p-3 border-end">
+                <p class="stat-label text-muted">Out</p>
+                <p class="stat-value">5</p>
+              </div>
+              <div class="col-6 col-md-3 p-3">
+                <p class="stat-label text-muted">Discontinued</p>
+                <p class="stat-value">0</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </main>
+      <footer class="app-footer border-top">
+        <div class="container d-flex flex-column flex-md-row justify-content-between gap-2">
+          <span class="text-muted">Planner catalog</span>
+          <span class="text-muted">Prices updated daily</span>
+        </div>
+      </footer>
+    </app-root>
+  </body>
+</html>

@@ -1473,6 +1473,7 @@ export abstract class PageLifter {
       layerChildren: new Map(),
       uaInCascade: this.uaInCascade,
       fullWidthAsPercent: true,
+      wholeCascade: true,
       pageBackground: this.pageBackground,
       unlifted,
       resets,

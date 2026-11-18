@@ -447,6 +447,8 @@ export interface LiftInput {
    * Cadesa's own output keeps fill.
    */
   fullWidthAsPercent?: boolean;
+  /** Each element's declarations are its whole cascade (a page lift): a property it lacks is unset. */
+  wholeCascade?: boolean;
   /** Declarations read, for stats. */
   declarations: number;
 }
@@ -601,7 +603,9 @@ export function liftElements(input: LiftInput): LiftResult {
     }
     for (const p of ["flex-direction", "flex-wrap", "align-items", "justify-content", "row-gap", "column-gap"]) {
       const d = take(p);
-      if (d && !(p.endsWith("gap") && isZero(d.value))) note(e, s, d, `${p} only applies to a flex container`, "geometry");
+      // On a block container (Bootstrap's .navbar-collapse once .show makes it display: block) they do nothing.
+      const block = !!input.wholeCascade && (!display || /^(block|flow-root|flow|inline|inline-block|list-item)$/.test(display.value.trim()));
+      if (d && !(p.endsWith("gap") && isZero(d.value))) note(e, s, d, block ? `${p} only applies to a flex or grid container; no effect here` : `${p} only applies to a flex container`, block ? "none" : "geometry");
     }
 
     // padding
@@ -946,6 +950,7 @@ export function liftElements(input: LiftInput): LiftResult {
         margin: () => lengthToken("space", "0px"),
         radius: () => lengthToken("radius", "0px"),
         overflow: () => "visible",
+        textAlign: () => "start",
       };
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {
         for (const k of lost(a, b)) {
