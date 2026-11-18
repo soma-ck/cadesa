@@ -184,9 +184,17 @@ export function explainCmd(s: SourceInput & { fixture: string; widths: number[];
 }
 
 export function checkCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
-  const layouts = renderPage(modelOf(load(s)), pageOf(s), s.widths);
+  const p = pageOf(s);
+  const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
   const findings = check(layouts, imp?.impacts);
+  if (p.tw) {
+    // Tailwind: also name the element in the page, where the utilities are edited.
+    const lines = new Map<string, number>();
+    const visit = (ns: Fixture["body"]) => ns.forEach((n) => (n.fixtureId && n.line && lines.set(n.fixtureId, n.line), visit(n.children)));
+    visit(p.fixture.body);
+    for (const f of findings) if (lines.has(f.id)) f.message += ` [${s.fixture}:${lines.get(f.id)}]`;
+  }
   return {
     text: formatCheck(findings, s.widths),
     data: { findings },
