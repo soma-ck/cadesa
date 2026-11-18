@@ -1,0 +1,35 @@
+version: 1
+styles:
+  c2:
+    layout:
+      pattern: layer
+    padding: s5
+    width: z4
+    slots:
+      s2:
+        layout:
+          pattern: stack
+        border: line
+      s4:
+        text: t3
+        backdrop: band
+tokens:
+  space:
+    s5: 9px
+  size:
+    z4: 13rem
+  color:
+    ink: "#1e1b4b"
+    line: "#d4d4d8"
+  font:
+    inter: Inter, sans-serif
+  paint:
+    band: "linear-gradient(90deg, #3730a3, #0f766e)"
+text:
+  t3:
+    font: inter
+    size: 10px
+    weight: 700
+    lineHeight: 1.5
+    color: ink
+    letterSpacing: 0.055

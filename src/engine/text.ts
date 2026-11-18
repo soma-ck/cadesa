@@ -343,7 +343,9 @@ export function layoutText(
       from = cut;
     }
     const last = cs.slice(from).join("");
-    const lw = w(last);
+    // A line that ends where an inline element starts or ends keeps its hanging space's kerning
+    // even in a painted block: its item needs no reshaping there.
+    const lw = edges.includes(consumed + cs.length) ? w(last, true) : w(last);
     // A line ending in a soft hyphen's "-" gets no slack (and how much isn't pinned down: flagged).
     const hyphenated = trimSpaces(last).endsWith(SHY);
     const ok = used + lw <= maxWidth + (hyphenated ? 0 : 1 / 64) + TEXT_EPS / 64;
