@@ -100,7 +100,7 @@ An agent rebuilt a 20-component French-language WordPress site in Cadesa, checki
 
 Each check took 60–900ms. At that cost, checking every edit at a dozen widths stopped being a chore and became the normal way to work.
 
-The same rebuild found seven cases where Cadesa said "fine" and Chromium disagreed: four layout divergences (image `width`/`height` attributes, no-break spaces, nested centered layers, block children measured as one line) and three gaps in the checks. All seven are fixed and kept as regression tests ([`fixtures/field2.html`](fixtures/field2.html), `npm run conformance:field2`). A differential fuzzer is being added to find the next ones before users do.
+The same rebuild found seven cases where Cadesa said "fine" and Chromium disagreed: four layout divergences (image `width`/`height` attributes, no-break spaces, nested centered layers, block children measured as one line) and three gaps in the checks. All seven are fixed and kept as regression tests ([`fixtures/field2.html`](fixtures/field2.html), `npm run conformance:field2`).
 
 ## What it does
 
@@ -229,10 +229,6 @@ The same job done two ways: get every box of the landing page at every width. On
 About 3ms per width instead of about 79ms, with no browser to download or launch. That speed is why an agent can check every width on every edit instead of two or three screenshots at the end, and why a CI job can sweep every pixel width in seconds. Reproduce it with `npm run speed` (`-- --step 1` for every pixel).
 
 The comparison covers layout geometry only: where every box lands and how text wraps. Pixel diffs, hover states and interaction tests still need a browser.
-
-### Agents: catching what nobody described
-
-> **Results pending.** The discovery benchmark gives an agent a realistic site-wide change (a translation, a larger base font, an extra pricing plan) without saying where it breaks. It counts the defects that ship, measured in Chromium every 20px from 320 to 1440px, plus regressions in sections the change didn't touch. That's the job Cadesa did on the real rebuild above.
 
 All benchmark code, earlier agent runs and raw data are in [`bench/`](bench/) ([`RESULTS.md`](bench/RESULTS.md)).
 
@@ -420,8 +416,10 @@ React, Svelte, server templates and static HTML work the same way, because Cades
 
 ## Roadmap
 
+- **Tailwind:** read utility classes (`flex gap-4 p-6 md:grid-cols-3`) straight from a page's HTML, so Tailwind apps get `check`, `whatif` and `critique` without writing any Cadesa source.
 - **More of CSS:** `min-width` and range breakpoints, a `row` pattern and shared flexible widths, so lift leaves less behind.
-- **A differential fuzzer** that generates pages and compares the engine against Chromium, to find divergences before users do.
+- **A differential fuzzer** that generates random pages and compares the engine against Chromium, to find divergences before users do.
+- **A discovery benchmark:** agents make a site-wide change without being told where it breaks; count the defects that ship across every width and the regressions in untouched sections.
 
 ## Development
 
