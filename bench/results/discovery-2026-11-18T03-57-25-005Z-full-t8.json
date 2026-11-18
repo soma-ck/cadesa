@@ -1,0 +1,62 @@
+{
+  "benchmark": "discovery",
+  "label": "full-t8",
+  "model": "sonnet",
+  "maxTurns": 30,
+  "runBudgetUsd": 2,
+  "claude": "2.1.327 (Claude Code)",
+  "stoppedForBudget": false,
+  "results": [
+    {
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "trial": 1,
+      "solved": true,
+      "workspace": "/tmp/cadesa-disc-bigger-text-cadesa-OO2eYK",
+      "goal": {
+        "ok": true,
+        "detail": "every body text is exactly 2px larger; headings unchanged"
+      },
+      "defects": {
+        "distinct": 0,
+        "instances": 0,
+        "byKind": {},
+        "where": {}
+      },
+      "shipped": 0,
+      "collateral": {
+        "sections": [],
+        "elements": 0,
+        "instances": 0,
+        "examples": []
+      },
+      "turns": 20,
+      "toolCalls": 19,
+      "tools": [
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; cat page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,480,768,1024,1440 | tail -2",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; \nfor p in \"nav-link:0.9375:1.0625\" \"lede:1.25:1.375\" \"lede-small:1.0625:1.1875\" \"action:1.0625:1.1875\" \"action-qu",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; \nf=page.cadesa.yaml\nsed -i -E '/^  (nav-link|action|action-quiet|body|body-on-dark|card-meta|price|feature|footer",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; sed -i -E '/^  (nav-link|action|action-quiet|body|body-on-dark|card-meta|price|feature|footer-link):/{s/size: 0\\.",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; ./cadesa validate page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,6",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; sed -i 's/link: { text: footer-link, height: tap }/link: { text: footer-link, minHeight: tap }/' page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; ./cadesa validate page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,5",
+        "Edit: page.cadesa.yaml",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; ./cadesa validate page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,5",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-OO2eYK; ./cadesa validate page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,5"
+      ],
+      "costUsd": 0.1938186,
+      "ms": 37990,
+      "stop": "success",
+      "reply": "Body text is now 2px larger everywhere you listed, and `./cadesa check` shows no layout, overflow, tap-target or line-length warnings at 12 widths from 320px to 1440px. I didn't run `node preview.mjs`, so I haven't looked at the screenshots. The only remaining warnings are contrast notes for text over the hero image, which `check` says to confirm by eye.\n\nI edited only `page.cadesa.yaml`, and it validates.\n\n**Text sizes (+0.125rem each)**\n- Nav links: 15px to 17px.\n- Hero lede: 20px to 22px, and the narrow-screen version 17px to 19px.\n- Button labels, hero and plan CTAs: 17px to 19px.\n- Paragraphs, on light and dark backgrounds: 17px to 19px.\n- Trip descriptions, trip prices, plan features and footer links: 15px to 17px.\n- Fine print: 13px to 15px.\n\nHeadings, the brand name, card titles, plan names, the big plan prices and the footer column headings are unchanged.\n\n**One layout change in the footer**\n- **Problem:** at the larger size, a footer link (\"Safety\", `#col-safety-l1`) wrapped to two lines and spilled out of its fixed 44px height, at 480px and 1440px.\n- **Fix:** I replaced the fixed height on footer links with 10px of vertical padding, which I added as a new `link-pad` spac"
+    }
+  ]
+}

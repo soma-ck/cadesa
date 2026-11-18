@@ -1,0 +1,310 @@
+{
+  "benchmark": "discovery",
+  "label": "pilot",
+  "model": "sonnet",
+  "maxTurns": 30,
+  "runBudgetUsd": 2,
+  "claude": "2.1.327 (Claude Code)",
+  "stoppedForBudget": false,
+  "results": [
+    {
+      "task": "german",
+      "arm": "css",
+      "trial": 1,
+      "solved": false,
+      "workspace": "/tmp/cadesa-disc-german-css-LNQMhv",
+      "goal": {
+        "ok": true,
+        "detail": "no separate goal: the copy is fixed; only defects count"
+      },
+      "defects": {
+        "distinct": 0,
+        "instances": 0,
+        "byKind": {},
+        "where": {}
+      },
+      "shipped": 0,
+      "collateral": {
+        "sections": [
+          "closing",
+          "footer",
+          "pricing"
+        ],
+        "elements": 56,
+        "instances": 165,
+        "examples": [
+          "320px #pricing 320.0×1404.8@0.0,0.0 → 320.0×1335.6@0.0,0.0",
+          "320px #pricing-head 288.0×288.8@16.0,48.0 → 288.0×231.7@16.0,48.0",
+          "320px #pricing-title 288.0×118.8@16.0,48.0 → 288.0×61.6@16.0,48.0",
+          "320px #pricing-lede 288.0×158.1@16.0,178.8 → 288.0×158.1@16.0,121.6",
+          "320px #plans 288.0×980.0@16.0,376.8 → 288.0×968.0@16.0,319.7",
+          "320px #single 288.0×337.7@16.0,376.8 → 288.0×333.7@16.0,319.7"
+        ]
+      },
+      "turns": 20,
+      "toolCalls": 16,
+      "tools": [
+        "Read: page.css",
+        "Read: page.html",
+        "Bash: cat >> page.css <<'EOF'\n\n/* German copy: long words and longer labels */\n.ca-site-nav .ca-site-nav__brand,\n.ca-site-nav .ca-site-nav__link,\n.ca-hero .ca-hero__b",
+        "Bash: tail -5 page.css; ls",
+        "Edit: page.css",
+        "Bash: cat > /tmp/chk.mjs <<'EOF'\nimport { chromium } from 'playwright';\nconst b = await chromium.launch(); const p = await b.newPage();\nfor (const w of [320,360,400,4",
+        "Write: chk.mjs",
+        "Bash: node chk.mjs; rm chk.mjs",
+        "Bash: node chk.mjs",
+        "Bash: node preview.mjs 320,768,1280",
+        "Read: full.png",
+        "Read: full.png",
+        "Read: full.png",
+        "Edit: page.css",
+        "Bash: node preview.mjs 1280,1024 >/dev/null; echo ok",
+        "Read: trips.png"
+      ],
+      "costUsd": 0.2871869,
+      "ms": 48490,
+      "stop": "success",
+      "reply": "I only changed `page.css`. I checked it in screenshots at 320, 768 and 1280px, and the 1280px trips row is fixed. I couldn't run an automated overflow check, because Bash blocked my script, so the other widths in the 320–1440px range are unchecked. I also never re-looked at 1024px or the final state at 320 and 768px.\n\n- **Fixed-height boxes:** The nav links, hero buttons, plan buttons, closing button and footer links had fixed heights. They now use a 44px minimum height with vertical padding, so longer German labels wrap instead of spilling out. This also keeps every link at least 44×44px.\n- **Long German words:** Words like \"Seehundbeobachtungstour\" and \"Übernachtungstour\" could break mid-word or run past their box. I added word-break rules to the headings, card text, plan cards and footer so nothing overflows. I also capped the hero title and the plan cards at the width of their container.\n- **Phone sizes:** At 640px and below, the hero title is 2rem and the section headings are 1.75rem. That keeps long compound words on one line at 320px.\n- **Trip card names:** These are now 1.125rem. Before this, \"Seehundbeobachtungstour\" broke as \"Seehundbeobachtungstou / r\" in the four-column"
+    },
+    {
+      "task": "german",
+      "arm": "cadesa",
+      "trial": 1,
+      "solved": true,
+      "workspace": "/tmp/cadesa-disc-german-cadesa-bdUQUZ",
+      "goal": {
+        "ok": true,
+        "detail": "no separate goal: the copy is fixed; only defects count"
+      },
+      "defects": {
+        "distinct": 0,
+        "instances": 0,
+        "byKind": {},
+        "where": {}
+      },
+      "shipped": 0,
+      "collateral": {
+        "sections": [],
+        "elements": 0,
+        "instances": 0,
+        "examples": []
+      },
+      "turns": 9,
+      "toolCalls": 8,
+      "tools": [
+        "Bash: cd /tmp/cadesa-disc-german-cadesa-bdUQUZ; cat page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,480,600,768,900,1024,1280,14",
+        "Bash: cd /tmp/cadesa-disc-german-cadesa-bdUQUZ; ./cadesa --help | grep -i -E \"hyphen|wrap|break\" ; grep -o -i -E '\"(hyphens|overflowWrap|wrap)[^\"]*\"' ../../schema/cad",
+        "Bash: cd /tmp/cadesa-disc-german-cadesa-bdUQUZ; sed -i 's/display-small: { font: ui, size: 2.625rem/display-small: { font: ui, size: 2.25rem/; s/card-title: { font: u",
+        "Bash: sed -i 's/display-small: { font: ui, size: 2.625rem/display-small: { font: ui, size: 2.25rem/; s/card-title: { font: ui, size: 1.25rem/card-title: { font: ui, s",
+        "Bash: ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,600,700,768,900,1000,1024,1100,1200,1280,1440 | grep -E \"⚠|✖|error\"",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,600,700,768,900,1000,1024,1100,1200,1280,1440 | grep -E \"⚠|✖|error\""
+      ],
+      "costUsd": 0.12891229999999998,
+      "ms": 15899,
+      "stop": "success",
+      "reply": "The German page now passes `./cadesa check` with no layout, overflow, tap-target or line-length warnings at 320, 360, 400, 480, 600, 700, 768, 900, 1000, 1024, 1100, 1200, 1280 and 1440px. I didn't look at the screenshots.\n\nThe long German compound words were the problem. I changed two text tokens in `page.cadesa.yaml`:\n- **`display-small`:** 2.625rem → 2.25rem. This stops \"Morgengrauen\" in the hero headline overflowing at 320px.\n- **`card-title`:** 1.25rem → 1.0625rem. This stops \"Seehundbeobachtungstour\" overflowing its trip card at 1100px and above.\n\nThe `card-title` change makes trip titles smaller at every width, not only where they overflowed. The `display-small` token is only used by the hero on narrow screens, so no other section's layout changed.\n\nThe check still reports about 42 contrast warnings marked inconclusive. They're for hero text over the image, and they were there before my edits. I left them alone."
+    },
+    {
+      "task": "fourth-plan",
+      "arm": "css",
+      "trial": 1,
+      "solved": true,
+      "workspace": "/tmp/cadesa-disc-fourth-plan-css-ukF7Jg",
+      "goal": {
+        "ok": true,
+        "detail": "four plans in one row at every width from 1024px"
+      },
+      "defects": {
+        "distinct": 0,
+        "instances": 0,
+        "byKind": {},
+        "where": {}
+      },
+      "shipped": 0,
+      "collateral": {
+        "sections": [],
+        "elements": 0,
+        "instances": 0,
+        "examples": []
+      },
+      "turns": 7,
+      "toolCalls": 6,
+      "tools": [
+        "Read: page.css",
+        "Grep",
+        "Edit: page.css",
+        "Bash: node preview.mjs 1024,1440 >/dev/null 2>&1; ls shots/1024",
+        "Read: pricing.png",
+        "Edit: page.css"
+      ],
+      "costUsd": 0.1531891,
+      "ms": 17665,
+      "stop": "success",
+      "reply": "All four plans now sit in one row at every width from 1024px up. I only checked the 1024px screenshot, and I did not re-render after the last edit or render 1440px or any narrower width.\n\nThe 1024px pricing screenshot showed four equal cards, nothing sticking out, and the long email address wrapping inside its card.\n\nIn `page.css`:\n- **Four-column row:** from 1024px up, the plans container becomes a 4-column grid, and the cards drop their fixed 18rem width so they share the row.\n- **Long text:** feature lines and prices can now break mid-word, so `groups@kvitfjordpaddling.no` can't run past its card's edge. This applies at all widths.\n- **Price size:** on desktop the price is slightly smaller, 1.875rem instead of 2.25rem, so \"NOK 14,500\" fits the narrowest cards.\n- **Buttons:** the plan buttons are pushed to the bottom of their cards so they line up across the row. I added this after the screenshot, so it hasn't been rendered.\n\nBelow 1024px the layout is unchanged apart from the text-wrapping rule. Other sections are untouched."
+    },
+    {
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "trial": 1,
+      "solved": true,
+      "workspace": "/tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4",
+      "goal": {
+        "ok": true,
+        "detail": "four plans in one row at every width from 1024px"
+      },
+      "defects": {
+        "distinct": 0,
+        "instances": 0,
+        "byKind": {},
+        "where": {}
+      },
+      "shipped": 0,
+      "collateral": {
+        "sections": [],
+        "elements": 0,
+        "instances": 0,
+        "examples": []
+      },
+      "turns": 15,
+      "toolCalls": 14,
+      "tools": [
+        "Bash: cd /tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4; cat page.cadesa.yaml; grep -n -i -B2 -A30 'pricing' page.html | head -120",
+        "Bash: cd /tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4; sed -i 's/plans: { layout: { pattern: cluster, gap: base, align: stretch } }/plans: { layout: { pattern: grid, mi",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: cd /tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4; ./cadesa validate page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,400,641,768,9",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: cd /tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4; ./cadesa validate page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,400,641,768,9",
+        "Bash: cd /tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4; ./cadesa validate page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,400,641,768,9",
+        "Bash: cd /tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4; ./cadesa --help | grep -i -E 'wrap|break|overflow'; ./cadesa whatif page.html --source page.cadesa.yaml --widths ",
+        "Bash: cd /tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4; sed -i 's/plan-min: 13.5rem/plan-min: 14.5rem/; /^  plan-card:/,/^  closing:/ s/^    padding: card$/    padding: ",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: cd /tmp/cadesa-disc-fourth-plan-cadesa-GZk8h4; ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,500,641,700,768,900,1000,1023,1024,1100,1280,"
+      ],
+      "costUsd": 0.19547309999999998,
+      "ms": 33572,
+      "stop": "success",
+      "reply": "All four plans now sit in one row at 1024px and up. The check reports 0 errors across 320–1440px. The 39 warnings it still lists are all hero-text contrast notes (\"inconclusive\": text over an image). I didn't look at the hero by eye.\n\nI didn't open the screenshots, and I only measured the plan row's layout at 1024px. Check the narrower widths (320 up) in the screenshots as well.\n\nChanges, all in `page.cadesa.yaml`:\n- **Plan row:** `pricing.plans` is now a grid instead of a wrapping cluster. The cards each get an equal share of the row, using a new `plan-min` size token of 14.5rem. At 1024px that gives four cards of 232px.\n- **Plan card width:** `plan-card` width went from the fixed 18rem to `fill`, so the cards stretch to their column.\n- **Plan card padding:** it went from 1.25rem to 0.75rem. The \"groups@kvitfjordpaddling.no\" line in the new plan can't wrap, and with the old padding it ran past the card edge by about 15px at 1024px.\n- **Narrower screens:** below the 4-up width the grid drops to fewer columns. On phones the plans stay stacked, as before.\n\nOther sections are unchanged."
+    },
+    {
+      "task": "bigger-text",
+      "arm": "css",
+      "trial": 1,
+      "solved": true,
+      "workspace": "/tmp/cadesa-disc-bigger-text-css-zibaoz",
+      "goal": {
+        "ok": true,
+        "detail": "every body text is exactly 2px larger; headings unchanged"
+      },
+      "defects": {
+        "distinct": 0,
+        "instances": 0,
+        "byKind": {},
+        "where": {}
+      },
+      "shipped": 0,
+      "collateral": {
+        "sections": [],
+        "elements": 0,
+        "instances": 0,
+        "examples": []
+      },
+      "turns": 26,
+      "toolCalls": 25,
+      "tools": [
+        "Read: page.css",
+        "Read: page.html",
+        "Bash: python3 -I - <<'E'\nimport re\ns=open('page.css').read()\nm={'0.9375rem':'1.0625rem','1.0625rem':'1.1875rem','0.8125rem':'0.9375rem','1.25rem':None}\n# targeted by ",
+        "Write: edit_css.py",
+        "Bash: python3 -I /tmp/edit_css.py && grep -n \"font-size\\|min-height\" page.css | sed -n 1,80p",
+        "Bash: python3 -I /tmp/edit_css.py",
+        "Bash: sed -i \\\n -e '/^\\.ca-site-nav \\.ca-site-nav__link {/,/^}/s/font-size: [^;]*/font-size: 1.0625rem/' \\\n -e '/^\\.ca-hero \\.ca-hero__lede {/,/^}/s/font-size: [^;]*/",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Edit: page.css",
+        "Bash: node preview.mjs 320,768,1024 | tail -2",
+        "Read: hero.png",
+        "Read: hero.png",
+        "Read: footer.png",
+        "Read: nav.png",
+        "Read: pricing.png"
+      ],
+      "costUsd": 0.30037590000000003,
+      "ms": 56234,
+      "stop": "success",
+      "reply": "All the body text in `page.css` is now exactly 2px larger. I only previewed 320, 768 and 1024px, and I didn't check the trips and closing sections, or 1440px. The sections I looked at (hero at 320 and 768, nav and pricing at 320, footer at 1024) had no overflow, clipping or overlap. I didn't test the 24×24 minimum or the 80-character line limit with a tool.\n\n- **Sizes (rem values, 16px root):**\n  - 15px → 17px: nav links, trip descriptions and prices, plan features, footer links.\n  - 17px → 19px: the intro and lede paragraphs, the closing paragraph, and the button labels (hero, plan and closing).\n  - 20px → 22px: the hero lede, and 17px → 19px on phones.\n  - 13px → 15px: the fine print.\n- **Unchanged:** headings, the brand name, the big plan prices, and the footer column headings.\n- **One layout change:** the nav links, buttons and footer links had fixed heights. I changed those to minimum heights with the same values (44px for nav and footer links, 48px for buttons). That way a label that wraps onto two lines, such as \"Weather and cancellations\" in a narrow footer column, grows its box instead of spilling out of it."
+    },
+    {
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "trial": 1,
+      "solved": true,
+      "workspace": "/tmp/cadesa-disc-bigger-text-cadesa-ChpgCT",
+      "goal": {
+        "ok": true,
+        "detail": "every body text is exactly 2px larger; headings unchanged"
+      },
+      "defects": {
+        "distinct": 0,
+        "instances": 0,
+        "byKind": {},
+        "where": {}
+      },
+      "shipped": 0,
+      "collateral": {
+        "sections": [],
+        "elements": 0,
+        "instances": 0,
+        "examples": []
+      },
+      "turns": 28,
+      "toolCalls": 27,
+      "tools": [
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-ChpgCT; cat page.cadesa.yaml; ./cadesa check page.html --source page.cadesa.yaml --widths 320,768,1440 | head -30",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-ChpgCT; for n in nav-link lede lede-small action action-quiet body body-on-dark card-meta price feature footer-link fine;",
+        "Bash: cd /tmp/cadesa-disc-bigger-text-cadesa-ChpgCT; python3 - <<'E'\nimport re\ns=open('page.cadesa.yaml').read()\nfor n in \"nav-link lede lede-small action action-quie",
+        "Bash: python3 -c \"\nimport re\ns=open('page.cadesa.yaml').read()\nfor n in 'nav-link lede lede-small action action-quiet body body-on-dark card-meta price feature footer",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,640,768,1024,1280,1440 | grep -v \"contrast\\|edit:\"",
+        "Bash: ./cadesa whatif page.html --source page.cadesa.yaml --widths 480,1280 --set styles.site-footer.slots.link.minHeight=tap --set styles.site-footer.slots.link.heig",
+        "Bash: grep -n -B2 -A2 'col-safety-l1' page.html | head; ./cadesa render page.html --source page.cadesa.yaml --widths 1280 | grep -i \"col-\\|columns\" | head -20",
+        "Bash: ./cadesa whatif page.html --source page.cadesa.yaml --widths 320,480,1024,1280,1440 --set styles.site-footer.slots.columns.layout.gap=base 2>&1 | head -30",
+        "Edit: page.cadesa.yaml",
+        "Bash: ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,420,480,520,560,640,700,768,900,1024,1100,1200,1280,1440 | grep -v \"contrast\\|edit:\"|gre",
+        "Bash: ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,420,480,520,560,640,700,768,900,1024,1100,1200,1280,1440 | grep -v \"contrast\\|edit:\"",
+        "Edit: page.cadesa.yaml",
+        "Edit: page.cadesa.yaml",
+        "Bash: ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,560,640,700,768,900,1024,1100,1280,1440 | grep -v \"contrast\\|edit:\" | grep -v \"^$\\|p",
+        "Bash: ./cadesa check page.html --source page.cadesa.yaml --widths 320,360,400,480,560,640,700,768,900,1024,1100,1280,1440 | grep -v \"contrast\\|edit:\""
+      ],
+      "costUsd": 0.2309971,
+      "ms": 46790,
+      "stop": "success",
+      "reply": "I increased all the body text by exactly 2px in `page.cadesa.yaml`, and `./cadesa check` now reports no overflow, tap-target, line-length or fixed-height problems from 320px to 1440px. I did not run `node preview.mjs`, so I haven't looked at the screenshots. The only warnings left are the \"inconclusive\" contrast notes for the hero text sitting over the image, which were there before my change.\n\n**Sizes**, all raised by 0.125rem (2px):\n- **Nav links, trip meta, trip prices, plan features, footer links:** 15px to 17px.\n- **Paragraph text and the closing-band text:** 17px to 19px.\n- **Button labels:** 17px to 19px.\n- **Hero lede:** 20px to 22px, and 17px to 19px on phones.\n- **Fine print:** 13px to 15px.\n\nThe brand name, headings, card titles, plan names, big plan prices and footer column headings are unchanged.\n\n**One side effect in the footer:** at the larger size, \"Weather and cancellations\" wrapped to two lines inside a link fixed at 44px tall, so the text spilled out of the box. I replaced the fixed height on footer links with 12px of vertical padding. Single-line links are now about 49px tall, slightly taller than the 44px before, so the footer grew a little."
+    }
+  ]
+}
