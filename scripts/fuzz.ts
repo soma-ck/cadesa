@@ -153,6 +153,10 @@ interface Gen {
   comps: { name: string; kind: Kind; depth: number }[];
   ids: number;
   spaces: string[];
+  /** Negative space tokens: margins only. */
+  negs: string[];
+  /** Border widths (fractional too: Chromium floors them to whole pixels). */
+  widths: string[];
   sizes: string[];
   pcts: string[];
   colors: string[];
@@ -185,8 +189,15 @@ function genTokens(g: Gen) {
   const color = { ink: "#1e1b4b", paper: "#ffffff", accent: "#3730a3", line: "#d4d4d8" };
   const font: Obj = { inter: `${FONT_FAMILY}, sans-serif` };
   if (r.chance(0.1)) font.serif = "Georgia, serif";
-  g.doc.tokens = { space, size, color, radius: { round: "8px" }, font, paint: { band: "linear-gradient(90deg, #3730a3, #0f766e)" }, shadow: { lift: "0 8px 24px #0002" } };
   g.spaces = Object.keys(space);
+  // Negative margins (a Bootstrap row's -0.5 × gutter) and border widths, fractional ones too.
+  const nn = r.weighted([[0, 2], [1, 3], [2, 1]]);
+  for (let i = 1; i <= nn; i++) space[`n${i}`] = r.chance(0.6) ? r.pick(["-12px", "-0.75rem", "-1rem", "-4px", "-8px", "-1.5rem"]) : `-${lengthValue(r, 1, 40)}`;
+  g.negs = Object.keys(space).filter((k) => k.startsWith("n"));
+  const nw = r.int(1, 3);
+  for (let i = 1; i <= nw; i++) space[`b${i}`] = r.pick(["1px", "1px", "2px", "0.25rem", "0.5px", "1.5px", "2.7px", "0.1rem", "3px", "0.0625rem"]);
+  g.widths = Object.keys(space).filter((k) => /^b\d/.test(k));
+  g.doc.tokens = { space, size, color, radius: { round: "8px" }, font, paint: { band: "linear-gradient(90deg, #3730a3, #0f766e)" }, shadow: { lift: "0 8px 24px #0002" } };
   g.sizes = Object.keys(size);
   // Percentage size tokens: widths, maxWidth and measure only (never a height or a grid minimum).
   const np = r.weighted([[0, 2], [1, 3], [2, 2], [3, 1]]);
@@ -216,7 +227,7 @@ function genTokens(g: Gen) {
     if (r.chance(0.25)) role.letterSpacing = r.float(-0.05, 0.2, 3);
     if (r.chance(0.15)) role.transform = r.pick(["uppercase", "none"]);
     if (r.chance(0.1)) role.decoration = r.pick(["underline", "none"]);
-    if (r.chance(0.2)) role.wrap = r.pick(["anywhere", "anywhere", "normal"]);
+    if (r.chance(0.25)) role.wrap = r.pick(["anywhere", "anywhere", "normal", "break-word", "none", "none"]);
     text[`t${i}`] = role;
   }
   g.doc.text = text;
@@ -238,6 +249,8 @@ function genLayout(g: Gen, parentDepth: number): Obj {
   if (pattern === "grid") l.min = r.pick(g.sizes);
   if (pattern !== "flow" && r.chance(0.7)) l.gap = r.pick(g.spaces);
   if (pattern !== "stack" && pattern !== "flow" && r.chance(0.5)) l.align = r.pick(["start", "center", "end", "stretch"]);
+  if (pattern === "cluster" && r.chance(0.45)) l.justify = r.pick(["start", "end", "center", "between", "around", "evenly"]);
+  if (pattern === "cluster" && r.chance(0.3)) l.wrap = false;
   void parentDepth;
   return l;
 }
@@ -252,26 +265,52 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
   if (kind === "box") p.layout = genLayout(g, 0);
   if (kind === "text") p.text = r.pick(g.roles);
   if (kind === "box" && r.chance(0.04)) p.text = r.pick(g.roles);
+  const sp = () => r.pick(g.spaces);
   if (r.chance(0.4 * s))
-    p.padding = r.chance(0.6) ? r.pick(g.spaces) : r.chance(0.5) ? { block: r.pick(g.spaces), inline: r.pick(g.spaces) } : r.chance(0.5) ? { block: r.pick(g.spaces) } : { inline: r.pick(g.spaces) };
+    p.padding = r.weighted<Obj | string>([
+      [sp(), 6],
+      [{ block: sp(), inline: sp() }, 2],
+      [{ block: sp() }, 1],
+      [{ inline: sp() }, 1],
+      [{ top: sp(), right: sp(), bottom: sp(), left: sp() }, 1.5],
+      [{ left: sp(), block: sp() }, 1],
+      [{ bottom: sp() }, 0.5],
+    ]);
   if (r.chance(0.3 * s)) p.background = r.pick(g.colors);
-  if (r.chance(0.2 * s)) p.border = r.pick(g.colors);
+  if (r.chance(0.2 * s)) {
+    const w = () => r.pick(g.widths);
+    p.border = r.weighted<Obj | string>([
+      [r.pick(g.colors), 4],
+      [{ color: r.pick(g.colors), width: w() }, 1],
+      [{ color: r.pick(g.colors), bottom: w() }, 1],
+      [{ color: r.pick(g.colors), top: w(), left: w() }, 1],
+      [{ color: r.pick(g.colors), width: w(), left: w() }, 1],
+    ]);
+  }
   if (r.chance(0.15 * s)) p.radius = "round";
   if (r.chance(0.08 * s)) p.shadow = "lift";
   if (r.chance(0.08 * s)) p.backdrop = "band";
-  const wantWidth = parent === "cluster" && kind !== "text" ? 0.97 : 0.2;
+  // Cluster items without a width are sized by their content (measured, or flagged).
+  const wantWidth = parent === "cluster" && kind !== "text" ? (kind === "media" ? 0.97 : 0.6) : 0.2;
   // A width, maxWidth or measure: sometimes a percentage of the parent's width.
   const size = () => (g.pcts.length && r.chance(0.3) ? r.pick(g.pcts) : r.pick(g.sizes));
-  if (r.chance(wantWidth * s)) p.width = r.chance(parent === "stack" ? 0.4 : parent === "cluster" ? 0.01 : 0.1) ? "fill" : size();
-  if (r.chance((parent === "page" ? 0.35 : parent === "cluster" ? 0.02 : 0.12) * s)) p.maxWidth = size();
+  if (r.chance(wantWidth * s)) p.width = r.chance(parent === "stack" ? 0.4 : parent === "cluster" ? 0.01 : 0.1) ? "fill" : r.chance(0.08) ? "fit" : size();
+  if (r.chance((parent === "page" ? 0.35 : parent === "cluster" ? 0.06 : 0.12) * s)) p.maxWidth = size();
+  // grow: in a cluster (shares the line) or a stack (its extra height).
+  if ((parent === "cluster" || parent === "stack") && kind !== "media" && r.chance((parent === "cluster" ? 0.3 : 0.15) * s))
+    p.grow = r.weighted<Obj | number>([[1, 4], [{ factor: 1, basis: "zero" }, 4], [r.int(2, 3), 1], [{ factor: r.pick([0.5, 1.5, 2, 0.3]), basis: r.pick(["zero", "content"]) }, 1]]);
   if (r.chance(0.12 * s)) p.measure = size();
   // Margins: common in block flow (where they collapse), sometimes anywhere else.
   if (r.chance((parent === "flow" || parent === "page" ? 0.5 : 0.2) * s)) {
-    const sp = () => r.pick(g.spaces);
+    // Sometimes negative (pulls the box outward), sometimes auto left and right (not in a grid or layer).
+    const ms = () => (g.negs.length && r.chance(0.2) ? r.pick(g.negs) : sp());
+    const auto = parent !== "grid" && parent !== "layer" && r.chance(0.12);
     const block = !!p.maxWidth || r.chance(0.5);
     p.margin = block
-      ? r.weighted<Obj>([[{ block: sp() }, 3], [{ top: sp() }, 2], [{ bottom: sp() }, 2], [{ top: sp(), bottom: sp() }, 2]])
-      : r.weighted<Obj | string>([[sp(), 2], [{ block: sp(), inline: sp() }, 2], [{ inline: sp() }, 1], [{ left: sp() }, 1], [{ top: sp(), right: sp(), bottom: sp(), left: sp() }, 1], [{ inline: sp(), top: sp() }, 1]]);
+      ? r.weighted<Obj>([[{ block: ms() }, 3], [{ top: ms() }, 2], [{ bottom: ms() }, 2], [{ top: ms(), bottom: ms() }, 2]])
+      : auto
+        ? r.weighted<Obj>([[{ inline: "auto" }, 2], [{ left: "auto" }, 2], [{ right: "auto", left: ms() }, 1], [{ block: ms(), left: "auto" }, 1]])
+        : r.weighted<Obj | string>([[ms(), 2], [{ block: ms(), inline: ms() }, 2], [{ inline: ms() }, 1], [{ left: ms() }, 1], [{ top: ms(), right: ms(), bottom: ms(), left: ms() }, 1], [{ inline: ms(), top: ms() }, 1]]);
   }
   if (kind === "media") {
     if (r.chance(0.85)) p.aspect = r.pick(["16:9", "4:3", "1:1", "3:2", "2:3", "21:9", 1.5, 0.75, "1.91:1"]);
@@ -288,8 +327,11 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
     const keep = keys.filter(() => r.chance(0.5));
     const out: Obj = {};
     for (const k of keep.length ? keep : [r.pick(keys)]) out[k] = p[k];
-    if (out.aspect !== undefined && out.height !== undefined) delete out.height;
-    if (out.maxWidth !== undefined && inlineMargin(out.margin)) delete out.margin;
+    // An override may remove a wider value instead.
+    for (const k of ["maxWidth", "measure", "width", "height", "padding", "margin", "border", "background", "grow", "aspect"])
+      if (r.chance(0.04)) out[k] = "none";
+    if (out.aspect !== undefined && out.height !== undefined && out.aspect !== "none" && out.height !== "none") delete out.height;
+    if (out.maxWidth !== undefined && out.maxWidth !== "none" && inlineMargin(out.margin)) delete out.margin;
     return out;
   }
   if (p.aspect !== undefined && p.height !== undefined) delete p.height;
@@ -402,6 +444,10 @@ function genOverrides(g: Gen) {
       // cluster leaves children without widths, which the engine flags).
       if (o.layout && style.layout && r.chance(0.6)) o.layout = { ...o.layout, pattern: style.layout.pattern, ...(style.layout.pattern === "grid" ? { min: o.layout.min ?? style.layout.min } : {}) };
       if (o.layout && o.layout.pattern !== "grid") delete o.layout.min;
+      if (o.layout && o.layout.pattern !== "cluster") {
+        delete o.layout.justify;
+        delete o.layout.wrap;
+      }
       if (o.layout?.pattern === "stack" || o.layout?.pattern === "flow") delete o.layout.align;
       if (o.layout?.pattern === "flow") delete o.layout.gap;
       const slots: Obj = {};
@@ -415,7 +461,7 @@ function genOverrides(g: Gen) {
 
 export function genCase(seed: number): Case {
   const r = rng(seed);
-  const g: Gen = { r, doc: { version: 1, styles: {} }, comps: [], ids: 0, spaces: [], sizes: [], pcts: [], colors: [], roles: [] };
+  const g: Gen = { r, doc: { version: 1, styles: {} }, comps: [], ids: 0, spaces: [], negs: [], widths: [], sizes: [], pcts: [], colors: [], roles: [] };
   genTokens(g);
   const body: Node[] = [];
   const nRoots = r.weighted([[1, 5], [2, 3], [3, 1]]);
@@ -563,7 +609,18 @@ async function runCase(page: Page, yaml: string, html: string, widths: number[])
   const eng = engineSide(yaml, html, widths);
   if (!("css" in eng)) return { valid: false, invalid: eng.invalid, widths: [], compared: 0, excluded: 0, mismatches: 0 };
   const rects = await chromeSide(page, html, eng.css!, widths);
-  const res: CaseResult = { valid: true, cssSha256: cssHash(eng.css!), widths: [], compared: 0, excluded: 0, mismatches: 0 };
+  // The widths are visited by resizing one page. Chromium occasionally keeps a stale layout across
+  // resizes; a width where any compared box differs is laid out again from a fresh load, which is
+  // what the engine predicts.
+  for (let i = 1; i < widths.length; i++) {
+    const l = eng.layouts![i];
+    const off = [...walk(l.boxes)].some((b) => {
+      const c = rects[i][b.id];
+      return !excludedReason(l, b.id, b.assumptions) && (!c || Math.max(...(["x", "y", "w", "h"] as const).map((k) => Math.abs(b[k] - c[k]))) > TOL);
+    });
+    if (off) rects[i] = (await chromeSide(page, html, eng.css!, [widths[i]]))[0];
+  }
+  const res: CaseResult ={ valid: true, cssSha256: cssHash(eng.css!), widths: [], compared: 0, excluded: 0, mismatches: 0 };
   eng.layouts!.forEach((l, i) => {
     const wr: WidthResult = { width: l.width, active: l.active, boxes: [], issues: l.issues.map((x) => `${x.severity} #${x.id}: ${x.message}`) };
     for (const b of walk(l.boxes)) {
@@ -603,7 +660,7 @@ function removeAt(body: Node[], path: number[]) {
   list.splice(path.at(-1)!, 1);
 }
 
-const PROP_KEYS = new Set(["layout", "padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "fit", "text", "textAlign"]);
+const PROP_KEYS = new Set(["layout", "padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "fit", "text", "textAlign", "grow"]);
 
 /** Every smaller variant of a case, biggest reductions first. */
 function* candidates(c: Case): Generator<Case> {
@@ -1042,7 +1099,8 @@ async function main() {
           failingSeeds.push(seed);
           const sig0 = signature(c, r);
           if (args["no-shrink"] || shrinks >= maxShrinks) {
-            console.log(`seed ${seed}: ✖ ${r.mismatches} mismatch(es) ${sig0} (not shrunk)`);
+            const hash = save(c, r, args.out!, `found by seed ${seed}, not shrunk`);
+            console.log(`seed ${seed}: ✖ ${r.mismatches} mismatch(es) → saved to ${args.out}/${hash} ${sig0} (not shrunk)`);
             continue;
           }
           shrinks++;
@@ -1084,4 +1142,5 @@ async function main() {
   }
 }
 
-await main();
+// Run only as a script (tools may import the generator).
+if (process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/^.*\//, ""))) await main();
