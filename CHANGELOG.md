@@ -13,10 +13,28 @@ claude mcp add cadesa -- npx -y cadesa@0.1.8 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
-ask for `metrics --google` or a page loads its fonts from there; your pages are never sent
-anywhere. `metrics --measure` and the conformance scripts start a local Chromium.
+ask for `metrics --google` or a page loads its fonts from there, and the ones `capture` makes
+to load the URL you give it; your pages are never sent anywhere. `metrics --measure`,
+`capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
+serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
 ## Unreleased
+
+- On `--css` and `--tailwind` pages, each `check` finding names the element (page file:line,
+  tag, classes, the start of its text) and the stylesheet rules behind it (file:line and
+  selector, following `var()` to where the variable is set) instead of a path in the generated
+  Cadesa source and a generated id. `--json` keeps the Cadesa path in `path` and adds `element`
+  and `source`.
+- `check --verify` loads the page in Chromium at the widths with findings and six others,
+  measures the elements, and marks each finding confirmed or not reproduced. Inconclusive
+  findings are decided by what Chromium measures. The MCP tool takes `verify: true`.
+- `cadesa capture <url>` (and the `cadesa_capture` MCP tool) saves a page as Chromium rendered
+  it: the DOM without scripts, every stylesheet in cascade order (including CSS-in-JS rules
+  read back from the CSSOM, and `@import`s inlined), and the fonts it loaded; then prints the
+  check command. `--login-script` runs a module before loading the page; no cookies or
+  credentials are written.
+- The conformance script's serving and measuring code moved to `src/browser.ts`, shared with
+  `--verify`.
 
 - `check` and `render` start with a coverage line: how many boxes at how many widths were
   predicted exactly, how many approximately, and the most common reasons. When most of a
