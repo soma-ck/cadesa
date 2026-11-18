@@ -1,13 +1,15 @@
 /**
  * Summarize a discovery results file as a Markdown table, plus how each arm looked at the page.
  *
- *   npx tsx bench/discovery/report.ts bench/results/discovery-<stamp>.json
+ *   npx tsx bench/discovery/report.ts bench/results/discovery-<stamp>.json [more.json ...]
+ *
+ * Several files are pooled into one table (e.g. a run plus a top-up run of one cell).
  */
 import { readFileSync } from "node:fs";
 
-const file = process.argv[2];
-if (!file) throw new Error("usage: report.ts <results.json>");
-const { results } = JSON.parse(readFileSync(file, "utf8")) as { results: any[] };
+const files = process.argv.slice(2);
+if (!files.length) throw new Error("usage: report.ts <results.json> [more.json ...]");
+const results: any[] = files.flatMap((f) => (JSON.parse(readFileSync(f, "utf8")) as { results: any[] }).results);
 
 const mean = (xs: number[]) => (xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN);
 const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
@@ -43,9 +45,11 @@ for (const arm of arms) {
     `| **all** | ${arm} | ${rs.filter((r) => r.solved).length}/${rs.length} | ${rs.filter((r) => r.goal.ok).length}/${rs.length} | ${mean(rs.map((r) => r.shipped)).toFixed(2)} | ${rs.filter((r) => r.shipped > 0).length}/${rs.length} | ${mean(rs.map((r) => r.collateral.elements)).toFixed(1)} | ${rs.filter((r) => r.collateral.elements > 0).length}/${rs.length} | ${mean(rs.map((r) => r.toolCalls)).toFixed(1)} | $${mean(rs.map((r) => r.costUsd)).toFixed(2)} | ${mean(rs.map((r) => r.ms / 1000)).toFixed(0)}s |`,
   );
 }
-console.log(`\ntotal cost in this file: $${sum(results.map((r) => r.costUsd)).toFixed(2)} over ${results.length} runs`);
+console.log(`\ntotal cost in these results: $${sum(results.map((r) => r.costUsd)).toFixed(2)} over ${results.length} runs`);
 
-console.log("\nHow agents looked (mean per trial): distinct widths screenshotted · distinct widths given to Cadesa commands · runs using check / whatif / critique / screenshots");
+// Tool logs keep only the first 160 characters of a shell command, so widths screenshotted are a lower bound;
+// reading a PNG is the reliable sign that an agent looked at a screenshot.
+console.log("\nHow agents looked (mean per trial): distinct widths screenshotted (lower bound) · distinct widths given to Cadesa commands · runs using check / whatif / critique · runs that read a screenshot (PNGs read per trial)");
 for (const task of tasks)
   for (const arm of arms) {
     const rs = results.filter((r) => r.task === task && r.arm === arm);
@@ -53,7 +57,7 @@ for (const task of tasks)
     const seen = rs.map((r) => widthsSeen(r.tools));
     const uses = (re: RegExp) => rs.filter((r) => r.tools.some((t: string) => re.test(t))).length;
     console.log(
-      `  ${task.padEnd(12)} ${arm.padEnd(7)} shots ${mean(seen.map((s) => s.shots)).toFixed(1)} · engine ${mean(seen.map((s) => s.engine)).toFixed(1)} · check ${uses(/cadesa check/)}/${rs.length} · whatif ${uses(/cadesa whatif/)}/${rs.length} · critique ${uses(/cadesa critique/)}/${rs.length} · screenshots ${uses(/preview\.mjs/)}/${rs.length}`,
+      `  ${task.padEnd(12)} ${arm.padEnd(7)} shots ${mean(seen.map((s) => s.shots)).toFixed(1)} · engine ${mean(seen.map((s) => s.engine)).toFixed(1)} · check ${uses(/cadesa check/)}/${rs.length} · whatif ${uses(/cadesa whatif/)}/${rs.length} · critique ${uses(/cadesa critique/)}/${rs.length} · read a screenshot ${rs.filter((r) => r.tools.some((t: string) => /^Read: .*\.png$/.test(t))).length}/${rs.length} (${mean(rs.map((r) => r.tools.filter((t: string) => /^Read: .*\.png$/.test(t)).length)).toFixed(1)})`,
     );
   }
 
