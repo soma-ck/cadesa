@@ -18,7 +18,7 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## Unreleased
+## 0.1.8 (2026-11-18)
 
 - `whatif` previews edits to plain CSS: `--css app.css --add-css ".card { padding: 24px }"`
   appends rules in memory, and `--after app.new.css` compares edited stylesheets (one per
