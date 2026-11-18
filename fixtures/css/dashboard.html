@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: a dashboard in plain CSS</title>
+    <link rel="stylesheet" href="dashboard.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page" data-fixture="page">
+      <h1 class="page-title" data-fixture="title">Fulfilment this week</h1>
+      <p class="page-subtitle" data-fixture="subtitle">Orders, shipments and returns across all three warehouses.</p>
+      <div class="stats" data-fixture="stats">
+        <div class="stat" data-fixture="stat-1">
+          <p class="stat-value" data-fixture="stat-1-value">1,284</p>
+          <p class="stat-label" data-fixture="stat-1-label">Orders received</p>
+        </div>
+        <div class="stat" data-fixture="stat-2">
+          <p class="stat-value" data-fixture="stat-2-value">1,190</p>
+          <p class="stat-label" data-fixture="stat-2-label">Shipped on time</p>
+        </div>
+        <div class="stat" data-fixture="stat-3">
+          <p class="stat-value" data-fixture="stat-3-value">37</p>
+          <p class="stat-label" data-fixture="stat-3-label">Returns opened</p>
+        </div>
+        <div class="stat" data-fixture="stat-4">
+          <p class="stat-value" data-fixture="stat-4-value">2.4 days</p>
+          <p class="stat-label" data-fixture="stat-4-label">Average lead time</p>
+        </div>
+      </div>
+      <h2 class="section-title" data-fixture="section">Warehouses</h2>
+      <div class="cards" data-fixture="cards">
+        <section class="card" data-fixture="card-1">
+          <h3 data-fixture="card-1-name">Lagos</h3>
+          <p data-fixture="card-1-text">412 orders, 9 waiting on stock. The new loading bay opens on Thursday.</p>
+          <p class="meta" data-fixture="card-1-meta">Updated 12 minutes ago</p>
+        </section>
+        <section class="card" data-fixture="card-2">
+          <h3 data-fixture="card-2-name">Rotterdam</h3>
+          <p data-fixture="card-2-text">530 orders. Two carriers are delayed by the strike; expect late deliveries in Belgium.</p>
+          <p class="meta" data-fixture="card-2-meta">Updated an hour ago</p>
+        </section>
+        <section class="card" data-fixture="card-3">
+          <h3 data-fixture="card-3-name">Monterrey</h3>
+          <p data-fixture="card-3-text">342 orders, all on schedule.</p>
+          <p class="meta" data-fixture="card-3-meta">Updated 3 minutes ago</p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

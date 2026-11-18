@@ -112,7 +112,8 @@ describe("utility mapping", () => {
     const t = tw(page(`<div class="flex items-center justify-between"><a class="text-sm/6 hover:text-gray-900">a</a><p class="rounded-full bg-indigo-600/10 text-xs/5">b</p></div><p class="text-lg/8 dark:bg-black">c</p>`), CSS + "\n@layer utilities { @media (prefers-color-scheme: dark) { .dark\\:bg-black { background-color: #000; } } }\n");
     const u = t.lifted.unlifted;
     expect(u.find((x) => x.decl?.startsWith("hover:text-gray-900"))?.kind).toBe("state");
-    expect(u.find((x) => x.decl?.startsWith("justify-between"))).toMatchObject({ kind: "visual", className: "ca-div__a" });
+    // space-between leaves the first item in place; the others move.
+    expect(u.filter((x) => x.decl?.startsWith("justify-between")).map((x) => [x.kind, x.className])).toEqual([["visual", "ca-div__p"]]);
     expect(u.find((x) => x.decl === "dark:bg-black")?.kind).toBe("none");
   });
 

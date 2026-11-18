@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: an app side panel in plain CSS</title>
+    <!-- Hand-written app CSS. `cadesa check panel.html --css panel.css` reads it through the page lift. -->
+    <link rel="stylesheet" href="panel.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <aside class="side-panel" data-fixture="panel">
+      <div class="panel-header" data-fixture="header">
+        <h2 class="panel-title" data-fixture="title">Order details</h2>
+        <button class="icon-button" data-fixture="close" type="button" aria-label="Close">×</button>
+      </div>
+
+      <div class="item" data-fixture="item">
+        <h3 data-fixture="item-name">Walnut desk, 140 × 70 cm</h3>
+        <p data-fixture="item-desc">Solid walnut top on powder-coated steel legs. Ships flat-packed; assembly takes about twenty minutes.</p>
+      </div>
+
+      <h4 class="section-label" data-fixture="details-label">Order</h4>
+      <div class="details" data-fixture="details">
+        <div class="detail-row" data-fixture="row-customer">
+          <span class="detail-label" data-fixture="customer-label">Customer</span>
+          <span class="detail-value" data-fixture="customer-value">Amara Okafor</span>
+        </div>
+        <div class="detail-row" data-fixture="row-order">
+          <span class="detail-label" data-fixture="order-label">Customer order</span>
+          <span class="detail-value" data-fixture="order-value">PO-2024-0187</span>
+        </div>
+        <div class="detail-row" data-fixture="row-due">
+          <span class="detail-label" data-fixture="due-label">Due</span>
+          <span class="detail-value" data-fixture="due-value">Friday, 14 March</span>
+        </div>
+        <div class="detail-row" data-fixture="row-ship">
+          <span class="detail-label" data-fixture="ship-label">Ship to</span>
+          <span class="detail-value" data-fixture="ship-value">Lagos, dock 3</span>
+        </div>
+      </div>
+
+      <h4 class="section-label" data-fixture="notes-label">Notes</h4>
+      <div class="notes" data-fixture="notes">
+        <p data-fixture="note-1">Customer asked for delivery before the office reopens on Monday.</p>
+        <p data-fixture="note-2">Leave with reception if nobody answers at the loading bay.</p>
+      </div>
+
+      <div class="panel-actions" data-fixture="actions">
+        <button class="button primary" data-fixture="approve" type="button">Approve order</button>
+        <button class="button" data-fixture="hold" type="button">Put on hold</button>
+      </div>
+    </aside>
+  </body>
+</html>

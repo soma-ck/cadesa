@@ -58,6 +58,7 @@
     "fuzz": "tsx scripts/fuzz.ts",
     "breaks": "tsx scripts/gen-breaks.ts",
     "conformance:lift": "tsx scripts/conformance.ts --lift fixtures/legacy.css --fixtures fixtures/legacy.html --out artifacts/legacy",
+    "conformance:css": "tsx scripts/conformance.ts --lift fixtures/css/panel.css --fixtures fixtures/css/panel.html --widths 320-1440/10 --out artifacts/css-panel && tsx scripts/conformance.ts --lift fixtures/css/article.css --fixtures fixtures/css/article.html --widths 320-1440/10 --out artifacts/css-article && tsx scripts/conformance.ts --lift fixtures/css/dashboard.css --fixtures fixtures/css/dashboard.html --widths 320-1440/10 --out artifacts/css-dashboard",
     "bench": "npm run build:ts && tsx bench/run.ts",
     "bench:discovery": "npm run build:ts && tsx bench/discovery/run.ts",
     "conformance:pricing": "tsx scripts/conformance.ts --source examples/pricing/pricing.cadesa.yaml --css examples/pricing/pricing.css --fixtures examples/pricing/pricing.html --widths $(seq -s, 300 7 1300) --out artifacts/pricing",

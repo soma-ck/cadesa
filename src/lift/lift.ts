@@ -382,6 +382,11 @@ export interface LiftInput {
   resets: Map<string, Set<string>>;
   /** Browser defaults are part of the declarations (a page front end computed the whole cascade). */
   uaInCascade?: boolean;
+  /**
+   * `width: 100%` becomes a "100%" size token rather than fill (exact in a cluster too). Lifting
+   * Cadesa's own output keeps fill.
+   */
+  fullWidthAsPercent?: boolean;
   /** Declarations read, for stats. */
   declarations: number;
 }
@@ -646,7 +651,7 @@ export function liftElements(input: LiftInput): LiftResult {
     const basis = take("flex-basis");
     if (width) {
       const v = width.value.trim();
-      if (v === "100%" || (v === "auto" && alignSelf?.value.trim() === "stretch")) out.width = "fill";
+      if ((v === "100%" && !input.fullWidthAsPercent) || (v === "auto" && alignSelf?.value.trim() === "stretch")) out.width = "fill";
       else if (v !== "auto") {
         const t = sizeToken(v);
         if (t) out.width = t;

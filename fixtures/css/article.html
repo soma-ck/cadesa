@@ -1,0 +1,54 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: an article in plain CSS</title>
+    <link rel="stylesheet" href="article.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <header class="site-header" data-fixture="site">
+      <p class="site-name" data-fixture="site-name">Field Notes</p>
+    </header>
+    <article class="post" data-fixture="post">
+      <header class="post-header" data-fixture="post-header">
+        <h1 data-fixture="title">What a week of measuring line breaks taught us</h1>
+        <p class="byline" data-fixture="byline">Noor Haddad · 9 min read</p>
+      </header>
+      <p class="lede" data-fixture="lede">Text that wraps one word earlier than you expected moves everything under it. We spent a week finding out why.</p>
+      <p data-fixture="p1">Most layout bugs that reach production are not exotic. A heading wraps at one width and not another, a button label grows by a word after translation, a card gets one line taller than its neighbours.</p>
+      <h2 data-fixture="h-measure">Measure first</h2>
+      <p data-fixture="p2">Before changing any style, we measured every text box on the page at every width from phones to wide desktops, and kept the numbers next to the source.</p>
+      <figure data-fixture="figure">
+        <img src="../../examples/landing/assets/glacier.svg" alt="" data-fixture="figure-img" />
+        <figcaption data-fixture="caption">The same paragraph at 320, 768 and 1280 pixels.</figcaption>
+      </figure>
+      <p data-fixture="p3">The surprises were all in the margins: the browser's own spacing around headings and paragraphs, and the way two margins meet and become one.</p>
+      <h2 data-fixture="h-findings">What we found</h2>
+      <ul data-fixture="list">
+        <li data-fixture="li-1">Headings wrap more often than body text.</li>
+        <li data-fixture="li-2">Margins between paragraphs collapse into one.</li>
+      </ul>
+      <blockquote data-fixture="quote">Measure the page you ship, not the page you designed.</blockquote>
+      <div class="callout" data-fixture="callout">
+        <p data-fixture="callout-1">Every number in this post came from the browser itself.</p>
+        <p data-fixture="callout-2">We compared each box at every ten pixels of width.</p>
+      </div>
+      <p data-fixture="p4">Next week: what happens when the font changes under you.</p>
+      <footer class="post-footer" data-fixture="footer">
+        <div class="tags" data-fixture="tags">
+          <span class="tag" data-fixture="tag-1">layout</span>
+          <span class="tag" data-fixture="tag-2">typography</span>
+          <span class="tag" data-fixture="tag-3">testing</span>
+        </div>
+      </footer>
+    </article>
+  </body>
+</html>

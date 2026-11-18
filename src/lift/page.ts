@@ -110,6 +110,8 @@ export interface El {
   notes: Map<string, { note: Note; states: Set<number> }>;
   space: ({ axis: "x" | "y"; value: string; utility: string } | undefined)[];
   nowrap: boolean[];
+  /** A wrapping row's own row gap, when it differs from the column gap (dropped from the lift). */
+  rowGap: (string | undefined)[];
   /** Has margin-inline: auto as a flex-row item (handled as a visual offset). */
   autoMargin: boolean[];
   gridCols: ({ n: number; gap: number } | undefined)[];
@@ -412,6 +414,7 @@ export abstract class PageLifter {
       notes: new Map(),
       space: [],
       nowrap: [],
+      rowGap: [],
       autoMargin: [],
       gridCols: [],
     });
@@ -529,7 +532,8 @@ export abstract class PageLifter {
       const o = own.get(p);
       if (o) {
         const v = this.resolve(el, si, o.value);
-        if (v !== undefined) t.inherited.set(p, { value: v, utility: o.utility });
+        // inherit (and unset, for an inherited property) keeps the parent's value.
+        if (v !== undefined && !/^(inherit|unset)$/.test(v)) t.inherited.set(p, { value: v, utility: o.utility });
       }
     }
     el.text[si] = t;
@@ -667,6 +671,12 @@ export abstract class PageLifter {
               handled.add(gapProp);
             } else this.note(el, si, { decl: space.utility, reason: "space-* margins on top of a gap (or across the flex axis) are not modelled", kind: "geometry" });
           }
+          // A wrapping row whose gaps differ: the column gap is the cluster's; the row gap only
+          // matters once the row wraps, which dynamic() decides per width.
+          if (dir === "row" && rowGap && colGap && !handled.has("row-gap") && !handled.has("column-gap") && this.resolve(el, si, rowGap.value) !== this.resolve(el, si, colGap.value)) {
+            el.rowGap[si] = `${rowGap.utility} (row-gap: ${rowGap.value})`;
+            rowGap = undefined;
+          }
           for (const [p, o] of [["row-gap", rowGap], ["column-gap", colGap]] as const)
             if (o && !handled.has(p)) {
               decl(p, this.len(el, si, o) ?? o.value, o.utility);
@@ -678,7 +688,8 @@ export abstract class PageLifter {
           const jc = res("justify-content");
           if (jc && !/^(normal|flex-start|start|left)$/.test(jc) && (dir !== "column" || own.has("height") || own.has("min-height"))) {
             handled.add("justify-content");
-            for (const c of kids) this.note(c, si, { decl: `${own.get("justify-content")!.utility} on the parent (justify-content: ${jc})`, reason: "moves the item along its row; Cadesa packs items at the start", kind: "visual" });
+            // space-between leaves the first item where it is (it starts its line).
+            for (const c of kids.slice(/^space-between$/.test(jc) ? 1 : 0)) this.note(c, si, { decl: `${own.get("justify-content")!.utility} on the parent (justify-content: ${jc})`, reason: "moves the item along its row; Cadesa packs items at the start", kind: "visual" });
           } else if (jc) handled.add("justify-content");
           const ai = res("align-items");
           if (dir === "column" && ai && !/^(normal|stretch)$/.test(ai)) {
@@ -775,8 +786,8 @@ export abstract class PageLifter {
           const w = own.get(`border-${s}-width`);
           const st = own.get(`border-${s}-style`);
           const c = own.get(`border-${s}-color`);
-          decl(`border-${s}-width`, w ? (this.resolve(el, si, w.value) ?? "0") : "0", w?.utility ?? "preflight");
-          decl(`border-${s}-style`, st ? (this.resolve(el, si, st.value) ?? "solid") : this.preflight ? "solid" : "none", st?.utility ?? "preflight");
+          decl(`border-${s}-width`, w ? (this.resolve(el, si, w.value) ?? "0") : "0", w?.utility ?? (this.preflight ? "preflight" : "browser default"));
+          decl(`border-${s}-style`, st ? (this.resolve(el, si, st.value) ?? "solid") : this.preflight ? "solid" : "none", st?.utility ?? (this.preflight ? "preflight" : "browser default"));
           const cv = c ? this.resolve(el, si, c.value) : "currentcolor";
           const parsed = cv && !/^currentcolor$/i.test(cv) ? parseColor(cv, parseColor(text.color.hex)) : parseColor(text.color.hex);
           const hint = c && parsed && parsed.a >= 0.9995 ? hintOf(c.value, this.theme) : !c ? text.color.hint : undefined;
@@ -1058,6 +1069,7 @@ export abstract class PageLifter {
       bpName: (px) => names.get(px) ?? `max-${bpRaw.get(px)}`,
       layerChildren: new Map(),
       uaInCascade: this.uaInCascade,
+      fullWidthAsPercent: true,
       pageBackground: this.pageBackground,
       unlifted,
       resets,
@@ -1172,6 +1184,8 @@ export abstract class PageLifter {
         const el = byId.get(b.id);
         if (!el) continue;
         const sel = `[data-fixture="${b.id}"]`;
+        if (el.rowGap[si] && this.lineCount(b) > 1)
+          out.push({ file: this.page, line: el.line, selector: sel, decl: el.rowGap[si], reason: `the row wraps at ${layout.width}px and its row gap differs from its column gap; a cluster has one gap`, kind: "geometry" });
         if (el.nowrap[si] && b.children.length > 1) {
           if (this.lineCount(b) > 1)
             out.push({ file: this.page, line: el.line, selector: sel, decl: "flex (flex-wrap: nowrap)", reason: `the row doesn't fit at ${layout.width}px; Tailwind's flex row shrinks its items instead of wrapping`, kind: "geometry" });
