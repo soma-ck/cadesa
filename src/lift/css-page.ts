@@ -402,8 +402,15 @@ const sanitize = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .replace(/^(\d)/, "n$1");
 
-export function liftCssPage(page: string, html: string, cssFile: string, cssText: string): PageLift {
-  return new CssLifter(page, html, cssFile, cssText).run();
+/** One stylesheet given to the lift (several: comma-separated --css, in cascade order). */
+export interface SheetFile {
+  file: string;
+  text: string;
+}
+
+export function liftCssPage(page: string, html: string, cssFile: string | SheetFile[], cssText?: string): PageLift {
+  const sheets = typeof cssFile === "string" ? [{ file: cssFile, text: cssText ?? "" }] : cssFile;
+  return new CssLifter(page, html, sheets).run();
 }
 
 class CssLifter extends PageLifter {
@@ -411,42 +418,40 @@ class CssLifter extends PageLifter {
   rules: CssRuleIn[] = [];
   skipped: Sheet["skipped"] = [];
 
-  constructor(page: string, html: string, cssFile: string, cssText: string) {
-    super(page, html, cssFile);
-    this.label = `CSS, ${cssFile}`;
+  constructor(page: string, html: string, files: SheetFile[]) {
+    super(page, html, files.map((f) => f.file).join(","));
+    this.label = `CSS, ${files.map((f) => f.file).join(", ")}`;
     this.blockFlow = "flow";
     this.uaInCascade = true;
     this.preflight = false;
-    // Cascade order: the browser's defaults, then the page's stylesheets in document order (the
-    // given file where the page links it, else first), then style="" attributes.
+    // Cascade order: the browser's defaults, then the page's stylesheets in document order (each
+    // given file where the page links it; given files the page doesn't link come first, in the
+    // order given), then style="" attributes.
     const ua = readSheet("browser default", UA_CSS, "ua", 0);
-    const sheets: Sheet[] = [];
     const styleBlocks = [...html.matchAll(/<(link)\b([^>]*)>|<(style)\b[^>]*>([\s\S]*?)<\/style>/gi)];
-    let order = 1000;
-    let placed = false;
-    const base = cssFile.replace(/^.*[\\/]/, "");
-    const own = () => {
-      placed = true;
-      const s = readSheet(cssFile, cssText, "author", order);
-      order += s.rules.length + 1;
-      return s;
-    };
+    const baseOf = (f: string) => f.replace(/[?#].*$/, "").replace(/^.*[\\/]/, "");
+    const placed = new Set<SheetFile>();
+    /** In cascade order: a given file, or a <style> block (its text and line offset). */
+    const sources: ({ sheet: SheetFile } | { style: string; line: number })[] = [];
     for (const m of styleBlocks) {
       if (m[1]) {
         if (!/rel\s*=\s*["']?stylesheet/i.test(m[2])) continue;
         const href = /href\s*=\s*["']?([^"'\s>]+)/i.exec(m[2])?.[1] ?? "";
-        if (!placed && href.replace(/[?#].*$/, "").replace(/^.*\//, "") === base) sheets.push(own());
-        else if (href.replace(/[?#].*$/, "").replace(/^.*\//, "") !== base)
-          this.skipped.push({ file: page, line: lineAt(html, m.index!), text: `<link href="${href}">`, reason: `the page links ${href}, which isn't lifted; only ${cssFile} is` });
-      } else {
-        const body = m[4] ?? "";
-        const s = readSheet(`${page} <style>`, body, "author", order, lineAt(html, m.index!) - 1);
-        order += s.rules.length + 1;
-        sheets.push(s);
-      }
+        const given = files.find((f) => baseOf(f.file) === baseOf(href));
+        if (given && !placed.has(given)) {
+          placed.add(given);
+          sources.push({ sheet: given });
+        } else if (!given) {
+          const names = files.map((f) => f.file).join(", ");
+          this.skipped.push({ file: page, line: lineAt(html, m.index!), text: `<link href="${href}">`, reason: `the page links ${href}, which isn't lifted; only ${names} ${files.length > 1 ? "are" : "is"} (give every stylesheet: --css a.css,b.css)` });
+        }
+      } else sources.push({ style: m[4] ?? "", line: lineAt(html, m.index!) - 1 });
     }
-    if (!placed) sheets.unshift(own());
-    for (const s of [ua, ...sheets]) {
+    sources.unshift(...files.filter((f) => !placed.has(f)).map((sheet) => ({ sheet })));
+    let order = 1000;
+    for (const src of [ua, ...sources]) {
+      const s = "rules" in src ? src : "sheet" in src ? readSheet(src.sheet.file, src.sheet.text, "author", order) : readSheet(`${page} <style>`, src.style, "author", order, src.line);
+      if (!("rules" in src)) order += s.rules.length + 1;
       this.rules.push(...s.rules);
       this.skipped.push(...s.skipped);
     }

@@ -86,11 +86,14 @@ const pageCache = new Map<string, PageLift>();
 /** Lift a page with its stylesheet (cached per file contents, so one command lifts once). */
 function pageLiftFile(kind: "tailwind" | "css", page: string, css: string): PageLift {
   const html = readFileSync(page, "utf8");
-  const cssText = readFileSync(css, "utf8");
-  const key = createHash("sha256").update(kind).update("\0").update(page).update("\0").update(html).update("\0").update(css).update("\0").update(cssText).digest("hex");
+  // --css takes several stylesheets, comma-separated (a framework's CSS and the app's own).
+  const files = (kind === "css" ? css.split(",").map((f) => f.trim()).filter(Boolean) : [css]).map((file) => ({ file, text: readFileSync(file, "utf8") }));
+  const hash = createHash("sha256").update(kind).update("\0").update(page).update("\0").update(html);
+  for (const f of files) hash.update("\0").update(f.file).update("\0").update(f.text);
+  const key = hash.digest("hex");
   let t = pageCache.get(key);
   if (!t) {
-    t = kind === "tailwind" ? liftTailwind(page, html, css, cssText) : liftCssPage(page, html, css, cssText);
+    t = kind === "tailwind" ? liftTailwind(page, html, css, files[0].text) : liftCssPage(page, html, files);
     pageCache.clear();
     pageCache.set(key, t);
   }

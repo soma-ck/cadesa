@@ -47,7 +47,8 @@ Usage:
   cadesa metrics  --auto <page.html> --css <file.css>   same as cadesa fonts ... --measure
   cadesa mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
 
-  render, whatif, explain and check also accept --css <file.css> instead of --source:
+  render, whatif, explain and check also accept --css <file.css> instead of --source (several
+  stylesheets comma-separated, in cascade order: --css bootstrap.css,app.css):
   the page and its CSS are lifted on the fly (the whole cascade, element by element: block flow
   with margins, percentage widths, inherited text), and boxes it can't predict exactly are marked ≈.
   lift <file.css> --fixture <page.html> lifts the same way and shows the source.

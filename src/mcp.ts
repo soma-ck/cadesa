@@ -56,7 +56,7 @@ const sourceShape = {
   css: z
     .string()
     .optional()
-    .describe("Path to a plain CSS file to lift on the fly instead of a Cadesa source; boxes it can't predict exactly are marked ≈"),
+    .describe("Path to a plain CSS file to lift on the fly instead of a Cadesa source (several, comma-separated, e.g. a framework's CSS and the app's: bootstrap.css,app.css); boxes it can't predict exactly are marked ≈"),
   sourceText: z
     .string()
     .optional()
