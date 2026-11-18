@@ -23,7 +23,7 @@ export interface Fixture {
   body: FixtureNode[];
 }
 
-interface P5Node {
+export interface P5Node {
   nodeName: string;
   tagName?: string;
   value?: string;
@@ -45,12 +45,12 @@ const BLOCK = new Set([
   "p", "pre", "section", "summary", "table", "tr", "ul",
 ]);
 
-function textOf(n: P5Node): string {
+function textOf(n: P5Node, skip?: (n: P5Node) => boolean): string {
   if (n.nodeName === "#text") return n.value ?? "";
-  return (n.childNodes ?? []).map(textOf).join("");
+  return (n.childNodes ?? []).filter((c) => !skip?.(c)).map((c) => textOf(c, skip)).join("");
 }
 
-function runsOf(n: P5Node): string[] {
+function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): string[] {
   const runs: string[] = [];
   let cur = "";
   const flush = () => {
@@ -59,6 +59,7 @@ function runsOf(n: P5Node): string[] {
     cur = "";
   };
   const walk = (k: P5Node) => {
+    if (skip?.(k)) return;
     if (k.nodeName === "#text") cur += k.value ?? "";
     else if (k.tagName === "br") flush();
     else if (k.tagName && BLOCK.has(k.tagName)) {
@@ -70,6 +71,14 @@ function runsOf(n: P5Node): string[] {
   (n.childNodes ?? []).forEach(walk);
   flush();
   return runs;
+}
+
+/**
+ * Text and runs of a parse5 element, leaving out descendants `skip` rejects (e.g. elements that
+ * are never displayed). Same rules as the fixture parser.
+ */
+export function textAndRuns(n: P5Node, skip?: (n: P5Node) => boolean): { text: string; runs: string[] } {
+  return { text: collapse(textOf(n, skip)), runs: runsOf(n, skip) };
 }
 
 function convert(n: P5Node): FixtureNode {
