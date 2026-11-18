@@ -119,15 +119,17 @@ describe("lift details", () => {
 
   it("flags flex settings Cadesa can't express, and lifts the ones it can", () => {
     const r = one(".c{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap}");
-    expect(r.unlifted.map((u) => u.decl)).toEqual(["justify-content: space-between"]);
-    expect(style(r, "c").layout).toEqual({ pattern: "cluster", align: "end" });
+    expect(r.unlifted.map((u) => u.decl)).toEqual([]);
+    expect(style(r, "c").layout).toEqual({ pattern: "cluster", align: "end", justify: "between" });
+    expect(one(".c{display:flex;flex-wrap:wrap;justify-content:stretch}").unlifted.map((u) => u.decl)).toEqual(["justify-content: stretch"]);
     expect(one(".c{display:flex;flex-wrap:wrap;align-items:baseline}").unlifted.map((u) => u.decl)).toEqual(["align-items: baseline"]);
   });
 
-  it("converts rgb() and px line heights, and asymmetric padding is not lifted", () => {
+  it("converts rgb() and px line heights, and lifts asymmetric padding per side", () => {
     const r = one(".c__t{font-size:16px;line-height:24px;color:rgb(17, 24, 39)} .c__p{padding:1px 2px 3px 2px}");
     expect(r.data.text).toEqual({ t: { size: "16px", weight: 400, lineHeight: 1.5, color: "hex-111827" } });
-    expect(r.unlifted.map((u) => u.reason)).toContain("padding must be symmetric per axis (block, inline)");
+    expect(r.unlifted).toEqual([]);
+    expect((style(r, "c") as { slots: Record<string, unknown> }).slots.p).toEqual({ padding: { top: "px-1", bottom: "px-3", inline: "px-2" } });
   });
 
   it("classifies properties by what they can affect", () => {

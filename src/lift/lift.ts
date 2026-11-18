@@ -12,7 +12,12 @@ import { Document, isMap, isScalar, visit } from "yaml";
 import { parseCss, specificity, splitSelectors, type CssRule, type Decl, type ParsedCss } from "./css.js";
 import { classify } from "./selectors.js";
 
-export type ImpactKind = "geometry" | "text" | "visual" | "paint" | "state" | "none";
+/**
+ * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
+ * text), only its height (height: its width and its content's layout are known), only how it's
+ * drawn where it is (visual), paint, an interactive state, or nothing.
+ */
+export type ImpactKind = "geometry" | "text" | "height" | "visual" | "paint" | "state" | "none";
 
 export interface Unlifted {
   file: string;
@@ -52,7 +57,7 @@ export interface LiftResult {
 // ---------------------------------------------------------------- property classes
 
 const PAINT =
-  /^(color|background(-color|-image|-position|-size|-repeat|-clip|-origin|-attachment)?|box-shadow|outline.*|opacity|cursor|transition.*|animation.*|text-decoration.*|text-shadow|text-align|border(-top|-right|-bottom|-left)?-color|border(-top|-right|-bottom|-left)?-(left|right)?-?radius|border-radius|fill|stroke.*|filter|backdrop-filter|visibility|pointer-events|user-select|caret-color|accent-color|will-change|z-index|mix-blend-mode|appearance|-webkit-.*|-moz-.*|list-style.*|object-.*|scroll-.*|isolation|overflow(-x|-y)?|content|resize|touch-action|clip-path|mask.*)$/;
+  /^(color-adjust|print-color-adjust|forced-color-adjust|color|background(-color|-image|-position|-size|-repeat|-clip|-origin|-attachment)?|box-shadow|outline.*|opacity|cursor|transition.*|animation.*|text-decoration.*|text-shadow|text-align|border(-top|-right|-bottom|-left)?-color|border(-top|-right|-bottom|-left)?-(left|right)?-?radius|border-radius|fill|stroke.*|filter|backdrop-filter|visibility|pointer-events|user-select|caret-color|accent-color|will-change|z-index|mix-blend-mode|appearance|-webkit-.*|-moz-.*|list-style.*|object-.*|scroll-.*|isolation|overflow(-x|-y)?|content|resize|touch-action|clip-path|mask.*)$/;
 const TEXT =
   /^(font.*|letter-spacing|word-spacing|text-transform|white-space|line-height|text-indent|word-break|overflow-wrap|word-wrap|hyphens|tab-size|text-wrap.*|direction|unicode-bidi|writing-mode|text-rendering|font-kerning)$/;
 const VISUAL = /^(transform|translate|rotate|scale|perspective.*|transform-origin)$/;
@@ -64,12 +69,13 @@ export function kindOf(prop: string): ImpactKind {
   return "geometry";
 }
 
-const RANK: Record<ImpactKind, number> = { none: 0, state: 1, paint: 2, visual: 3, text: 4, geometry: 5 };
+const RANK: Record<ImpactKind, number> = { none: 0, state: 1, paint: 2, visual: 3, height: 4, text: 5, geometry: 6 };
 export const worst = (kinds: ImpactKind[]) => kinds.reduce((a, b) => (RANK[b] > RANK[a] ? b : a), "none" as ImpactKind);
 
 // ---------------------------------------------------------------- values
 
 const LENGTH = /^(?:\d+(?:\.\d+)?|\.\d+)(px|rem)$/;
+const SIGNED_LENGTH = /^-?(?:\d+(?:\.\d+)?|\.\d+)(px|rem)$/;
 const NAMED: Record<string, string> = { white: "#ffffff", black: "#000000" };
 const IDENT = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
 
@@ -114,6 +120,7 @@ class Tokens {
   literal(cat: Cat, raw: string): string {
     const known = this.byValue.get(`${cat}:${raw}`);
     if (known) return known;
+    if (raw.startsWith("-")) return this.add(cat, `px-n${String(Math.round(-pxOf(raw) * 100) / 100).replace(".", "-")}`, raw);
     const name =
       cat === "paint" || cat === "shadow"
         ? `${cat}-${(this.cats.get(cat)?.size ?? 0) + 1}`
@@ -208,6 +215,48 @@ function expand(d: Decl): Decl[] {
       return [d];
   }
 }
+
+/** Per-side tokens as Cadesa writes them: one value, { block, inline }, or sides (a missing side is 0). */
+function sidesValue(t: (string | undefined)[], all?: "width"): string | Record<string, string> {
+  const [top, right, bottom, left] = t;
+  if (top && top === right && right === bottom && bottom === left) return all ? { [all]: top } : top;
+  const m: Record<string, string> = {};
+  if (top && top === bottom) m.block = top;
+  else {
+    if (top) m.top = top;
+    if (bottom) m.bottom = bottom;
+  }
+  if (left && left === right) m.inline = left;
+  else {
+    if (right) m.right = right;
+    if (left) m.left = left;
+  }
+  if (all) {
+    // Border sides: no block/inline axes; spell each side.
+    const out: Record<string, string> = {};
+    for (const [k, i] of [["top", 0], ["right", 1], ["bottom", 2], ["left", 3]] as const) if (t[i]) out[k] = t[i]!;
+    return out;
+  }
+  return m;
+}
+
+/** flex shorthand → grow, shrink, basis (undefined when it can't be read). */
+export function parseFlex(v: string): { grow: number; shrink: number; basis: string } | undefined {
+  if (v === "none") return { grow: 0, shrink: 0, basis: "auto" };
+  if (v === "auto") return { grow: 1, shrink: 1, basis: "auto" };
+  if (v === "initial") return { grow: 0, shrink: 1, basis: "auto" };
+  const p = v.split(/\s+/);
+  const num = (x: string | undefined) => (x !== undefined && /^\d*\.?\d+$/.test(x) ? parseFloat(x) : undefined);
+  const g = num(p[0]);
+  if (g === undefined) return p.length === 1 ? { grow: 1, shrink: 1, basis: p[0] } : undefined;
+  if (p.length === 1) return { grow: g, shrink: 1, basis: "0" };
+  const sh = num(p[1]);
+  if (p.length === 2) return sh === undefined ? { grow: g, shrink: 1, basis: p[1] } : { grow: g, shrink: sh, basis: "0" };
+  if (p.length === 3 && sh !== undefined) return { grow: g, shrink: sh, basis: p[2] };
+  return undefined;
+}
+
+const UNSETTABLE_PROPS = new Set(["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "grow"]);
 
 // ---------------------------------------------------------------- the lift
 
@@ -435,13 +484,14 @@ export function liftElements(input: LiftInput): LiftResult {
     return m[2] ? { raw: m[2].trim() } : undefined;
   };
 
-  const lengthToken = (cat: Cat, value: string): string | undefined => {
+  const lengthToken = (cat: Cat, value: string, signed = false): string | undefined => {
     const r = resolveVar(value);
     if (!r) return undefined;
     let raw = r.raw;
     if (isZero(raw)) raw = "0px";
-    if (!LENGTH.test(raw)) return undefined;
-    return r.varName ? tokens.named(cat, r.varName, raw) : tokens.literal(cat, raw);
+    if (!(signed ? SIGNED_LENGTH : LENGTH).test(raw)) return undefined;
+    // A negative value is its own token (a var named for a gutter may hold either sign elsewhere).
+    return r.varName && !raw.startsWith("-") ? tokens.named(cat, r.varName, raw) : tokens.literal(cat, raw);
   };
   /** A size token that may be a percentage of the parent's width (width, max-width). */
   const sizeToken = (value: string): string | undefined => {
@@ -480,16 +530,17 @@ export function liftElements(input: LiftInput): LiftResult {
       const column = dir === "column";
       if (dir !== "row" && dir !== "column") note(e, s, display, `flex-direction: ${dir} has no Cadesa pattern`, "geometry");
       const pattern = column ? "stack" : "cluster";
-      if (!column && wrap === "nowrap")
-        note(e, s, display, "a non-wrapping flex row is lifted as a cluster; items may shrink instead of wrapping", "geometry");
       const av = align?.value.trim();
       if (align && column && !["stretch", "normal"].includes(av!)) note(e, s, align, "stack children always stretch", "geometry");
       const CLUSTER_ALIGN: Record<string, string> = { center: "center", "flex-start": "start", start: "start", "flex-end": "end", end: "end", stretch: "stretch", normal: "stretch" };
       const clusterAlign = av === undefined ? "stretch" : CLUSTER_ALIGN[av];
       if (!column && !clusterAlign) note(e, s, align!, `align-items: ${av} has no Cadesa equivalent`, "geometry");
       const jv = justify?.value.trim();
-      if (justify && !["flex-start", "start", "normal", "left"].includes(jv!) && !(column && !m.has("height")))
-        note(e, s, justify, `justify-content: ${jv} has no Cadesa equivalent`, "geometry");
+      const JUSTIFY: Record<string, string> = { "flex-start": "start", start: "start", normal: "start", left: "start", "flex-end": "end", end: "end", right: "end", center: "center", "space-between": "between", "space-around": "around", "space-evenly": "evenly" };
+      const clusterJustify = jv === undefined || column ? undefined : JUSTIFY[jv];
+      if (justify && column && !["flex-start", "start", "normal", "left"].includes(jv!) && m.has("height"))
+        note(e, s, justify, `justify-content: ${jv} in a column has no Cadesa equivalent`, "geometry");
+      else if (justify && !column && !clusterJustify) note(e, s, justify, `justify-content: ${jv} has no Cadesa equivalent`, "geometry");
       const gapDecl = column ? rowGap : colGap ?? rowGap;
       let gap: string | undefined;
       if (gapDecl && !isZero(resolveVar(gapDecl.value)?.raw ?? "x")) {
@@ -502,6 +553,8 @@ export function liftElements(input: LiftInput): LiftResult {
         pattern,
         ...(gap && { gap }),
         ...(!column && clusterAlign && clusterAlign !== "center" && { align: clusterAlign }),
+        ...(clusterJustify && clusterJustify !== "start" && { justify: clusterJustify }),
+        ...(!column && wrap === "nowrap" && { wrap: false }),
       };
     } else if (display && display.value.trim() === "flow") {
       // A page front end's marker: a block container whose children are block boxes.
@@ -544,16 +597,10 @@ export function liftElements(input: LiftInput): LiftResult {
     const pad = ["top", "right", "bottom", "left"].map((k) => take(`padding-${k}`));
     if (pad.some(Boolean)) {
       const v = pad.map((d) => (d ? d.value.trim() : "0"));
-      const blockOk = v[0] === v[2];
-      const inlineOk = v[1] === v[3];
-      if (!blockOk || !inlineOk) note(e, s, pad.find(Boolean)!, "padding must be symmetric per axis (block, inline)", "geometry");
-      else {
-        const block = isZero(v[0]) ? undefined : lengthToken("space", v[0]);
-        const inline = isZero(v[1]) ? undefined : lengthToken("space", v[1]);
-        if ((!isZero(v[0]) && !block) || (!isZero(v[1]) && !inline))
-          note(e, s, pad.find(Boolean)!, "padding must be a px or rem length", "geometry");
-        else if (block || inline) out.padding = block && inline && block === inline ? block : { ...(block && { block }), ...(inline && { inline }) };
-      }
+      const t = v.map((x) => (isZero(x) ? undefined : lengthToken("space", x)));
+      const bad = v.findIndex((x, i) => !isZero(x) && !t[i]);
+      if (bad >= 0) note(e, s, pad[bad]!, "padding must be a px or rem length", "geometry");
+      else if (t.some(Boolean)) out.padding = sidesValue(t);
     }
 
     // border
@@ -563,14 +610,25 @@ export function liftElements(input: LiftInput): LiftResult {
     if (bw.some(Boolean)) {
       const widths = bw.map((d) => (d ? d.value.trim() : "0"));
       const styles = bs.map((d) => (d ? d.value.trim() : "none"));
-      const visible = widths.map((w, i) => !isZero(w) && styles[i] !== "none");
-      if (visible.every((x) => !x)) {
+      const visible = widths.map((w, i) => !isZero(w) && !/^(none|hidden)$/.test(styles[i]));
+      const first = visible.indexOf(true);
+      if (first < 0) {
         /* no border */
-      } else if (visible.every(Boolean) && widths.every((w) => w === "1px") && styles.every((x) => x === "solid") && bc.every((c) => c && c.value === bc[0]!.value)) {
-        const c = colorToken(bc[0]!.value);
-        if (c) out.border = c;
-        else note(e, s, bc[0]!, "border color must be a hex or rgb() color", "paint");
-      } else note(e, s, bw.find(Boolean)!, "Cadesa borders are 1px solid on every side", "geometry");
+      } else {
+        const onePx = widths.every((w, i) => visible[i] && resolveVar(w)?.raw === "1px");
+        const keyword = (w: string) => (/^thin$/.test(w) ? "1px" : /^medium$/.test(w) ? "3px" : /^thick$/.test(w) ? "5px" : w);
+        const t = onePx ? [] : widths.map((w, i) => (visible[i] ? lengthToken("space", keyword(w)) : undefined));
+        const bad = onePx ? -1 : widths.findIndex((_, i) => visible[i] && !t[i]);
+        const c = colorToken(bc[first]?.value ?? "currentcolor");
+        if (bad >= 0) note(e, s, bw[bad] ?? bw.find(Boolean)!, "a border width must be a px or rem length", "geometry");
+        else {
+          if (styles.some((x, i) => visible[i] && x !== "solid")) note(e, s, bs.find((d, i) => visible[i] && d && d.value.trim() !== "solid") ?? bw.find(Boolean)!, "Cadesa borders are solid; this one paints differently", "paint");
+          if (bc.some((d, i) => visible[i] && d?.value !== bc[first]?.value)) note(e, s, bc.find((d, i) => visible[i] && d?.value !== bc[first]?.value) ?? bw[first]!, "a Cadesa border has one color; the sides differ", "paint");
+          if (!c) note(e, s, bc[first] ?? bw[first]!, "border color must be a hex or rgb() color", "paint");
+          const color = c ?? tokens.literal("color", "#000000");
+          out.border = onePx ? color : { color, ...(sidesValue(t, "width") as Record<string, string>) };
+        }
+      }
     }
 
     // radius
@@ -609,38 +667,22 @@ export function liftElements(input: LiftInput): LiftResult {
       else if (autoX) out.maxWidth = t;
       else out.measure = t;
     }
-    // Margins: px or rem lengths per side (auto inline margins are maxWidth's centering).
+    // Margins: px or rem lengths per side, negative ones too; auto left and right (with max-width,
+    // auto inline margins are maxWidth's centering).
     const sideTokens: (string | undefined)[] = [];
     let marginOk = true;
     margins.forEach((d, i) => {
       if (!d || isZero(d.value)) return;
       const v = d.value.trim();
       if (v === "auto" && (i === 1 || i === 3) && out.maxWidth) return;
-      const t = v === "auto" || v.startsWith("-") ? undefined : lengthToken("space", v);
+      const t = v === "auto" ? (i === 1 || i === 3 ? "auto" : undefined) : lengthToken("space", v, true);
       if (t) sideTokens[i] = t;
       else {
         marginOk = false;
-        note(e, s, d, v === "auto" ? "an auto margin is modelled only as left and right with max-width (centering)" : v.startsWith("-") ? "negative margins are not modelled" : "a margin must be a px or rem length", "geometry");
+        note(e, s, d, v === "auto" ? "a top or bottom auto margin is not modelled" : "a margin must be a px or rem length", "geometry");
       }
     });
-    if (marginOk && sideTokens.some(Boolean)) {
-      const [t, r, b, l] = [0, 1, 2, 3].map((i) => sideTokens[i]);
-      if (t === r && r === b && b === l) out.margin = t;
-      else {
-        const m: Record<string, string> = {};
-        if (t && t === b) m.block = t;
-        else {
-          if (t) m.top = t;
-          if (b) m.bottom = b;
-        }
-        if (l && l === r) m.inline = l;
-        else {
-          if (r) m.right = r;
-          if (l) m.left = l;
-        }
-        out.margin = m;
-      }
-    }
+    if (marginOk && sideTokens.some(Boolean)) out.margin = sidesValue(sideTokens);
 
     // width / height / flex item
     const width = take("width");
@@ -652,6 +694,7 @@ export function liftElements(input: LiftInput): LiftResult {
     if (width) {
       const v = width.value.trim();
       if ((v === "100%" && !input.fullWidthAsPercent) || (v === "auto" && alignSelf?.value.trim() === "stretch")) out.width = "fill";
+      else if (v === "fit-content") out.width = "fit";
       else if (v !== "auto") {
         const t = sizeToken(v);
         if (t) out.width = t;
@@ -660,11 +703,21 @@ export function liftElements(input: LiftInput): LiftResult {
     }
     if (alignSelf && !["auto", "stretch", "normal"].includes(alignSelf.value.trim()))
       note(e, s, alignSelf, `align-self: ${alignSelf.value.trim()} has no Cadesa equivalent`, "geometry");
-    if (flex && !["none", "0 0 auto", "initial", "0 1 auto"].includes(flex.value.trim()))
-      note(e, s, flex, `flex: ${flex.value.trim()} has no Cadesa equivalent`, "geometry");
-    if (grow && !isZero(grow.value)) note(e, s, grow, "flex-grow has no Cadesa equivalent", "geometry");
-    if (basis && basis.value.trim() !== "auto") note(e, s, basis, "flex-basis has no Cadesa equivalent", "geometry");
+    // flex: <grow> <shrink> <basis>. A grow factor maps to grow (basis 0 or auto); shrinking is
+    // Cadesa's own (a lone item too wide for its line), which flex-shrink: 0 switches off: page.ts
+    // decides per width whether that matters.
+    const fl = flex ? parseFlex(flex.value.trim()) : undefined;
+    if (flex && !fl) note(e, s, flex, `flex: ${flex.value.trim()} has no Cadesa equivalent`, "geometry");
+    const g = grow ? parseFloat(grow.value) : fl?.grow ?? 0;
+    const b = (basis?.value.trim() ?? fl?.basis ?? "auto").replace(/^0(px|%)?$/, "0");
     void shrink;
+    if (grow && isNaN(g)) note(e, s, grow, `flex-grow: ${grow.value} has no Cadesa equivalent`, "geometry");
+    else if (g > 0) {
+      if (b === "0") out.grow = { factor: g, basis: "zero" };
+      else if (b === "auto" || b === "content") out.grow = g;
+      else note(e, s, basis ?? flex!, `a flex basis of ${b} has no Cadesa equivalent (0 or auto)`, "geometry");
+    } else if (b !== "auto" && b !== "0" && !(b === "content")) note(e, s, basis ?? flex!, `flex-basis: ${b} has no Cadesa equivalent`, "geometry");
+    else if (b === "0" && (basis || fl)) note(e, s, basis ?? flex!, "flex-basis: 0 without a grow factor has no Cadesa equivalent", "geometry");
     const ar = take("aspect-ratio");
     if (ar) {
       const m = /^([\d.]+)\s*(?:\/\s*([\d.]+))?$/.exec(ar.value.trim());
@@ -701,7 +754,7 @@ export function liftElements(input: LiftInput): LiftResult {
     for (const p of ["min-width", "min-height", "max-height"]) {
       const d = take(p);
       // min-height equal to the height is what Cadesa emits with every height.
-      if (p === "min-height" && d && height && d.value.trim() === height.value.trim()) continue;
+      if (p === "min-height" && d && height && (d.value.trim() === height.value.trim() || (/^[\d.]+px$/.test(resolveVar(d.value)?.raw ?? "") && /^[\d.]+px$/.test(resolveVar(height.value)?.raw ?? "") && parseFloat(resolveVar(d.value)!.raw) <= parseFloat(resolveVar(height.value)!.raw)))) continue;
       if (d && !["0", "auto", "none", "0px"].includes(d.value.trim())) note(e, s, d, `${p} is not modelled`, "geometry");
     }
 
@@ -762,8 +815,11 @@ export function liftElements(input: LiftInput): LiftResult {
         }
         const ow = take("overflow-wrap") ?? take("word-wrap");
         const owv = ow?.value.trim();
-        if (ow && owv !== "anywhere" && owv !== "normal")
-          note(e, s, ow, `overflow-wrap: ${owv} is not modelled (anywhere is: it also lets min-content shrink)`, "text");
+        if (ow && !["anywhere", "break-word", "normal"].includes(owv!))
+          note(e, s, ow, `overflow-wrap: ${owv} is not modelled`, "text");
+        const ws = take("white-space") ?? take("text-wrap-mode");
+        const wsv = ws?.value.trim();
+        if (ws && !["normal", "nowrap", "wrap"].includes(wsv!)) note(e, s, ws, `white-space: ${wsv} is not modelled`, "text");
         const tt = take("text-transform");
         const transform = tt?.value.trim();
         if (tt && transform !== "uppercase" && transform !== "none") note(e, s, tt, `text-transform: ${transform} is not measured`, "text");
@@ -779,7 +835,7 @@ export function liftElements(input: LiftInput): LiftResult {
           ...((decoration === "none" || decoration === "underline") && { decoration }),
           ...(letterSpacing !== undefined && { letterSpacing }),
           ...(transform === "uppercase" && { transform }),
-          ...(owv === "anywhere" && { wrap: "anywhere" }),
+          ...(wsv === "nowrap" ? { wrap: "none" } : (owv === "anywhere" || owv === "break-word") && { wrap: owv }),
         };
         const key = JSON.stringify(spec);
         let role = roles.get(key);
@@ -862,7 +918,8 @@ export function liftElements(input: LiftInput): LiftResult {
       };
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {
         for (const k of lost(a, b)) {
-          if (zero[k]) d[k] = zero[k]();
+          if (UNSETTABLE_PROPS.has(k)) d[k] = "none";
+          else if (zero[k]) d[k] = zero[k]();
           else
             unlifted.push({
               file: css.file,

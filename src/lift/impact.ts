@@ -13,6 +13,7 @@
  *   state (:hover)     → nothing in the default state.
  */
 import { walk, type Box, type Layout } from "../engine/layout.js";
+import { insets } from "../resolve.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import type { LiftResult, Unlifted } from "./lift.js";
 import { locate, match, type Located } from "./selectors.js";
@@ -43,6 +44,30 @@ const UA_CONTROL = new Set(["button", "input", "select", "textarea"]);
 
 const where = (u: Unlifted) => `${u.file}${u.line ? `:${u.line}` : ""}`;
 export const describeUnlifted = (u: Unlifted) => `${where(u)} ${u.decl ? `${u.decl.split(";")[0]}` : u.selector}: ${u.reason}`;
+
+/** A cluster's children, line by line (a line starts where an item is left of the one before). */
+export function linesOf(b: Box): Box[][] {
+  const out: Box[][] = [];
+  let prevRight = -Infinity;
+  for (const c of b.children) {
+    if (!out.length || c.x < prevRight - 0.001) out.push([]);
+    out.at(-1)!.push(c);
+    prevRight = c.x + c.w;
+  }
+  return out;
+}
+
+/** A cluster taller than its lines (a set height, an aspect ratio, or stretched): its lines share the extra height. */
+function stretched(b: Box): boolean {
+  const lines = linesOf(b);
+  const m = (c: Box) => (c.props.margin?.value.top ?? 0) + c.h + (c.props.margin?.value.bottom ?? 0);
+  const natural = lines.reduce((t, ln) => t + Math.max(0, ...ln.map(m)), 0) + (b.props.gap?.value ?? 0) * (lines.length - 1);
+  const i = insets(b.props);
+  return !!b.props.height || !!b.props.aspect || b.h > natural + i.top + i.bottom + 0.001;
+}
+
+/** A box that places rows inside its height (stretching it moves its children). */
+const placesRows = (b: Box) => /^(cluster|grid|layer)$/.test(b.props.pattern?.value ?? "") || (b.props.pattern?.value === "stack" && b.children.some((c) => c.props.grow));
 
 function applies(u: Unlifted, width: number) {
   if (!u.when) return true;
@@ -81,13 +106,37 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
   const subtree = (b: Box, e: Effect, why: string) => {
     for (const x of walk([b])) mark(x, e, why);
   };
-  const sizeChange = (b: Box, why: string) => {
-    subtree(b, "size", why);
+  /**
+   * heightOnly: only the box's height is unknown (its width, and how its content is laid out, are
+   * known). Then only what is below it moves: in a cluster, later lines, and on its own line the
+   * items aligned by height (center, end) or stretched to it (only their own box, unless they
+   * place rows inside it).
+   */
+  const sizeChange = (b: Box, why: string, heightOnly = false) => {
+    if (heightOnly) mark(b, "size", why);
+    else subtree(b, "size", why);
     let cur = b;
     for (let p = parentOf.get(cur); p; cur = p, p = parentOf.get(cur)) {
       const i = p.children.indexOf(cur);
-      const sibs = p.props.pattern?.value === "cluster" ? p.children.filter((c) => c !== cur) : p.children.slice(i + 1);
-      for (const s of sibs) subtree(s, "position", `moved by #${b.id}: ${why}`);
+      const moved = `moved by #${b.id}: ${why}`;
+      const pattern = p.props.pattern?.value;
+      const grows = pattern === "stack" && p.children.some((c) => c.props.grow);
+      if (heightOnly && pattern === "cluster" && !stretched(p)) {
+        const lines = linesOf(p);
+        const li = lines.findIndex((ln) => ln.includes(cur));
+        const align = p.props.align?.value ?? "center";
+        lines.forEach((ln, k) => {
+          for (const s of ln) {
+            if (s === cur || k < li) continue;
+            if (k > li || align === "center" || align === "end") subtree(s, "position", moved);
+            else if (align === "stretch" && !s.props.height) (placesRows(s) ? subtree : mark)(s, "size", `stretched with #${b.id}: ${why}`);
+          }
+        });
+      } else {
+        const shared = pattern === "cluster" || grows;
+        const sibs = shared ? p.children.filter((c) => c !== cur) : p.children.slice(i + 1);
+        for (const s of sibs) subtree(s, "position", moved);
+      }
       mark(p, "size", `resized by #${b.id}: ${why}`);
     }
     const roots = l.boxes;
@@ -116,6 +165,7 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
       const b = boxOf.get(t.loc.node);
       if (!b) continue;
       if (u.kind === "geometry" || u.kind === "text" || t.pseudo) sizeChange(b, why);
+      else if (u.kind === "height") sizeChange(b, why, true);
       else if (u.kind === "visual") subtree(b, "visual", why);
       else if (u.kind === "paint") (u.decl?.startsWith("color") ? subtree : mark)(b, "paint", why);
     }

@@ -112,15 +112,20 @@ describe("utility mapping", () => {
     const t = tw(page(`<div class="flex items-center justify-between"><a class="text-sm/6 hover:text-gray-900">a</a><p class="rounded-full bg-indigo-600/10 text-xs/5">b</p></div><p class="text-lg/8 dark:bg-black">c</p>`), CSS + "\n@layer utilities { @media (prefers-color-scheme: dark) { .dark\\:bg-black { background-color: #000; } } }\n");
     const u = t.lifted.unlifted;
     expect(u.find((x) => x.decl?.startsWith("hover:text-gray-900"))?.kind).toBe("state");
-    // space-between leaves the first item in place; the others move.
-    expect(u.filter((x) => x.decl?.startsWith("justify-between")).map((x) => [x.kind, x.className])).toEqual([["visual", "ca-div__p"]]);
+    // justify-between is the cluster's justify: nothing left unmodelled.
+    expect(u.filter((x) => x.decl?.startsWith("justify-between"))).toEqual([]);
+    expect((t.lifted.data.styles as Record<string, { layout: unknown }>).div.layout).toMatchObject({ pattern: "cluster", justify: "between" });
     expect(u.find((x) => x.decl === "dark:bg-black")?.kind).toBe("none");
   });
 
-  it("flags a non-wrapping flex row only at widths where it would wrap", () => {
+  it("lays out a non-wrapping flex row on one line, its items shrinking to fit", () => {
     const t = tw(page(`<div class="flex gap-x-4"><span class="text-base/6">Northwind warehouse dashboard</span><span class="text-base/6">Operators actually open it</span></div>`));
     expect(t.dynamic(boxAt(t, 1280).layout)).toEqual([]);
-    expect(t.dynamic(boxAt(t, 320).layout).map((u) => u.kind)).toEqual(["geometry"]);
+    const narrow = boxAt(t, 320);
+    expect(t.dynamic(narrow.layout)).toEqual([]);
+    const [a, b] = narrow.layout.boxes[0].children;
+    expect(a.y).toBe(b.y);
+    expect(b.x + b.w).toBeLessThanOrEqual(320);
   });
 
   it("adds generated classes and ids without touching the original markup", () => {

@@ -22,9 +22,12 @@ import { walk, type Box, type Layout } from "../engine/layout.js";
 import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type P5Node } from "../fixture.js";
 import { loadSource } from "../load.js";
 import { modelOf, render } from "../project.js";
+import { borderPx, insets } from "../resolve.js";
+import { lineHeightPx } from "../engine/layout.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
 import type { Decl } from "./css.js";
-import { emitYaml, kindOf, liftElements, type ImpactKind, type LiftedElement, type LiftResult, type Unlifted } from "./lift.js";
+import { linesOf } from "./impact.js";
+import { emitYaml, kindOf, liftElements, parseFlex, type ImpactKind, type LiftedElement, type LiftResult, type Unlifted } from "./lift.js";
 
 // ---------------------------------------------------------------- states
 
@@ -68,6 +71,11 @@ export interface Origin {
   value: string;
   utility: string;
   important?: boolean;
+  /**
+   * Set by a shorthand whose value has var(): which longhand gets which part is only known once
+   * the variables are substituted (`border: var(--w) solid var(--c)`), so it's expanded then.
+   */
+  shorthand?: string;
 }
 
 export interface TextCtx {
@@ -112,15 +120,28 @@ export interface El {
   nowrap: boolean[];
   /** A wrapping row's own row gap, when it differs from the column gap (dropped from the lift). */
   rowGap: (string | undefined)[];
-  /** Has margin-inline: auto as a flex-row item (handled as a visual offset). */
-  autoMargin: boolean[];
+  /** A flex-row item without a width that may not shrink (flex-shrink: 0), with the declaration. */
+  noShrink: (string | undefined)[];
   gridCols: ({ n: number; gap: number } | undefined)[];
+  /**
+   * An inline element laid out as a block (per state): "block" wraps only block-level boxes, alone
+   * between blocks (block-in-inline: Chromium lays its children out as if it were a block with no
+   * padding or border, and its box is theirs); "empty" has nothing in it (a zero-size box where the
+   * next block starts, e.g. Angular's <router-outlet>).
+   */
+  asBlock: ("block" | "empty" | undefined)[];
+  /** An inline-block alone on its line whose line box is exactly its margin box: lifted as a block of its content's width. */
+  alone: boolean[];
+  /** A run of text among element children (added after the cascade): its anonymous box. */
+  anonymous?: string;
   /** The (shared) slot or root this element's styles are emitted under. */
   signature?: string;
 }
 
 export const SKIP = new Set(["script", "style", "template", "noscript", "head", "title", "meta", "link", "base"]);
 export const INLINE = new Set(["a", "abbr", "b", "bdi", "bdo", "cite", "code", "data", "dfn", "em", "i", "kbd", "mark", "q", "s", "samp", "small", "span", "strong", "sub", "sup", "time", "u", "var", "wbr", "br", "label", "del", "ins"]);
+/** Elements Chromium's default stylesheet makes blocks. Any other element (custom elements like <app-root> too) is inline. */
+const BLOCK_TAGS = new Set(["html", "body", "div", "p", "section", "article", "header", "footer", "nav", "main", "aside", "h1", "h2", "h3", "h4", "h5", "h6", "hgroup", "ul", "ol", "menu", "dl", "dt", "dd", "form", "fieldset", "legend", "figure", "figcaption", "blockquote", "pre", "address", "hr", "details", "summary", "dialog", "search", "center", "dir", "listing", "plaintext", "xmp", "optgroup", "option", "frameset", "frame"]);
 export const INLINE_BLOCK = new Set(["button", "input", "select", "textarea", "meter", "progress"]);
 export const REPLACED_BLOCK = new Set(["img", "svg", "video", "canvas", "audio", "iframe", "embed", "object"]);
 const CONTROL = new Set(["input", "select", "textarea"]);
@@ -248,6 +269,31 @@ export function longhands(prop: string, value: string): [string, string][] {
   }
   return [[prop, value]];
 }
+
+/** Shorthands expanded only after var() substitution, with every longhand each may set. */
+const DEFERRED: Record<string, string[]> = (() => {
+  const sides = (f: (s: string) => string) => SIDES.map(f);
+  const border = (ss: readonly string[]) => ss.flatMap((s) => [`border-${s}-width`, `border-${s}-style`, `border-${s}-color`]);
+  const out: Record<string, string[]> = {
+    margin: sides((s) => `margin-${s}`),
+    padding: sides((s) => `padding-${s}`),
+    "margin-inline": ["margin-left", "margin-right"],
+    "margin-block": ["margin-top", "margin-bottom"],
+    "padding-inline": ["padding-left", "padding-right"],
+    "padding-block": ["padding-top", "padding-bottom"],
+    border: border(SIDES),
+    "border-width": sides((s) => `border-${s}-width`),
+    "border-style": sides((s) => `border-${s}-style`),
+    "border-color": sides((s) => `border-${s}-color`),
+    gap: ["row-gap", "column-gap"],
+    inset: [...SIDES],
+    font: ["font-style", "font-weight", "font-size", "line-height", "font-family"],
+    background: ["background-color", "background-image", "background"],
+    "border-radius": ["border-radius", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"],
+  };
+  for (const s of SIDES) out[`border-${s}`] = border([s]);
+  return out;
+})();
 
 // ---------------------------------------------------------------- values
 
@@ -377,6 +423,9 @@ export abstract class PageLifter {
     this.computeStates();
     this.computeRootText();
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.evaluate(el);
+    for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.expandDeferred(el);
+    this.anonymousText();
+    this.inlineBlocks();
     for (const el of this.els) this.classify(el);
     for (const el of this.els) this.synthesize(el);
     this.name();
@@ -415,8 +464,10 @@ export abstract class PageLifter {
       space: [],
       nowrap: [],
       rowGap: [],
-      autoMargin: [],
+      noShrink: [],
       gridCols: [],
+      asBlock: [],
+      alone: [],
     });
     if (htmlEl) {
       const h = mk(htmlEl, undefined, 0, 1);
@@ -468,12 +519,64 @@ export abstract class PageLifter {
     return simplify(v).trim();
   }
 
+  /** A box length (not font-size): as resolve(), with em as the element's own font size, also inside calc(). */
+  resolveBox(el: El, si: number, value: string): string | undefined {
+    const v = substitute(value, (n) => this.lookupVar(el, si, n));
+    if (v === INVALID) return undefined;
+    const size = this.textOf(el, si).size;
+    return simplify(v.replace(/(^|[\s(,*/+-])(\d*\.?\d+)em\b/g, (_, pre, n) => `${pre}${fmtNum(parseFloat(n) * size)}px`)).trim();
+  }
+
   apply(own: Map<string, Origin>, d: { prop: string; value: string; important: boolean }, utility: string) {
-    for (const [p, v] of d.prop.startsWith("--") ? [[d.prop, d.value] as [string, string]] : longhands(d.prop, d.value)) {
+    if (d.prop === "word-wrap") d = { ...d, prop: "overflow-wrap" }; // a legacy alias
+    const deferred = !d.prop.startsWith("--") && /\bvar\(/.test(d.value) ? DEFERRED[d.prop] : undefined;
+    const pairs: [string, string][] = d.prop.startsWith("--") ? [[d.prop, d.value]] : deferred ? deferred.map((p) => [p, d.value]) : longhands(d.prop, d.value);
+    for (const [p, v] of pairs) {
       const prev = own.get(p);
       if (prev?.important && !d.important) continue;
-      own.set(p, { value: v, utility, important: d.important });
+      own.set(p, { value: v, utility, important: d.important, ...(deferred && { shorthand: d.prop }) });
     }
+  }
+
+  /**
+   * A shorthand with var() in it, expanded. When each part of the value is one value once
+   * substituted, the longhands keep the part as written (`var(--spacing)`, so token names survive):
+   * by position, or for shorthands that assign by type (border, font, background) by matching the
+   * substituted parts.
+   */
+  expandShorthand(el: El, si: number, prop: string, raw: string): [string, string][] {
+    const v = this.resolve(el, si, raw);
+    if (v === undefined || v === "") return [];
+    const rawParts = raw.trim().split(/\s+(?![^(]*\))/);
+    const resParts = rawParts.map((p) => this.resolve(el, si, p));
+    if (resParts.some((p) => p === undefined || p === "" || /\s/.test(p))) return longhands(prop, v);
+    if (!/^(border|border-(top|right|bottom|left|inline|block|inline-start|inline-end|block-start|block-end)|font|background)$/.test(prop)) return longhands(prop, raw);
+    return longhands(prop, resParts.join(" ")).map(([p, x]) => {
+      const i = resParts.indexOf(x);
+      return [p, i >= 0 ? rawParts[i] : x];
+    });
+  }
+
+  /** Expand the shorthands apply() deferred, now that every custom property is known. */
+  expandDeferred(el: El) {
+    this.states.forEach((_, si) => {
+      const own = el.own[si];
+      if (!own) return;
+      const done = new Map<string, Map<string, string>>();
+      for (const [p, o] of [...own]) {
+        if (!o.shorthand) continue;
+        const key = `${o.shorthand}\0${o.value}`;
+        let parts = done.get(key);
+        if (!parts) {
+          parts = new Map(this.expandShorthand(el, si, o.shorthand, o.value));
+          done.set(key, parts);
+        }
+        // A part the value doesn't set: invalid at computed-value time, so the initial value (left out).
+        const part = parts.get(p);
+        if (part === undefined) own.delete(p);
+        else own.set(p, { value: part, utility: o.utility, important: o.important });
+      }
+    });
   }
 
   // ---- inherited text
@@ -543,6 +646,12 @@ export abstract class PageLifter {
   // ---- roles
 
   displayOf(el: El, si: number): string {
+    if (el.asBlock[si]) return "block";
+    return this.ownDisplay(el, si);
+  }
+
+  /** The display the cascade gives the element (the browser's default for its tag when nothing sets it). */
+  ownDisplay(el: El, si: number): string {
     const d = el.own[si].get("display");
     const v = d ? this.resolve(el, si, d.value) : undefined;
     if (v) return v;
@@ -552,7 +661,221 @@ export abstract class PageLifter {
     if (el.tag === "li") return "list-item";
     if (["table"].includes(el.tag)) return "table";
     if (["tr", "td", "th", "thead", "tbody", "tfoot", "caption", "colgroup", "col"].includes(el.tag)) return "table-part";
-    return "block";
+    return BLOCK_TAGS.has(el.tag) || el === this.bodyEl || el === this.htmlEl ? "block" : "inline";
+  }
+
+  /**
+   * An inline-block alone on its line in block flow, laid out as a block of its content's width: its
+   * line box is exactly its margin box when its text sits on the baseline in the same font, size
+   * and line height as the line's own (the strut), and its vertical margins can't collapse anyway
+   * (whatever they'd meet is zero).
+   */
+  aloneOnLine(el: El, si: number): boolean {
+    const parent = el.parent;
+    if (!parent || el.roles[si] !== "text") return false;
+    if (parent !== this.bodyEl && !/^(block|flow-root|list-item)$/.test(this.displayOf(parent, si))) return false;
+    if (parent.ownText) return false;
+    const shown = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
+    const sibs = parent.children.filter((k) => k !== el && shown(k));
+    if (sibs.some((k) => this.isInlineLevel(k, si) || k.tag === "br")) return false;
+    const res = (k: El, p: string) => {
+      const o = k.own[si].get(p);
+      return o ? this.resolve(k, si, o.value) : undefined;
+    };
+    if (!/^(baseline)?$/.test(res(el, "vertical-align") ?? "") || !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "")) return false;
+    const t = this.textOf(el, si);
+    const pt = this.textOf(parent, si);
+    const lh = (x: TextCtx) => (x.lineHeight === "normal" ? NaN : "num" in x.lineHeight ? lineHeightPx(x.size, x.lineHeight.num) : x.lineHeight.px);
+    if (t.size !== pt.size || t.family.value !== pt.family.value || !(lh(t) === lh(pt))) return false;
+    if (!/^(start|left|unset|initial|-webkit-auto)?$/.test(pt.inherited.get("text-align")?.value ?? "")) return false;
+    if (t.inherited.get("direction")?.value === "rtl") return false;
+    const px = (k: El, p: string) => lengthPx(res(k, p) ?? "0", this.textOf(k, si).size) ?? NaN;
+    const edge = (k: El, side: "top" | "bottom") => px(k, `padding-${side}`) > 0 || (px(k, `border-${side}-width`) > 0 && !/^(none|hidden)$/.test(res(k, `border-${side}-style`) ?? "none"));
+    // A margin that would meet nothing: the neighbour's own margin is 0 and nothing collapses through it.
+    const tight = (k: El, side: "top" | "bottom") =>
+      px(k, `margin-${side}`) === 0 && (k.roles[si] === "text" || k.roles[si] === "leaf" || edge(k, side) || /flex|grid/.test(this.displayOf(k, si)));
+    const i = sibs.findIndex((k) => parent.children.indexOf(k) > parent.children.indexOf(el));
+    const prev = (i < 0 ? sibs : sibs.slice(0, i)).at(-1);
+    const next = i < 0 ? undefined : sibs[i];
+    const parentDisplay = parent.parent ? this.displayOf(parent.parent, si) : "block";
+    const contained = (side: "top" | "bottom") => parent !== this.bodyEl && (edge(parent, side) || /flex|grid/.test(parentDisplay));
+    for (const side of ["top", "bottom"] as const) {
+      const m = px(el, `margin-${side}`);
+      if (!(m >= 0)) return false;
+      if (m === 0) continue;
+      const near = side === "top" ? prev : next;
+      if (near ? !tight(near, side === "top" ? "bottom" : "top") : !contained(side)) return false;
+    }
+    return true;
+  }
+
+  /** min-height no taller than one line of the element's text plus its padding and border (border-box). */
+  minHeightMet(el: El, si: number): boolean {
+    const t = this.textOf(el, si);
+    if (t.lineHeight === "normal") return false;
+    const line = "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
+    const v = (p: string) => {
+      const d = el.own[si].get(p);
+      const r = d ? this.resolveBox(el, si, d.value) : "0";
+      return r === undefined ? NaN : (lengthPx(r, t.size) ?? NaN);
+    };
+    const border = (side: string) => (/^(none|hidden)$/.test(this.resolve(el, si, el.own[si].get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(v(`border-${side}-width`)));
+    const sizing = this.resolve(el, si, el.own[si].get("box-sizing")?.value ?? "content-box");
+    const extra = sizing === "border-box" ? v("padding-top") + v("padding-bottom") + border("top") + border("bottom") : 0;
+    return v("min-height") <= line + extra + 1e-6;
+  }
+
+  /**
+   * A text field, select or textarea without native appearance: its line height (× rows for a
+   * textarea) plus padding and border (border-box px), or undefined when that isn't its height.
+   */
+  controlHeight(el: El, si: number): number | undefined {
+    const res = (p: string) => {
+      const o = el.own[si].get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    if ((res("appearance") ?? res("-webkit-appearance")) !== "none") return undefined;
+    const type = (attr(el.node, "type") ?? "text").toLowerCase();
+    if (el.tag === "input" && !/^(text|email|password|search|tel|url)$/.test(type)) return undefined;
+    if (el.tag === "select" && (attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1)) return undefined;
+    const t = this.textOf(el, si);
+    if (t.lineHeight === "normal") return undefined;
+    const line = "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
+    const rows = el.tag === "textarea" ? Number(attr(el.node, "rows") ?? "2") : 1;
+    if (!(rows >= 1) || !Number.isInteger(rows)) return undefined;
+    const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
+    let h = rows * line;
+    for (const side of ["top", "bottom"]) {
+      h += px(`padding-${side}`);
+      if (!/^(none|hidden)$/.test(res(`border-${side}-style`) ?? "none")) h += borderPx(px(`border-${side}-width`));
+    }
+    if (!isFinite(h)) return undefined;
+    // min-height / max-height that would change it: not this simple case.
+    const min = el.own[si].get("min-height") ? this.resolveBox(el, si, el.own[si].get("min-height")!.value) : undefined;
+    const max = res("max-height");
+    if ((min && !/^(auto|0(px)?)$/.test(min) && !(lengthPx(min, t.size)! <= h)) || (max && max !== "none")) return undefined;
+    return h;
+  }
+
+  /**
+   * Text directly inside an element that also has element children: each text node becomes an
+   * anonymous child (after the cascade, so no selector matches it and :first-child etc. are
+   * unchanged). In a flex or grid container it is an anonymous item; in block flow an anonymous
+   * block, when nothing inline-level sits beside it (see textRun).
+   */
+  anonymousText() {
+    const add = (el: El) => {
+      const nodes = el.node.childNodes ?? [];
+      if (el.children.length && el.ownText && el.tag !== "svg") {
+        const out: El[] = [];
+        let k = 0;
+        for (const n of nodes) {
+          if (n.tagName && !SKIP.has(n.tagName)) out.push(el.children[k++]);
+          else if (n.nodeName === "#text" && !isWs(n.value ?? "")) {
+            const text = (n.value ?? "").replace(/[ \t\n\r\f]+/g, " ").trim();
+            const a: El = {
+              node: n,
+              tag: "#text",
+              classes: [],
+              line: n.sourceCodeLocation?.startLine ?? el.line,
+              parent: el,
+              children: [],
+              index: -1,
+              siblings: 0,
+              ownText: true,
+              roles: [],
+              own: this.states.map(() => new Map()),
+              text: [],
+              decls: [],
+              notes: new Map(),
+              space: [],
+              nowrap: [],
+              rowGap: [],
+              noShrink: [],
+              gridCols: [],
+              asBlock: [],
+              alone: [],
+              anonymous: text,
+            };
+            out.push(a);
+            this.els.push(a);
+          }
+        }
+        el.children.forEach(add);
+        el.children = out;
+      } else el.children.forEach(add);
+    };
+    if (this.bodyEl) this.bodyEl.children.forEach(add);
+  }
+
+  /**
+   * Whether an anonymous text run lays out as a box of its own in state si: in a flex or grid
+   * container always (each text run is an item); in block flow only when no inline-level element
+   * sits next to it (they'd share its lines).
+   */
+  textRun(a: El, si: number): boolean {
+    const p = a.parent!;
+    if (/^(inline-)?(flex|grid)$/.test(this.displayOf(p, si))) return true;
+    const sibs = p.children.filter((k) => k.tag === "#text" || (this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si)));
+    const i = sibs.indexOf(a);
+    const near = [sibs[i - 1], sibs[i + 1]].filter(Boolean) as El[];
+    return near.every((k) => k.tag !== "#text" && !this.isInlineLevel(k, si) && k.tag !== "br");
+  }
+
+  /**
+   * Inline elements that lay out as blocks: an inline wrapping only block-level boxes (Angular's
+   * component elements, which are inline unless a :host rule says otherwise), and an empty inline,
+   * each alone between blocks (or in a flex or grid container, which blockifies it anyway). Neither
+   * may have padding, border or inline margins (those make line boxes of their own).
+   */
+  inlineBlocks() {
+    const px = (el: El, si: number, p: string) => {
+      const o = el.own[si].get(p);
+      const v = o ? this.resolve(el, si, o.value) : undefined;
+      return v === undefined ? 0 : (lengthPx(v, this.textOf(el, si).size) ?? NaN);
+    };
+    const bare = (el: El, si: number) =>
+      !el.ownText &&
+      SIDES.every((s) => px(el, si, `padding-${s}`) === 0 && (px(el, si, `border-${s}-width`) === 0 || /^(none|hidden)$/.test(this.resolve(el, si, el.own[si].get(`border-${s}-style`)?.value ?? "none") ?? "none"))) &&
+      px(el, si, "margin-left") === 0 && px(el, si, "margin-right") === 0;
+    const shown = (el: El, si: number) => this.ownDisplay(el, si) !== "none" && !this.outOfFlow(el, si);
+    const blockish = (el: El, si: number) => !!el.asBlock[si] || !/^(inline|inline-block|inline-flex|inline-grid|inline-flow-root|contents|none)$/.test(this.ownDisplay(el, si));
+    /** Bottom-up: content that qualifies (no text, only block-level children). */
+    const content = new Map<El, boolean[]>();
+    const visit = (el: El) => {
+      el.children.forEach(visit);
+      content.set(
+        el,
+        this.states.map((_, si) => {
+          if (this.ownDisplay(el, si) !== "inline" || INLINE.has(el.tag) || el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || !bare(el, si)) return false;
+          const kids = el.children.filter((k) => shown(k, si));
+          return kids.every((k) => content.get(k)![si] || blockish(k, si) || (k.tag === "br" ? false : false));
+        }),
+      );
+    };
+    if (this.bodyEl) visit(this.bodyEl);
+    /** Top-down: alone between blocks, or blockified by a flex or grid parent. */
+    const place = (el: El) => {
+      this.states.forEach((_, si) => {
+        if (!content.get(el)?.[si] || !el.parent) return;
+        const pd = this.ownDisplay(el.parent, si);
+        const blockified = /^(inline-)?(flex|grid)$/.test(pd);
+        const sibs = el.parent.children.filter((k) => k !== el && shown(k, si));
+        const alone = !el.parent.ownText && (el.parent === this.bodyEl || el.parent.asBlock[si] || !/^inline/.test(pd)) && sibs.every((k) => content.get(k)![si] || blockish(k, si));
+        if (!blockified && !alone) return;
+        const empty = !el.children.some((k) => shown(k, si));
+        // An empty one sits at the start of its line: only with text-align: start.
+        if (empty && !blockified && !/^(start|left|unset|initial|-webkit-auto)?$/.test(this.textOf(el.parent, si).inherited.get("text-align")?.value ?? "")) return;
+        if (empty && !blockified && SIDES.some((s) => px(el, si, `margin-${s}`) !== 0)) return;
+        el.asBlock[si] = empty && !blockified ? "empty" : "block";
+      });
+      el.children.forEach(place);
+    };
+    if (this.bodyEl) this.bodyEl.children.forEach(place);
+  }
+
+  isTable(el: El, si: number) {
+    return /^(inline-)?table$/.test(this.ownDisplay(el, si));
   }
 
   isInlineLevel(el: El, si: number) {
@@ -562,7 +885,35 @@ export abstract class PageLifter {
   outOfFlow(el: El, si: number) {
     const p = el.own[si].get("position");
     const v = p ? this.resolve(el, si, p.value) : undefined;
-    return v === "absolute" || v === "fixed";
+    return v === "absolute" || v === "fixed" || this.asideFloat(el, si);
+  }
+
+  /**
+   * A left float that changes nothing around it: the first thing in its parent, pulled entirely
+   * into the parent's padding by a negative left margin (so no line beside it is shortened), and
+   * no taller than the parent's first line (so nothing below meets it). Bootstrap's .form-check
+   * checkbox. It isn't laid out (its own box isn't predicted).
+   */
+  asideFloat(el: El, si: number): boolean {
+    const o = el.own[si].get("float");
+    if (!o || this.resolve(el, si, o.value) !== "left" || !el.parent) return false;
+    const parent = el.parent;
+    if (parent.ownText && !(parent.node.childNodes ?? []).slice(0, (parent.node.childNodes ?? []).indexOf(el.node)).every((c) => c.nodeName !== "#text" || /^\s*$/.test(c.value ?? ""))) return false;
+    if (parent.children[0] !== el) return false;
+    const px = (p: string) => {
+      const d = el.own[si].get(p);
+      const v = d ? this.resolveBox(el, si, d.value) : "0";
+      return v === undefined ? NaN : (lengthPx(v, this.textOf(el, si).size) ?? NaN);
+    };
+    const border = (side: string) => (/^(none|hidden)$/.test(this.resolve(el, si, el.own[si].get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+    const sizing = this.resolve(el, si, el.own[si].get("box-sizing")?.value ?? "content-box");
+    const box = (size: string, a: string, b: string) => px(size) + (sizing === "border-box" ? 0 : px(`padding-${a}`) + px(`padding-${b}`) + border(a) + border(b));
+    const w = box("width", "left", "right");
+    const h = box("height", "top", "bottom");
+    if (!(px("margin-left") + w + px("margin-right") <= 0)) return false;
+    const pt = this.textOf(parent, si);
+    const line = pt.lineHeight === "normal" ? NaN : "num" in pt.lineHeight ? lineHeightPx(pt.size, pt.lineHeight.num) : pt.lineHeight.px;
+    return px("margin-top") >= 0 && px("margin-top") + h + px("margin-bottom") <= line;
   }
 
   /** Inline children make an element a text box when every element child is inline in every state. */
@@ -588,7 +939,14 @@ export abstract class PageLifter {
   classify(el: El) {
     // Parents decide first (a text box's descendants are inline content, not boxes).
     if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length && el.parent.roles.every((r) => r === "text" || r === "hidden" || r === "out")) return;
+    // A table is one box; what's inside it isn't laid out.
+    if (el.parent && el.parent !== this.bodyEl && this.states.some((_, si) => this.ownDisplay(el.parent!, si) === "table" || el.parent!.roles[si] === "leaf" && this.isTable(el.parent!, si))) return;
     if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length === 0) return;
+    if (el.anonymous !== undefined) {
+      // A text run beside element children: an anonymous text box (or, in a text box, part of its text).
+      this.states.forEach((_, si) => (el.roles[si] = !el.parent || el.parent.roles[si] === "hidden" ? "hidden" : "text"));
+      return;
+    }
     // Children of a flex or grid container are blockified: never inline content.
     const formatsChildren = this.states.some((_, si) => /^(inline-)?(flex|grid)$/.test(this.displayOf(el, si)));
     const allInline = el.children.length > 0 && !formatsChildren && el.children.every((c) => this.inlineChild(c));
@@ -598,7 +956,7 @@ export abstract class PageLifter {
       let role: Role;
       if (d === "none" || (el.parent && el.parent.roles[si] === "hidden")) role = "hidden";
       else if (this.outOfFlow(el, si)) role = "out";
-      else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag)) role = "leaf";
+      else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || this.isTable(el, si)) role = "leaf";
       else if (hasText && (el.children.length === 0 || allInline)) role = "text";
       else if (el.children.length) role = "container";
       else role = "leaf";
@@ -627,18 +985,26 @@ export abstract class PageLifter {
       const parentDisplay = el.parent && el.parent !== this.bodyEl ? this.displayOf(el.parent, si) : "block";
       const inFlexOrGrid = /flex|grid/.test(parentDisplay) && parentRole === "container";
 
-      // Inline-level boxes in block flow sit on line boxes, which Cadesa doesn't model.
-      if (!inFlexOrGrid && this.isInlineLevel(el, si))
+      // Inline-level boxes in block flow sit on line boxes, which Cadesa doesn't model, except an
+      // inline-block alone on its line whose line box is exactly its margin box.
+      if (!inFlexOrGrid && this.ownDisplay(el, si) === "inline-block" && this.aloneOnLine(el, si)) el.alone[si] = true;
+      if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && el.anonymous === undefined)
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
+      // An empty inline (zero size where the next block starts) or a lone inline-block: as wide as its content.
+      if (((el.asBlock[si] === "empty" && !inFlexOrGrid) || el.alone[si]) && !own.has("width")) decl("width", "fit-content", el.alone[si] ? "inline-block (alone on its line)" : "empty inline element");
 
       // Sticky: in flow; it only moves once the page scrolls.
       const pos = res("position");
       if (pos === "sticky") this.note(el, si, { decl: own.get("position")!.utility, reason: "position: sticky; predicted at scroll position 0", kind: "none" });
 
       const skipProp = (p: string) =>
-        (el.autoMargin[si] && /^margin-(left|right)$/.test(p) && res(p) === "auto") ||
+        // Flex item properties do nothing outside a flex container (align-self: outside flex and grid).
+        (/^(flex|flex-grow|flex-shrink|flex-basis|order)$/.test(p) && !(/flex/.test(parentDisplay) && parentRole === "container")) ||
+        (p === "align-self" && !inFlexOrGrid) ||
         p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p) || p === "display" ||
-        (pos === "sticky" && /^(position|top|right|bottom|left|z-index)$/.test(p)) || p === "box-sizing";
+        (pos === "sticky" && /^(position|top|right|bottom|left|z-index)$/.test(p)) || p === "box-sizing" ||
+        // vertical-align moves only inline-level boxes on a line (noted above) and table cells.
+        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline"));
 
       // Layout
       const display = this.displayOf(el, si);
@@ -653,10 +1019,8 @@ export abstract class PageLifter {
           const wrap = res("flex-wrap") ?? "nowrap";
           decl("display", "flex", own.get("display")?.utility ?? "flex");
           decl("flex-direction", dir === "column" ? "column" : dir, own.get("flex-direction")?.utility ?? "flex");
-          if (dir === "row" && wrap === "nowrap") {
-            el.nowrap[si] = true;
-            decl("flex-wrap", "wrap", "flex (no wrap)");
-          } else if (own.has("flex-wrap")) decl("flex-wrap", wrap, own.get("flex-wrap")!.utility);
+          // A row that doesn't wrap is a one-line cluster (wrap: false): its items shrink to fit.
+          decl("flex-wrap", dir === "row" && wrap === "nowrap" ? "nowrap" : wrap, own.get("flex-wrap")?.utility ?? "flex (no wrap)");
           handled.add("flex-direction").add("flex-wrap");
           let rowGap = own.get("row-gap");
           let colGap = own.get("column-gap");
@@ -685,12 +1049,13 @@ export abstract class PageLifter {
           handled.add("row-gap").add("column-gap");
           // Alignment that only moves items inside the container (never resizes it).
           const kids = el.children.filter((c) => c.roles[si] && c.roles[si] !== "hidden" && c.roles[si] !== "out");
+          // A row's justify-content is the cluster's justify (lift maps it); a column's moves its items
+          // only when it is taller than they are.
           const jc = res("justify-content");
-          if (jc && !/^(normal|flex-start|start|left)$/.test(jc) && (dir !== "column" || own.has("height") || own.has("min-height"))) {
+          if (jc && dir === "column" && !/^(normal|flex-start|start|left)$/.test(jc) && (own.has("height") || own.has("min-height"))) {
             handled.add("justify-content");
-            // space-between leaves the first item where it is (it starts its line).
-            for (const c of kids.slice(/^space-between$/.test(jc) ? 1 : 0)) this.note(c, si, { decl: `${own.get("justify-content")!.utility} on the parent (justify-content: ${jc})`, reason: "moves the item along its row; Cadesa packs items at the start", kind: "visual" });
-          } else if (jc) handled.add("justify-content");
+            for (const c of kids) this.note(c, si, { decl: `${own.get("justify-content")!.utility} on the parent (justify-content: ${jc})`, reason: "moves the item down its column; Cadesa stacks items at the start", kind: "visual" });
+          } else if (jc && dir === "column") handled.add("justify-content");
           const ai = res("align-items");
           if (dir === "column" && ai && !/^(normal|stretch)$/.test(ai)) {
             handled.add("align-items");
@@ -701,18 +1066,6 @@ export abstract class PageLifter {
                 : { decl: `${own.get("align-items")!.utility} on the parent (align-items: ${ai})`, reason: "the item isn't stretched; it's sized by its content, which Cadesa measures only for a single text run", kind: "geometry" });
             }
           }
-          // margin-inline: auto on a row item pushes it (and what follows) along the row.
-          if (dir !== "column")
-            kids.forEach((c, i) => {
-              for (const side of ["left", "right"]) {
-                const m = c.own[si].get(`margin-${side}`);
-                if (m && this.resolve(c, si, m.value) === "auto") {
-                  c.autoMargin[si] = true;
-                  for (const d of kids.slice(side === "left" ? i : i + 1))
-                    this.note(d, si, { decl: `${m.utility} on <${c.tag}> line ${c.line} (margin-${side}: auto)`, reason: "auto margins move items along the row; Cadesa packs items at the start", kind: "visual" });
-                }
-              }
-            });
         } else if (grid) {
           const cols = res("grid-template-columns");
           const gapOrigin = own.get("row-gap");
@@ -755,23 +1108,37 @@ export abstract class PageLifter {
         } else {
           this.note(el, si, { decl: `display: ${display}`, reason: `display: ${display} has no Cadesa pattern`, kind: "geometry" });
         }
-        if (el.ownText)
-          this.note(el, si, { decl: "text", reason: "text next to block children (anonymous boxes) is not modelled", kind: "geometry" });
+        // Its text runs are anonymous boxes; one that shares its lines with inline elements isn't modelled.
+        if (el.children.some((k) => k.anonymous !== undefined && !this.textRun(k, si)))
+          this.note(el, si, { decl: "text", reason: "text next to inline elements among block children (one anonymous block of mixed inline content) is not modelled", kind: "geometry" });
         if (space && space.axis === "y" && el.children.some((c) => c.roles[si] === "hidden") && !flex)
           this.note(el, si, { decl: space.utility, reason: "space-y with hidden children (:last-child) is not modelled", kind: "geometry" });
       } else {
         if (space) this.note(el, si, { decl: space.utility, reason: "space-* without children", kind: "none" });
-        if (!/^(block|flow-root|list-item|inline|inline-block|flex|inline-flex|grid|inline-grid)$/.test(display))
+        if (display === "table") {
+          // One box as wide as its width says; its height comes from its rows, which aren't laid out.
+          this.note(el, si, { decl: "display: table", reason: "a table is laid out as one box; its height comes from its rows, which Cadesa doesn't lay out", kind: "height" });
+          if (!own.has("width")) this.note(el, si, { decl: "display: table", reason: "a table without a width is as wide as its columns, which Cadesa doesn't lay out", kind: "geometry" });
+          for (const p of ["border-collapse", "border-spacing", "caption-side", "table-layout", "vertical-align", "empty-cells"]) handled.add(p);
+        } else if (!/^(block|flow-root|list-item|inline|inline-block|flex|inline-flex|grid|inline-grid)$/.test(display))
           this.note(el, si, { decl: `display: ${display}`, reason: `display: ${display} has no Cadesa pattern`, kind: "geometry" });
       }
       if (role !== "container") for (const p of ["flex-direction", "flex-wrap", "align-items", "justify-content", "row-gap", "column-gap", "grid-template-columns", "justify-items"]) handled.add(p);
 
-      // A flex-row item is sized by its content; the engine measures that only for a text run.
-      if (parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si) && role !== "text" && !own.has("width") && !/^(none|0 0 auto)$/.test(res("flex") ?? "x"))
-        this.note(el, si, { decl: `<${el.tag}> in a flex row`, reason: "a flex item without a width (w-*) is sized by its content, which Cadesa measures only for a single text run", kind: "geometry" });
+      // A flex-row item that may not shrink (flex-shrink: 0) without a width: Cadesa shrinks a lone
+      // item too wide for its line; dynamic() flags the widths where that happens.
+      if (parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si) && !own.has("width")) {
+        const fl = res("flex");
+        const sh = res("flex-shrink") ?? (fl ? String(parseFlex(fl)?.shrink ?? 1) : "1");
+        if (parseFloat(sh) === 0 && !/^0(px|%)?$/.test(res("flex-basis") ?? (fl ? parseFlex(fl)?.basis ?? "auto" : "auto"))) el.noShrink[si] = `${(own.get("flex-shrink") ?? own.get("flex"))!.utility} (flex-shrink: 0)`;
+      }
 
-      // Form controls size themselves from the font and the UA's internal padding.
-      if (CONTROL.has(el.tag) && !own.has("height"))
+      // Form controls size themselves from the font and the UA's internal padding, except a text
+      // field, select or textarea drawn without native appearance: one line (rows lines) of its
+      // line height, plus its padding and border.
+      const controlH = CONTROL.has(el.tag) && !own.has("height") ? this.controlHeight(el, si) : undefined;
+      if (controlH !== undefined) decl("height", `${fmtNum(controlH)}px`, `<${el.tag}>: its line height${el.tag === "textarea" ? " × rows" : ""}, padding and border`);
+      else if (CONTROL.has(el.tag) && !own.has("height"))
         this.note(el, si, { decl: `<${el.tag}>`, reason: `a form control's height comes from its font and the browser's internals; give it a height (h-*) to predict it`, kind: "geometry" });
       // Replaced elements and controls have an intrinsic width (the file, 300×150 for svg, ~20ch for inputs).
       const stretched = parentRole === "container" && /flex/.test(parentDisplay) && el.parent && this.isColumn(el.parent, si) && !own.has("align-self");
@@ -799,16 +1166,18 @@ export abstract class PageLifter {
       // Everything else the element sets on itself.
       for (const [p, o] of own) {
         if (handled.has(p) || skipProp(p)) continue;
+        // A min-height a text box's first line already reaches changes nothing.
+        if (p === "min-height" && role === "text" && this.minHeightMet(el, si)) continue;
         let v = this.resolve(el, si, o.value);
-        if (v === undefined) continue;
+        // Empty after substitution (`height: var(--unset)`): invalid at computed-value time, so the initial value.
+        if (v === undefined || v === "") continue;
         if (p === "background-color" || p === "outline-color" || p === "text-decoration-color") {
           const c = parseColor(v, parseColor(text.color.hex));
           if (c) v = this.colorValue(hexOf(c), c.a >= 0.9995 ? hintOf(o.value, this.theme) : undefined);
         } else if (p === "background-image" || p === "box-shadow") v = this.paintValue(p, v, text.color.hex);
         else if (/^(padding|margin)-|^(width|height|max-width|max-height|min-width|min-height|row-gap|column-gap|border-radius|top|right|bottom|left)$/.test(p)) {
-          // em is the element's own font size.
-          const em = /^(-?(?:\d+\.?\d*|\.\d+))em$/.exec(v);
-          if (em) v = `${fmtNum(parseFloat(em[1]) * text.size)}px`;
+          // em is the element's own font size (inside calc() too).
+          if (/\dem\b/.test(v)) v = this.resolveBox(el, si, o.value) ?? v;
           const h = hintOf(o.value, this.theme);
           if (h && /^-?[\d.]+px$/.test(v) && parseFloat(v) !== 0) v = this.varValue(h, v);
         }
@@ -911,12 +1280,12 @@ export abstract class PageLifter {
   /** Notes for a text box's inline descendants whose own styles change how the text measures. */
   inlineContent(el: El, si: number) {
     const visit = (k: El) => {
-      if (k.tag === "br") return;
+      if (k.tag === "br" || this.outOfFlow(k, si) || this.displayOf(k, si) === "none") return;
       const own = k.own[si];
       const ua = UA_TEXT[k.tag];
       const changes: { prop: string; utility: string; kind: ImpactKind }[] = [];
       for (const [p, o] of own) {
-        if (p.startsWith("--")) continue;
+        if (p.startsWith("--") || (p === "vertical-align" && this.resolve(k, si, o.value) === "baseline")) continue;
         const kind = TEXT_PROPS.has(p) ? (p === "color" ? "paint" : "text") : INHERITED_PAINT.has(p) ? "paint" : kindOf(p);
         changes.push({ prop: p, utility: o.utility, kind });
       }
@@ -927,7 +1296,15 @@ export abstract class PageLifter {
         const same = (k.tag === "strong" || k.tag === "b") && kt.weight === pt.weight;
         if (!same) this.note(el, si, { decl: `<${k.tag}>`, reason: `inline <${k.tag}> ${ua}; text runs in another style aren't measured`, kind: "text" });
       }
+      // box-sizing changes nothing on a box with no width, height, padding or border.
+      const boxy = ["width", "height", "min-width", "min-height", "max-width", "max-height"].some((p) => own.has(p)) || SIDES.some((s) => own.has(`padding-${s}`) || own.has(`border-${s}-width`) || own.has(`margin-${s}`));
+      // An inline-block that is all the text box holds, with no box of its own and the same text
+      // style: its line is the text box's line, broken the same way (Bootstrap's <label> in .form-check).
+      const shown = el.children.filter((x) => x.tag !== "br" && !this.outOfFlow(x, si) && this.displayOf(x, si) !== "none");
+      const sameText = kt.size === pt.size && kt.weight === pt.weight && kt.family.value === pt.family.value && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight) && kt.letterSpacing === pt.letterSpacing;
+      const whole = k.parent === el && shown.length === 1 && shown[0] === k && !el.ownText && !boxy && sameText && this.displayOf(k, si) === "inline-block";
       for (const c of changes) {
+        if ((c.prop === "box-sizing" && !boxy) || (c.prop === "display" && whole)) continue;
         if (c.kind === "paint" || c.kind === "none" || c.kind === "state") {
           if (c.kind === "paint") this.note(el, si, { decl: `${c.utility} on <${k.tag}>`, reason: "inline paint; no effect on layout", kind: "paint" });
           continue;
@@ -1050,7 +1427,7 @@ export abstract class PageLifter {
     }
     unlifted.push(...this.extraUnlifted());
     for (const el of this.els.filter((e) => e.roles.length && !e.className && e.roles.every((r) => r === "hidden" || r === "out") && !(e.parent?.roles.every((r) => r === "hidden" || r === "out"))))
-      unlifted.push({ file: this.page, line: el.line, selector: `<${el.tag}>`, reason: el.roles.includes("out") ? "taken out of flow (position: absolute/fixed); not laid out" : "hidden at every width (display: none)", kind: "none" });
+      unlifted.push({ file: this.page, line: el.line, selector: `<${el.tag}>`, reason: el.roles.includes("out") ? "taken out of flow (position: absolute/fixed, or a float beside the content); not laid out" : "hidden at every width (display: none)", kind: "none" });
 
     const bpPx = this.states.filter((s) => s.key !== Infinity).map((s) => s.key);
     const bpRaw = new Map(this.states.filter((s) => s.raw).map((s) => [s.key, s.raw!]));
@@ -1126,13 +1503,24 @@ export abstract class PageLifter {
     const fixture = parseFixture(this.page, fixtureHtml);
     const byId = new Map(this.els.filter((e) => e.id).map((e) => [e.id!, e]));
     const hiddenNodes = new Set(this.els.filter((e) => this.ignorable(e)).map((e) => e.node));
+    /** An anonymous text run's node: a text box of the run's text, with the class lift gave it. */
+    const anonNode = (k: El, si: number | undefined): FixtureNode | undefined =>
+      k.className && (si === undefined || k.roles[si] === "text")
+        ? { tag: "#text", classes: [k.className], attrs: {}, fixtureId: k.id, line: k.line, text: k.anonymous!, ownText: k.anonymous!, runs: [k.anonymous!], runMeta: [{ inBlock: false, underlined: false, items: [] }], children: [], anonymous: true }
+        : undefined;
     const fixtureFor = (si: number | undefined): Fixture => {
       const keep = (n: FixtureNode): FixtureNode | undefined => {
         const el = n.fixtureId ? byId.get(n.fixtureId) : undefined;
         if (!el) return undefined;
         if (si !== undefined && (el.roles[si] === "hidden" || el.roles[si] === "out")) return undefined;
         const isText = si === undefined ? el.roles.includes("text") : el.roles[si] === "text";
-        const children = isText || el.tag === "svg" ? (el.tag === "svg" ? [] : n.children) : (n.children.map(keep).filter(Boolean) as FixtureNode[]);
+        // Element children, with anonymous text runs between them.
+        const byEl = new Map(n.children.map((c) => [c.fixtureId ? byId.get(c.fixtureId) : undefined, c] as const));
+        const children =
+          isText || el.tag === "svg"
+            ? el.tag === "svg" ? [] : n.children
+            : (el.children.map((k) => (k.anonymous !== undefined ? anonNode(k, si) : byEl.has(k) ? keep(byEl.get(k)!) : undefined)).filter(Boolean) as FixtureNode[]);
+        if (!isText && el.children.some((k) => k.anonymous !== undefined)) return { ...n, children, ownText: "" };
         // A replaced element or form control has no text box (a textarea's text is its value).
         if (el.roles.every((r) => r !== "text" && r !== "container") && n.text) return { ...n, children, text: "", runs: [] };
         if (isText && hiddenNodes.size) return { ...n, children, ...textAndRuns(el.node as unknown as P5Node, (x) => hiddenNodes.has(x as unknown as P5)) };
@@ -1186,6 +1574,14 @@ export abstract class PageLifter {
         const sel = `[data-fixture="${b.id}"]`;
         if (el.rowGap[si] && this.lineCount(b) > 1)
           out.push({ file: this.page, line: el.line, selector: sel, decl: el.rowGap[si], reason: `the row wraps at ${layout.width}px and its row gap differs from its column gap; a cluster has one gap`, kind: "geometry" });
+        // flex-shrink: 0 on a lone item as wide as its line: Cadesa shrank it, the browser lets it overflow.
+        const parent = parentOf.get(b);
+        if (el.noShrink[si] && parent && parent.props.pattern?.value === "cluster") {
+          const line = linesOf(parent).find((l) => l.includes(b))!;
+          const m = b.props.margin?.value;
+          if (line.length === 1 && b.w + (m ? m.left + m.right : 0) >= innerWidth(parent) - 0.01)
+            out.push({ file: this.page, line: el.line, selector: sel, decl: el.noShrink[si], reason: `the item is as wide as its row at ${layout.width}px and may not shrink; it may overflow instead`, kind: "geometry" });
+        }
         if (el.nowrap[si] && b.children.length > 1) {
           if (this.lineCount(b) > 1)
             out.push({ file: this.page, line: el.line, selector: sel, decl: "flex (flex-wrap: nowrap)", reason: `the row doesn't fit at ${layout.width}px; Tailwind's flex row shrinks its items instead of wrapping`, kind: "geometry" });
@@ -1227,15 +1623,8 @@ export abstract class PageLifter {
 
   /** Lines a cluster box laid its children out on. */
   lineCount(b: Box): number {
-    let lines = 1;
-    let prevRight = -Infinity;
-    for (const c of b.children) {
-      if (c.x < prevRight - 0.001) lines++;
-      prevRight = c.x + c.w;
-    }
-    return lines;
+    return linesOf(b).length;
   }
-
   /** Name the utility behind each of lift's own records. */
   relabel(lifted: LiftResult) {
     const origin = new Map<string, Map<string, string>>();
@@ -1295,8 +1684,8 @@ export abstract class PageLifter {
 }
 
 function innerWidth(b: Box) {
-  const border = b.props.border ? 1 : 0;
-  return b.w - 2 * ((b.props.padding?.value.inline ?? 0) + border);
+  const i = insets(b.props);
+  return b.w - i.left - i.right;
 }
 
 
