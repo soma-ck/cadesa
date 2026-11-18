@@ -1,0 +1,119 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: an Angular + Bootstrap planning board</title>
+    <link rel="stylesheet" href="bootstrap.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      [_nghost-pln-c10] { display: block; }
+      [_nghost-pln-c52] { display: block; }
+      .board-header[_ngcontent-pln-c52] { border-bottom: 1px solid var(--bs-border-color); }
+      .job-title[_ngcontent-pln-c52] { font-size: 0.9375rem; font-weight: 600; margin-bottom: 0.25rem; }
+      .job-meta[_ngcontent-pln-c52] { font-size: 0.8125rem; margin-bottom: 0; }
+    </style>
+  </head>
+  <body>
+    <app-root _nghost-pln-c10="" ng-version="17.3.12">
+      <router-outlet _ngcontent-pln-c10=""></router-outlet>
+      <app-planning-board _ngcontent-pln-c10="" _nghost-pln-c52="">
+        <div _ngcontent-pln-c52="" class="board-header bg-white">
+          <div _ngcontent-pln-c52="" class="container-fluid py-3">
+            <div _ngcontent-pln-c52="" class="row align-items-center g-2">
+              <div _ngcontent-pln-c52="" class="col">
+                <h1 _ngcontent-pln-c52="" class="page-title">Week 19 plan</h1>
+              </div>
+              <div _ngcontent-pln-c52="" class="col-auto">
+                <button _ngcontent-pln-c52="" type="button" class="btn btn-outline-primary btn-sm">Previous week</button>
+              </div>
+              <div _ngcontent-pln-c52="" class="col-auto">
+                <button _ngcontent-pln-c52="" type="button" class="btn btn-primary btn-sm">Publish plan</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div _ngcontent-pln-c52="" class="container-fluid py-3">
+          <div _ngcontent-pln-c52="" class="alert alert-success" role="alert">All rush orders are scheduled. Three lines have spare capacity on Friday.</div>
+          <div _ngcontent-pln-c52="" class="row row-cols-1 row-cols-md-2 row-cols-xl-3 g-3">
+            <div _ngcontent-pln-c52="" class="col">
+              <app-line-column _ngcontent-pln-c52="">
+                <div class="card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Line 1</span>
+                    <span class="badge text-bg-light">3 jobs</span>
+                  </div>
+                  <div class="list-group list-group-flush">
+                    <div class="list-group-item">
+                      <p class="job-title" _ngcontent-pln-c52="">Pallet wrap for North Yard</p>
+                      <p class="job-meta text-muted" _ngcontent-pln-c52="">Mon to Tue, 120 units</p>
+                    </div>
+                    <div class="list-group-item">
+                      <p class="job-title" _ngcontent-pln-c52="">Corner boards for Harbor Supply</p>
+                      <p class="job-meta text-muted" _ngcontent-pln-c52="">Wed, 400 units</p>
+                    </div>
+                    <div class="list-group-item">
+                      <p class="job-title" _ngcontent-pln-c52="">Strapping kits</p>
+                      <p class="job-meta text-muted" _ngcontent-pln-c52="">Thu to Fri, 60 units</p>
+                    </div>
+                  </div>
+                </div>
+              </app-line-column>
+            </div>
+            <div _ngcontent-pln-c52="" class="col">
+              <app-line-column _ngcontent-pln-c52="">
+                <div class="card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Line 2</span>
+                    <span class="badge text-bg-light">2 jobs</span>
+                  </div>
+                  <div class="list-group list-group-flush">
+                    <div class="list-group-item">
+                      <p class="job-title" _ngcontent-pln-c52="">Crates for Field Works</p>
+                      <p class="job-meta text-muted" _ngcontent-pln-c52="">Mon to Wed, 300 units</p>
+                    </div>
+                    <div class="list-group-item">
+                      <p class="job-title" _ngcontent-pln-c52="">Spare parts kits</p>
+                      <p class="job-meta text-muted" _ngcontent-pln-c52="">Thu, 80 units</p>
+                    </div>
+                  </div>
+                </div>
+              </app-line-column>
+            </div>
+            <div _ngcontent-pln-c52="" class="col">
+              <app-line-column _ngcontent-pln-c52="">
+                <div class="card">
+                  <div class="card-header d-flex justify-content-between align-items-center">
+                    <span class="fw-semibold">Line 3</span>
+                    <span class="badge text-bg-warning">Maintenance</span>
+                  </div>
+                  <div class="card-body">
+                    <p class="job-meta text-muted" _ngcontent-pln-c52="">No jobs until Thursday. The belt drive is being replaced.</p>
+                  </div>
+                </div>
+              </app-line-column>
+            </div>
+          </div>
+          <div _ngcontent-pln-c52="" class="row mt-4">
+            <div _ngcontent-pln-c52="" class="col-md-6 col-xl-4 mb-3">
+              <div _ngcontent-pln-c52="" class="card">
+                <div _ngcontent-pln-c52="" class="card-body">
+                  <h2 _ngcontent-pln-c52="" class="section-title mb-2">Unplanned</h2>
+                  <p _ngcontent-pln-c52="" class="job-meta text-muted">Four orders are waiting for material and will be planned once it arrives.</p>
+                </div>
+              </div>
+            </div>
+            <div _ngcontent-pln-c52="" class="col-md-6 col-xl-4 mb-3">
+              <div _ngcontent-pln-c52="" class="card">
+                <div _ngcontent-pln-c52="" class="card-body">
+                  <h2 _ngcontent-pln-c52="" class="section-title mb-2">Overtime</h2>
+                  <p _ngcontent-pln-c52="" class="job-meta text-muted">No overtime is planned this week.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </app-planning-board>
+    </app-root>
+  </body>
+</html>

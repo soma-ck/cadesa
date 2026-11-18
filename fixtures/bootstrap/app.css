@@ -1,0 +1,48 @@
+/* Global styles of a small planning and orders app built on Bootstrap 5 (the app's styles.css). */
+@font-face {
+  font-family: "Inter";
+  font-weight: 100 900;
+  src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+}
+
+:root {
+  --bs-body-font-family: "Inter", sans-serif;
+  --bs-body-bg: #f4f6f9;
+  --app-sidebar-width: 15rem;
+}
+
+.page-title {
+  margin-bottom: 0;
+  font-size: 1.5rem;
+  font-weight: 600;
+}
+
+.page-subtitle {
+  margin-bottom: 0;
+  font-size: 0.875rem;
+}
+
+.stat-value {
+  margin-bottom: 0;
+  font-size: 1.75rem;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.stat-label {
+  margin-bottom: 0.25rem;
+  font-size: 0.8125rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.section-title {
+  margin-bottom: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.app-footer {
+  padding: 1.5rem 0;
+  font-size: 0.8125rem;
+}

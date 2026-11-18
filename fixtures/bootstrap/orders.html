@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: an Angular + Bootstrap order list</title>
+    <link rel="stylesheet" href="bootstrap.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      [_nghost-pln-c10] { display: block; }
+      [_nghost-pln-c33] { display: block; }
+      .filters[_ngcontent-pln-c33] { background-color: #ffffff; }
+      .result-count[_ngcontent-pln-c33] { font-size: 0.875rem; }
+    </style>
+  </head>
+  <body>
+    <app-root _nghost-pln-c10="" ng-version="17.3.12">
+      <app-top-nav _ngcontent-pln-c10="">
+        <nav class="navbar navbar-expand-md navbar-light bg-white border-bottom">
+          <div class="container">
+            <a class="navbar-brand fw-semibold" href="#">Orders</a>
+            <div class="collapse navbar-collapse">
+              <ul class="navbar-nav ms-auto">
+                <li class="nav-item"><a class="nav-link" href="#">Dashboard</a></li>
+                <li class="nav-item"><a class="nav-link active" href="#">Orders</a></li>
+                <li class="nav-item"><a class="nav-link" href="#">Settings</a></li>
+              </ul>
+            </div>
+          </div>
+        </nav>
+      </app-top-nav>
+      <router-outlet _ngcontent-pln-c10=""></router-outlet>
+      <app-orders-page _ngcontent-pln-c10="" _nghost-pln-c33="">
+        <div _ngcontent-pln-c33="" class="container-fluid px-4 py-3">
+          <div _ngcontent-pln-c33="" class="mb-3">
+            <h1 _ngcontent-pln-c33="" class="page-title">Open orders</h1>
+            <p _ngcontent-pln-c33="" class="page-subtitle text-muted">Everything not yet shipped, newest first</p>
+          </div>
+          <div _ngcontent-pln-c33="" class="card filters mb-3">
+            <div _ngcontent-pln-c33="" class="card-body">
+              <form _ngcontent-pln-c33="" class="row g-2 align-items-end">
+                <div _ngcontent-pln-c33="" class="col-md-5">
+                  <label _ngcontent-pln-c33="" class="form-label" for="q">Search</label>
+                  <input _ngcontent-pln-c33="" id="q" type="text" class="form-control" placeholder="Order or customer" />
+                </div>
+                <div _ngcontent-pln-c33="" class="col-6 col-md-3">
+                  <label _ngcontent-pln-c33="" class="form-label" for="status">Status</label>
+                  <select _ngcontent-pln-c33="" id="status" class="form-select"><option>Any</option><option>Planned</option><option>Picking</option></select>
+                </div>
+                <div _ngcontent-pln-c33="" class="col-6 col-md-2">
+                  <label _ngcontent-pln-c33="" class="form-label" for="site">Site</label>
+                  <select _ngcontent-pln-c33="" id="site" class="form-select"><option>All sites</option></select>
+                </div>
+                <div _ngcontent-pln-c33="" class="col-md-2 d-grid">
+                  <button _ngcontent-pln-c33="" type="submit" class="btn btn-primary">Apply</button>
+                </div>
+              </form>
+            </div>
+          </div>
+          <div _ngcontent-pln-c33="" class="d-flex justify-content-between align-items-center mb-2">
+            <span _ngcontent-pln-c33="" class="result-count text-muted">42 orders</span>
+            <div _ngcontent-pln-c33="" class="btn-group">
+              <button _ngcontent-pln-c33="" type="button" class="btn btn-sm btn-outline-secondary">Previous</button>
+              <button _ngcontent-pln-c33="" type="button" class="btn btn-sm btn-outline-secondary">Next</button>
+            </div>
+          </div>
+          <div _ngcontent-pln-c33="" class="card">
+            <div _ngcontent-pln-c33="" class="table-responsive">
+              <table _ngcontent-pln-c33="" class="table table-hover align-middle mb-0">
+                <thead _ngcontent-pln-c33="">
+                  <tr><th>Order</th><th>Customer</th><th>Due</th><th>Status</th></tr>
+                </thead>
+                <tbody _ngcontent-pln-c33="">
+                  <tr><td>SO-1051</td><td>North Yard</td><td>12 May</td><td><span class="badge text-bg-warning">Picking</span></td></tr>
+                  <tr><td>SO-1052</td><td>Harbor Supply</td><td>13 May</td><td><span class="badge text-bg-secondary">Planned</span></td></tr>
+                  <tr><td>SO-1053</td><td>Field Works</td><td>15 May</td><td><span class="badge text-bg-secondary">Planned</span></td></tr>
+                  <tr><td>SO-1054</td><td>Ridge Tools</td><td>16 May</td><td><span class="badge text-bg-info">On hold</span></td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+          <div _ngcontent-pln-c33="" class="alert alert-info mt-3 mb-0">Orders due within two days are planned automatically each night.</div>
+        </div>
+      </app-orders-page>
+    </app-root>
+  </body>
+</html>

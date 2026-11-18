@@ -65,7 +65,9 @@ const sha = (b: Buffer | string) => createHash("sha256").update(b).digest("hex")
 const lifted = !!values.lift;
 const model: Model | undefined = tw ? undefined : modelOf(loadSourceFile(values.source!));
 const cssFile = tw ?? values.css!;
-const css = tw ? readFileSync(tw, "utf8") : compile(model!);
+/** --lift takes several stylesheets, comma-separated (bootstrap.css,app.css): each must load unchanged. */
+const cssFiles = lifted ? cssFile.split(",") : [cssFile];
+const css = tw ? readFileSync(cssFiles[0], "utf8") : compile(model!);
 if (!tw) {
   mkdirSync(join(root, values.css!, ".."), { recursive: true });
   writeFileSync(values.css!, css);
@@ -168,6 +170,8 @@ for (const layout of layouts) {
   console.log(`${layout.width}px${layout.active.length ? ` (${layout.active.join(", ")} active)` : ""}`);
   console.log("  box           engine (x,y w×h)           chromium (x,y w×h)         max Δ");
   for (const b of walk(layout.boxes)) {
+    // An anonymous text run has no element to compare with.
+    if (b.anonymous) continue;
     const c = rects[b.id];
     const fmt = (r: { x: number; y: number; w: number; h: number }) =>
       `${+r.x.toFixed(2)},${+r.y.toFixed(2)} ${+r.w.toFixed(2)}×${+r.h.toFixed(2)}`;
@@ -199,9 +203,8 @@ await browser.close();
 server.close();
 
 // 3. The page must have loaded the emitted stylesheet byte-for-byte, and nothing else.
-const cssPath = resolve(root, cssFile);
-const loadedSha = served.get(cssPath);
-const bytesOk = loadedSha === builtSha && served.size === 1;
+const expected = new Map(cssFiles.map((f, i) => [resolve(root, f), i === 0 ? builtSha : sha(readFileSync(f))]));
+const bytesOk = served.size === expected.size && [...expected].every(([p, h]) => served.get(p) === h);
 if (!bytesOk) failures++;
 console.log(
   bytesOk
@@ -217,6 +220,6 @@ if (tw) {
       : `\n✓ all ${exact} boxes marked exact agree with Chromium`,
   );
   console.log(`≈ ${flaggedSame.length + flaggedDiff.length} boxes marked uncertain: ${flaggedDiff.length} differ, ${flaggedSame.length} happen to match`);
-  if (tw) console.log(`  (${assumed} of them for unmeasured text; ${widths.length} widths ${widths[0]}–${widths.at(-1)}px, ${values.fixtures!.split(",").length} pages)`);
+  if (tw) console.log(`  (${assumed} of them flagged by the engine itself, e.g. unmeasured text; ${widths.length} widths ${widths[0]}–${widths.at(-1)}px, ${values.fixtures!.split(",").length} pages)`);
 } else console.log(failures ? `\n✖ ${failures} mismatch(es) of ${checked} boxes` : `\n✓ engine and Chromium agree on all ${checked} boxes${strict ? `, none flagged; line counts agree on all ${linesChecked} text boxes` : ""}`);
 process.exitCode = failures ? 1 : 0;

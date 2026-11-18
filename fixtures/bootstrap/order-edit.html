@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: an Angular + Bootstrap order form</title>
+    <link rel="stylesheet" href="bootstrap.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      [_nghost-pln-c10] { display: block; }
+      [_nghost-pln-c45] { display: block; }
+      .form-section[_ngcontent-pln-c45] { padding-bottom: 1rem; }
+      .hint[_ngcontent-pln-c45] { font-size: 0.8125rem; }
+    </style>
+  </head>
+  <body>
+    <app-root _nghost-pln-c10="" ng-version="17.3.12">
+      <router-outlet _ngcontent-pln-c10=""></router-outlet>
+      <app-order-edit _ngcontent-pln-c10="" _nghost-pln-c45="">
+        <div _ngcontent-pln-c45="" class="container py-4">
+          <h1 _ngcontent-pln-c45="" class="page-title mb-1">Edit order SO-1052</h1>
+          <p _ngcontent-pln-c45="" class="page-subtitle text-muted mb-4">Changes are saved as a draft until you release the order.</p>
+          <div _ngcontent-pln-c45="" class="row g-4">
+            <div _ngcontent-pln-c45="" class="col-lg-8">
+              <div _ngcontent-pln-c45="" class="card">
+                <div _ngcontent-pln-c45="" class="card-body">
+                  <div _ngcontent-pln-c45="" class="form-section">
+                    <h2 _ngcontent-pln-c45="" class="section-title mb-3">Customer</h2>
+                    <div _ngcontent-pln-c45="" class="mb-3">
+                      <label _ngcontent-pln-c45="" for="customer" class="form-label">Customer name</label>
+                      <input _ngcontent-pln-c45="" type="text" class="form-control" id="customer" value="Harbor Supply" />
+                    </div>
+                    <div _ngcontent-pln-c45="" class="row g-3">
+                      <div _ngcontent-pln-c45="" class="col-md-6">
+                        <label _ngcontent-pln-c45="" for="contact" class="form-label">Contact</label>
+                        <input _ngcontent-pln-c45="" type="email" class="form-control" id="contact" value="desk@example.com" />
+                      </div>
+                      <div _ngcontent-pln-c45="" class="col-md-6">
+                        <label _ngcontent-pln-c45="" for="priority" class="form-label">Priority</label>
+                        <select _ngcontent-pln-c45="" id="priority" class="form-select"><option>Normal</option><option>Rush</option></select>
+                      </div>
+                    </div>
+                  </div>
+                  <hr _ngcontent-pln-c45="" />
+                  <div _ngcontent-pln-c45="" class="form-section">
+                    <h2 _ngcontent-pln-c45="" class="section-title mb-3">Delivery</h2>
+                    <div _ngcontent-pln-c45="" class="row g-3">
+                      <div _ngcontent-pln-c45="" class="col-sm-6 col-md-4">
+                        <label _ngcontent-pln-c45="" for="due" class="form-label">Due date</label>
+                        <input _ngcontent-pln-c45="" type="text" class="form-control" id="due" value="13 May" />
+                      </div>
+                      <div _ngcontent-pln-c45="" class="col-sm-6 col-md-4">
+                        <label _ngcontent-pln-c45="" for="site" class="form-label">Site</label>
+                        <select _ngcontent-pln-c45="" id="site" class="form-select"><option>East depot</option></select>
+                      </div>
+                      <div _ngcontent-pln-c45="" class="col-md-4">
+                        <label _ngcontent-pln-c45="" for="qty" class="form-label">Quantity</label>
+                        <input _ngcontent-pln-c45="" type="text" class="form-control" id="qty" value="48" />
+                      </div>
+                      <div _ngcontent-pln-c45="" class="col-12">
+                        <label _ngcontent-pln-c45="" for="notes" class="form-label">Notes for the warehouse</label>
+                        <textarea _ngcontent-pln-c45="" class="form-control" id="notes" rows="3"></textarea>
+                        <div _ngcontent-pln-c45="" class="form-text">Shown on the pick list.</div>
+                      </div>
+                    </div>
+                  </div>
+                  <div _ngcontent-pln-c45="" class="form-check mb-2">
+                    <input _ngcontent-pln-c45="" class="form-check-input" type="checkbox" id="split" />
+                    <label _ngcontent-pln-c45="" class="form-check-label" for="split">Allow split deliveries</label>
+                  </div>
+                  <div _ngcontent-pln-c45="" class="form-check mb-4">
+                    <input _ngcontent-pln-c45="" class="form-check-input" type="checkbox" id="notify" checked="" />
+                    <label _ngcontent-pln-c45="" class="form-check-label" for="notify">Notify the customer when it ships</label>
+                  </div>
+                  <div _ngcontent-pln-c45="" class="d-flex justify-content-end gap-2">
+                    <button _ngcontent-pln-c45="" type="button" class="btn btn-light">Cancel</button>
+                    <button _ngcontent-pln-c45="" type="submit" class="btn btn-primary">Save draft</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div _ngcontent-pln-c45="" class="col-lg-4">
+              <div _ngcontent-pln-c45="" class="card mb-3">
+                <div _ngcontent-pln-c45="" class="card-header fw-semibold">Order lines</div>
+                <ul _ngcontent-pln-c45="" class="list-group list-group-flush">
+                  <li _ngcontent-pln-c45="" class="list-group-item">Pallet wrap, 20 rolls</li>
+                  <li _ngcontent-pln-c45="" class="list-group-item">Corner boards, 400</li>
+                  <li _ngcontent-pln-c45="" class="list-group-item">Strapping kit</li>
+                </ul>
+              </div>
+              <div _ngcontent-pln-c45="" class="alert alert-secondary mb-0">
+                <h2 _ngcontent-pln-c45="" class="alert-heading section-title mb-1">Draft</h2>
+                <p _ngcontent-pln-c45="" class="hint mb-0">Last saved two minutes ago by the planning desk.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </app-order-edit>
+    </app-root>
+  </body>
+</html>
