@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 300" preserveAspectRatio="xMidYMid slice">
+  <rect width="400" height="300" fill="#d6e5e8"/>
+  <path d="M0 140 L70 70 L120 110 L190 40 L260 105 L320 60 L400 120 L400 170 L0 170Z" fill="#f4f8f9"/>
+  <path d="M190 40 L215 95 L175 130 Z M320 60 L340 110 L300 120Z" fill="#b8d4da"/>
+  <rect y="168" width="400" height="132" fill="#5f9aa3"/>
+  <path d="M60 196 L95 178 L120 200Z M250 214 L292 188 L330 216Z M160 250 L180 238 L196 252Z" fill="#eef6f7"/>
+  <path d="M60 196 H120 M250 214 H330" stroke="#3f7f88" stroke-width="3"/>
+</svg>

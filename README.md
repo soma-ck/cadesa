@@ -26,11 +26,11 @@ whatif styles.settings-panel.when.narrow.padding: compact → panel
 
 One proposed edit, every affected box, the YAML path that explains each value, and proof that desktop didn't move. An agent can read that and decide *before* it touches a file.
 
-| 390px | 1280px |
+| 1280px | 390px |
 | --- | --- |
-| <img src="docs/settings-long-390.png" width="260" alt="Settings panel with long copy at 390px: wrapped text, stacked full-width buttons"> | <img src="docs/settings-long-1280.png" width="520" alt="Settings panel with long copy at 1280px: buttons side by side"> |
+| <img src="docs/landing-1280.png" width="560" alt="Kvitfjord Paddling landing page at 1280px: a fjord illustration with a large headline over it, four trip cards in a row, and a dark closing band"> | <img src="docs/landing-390.png" width="200" alt="The same page at 390px: headline over the illustration, stacked buttons, trip cards in one column"> |
 
-<sub>Screenshots are from the Chromium conformance run, loading the exact CSS bytes `cadesa build` wrote. The engine predicted every line break shown here, without a browser.</sub>
+<sub>[`examples/landing`](examples/landing) is written entirely in Cadesa: text over a photo, a scrim gradient, an auto-fill grid, aspect-ratio images, tight-tracked display type, full-bleed bands with an aligned content column. Every box on it, all 5,412 across 123 widths, matches Chromium (`npm run conformance:landing`). The engine predicted every line break and card position here without a browser.</sub>
 
 ## Why
 
@@ -190,24 +190,32 @@ settings.cadesa.yaml:19:36 error styles.settings-panel.layout.gap: unknown space
 
 Invalid source never produces CSS. The same input always produces byte-identical CSS.
 
-## Language reference (v1)
+## Language reference
 
 | Key | Value | Compiles to |
 | --- | --- | --- |
 | `layout.pattern: stack` | | `display:flex; flex-direction:column; align-items:stretch` |
 | `layout.pattern: cluster` | | `display:flex; flex-wrap:wrap; align-items:center` |
+| `layout.pattern: grid` + `min` | size token | `grid-template-columns: repeat(auto-fill, minmax(min(<min>, 100%), 1fr))`. Columns fill the row, each at least `min` |
+| `layout.pattern: layer` | | one grid cell holding every child: text over a photo, a badge over a card |
 | `layout.gap` | space token | `gap` |
-| `layout.align` (cluster) | `start`, `center` (default), `end`, `stretch` | `align-items`. `stretch` gives equal-height cards |
+| `layout.align` | `start`, `center`, `end`, `stretch` | `align-items`. Cluster defaults to `center`, grid and layer to `stretch` (equal-height cards). Not for stack |
 | `padding` | space token, or `{ block, inline }` | `padding` (a missing axis is 0) |
-| `background`, `border` | color token | `background`, `border: 1px solid` |
+| `background`, `border` | color token | `background-color`, `border: 1px solid` |
+| `backdrop` | paint token: gradients and `url()` | `background-image`, cover, centered. Paint only, never moves a box |
+| `shadow` | shadow token | `box-shadow`. Paint only |
 | `radius` | radius token | `border-radius` |
 | `width` | size token, or `fill` | fixed `width; flex:none`, or stretch in a stack. Unset: stretch in a stack, sized to its text in a cluster |
 | `height` | size token | `height` |
-| `maxWidth` (root only) | size token | `max-width; margin-inline:auto` |
-| `text` | text role | font family, size, weight, line-height, color, optional `decoration: none \| underline` |
+| `maxWidth` | size token | `width:100%; max-width; margin-inline:auto`: a centered column, e.g. the content inside a full-bleed band |
+| `measure` | size token | `max-width`, left-aligned: a comfortable line length |
+| `aspect` | `"16:9"` | `aspect-ratio`: the height follows the width (images, media) |
+| `fit` | `cover`, `contain` | `object-fit`. Paint only |
+| `text` | text role | font family, size, weight, line-height, color; optional `letterSpacing` (em), `transform: uppercase`, `decoration: none \| underline`. Spacing and case are measured exactly |
 | `textAlign` | `start`, `center`, `end` | `text-align`. A text box with a fixed `height` also centers its lines vertically (`align-content: center`) |
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)` after base rules. Each property listed replaces its base value; unlisted properties keep their base value. `layout` and `padding` are replaced as a whole. The narrowest active breakpoint wins |
 | `intent` | sentence | a CSS comment; metadata for inspection |
+| `page.background` (top level) | color token | `:root { background-color }`; makes contrast checks conclusive |
 
 **Components nest.** Any element can be the root of another component. Put a `.ca-plan-card` inside `.ca-pricing__plans` and the parent slot's layout places it, while the card lays out its own slots, breakpoints and all. Repeated elements share their slot's style (three `.ca-plan-card__feature` items, say). See [`examples/pricing`](examples/pricing):
 

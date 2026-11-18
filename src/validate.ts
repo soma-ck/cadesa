@@ -26,11 +26,12 @@ const LENGTH = /^(?:\d+(?:\.\d+)?|\.\d+)(rem|px)$/;
 const COLOR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const IDENT_HELP = "a lowercase kebab-case name, e.g. section-title";
 
-const TOP_KEYS = ["version", "prefix", "tokens", "text", "breakpoints", "styles"];
+const TOP_KEYS = ["version", "prefix", "tokens", "text", "breakpoints", "page", "styles"];
+const PAINT = /^(?:(?:repeating-)?(?:linear|radial|conic)-gradient|url|image-set)\(/;
 const PREFIX = /^(?:[a-z][a-z0-9]*-)?$/;
-const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration"];
+const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration", "letterSpacing", "transform"];
 const ROOT_PROPS = PROP_ORDER as string[];
-const SLOT_PROPS = ROOT_PROPS.filter((p) => p !== "maxWidth");
+const SLOT_PROPS = ROOT_PROPS;
 
 type Obj = Record<string, unknown>;
 const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -123,9 +124,15 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             continue;
           }
           tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: value.toLowerCase() });
+        } else if (category === "paint") {
+          if (typeof value !== "string" || !PAINT.test(value.trim())) {
+            err(path, "invalid paint", { expected: 'a background-image value: a gradient or url(), e.g. "linear-gradient(#000a, #0000), url(hero.jpg)"', got: value });
+            continue;
+          }
+          tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: value.trim() });
         } else {
           if (typeof value !== "string" || !value.trim()) {
-            err(path, "invalid font", { expected: "a font-family list string", got: value });
+            err(path, `invalid ${category}`, { expected: category === "font" ? "a font-family list string" : 'a box-shadow value, e.g. "0 8px 24px #0002"', got: value });
             continue;
           }
           tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: value.trim() });
@@ -187,6 +194,14 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         err([...path, "lineHeight"], "invalid line height", { expected: "a unitless number > 0, e.g. 1.5", got: role.lineHeight });
         ok = false;
       }
+      if (role.letterSpacing !== undefined && (typeof role.letterSpacing !== "number" || role.letterSpacing < -0.2 || role.letterSpacing > 1)) {
+        err([...path, "letterSpacing"], "invalid letter spacing", { expected: "a number of em between -0.2 and 1, e.g. 0.08", got: role.letterSpacing });
+        ok = false;
+      }
+      if (role.transform !== undefined && role.transform !== "uppercase" && role.transform !== "none") {
+        err([...path, "transform"], "invalid text transform", { expected: "uppercase or none", got: role.transform });
+        ok = false;
+      }
       if (role.decoration !== undefined && role.decoration !== "none" && role.decoration !== "underline") {
         err([...path, "decoration"], "invalid text decoration", { expected: "none or underline", got: role.decoration });
         ok = false;
@@ -202,6 +217,8 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         weight: role.weight as number,
         lineHeight: role.lineHeight as number,
         decoration: role.decoration as "none" | "underline" | undefined,
+        letterSpacing: role.letterSpacing as number | undefined,
+        transform: role.transform as "uppercase" | "none" | undefined,
         color,
       });
     }
@@ -233,25 +250,38 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "layout": {
           const l = obj(v, p, "a layout");
           if (!l) break;
-          keys(l, p, ["pattern", "gap", "align"]);
-          if (l.pattern !== "stack" && l.pattern !== "cluster") {
+          keys(l, p, ["pattern", "gap", "align", "min"]);
+          const PATTERNS = ["stack", "cluster", "grid", "layer"];
+          if (!PATTERNS.includes(l.pattern as string)) {
             err([...p, "pattern"], l.pattern === undefined ? 'missing required key "pattern"' : "unsupported layout pattern", {
-              expected: "stack or cluster",
+              expected: "stack, cluster, grid or layer",
               got: l.pattern,
-              suggestion: typeof l.pattern === "string" ? closest(l.pattern, ["stack", "cluster"]) : undefined,
+              suggestion: typeof l.pattern === "string" ? closest(l.pattern, PATTERNS) : undefined,
             });
+            break;
+          }
+          let min: Ref | undefined;
+          if (l.pattern === "grid") {
+            if (l.min === undefined) {
+              err(p, 'a grid needs "min": the minimum column width (a size token)', { expected: "layout: { pattern: grid, min: <size token>, gap: <space token> }" });
+              break;
+            }
+            min = ref(l.min, [...p, "min"], "size");
+            if (!min) break;
+          } else if (l.min !== undefined) {
+            err([...p, "min"], "min only applies to a grid", { expected: "remove min, or use pattern: grid" });
             break;
           }
           const gap = l.gap === undefined ? undefined : ref(l.gap, [...p, "gap"], "space");
           if (l.gap !== undefined && !gap) break;
-          if (l.align !== undefined && (l.pattern !== "cluster" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
-            err([...p, "align"], l.pattern !== "cluster" ? "align only applies to a cluster (stack children always stretch)" : "invalid align", {
+          if (l.align !== undefined && (l.pattern === "stack" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
+            err([...p, "align"], l.pattern === "stack" ? "align doesn't apply to a stack (stack children always stretch)" : "invalid align", {
               expected: "start, center, end or stretch",
               got: l.align,
             });
             break;
           }
-          out.layout = { path: p.join("."), pattern: l.pattern, gap, align: l.align as LayoutProp["align"] };
+          out.layout = { path: p.join("."), pattern: l.pattern as LayoutProp["pattern"], gap, align: l.align as LayoutProp["align"], min };
           break;
         }
         case "padding": {
@@ -281,6 +311,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "maxWidth":
           out.maxWidth = ref(v, p, "size");
           break;
+        case "measure":
+          out.measure = ref(v, p, "size");
+          break;
         case "height":
           out.height = ref(v, p, "size");
           break;
@@ -296,6 +329,23 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
               suggestion: '"fill"',
             });
           else out.width = ref(v, p, "size");
+          break;
+        case "backdrop":
+          out.backdrop = ref(v, p, "paint");
+          break;
+        case "shadow":
+          out.shadow = ref(v, p, "shadow");
+          break;
+        case "aspect": {
+          const m = typeof v === "number" ? [String(v), String(v), "1"] : typeof v === "string" ? /^\s*([\d.]+)\s*[:/]\s*([\d.]+)\s*$/.exec(v) : null;
+          const ratio = m ? parseFloat(m[1]) / parseFloat(m[2]) : NaN;
+          if (!m || !(ratio > 0) || !isFinite(ratio)) err(p, "invalid aspect", { expected: 'a width:height ratio, e.g. "16:9" or 1.5', got: v });
+          else out.aspect = { value: ratio, raw: typeof v === "number" ? String(v) : `${m[1]} / ${m[2]}`, path: p.join(".") };
+          break;
+        }
+        case "fit":
+          if (v === "cover" || v === "contain") out.fit = { value: v, path: p.join(".") };
+          else err(p, "invalid fit", { expected: "cover or contain", got: v });
           break;
         case "textAlign":
           if (v === "start" || v === "center" || v === "end") out.textAlign = { value: v, path: p.join(".") };
@@ -382,6 +432,20 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   }
 
   if (diagnostics.length) return { diagnostics };
+  for (const c of components.values())
+    for (const [where, p] of [[c.path, c.props] as const, ...[...c.slots.values()].map((s) => [s.path, s.props] as const)])
+      if (p.aspect && p.height) err([...where.split("."), "aspect"], "aspect and height both set the height", { expected: "keep one of them" });
+
+  let page: Model["page"];
+  if (top.page !== undefined) {
+    const po = obj(top.page, ["page"], "page settings");
+    if (po) {
+      keys(po, ["page"], ["background"]);
+      page = { path: "page", background: po.background === undefined ? undefined : ref(po.background, ["page", "background"], "color") };
+    }
+  }
+
   const prefix = typeof top.prefix === "string" ? top.prefix : DEFAULT_PREFIX;
-  return { model: { file: src.file, prefix, tokens, text, breakpoints, components }, diagnostics };
+  if (diagnostics.length) return { diagnostics };
+  return { model: { file: src.file, prefix, tokens, text, breakpoints, components, page }, diagnostics };
 }

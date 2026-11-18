@@ -53,9 +53,12 @@ export interface Layout {
   active: string[];
   boxes: Box[];
   issues: Issue[];
+  /** The page background from the source, if declared. */
+  page?: { background: string; path: string };
 }
 
 type ParentKind = "page" | Pattern;
+const MEDIA = new Set(["img", "video", "picture", "svg", "canvas", "iframe", "object", "embed"]);
 
 const insetsOf = (p: ResolvedProps) => {
   const border = p.border ? 1 : 0;
@@ -71,16 +74,17 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   function text(n: FixtureNode, props: ResolvedProps, id: string, assumptions: string[]) {
     const t = props.text!.value;
     const m = metricsFor(t.font);
+    const shown = t.uppercase ? n.text.toUpperCase() : n.text;
     const why = !m
       ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; run cadesa metrics <font-file>`
-      : m.unsupported(n.text).length
-        ? `characters outside the measured set: ${m.unsupported(n.text).join(" ")}`
+      : m.unsupported(shown).length
+        ? `characters outside the measured set: ${m.unsupported(shown).join(" ")}`
         : m.weightIssue(t.weight);
     if (why) {
       assumptions.push(`text height assumes a single line (${why})`);
       return undefined;
     }
-    return (maxWidth: number) => layoutText(m!, n.text, t.sizePx, t.weight, maxWidth);
+    return (maxWidth: number) => layoutText(m!, shown, t.sizePx, t.weight, maxWidth, { letterSpacing: t.letterSpacing });
   }
 
   function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind): Box {
@@ -121,8 +125,16 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         });
         w = 0;
       }
-    } else w = avail; // page block or stack: stretch
+    } else w = avail; // page block, stack, grid cell, layer: stretch
     if (props.maxWidth && w > props.maxWidth.value) w = props.maxWidth.value;
+    if (props.measure && w > props.measure.value) w = props.measure.value;
+    if (props.maxWidth && parent === "cluster")
+      issues.push({
+        severity: "error",
+        id,
+        path: props.maxWidth.steps.at(-1)!.path,
+        message: `#${id} has maxWidth inside a cluster; its auto margins would push the row apart. Use a width token instead`,
+      });
 
     const innerW = Math.max(0, w - 2 * inset.x);
 
@@ -155,15 +167,53 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         severity: "error",
         id,
         path: sourcePath,
-        message: `#${id} has child slots but no layout; add layout: { pattern: stack | cluster }`,
+        message: `#${id} has child slots but no layout; add layout: { pattern: stack | cluster | grid | layer }`,
       });
     }
 
-    if (kids.length && pattern === "stack") {
+    /** margin-inline: auto centers a box narrower than its cell. */
+    const centered = (b: Box, cell: number) => (b.props.maxWidth && b.w < cell ? (cell - b.w) / 2 : 0);
+    /** Cross-axis alignment within a row of height `rowH` (grid rows, the layer cell). */
+    const alignIn = (b: Box, rowH: number, align: string) => {
+      if (align === "stretch" && !b.props.height && !b.props.aspect) b.h = rowH;
+      return align === "center" ? (rowH - b.h) / 2 : align === "end" ? rowH - b.h : 0;
+    };
+
+    if (kids.length && pattern === "grid") {
+      const min = props.min!.value;
+      const cols = Math.max(1, Math.floor((innerW + gap + EPS) / (min + gap)));
+      const colW = cols === 1 ? innerW : (innerW - gap * (cols - 1)) / cols;
+      const align = props.align?.value ?? "stretch";
+      const measured = kids.map((k) => measure(k.node, k.comp, k.slot, colW, "grid"));
+      let y = 0;
+      for (let r = 0; r < measured.length; r += cols) {
+        const row = measured.slice(r, r + cols);
+        const rowH = Math.max(...row.map((b) => b.h));
+        row.forEach((b, i) => {
+          const dy = alignIn(b, rowH, align);
+          b.x = i * (colW + gap) + centered(b, colW);
+          b.y = y + dy;
+          children.push(b);
+        });
+        y += rowH + (r + cols < measured.length ? gap : 0);
+      }
+      contentH = y;
+    } else if (kids.length && pattern === "layer") {
+      const align = props.align?.value ?? "stretch";
+      const measured = kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "layer"));
+      const rowH = Math.max(...measured.map((b) => b.h));
+      for (const b of measured) {
+        const dy = alignIn(b, rowH, align);
+        b.x = centered(b, innerW);
+        b.y = dy;
+        children.push(b);
+      }
+      contentH = rowH;
+    } else if (kids.length && pattern === "stack") {
       let y = 0;
       kids.forEach((k, i) => {
         const b = measure(k.node, k.comp, k.slot, innerW, "stack");
-        b.x = b.props.maxWidth && b.w < innerW ? (innerW - b.w) / 2 : 0; // nested root: margin-inline: auto
+        b.x = centered(b, innerW);
         b.y = y;
         y += b.h + (i < kids.length - 1 ? gap : 0);
         children.push(b);
@@ -220,7 +270,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       } else contentH = lineH;
     }
 
-    const h = props.height?.value ?? contentH + 2 * inset.y;
+    // aspect: the height follows the width. Media elements take exactly that; other boxes grow if
+    // their content needs more (aspect-ratio's automatic minimum size).
+    const media = MEDIA.has(n.tag);
+    let h = props.height?.value ?? contentH + 2 * inset.y;
+    if (props.aspect && !props.height) h = media ? w / props.aspect.value : Math.max(w / props.aspect.value, contentH + 2 * inset.y);
+    if (media && !props.aspect && !props.height)
+      issues.push({
+        severity: "warning",
+        id,
+        path: sourcePath,
+        message: `<${n.tag}> #${id} has no aspect or height, so its height depends on the file and can't be predicted; add aspect: "16:9" (or height)`,
+      });
     const box: Box = {
       id,
       tag: n.tag,
@@ -347,7 +408,14 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   };
   for (const b of boxes) place(b, 0, 0);
 
-  return { width, active: activeBreakpoints(model, width).map((b) => b.name), boxes, issues };
+  const pageBg = model.page?.background;
+  return {
+    width,
+    active: activeBreakpoints(model, width).map((b) => b.name),
+    boxes,
+    issues,
+    page: pageBg ? { background: model.tokens.get(`color.${pageBg.name}`)!.raw, path: pageBg.path } : undefined,
+  };
 }
 
 export function* walk(boxes: Box[]): Generator<Box> {

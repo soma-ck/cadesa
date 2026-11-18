@@ -30,10 +30,18 @@ export interface ResolvedText {
   weight: number;
   lineHeight: number;
   color: string;
+  /** px */
+  letterSpacing: number;
+  uppercase: boolean;
 }
 
 export interface ResolvedProps {
   pattern?: Resolved<Pattern>;
+  min?: Resolved<number>;
+  aspect?: Resolved<number>;
+  fit?: Resolved<"cover" | "contain">;
+  backdrop?: Resolved<string>;
+  shadow?: Resolved<string>;
   align?: Resolved<"start" | "center" | "end" | "stretch">;
   textAlign?: Resolved<"start" | "center" | "end">;
   gap?: Resolved<number>;
@@ -42,6 +50,7 @@ export interface ResolvedProps {
   border?: Resolved<string>;
   radius?: Resolved<number>;
   maxWidth?: Resolved<number>;
+  measure?: Resolved<number>;
   width?: Resolved<number | "fill">;
   height?: Resolved<number>;
   text?: Resolved<ResolvedText>;
@@ -96,10 +105,12 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const l = p.layout!;
         out.pattern = { value: l.pattern, display: l.pattern, steps: [...pre, src(`${l.path}.pattern`)] };
         out.gap = l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
-        if (l.pattern === "cluster") {
-          const a = l.align ?? "center";
-          out.align = { value: a, display: l.align ? a : "center (default)", steps: [...pre, src(l.align ? `${l.path}.align` : l.path)] };
+        if (l.pattern !== "stack") {
+          const def = l.pattern === "cluster" ? "center" : "stretch";
+          const a = l.align ?? def;
+          out.align = { value: a, display: l.align ? a : `${def} (default)`, steps: [...pre, src(l.align ? `${l.path}.align` : l.path)] };
         }
+        if (l.min) out.min = lengthOf(l.min);
         break;
       }
       case "textAlign": {
@@ -121,6 +132,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
         break;
       }
       case "radius":
+      case "measure":
       case "maxWidth":
       case "height":
         out[key] = lengthOf(p[key]!);
@@ -129,6 +141,23 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "border":
         out[key] = colorOf(p[key]!);
         break;
+      case "backdrop":
+      case "shadow": {
+        const r = p[key]!;
+        const t = model.tokens.get(tokenKey(r.kind, r.name))!;
+        out[key] = { value: t.raw, display: `${r.name}`, steps: [tokenStep(r), ...pre, src(r.path)] };
+        break;
+      }
+      case "aspect": {
+        const a = p.aspect!;
+        out.aspect = { value: a.value, display: a.raw, steps: [...pre, src(a.path)] };
+        break;
+      }
+      case "fit": {
+        const f = p.fit!;
+        out.fit = { value: f.value, display: f.value, steps: [...pre, src(f.path)] };
+        break;
+      }
       case "width": {
         const w = p.width!;
         out.width =
@@ -150,6 +179,8 @@ export function resolveElement(model: Model, component: Component, slot: string 
             weight: role.weight,
             lineHeight: role.lineHeight,
             color: color.raw,
+            letterSpacing: (role.letterSpacing ?? 0) * role.size.px,
+            uppercase: role.transform === "uppercase",
           },
           display: `${role.name} (${fmtPx(role.size.px)}px/${role.lineHeight}, ${role.weight})`,
           steps: [{ kind: "text", label: `text.${role.name}`, path: role.path }, ...pre, src(r.path)],

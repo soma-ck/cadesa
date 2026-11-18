@@ -4,9 +4,13 @@
   "description": "Editor autocomplete for *.cadesa.yaml. The CLI's validator is authoritative: it also checks that every reference names a declared token, role, breakpoint or slot.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["version"],
+  "required": [
+    "version"
+  ],
   "properties": {
-    "version": { "const": 1 },
+    "version": {
+      "const": 1
+    },
     "prefix": {
       "type": "string",
       "pattern": "^(?:[a-z][a-z0-9]*-)?$",
@@ -17,85 +21,210 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "space": { "$ref": "#/$defs/lengthTokens" },
-        "size": { "$ref": "#/$defs/lengthTokens" },
-        "radius": { "$ref": "#/$defs/lengthTokens" },
+        "space": {
+          "$ref": "#/$defs/lengthTokens"
+        },
+        "size": {
+          "$ref": "#/$defs/lengthTokens"
+        },
+        "radius": {
+          "$ref": "#/$defs/lengthTokens"
+        },
         "color": {
           "type": "object",
-          "propertyNames": { "$ref": "#/$defs/ident" },
-          "additionalProperties": { "type": "string", "pattern": "^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" }
+          "propertyNames": {
+            "$ref": "#/$defs/ident"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$"
+          }
         },
         "font": {
           "type": "object",
-          "propertyNames": { "$ref": "#/$defs/ident" },
-          "additionalProperties": { "type": "string", "minLength": 1 }
+          "propertyNames": {
+            "$ref": "#/$defs/ident"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "paint": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ident"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "pattern": "^(?:(?:repeating-)?(?:linear|radial|conic)-gradient|url|image-set)\\(",
+            "description": "background-image value: gradient(s) and/or url()"
+          }
+        },
+        "shadow": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/ident"
+          },
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1,
+            "description": "box-shadow value"
+          }
         }
       }
     },
     "text": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/ident" },
+      "propertyNames": {
+        "$ref": "#/$defs/ident"
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["size", "weight", "lineHeight", "color"],
+        "required": [
+          "size",
+          "weight",
+          "lineHeight",
+          "color"
+        ],
         "properties": {
-          "font": { "$ref": "#/$defs/ref", "description": "font token" },
-          "size": { "$ref": "#/$defs/length" },
-          "weight": { "type": "integer", "minimum": 1, "maximum": 1000 },
-          "lineHeight": { "type": "number", "exclusiveMinimum": 0 },
-          "color": { "$ref": "#/$defs/ref", "description": "color token" },
-          "decoration": { "enum": ["none", "underline"] }
+          "font": {
+            "$ref": "#/$defs/ref",
+            "description": "font token"
+          },
+          "size": {
+            "$ref": "#/$defs/length"
+          },
+          "weight": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "lineHeight": {
+            "type": "number",
+            "exclusiveMinimum": 0
+          },
+          "color": {
+            "$ref": "#/$defs/ref",
+            "description": "color token"
+          },
+          "decoration": {
+            "enum": [
+              "none",
+              "underline"
+            ]
+          },
+          "letterSpacing": {
+            "type": "number",
+            "minimum": -0.2,
+            "maximum": 1,
+            "description": "em"
+          },
+          "transform": {
+            "enum": [
+              "uppercase",
+              "none"
+            ]
+          }
         }
       }
     },
     "breakpoints": {
       "type": "object",
       "description": "Each breakpoint applies at viewport widths <= its value (desktop-first).",
-      "propertyNames": { "$ref": "#/$defs/ident" },
-      "additionalProperties": { "$ref": "#/$defs/length" }
+      "propertyNames": {
+        "$ref": "#/$defs/ident"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/length"
+      }
     },
     "styles": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/ident" },
+      "propertyNames": {
+        "$ref": "#/$defs/ident"
+      },
       "additionalProperties": {
         "type": "object",
         "additionalProperties": false,
         "properties": {
-          "intent": { "type": "string", "description": "Design intent. Metadata only; emitted as a CSS comment." },
+          "intent": {
+            "type": "string",
+            "description": "Design intent. Metadata only; emitted as a CSS comment."
+          },
           "slots": {
             "type": "object",
-            "propertyNames": { "$ref": "#/$defs/ident" },
-            "additionalProperties": { "$ref": "#/$defs/slotProps" }
+            "propertyNames": {
+              "$ref": "#/$defs/ident"
+            },
+            "additionalProperties": {
+              "$ref": "#/$defs/slotProps"
+            }
           },
           "when": {
             "type": "object",
-            "propertyNames": { "$ref": "#/$defs/ident" },
+            "propertyNames": {
+              "$ref": "#/$defs/ident"
+            },
             "additionalProperties": {
-              "allOf": [{ "$ref": "#/$defs/rootProps" }],
+              "allOf": [
+                {
+                  "$ref": "#/$defs/rootProps"
+                }
+              ],
               "properties": {
                 "slots": {
                   "type": "object",
-                  "additionalProperties": { "$ref": "#/$defs/slotProps" }
+                  "additionalProperties": {
+                    "$ref": "#/$defs/slotProps"
+                  }
                 }
               },
               "unevaluatedProperties": false
             }
           }
         },
-        "allOf": [{ "$ref": "#/$defs/rootProps" }],
+        "allOf": [
+          {
+            "$ref": "#/$defs/rootProps"
+          }
+        ],
         "unevaluatedProperties": false
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "background": {
+          "$ref": "#/$defs/ref",
+          "description": "color token behind every component"
+        }
       }
     }
   },
   "$defs": {
-    "ident": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
-    "length": { "type": "string", "pattern": "^(?:\\d+(?:\\.\\d+)?|\\.\\d+)(rem|px)$" },
-    "ref": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "ident": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
+    "length": {
+      "type": "string",
+      "pattern": "^(?:\\d+(?:\\.\\d+)?|\\.\\d+)(rem|px)$"
+    },
+    "ref": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$"
+    },
     "lengthTokens": {
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/ident" },
-      "additionalProperties": { "$ref": "#/$defs/length" }
+      "propertyNames": {
+        "$ref": "#/$defs/ident"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/length"
+      }
     },
     "boxProps": {
       "type": "object",
@@ -103,42 +232,139 @@
         "layout": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["pattern"],
+          "required": [
+            "pattern"
+          ],
           "properties": {
-            "pattern": { "enum": ["stack", "cluster"] },
-            "align": { "enum": ["start", "center", "end", "stretch"], "description": "cluster only: cross-axis alignment of items in a row (default center)" },
-            "gap": { "$ref": "#/$defs/ref", "description": "space token" }
+            "pattern": {
+              "enum": [
+                "stack",
+                "cluster",
+                "grid",
+                "layer"
+              ]
+            },
+            "align": {
+              "enum": [
+                "start",
+                "center",
+                "end",
+                "stretch"
+              ],
+              "description": "cluster (default center), grid and layer (default stretch)"
+            },
+            "gap": {
+              "$ref": "#/$defs/ref",
+              "description": "space token"
+            },
+            "min": {
+              "$ref": "#/$defs/ref",
+              "description": "grid only: minimum column width (size token)"
+            }
           }
         },
         "padding": {
           "description": "space token, or { block, inline } space tokens (a missing axis is 0)",
           "oneOf": [
-            { "$ref": "#/$defs/ref" },
+            {
+              "$ref": "#/$defs/ref"
+            },
             {
               "type": "object",
               "additionalProperties": false,
               "minProperties": 1,
-              "properties": { "block": { "$ref": "#/$defs/ref" }, "inline": { "$ref": "#/$defs/ref" } }
+              "properties": {
+                "block": {
+                  "$ref": "#/$defs/ref"
+                },
+                "inline": {
+                  "$ref": "#/$defs/ref"
+                }
+              }
             }
           ]
         },
-        "background": { "$ref": "#/$defs/ref", "description": "color token" },
-        "border": { "$ref": "#/$defs/ref", "description": "color token (1px solid)" },
-        "radius": { "$ref": "#/$defs/ref", "description": "radius token" },
-        "width": { "$ref": "#/$defs/ref", "description": "size token, or fill (stretch inside a stack)" },
-        "height": { "$ref": "#/$defs/ref", "description": "size token" },
-        "text": { "$ref": "#/$defs/ref", "description": "text role" },
-        "textAlign": { "enum": ["start", "center", "end"] }
+        "background": {
+          "$ref": "#/$defs/ref",
+          "description": "color token"
+        },
+        "border": {
+          "$ref": "#/$defs/ref",
+          "description": "color token (1px solid)"
+        },
+        "radius": {
+          "$ref": "#/$defs/ref",
+          "description": "radius token"
+        },
+        "width": {
+          "$ref": "#/$defs/ref",
+          "description": "size token, or fill (stretch inside a stack)"
+        },
+        "height": {
+          "$ref": "#/$defs/ref",
+          "description": "size token"
+        },
+        "text": {
+          "$ref": "#/$defs/ref",
+          "description": "text role"
+        },
+        "textAlign": {
+          "enum": [
+            "start",
+            "center",
+            "end"
+          ]
+        },
+        "maxWidth": {
+          "$ref": "#/$defs/ref",
+          "description": "size token; caps the width and centers the box"
+        },
+        "measure": {
+          "$ref": "#/$defs/ref",
+          "description": "size token; caps the width, stays left-aligned"
+        },
+        "aspect": {
+          "oneOf": [
+            {
+              "type": "string",
+              "pattern": "^\\s*[\\d.]+\\s*[:/]\\s*[\\d.]+\\s*$"
+            },
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            }
+          ],
+          "description": "width:height, e.g. \"16:9\""
+        },
+        "fit": {
+          "enum": [
+            "cover",
+            "contain"
+          ]
+        },
+        "backdrop": {
+          "$ref": "#/$defs/ref",
+          "description": "paint token"
+        },
+        "shadow": {
+          "$ref": "#/$defs/ref",
+          "description": "shadow token"
+        }
       }
     },
     "rootProps": {
-      "allOf": [{ "$ref": "#/$defs/boxProps" }],
-      "properties": {
-        "maxWidth": { "$ref": "#/$defs/ref", "description": "size token; also centers the component" }
-      }
+      "allOf": [
+        {
+          "$ref": "#/$defs/boxProps"
+        }
+      ]
     },
     "slotProps": {
-      "allOf": [{ "$ref": "#/$defs/boxProps" }],
+      "allOf": [
+        {
+          "$ref": "#/$defs/boxProps"
+        }
+      ],
       "unevaluatedProperties": false
     }
   }

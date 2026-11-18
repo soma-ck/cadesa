@@ -1,0 +1,99 @@
+# yaml-language-server: $schema=../../schema/cadesa.schema.json
+# Kvitfjord Paddling: a landing page built entirely in Cadesa.
+version: 1
+tokens:
+  space: { tight: 0.5rem, snug: 0.75rem, base: 1rem, roomy: 1.5rem, wide: 2.5rem, edge: 4rem, section: 5rem, compact-section: 3rem }
+  size: { content: 72rem, headline: 54rem, lede: 34rem, measure: 38rem, control: 3rem, card-min: 15rem }
+  color: { glacier: "#e9f0f1", fjord: "#0f3b46", ink: "#0f2a31", kelp: "#2f4a33", slate: "#4f6066", foam: "#ffffff", mist: "#cfdfe2", buoy: "#f4b41a" }
+  radius: { image: 0.375rem, control: 0.5rem }
+  font: { ui: "Inter, sans-serif" }
+  paint: { scrim: "linear-gradient(to bottom, #0f3b4600 0%, #0f3b46b3 45%, #0f3b46f2 100%)" }
+  shadow: { lift: "0 10px 24px -8px #0a2a3299" }
+text:
+  display: { font: ui, size: 4.5rem, weight: 760, lineHeight: 0.98, color: foam, letterSpacing: -0.035 }
+  display-small: { font: ui, size: 2.625rem, weight: 760, lineHeight: 1.02, color: foam, letterSpacing: -0.03 }
+  lede: { font: ui, size: 1.25rem, weight: 420, lineHeight: 1.45, color: mist }
+  lede-small: { font: ui, size: 1.0625rem, weight: 420, lineHeight: 1.45, color: mist }
+  action: { font: ui, size: 1rem, weight: 640, lineHeight: 1.25, color: ink, decoration: none }
+  action-quiet: { font: ui, size: 1rem, weight: 600, lineHeight: 1.25, color: foam, decoration: none }
+  heading: { font: ui, size: 2.25rem, weight: 720, lineHeight: 1.1, color: ink, letterSpacing: -0.02 }
+  heading-on-dark: { font: ui, size: 2.25rem, weight: 720, lineHeight: 1.1, color: foam, letterSpacing: -0.02 }
+  body: { font: ui, size: 1.0625rem, weight: 400, lineHeight: 1.55, color: slate }
+  body-on-dark: { font: ui, size: 1.0625rem, weight: 400, lineHeight: 1.55, color: mist }
+  card-title: { font: ui, size: 1.25rem, weight: 660, lineHeight: 1.25, color: ink, letterSpacing: -0.01 }
+  card-meta: { font: ui, size: 0.9375rem, weight: 400, lineHeight: 1.45, color: slate }
+  price: { font: ui, size: 0.9375rem, weight: 640, lineHeight: 1.45, color: kelp }
+breakpoints:
+  medium: 64rem
+  narrow: 40rem
+page:
+  background: glacier
+styles:
+  hero:
+    intent: The fjord is the first thing you see; the headline sits on the water.
+    layout: { pattern: layer, align: end }
+    background: fjord
+    slots:
+      art: { aspect: "16:7", fit: cover }
+      copy:
+        layout: { pattern: stack }
+        padding: { block: wide }
+        backdrop: scrim
+      frame: { layout: { pattern: stack, gap: roomy }, maxWidth: content, padding: { inline: roomy } }
+      title: { text: display, width: headline }
+      lede: { text: lede, width: lede }
+      actions: { layout: { pattern: cluster, gap: snug } }
+      book: { text: action, background: buoy, radius: control, height: control, padding: { inline: roomy }, shadow: lift, textAlign: center }
+      how: { text: action-quiet, border: mist, radius: control, height: control, padding: { inline: roomy }, textAlign: center }
+    when:
+      medium:
+        slots:
+          art: { aspect: "4:3" }
+          title: { width: fill }
+      narrow:
+        slots:
+          art: { aspect: "3:4" }
+          copy: { padding: { block: roomy } }
+          frame: { padding: { inline: base } }
+          title: { text: display-small }
+          lede: { text: lede-small, width: fill }
+          actions: { layout: { pattern: stack, gap: snug } }
+          book: { width: fill }
+          how: { width: fill }
+  trips:
+    intent: Four trips, scannable at a glance; the pictures do the selling.
+    layout: { pattern: stack, gap: wide }
+    padding: { block: section, inline: roomy }
+    maxWidth: content
+    slots:
+      head: { layout: { pattern: stack, gap: snug } }
+      title: { text: heading }
+      intro: { text: body, measure: measure }
+      list: { layout: { pattern: grid, min: card-min, gap: roomy, align: start } }
+    when:
+      narrow:
+        padding: { block: compact-section, inline: base }
+  trip-card:
+    layout: { pattern: stack, gap: snug }
+    slots:
+      photo: { aspect: "4:3", fit: cover, radius: image }
+      body: { layout: { pattern: stack, gap: tight } }
+      name: { text: card-title }
+      meta: { text: card-meta }
+      price: { text: price }
+  closing:
+    intent: One quiet, dark band that asks for the booking.
+    layout: { pattern: stack }
+    background: fjord
+    padding: { block: section }
+    slots:
+      inner: { layout: { pattern: stack, gap: roomy }, maxWidth: content, padding: { inline: roomy } }
+      title: { text: heading-on-dark, measure: measure }
+      body: { text: body-on-dark, measure: measure }
+      actions: { layout: { pattern: cluster, gap: snug } }
+      book: { text: action, background: buoy, radius: control, height: control, padding: { inline: roomy }, textAlign: center }
+    when:
+      narrow:
+        padding: { block: compact-section }
+        slots:
+          inner: { padding: { inline: base } }

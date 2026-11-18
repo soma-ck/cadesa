@@ -43,8 +43,9 @@
   align-items: stretch;
   gap: var(--ca-space-section);
   padding: var(--ca-space-panel);
-  background: var(--ca-color-surface);
+  background-color: var(--ca-color-surface);
   border-radius: var(--ca-radius-panel);
+  width: 100%;
   max-width: var(--ca-size-panel);
   margin-inline: auto;
 }
@@ -75,7 +76,7 @@
 
 .ca-settings-panel .ca-settings-panel__primary {
   padding: 0 var(--ca-space-control-inline);
-  background: var(--ca-color-ink);
+  background-color: var(--ca-color-ink);
   border-radius: var(--ca-radius-control);
   height: var(--ca-size-control);
   align-content: center;

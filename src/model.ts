@@ -7,8 +7,8 @@ export interface Length {
   px: number;
 }
 
-export type TokenCategory = "space" | "size" | "color" | "radius" | "font";
-export const TOKEN_CATEGORIES: TokenCategory[] = ["space", "size", "color", "radius", "font"];
+export type TokenCategory = "space" | "size" | "color" | "radius" | "font" | "paint" | "shadow";
+export const TOKEN_CATEGORIES: TokenCategory[] = ["space", "size", "color", "radius", "font", "paint", "shadow"];
 export const LENGTH_CATEGORIES = new Set<TokenCategory>(["space", "size", "radius"]);
 
 export interface Token {
@@ -29,6 +29,9 @@ export interface TextRole {
   lineHeight: number;
   color: Ref;
   decoration?: "none" | "underline";
+  /** In em; measured exactly (added after every character, as browsers do). */
+  letterSpacing?: number;
+  transform?: "uppercase" | "none";
 }
 
 export interface Breakpoint {
@@ -44,7 +47,7 @@ export interface Ref {
   path: string;
 }
 
-export type Pattern = "stack" | "cluster";
+export type Pattern = "stack" | "cluster" | "grid" | "layer";
 
 export type Align = "start" | "center" | "end" | "stretch";
 export type TextAlign = "start" | "center" | "end";
@@ -53,8 +56,10 @@ export interface LayoutProp {
   path: string;
   pattern: Pattern;
   gap?: Ref;
-  /** Cluster only: cross-axis alignment of items in a row (default center). */
+  /** Cross-axis alignment: cluster (default center), grid and layer (default stretch). Not for stack. */
   align?: Align;
+  /** Grid only: minimum column width; columns auto-fill the row. */
+  min?: Ref;
 }
 
 /** `padding: compact` sets both axes; `padding: { block, inline }` sets each (a missing axis is 0). */
@@ -71,8 +76,17 @@ export interface Props {
   border?: Ref;
   radius?: Ref;
   maxWidth?: Ref;
+  /** Max width that stays left-aligned (a line length), unlike maxWidth, which centers. */
+  measure?: Ref;
   width?: Ref | { keyword: "fill"; path: string };
   height?: Ref;
+  /** Width / height ratio; height follows the width (images, media, cards). */
+  aspect?: { value: number; raw: string; path: string };
+  /** How an image fills an aspect box. Paint only. */
+  fit?: { value: "cover" | "contain"; path: string };
+  /** Gradient or image painted over the background color. Paint only. */
+  backdrop?: Ref;
+  shadow?: Ref;
   text?: Ref;
   textAlign?: { value: TextAlign; path: string };
 }
@@ -81,11 +95,16 @@ export const PROP_ORDER: (keyof Props)[] = [
   "layout",
   "padding",
   "background",
+  "backdrop",
   "border",
+  "shadow",
   "radius",
   "maxWidth",
+  "measure",
   "width",
   "height",
+  "aspect",
+  "fit",
   "text",
   "textAlign",
 ];
@@ -122,6 +141,8 @@ export interface Model {
   text: Map<string, TextRole>;
   breakpoints: Breakpoint[];
   components: Map<string, Component>;
+  /** The page behind every component (paint only; makes contrast checks conclusive). */
+  page?: { background?: Ref; path: string };
 }
 
 export function tokenKey(category: string, name: string) {

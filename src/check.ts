@@ -71,7 +71,7 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
             severity: "warning",
             inconclusive: true,
             id: b.id,
-            message: `contrast of #${b.id} is inconclusive: no Cadesa background behind it (the page background is outside the source)`,
+            message: `contrast of #${b.id} is inconclusive: no background behind it in the source; set page.background or a background on an ancestor`,
           });
         } else {
           const ratio = contrast(t.color, here.color);
@@ -102,7 +102,8 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
       }
       for (const k of b.children) visit(k, here);
     };
-    for (const b of l.boxes) visit(b);
+    const pageBg = l.page ? { color: l.page.background, path: l.page.path } : undefined;
+    for (const b of l.boxes) visit(b, pageBg);
     for (const f of out.slice(start)) {
       const unknown = f.check === "contrast" ? paintUnknown.has(f.id) || geometryUnknown.has(f.id) : geometryUnknown.has(f.id);
       if (unknown && !f.inconclusive) {

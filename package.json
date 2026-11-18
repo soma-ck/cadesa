@@ -40,7 +40,7 @@
     "cadesa": "tsx src/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.check.json",
-    "build:ts": "rm -rf lib && tsc -p tsconfig.json",
+    "build:ts": "rm -rf lib && tsc -p tsconfig.json && chmod +x lib/cli.js",
     "prepublishOnly": "npm run typecheck && npm test && npm run build:ts",
     "conformance": "tsx scripts/conformance.ts",
     "demo": "tsx src/cli.ts build settings.cadesa.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cadesa.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel",
@@ -48,7 +48,8 @@
     "metrics": "tsx scripts/gen-metrics.ts",
     "conformance:lift": "tsx scripts/conformance.ts --lift fixtures/legacy.css --fixtures fixtures/legacy.html --out artifacts/legacy",
     "bench": "npm run build:ts && tsx bench/run.ts",
-    "conformance:pricing": "tsx scripts/conformance.ts --source examples/pricing/pricing.cadesa.yaml --css examples/pricing/pricing.css --fixtures examples/pricing/pricing.html --widths $(seq -s, 300 7 1300) --out artifacts/pricing"
+    "conformance:pricing": "tsx scripts/conformance.ts --source examples/pricing/pricing.cadesa.yaml --css examples/pricing/pricing.css --fixtures examples/pricing/pricing.html --widths $(seq -s, 300 7 1300) --out artifacts/pricing",
+    "conformance:landing": "tsx scripts/conformance.ts --source examples/landing/landing.cadesa.yaml --css examples/landing/landing.css --fixtures examples/landing/landing.html --widths $(seq -s, 300 9 1400) --out artifacts/landing"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

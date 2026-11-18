@@ -92,7 +92,8 @@ const sanitize = (s: string) =>
     .replace(/^-+|-+$/g, "")
     .replace(/^(\d)/, "n$1");
 
-type Cat = "space" | "size" | "color" | "radius" | "font";
+type Cat = "space" | "size" | "color" | "radius" | "font" | "paint" | "shadow";
+const PAINT_VALUE = /^(?:(?:repeating-)?(?:linear|radial|conic)-gradient|url|image-set)\(/;
 
 class Tokens {
   cats = new Map<Cat, Map<string, string>>();
@@ -112,7 +113,9 @@ class Tokens {
     const known = this.byValue.get(`${cat}:${raw}`);
     if (known) return known;
     const name =
-      cat === "color"
+      cat === "paint" || cat === "shadow"
+        ? `${cat}-${(this.cats.get(cat)?.size ?? 0) + 1}`
+        : cat === "color"
         ? `hex-${raw.slice(1)}`
         : cat === "font"
           ? sanitize(raw.split(",")[0].replace(/["']/g, "")) || "font"
@@ -180,6 +183,7 @@ function expand(d: Decl): Decl[] {
       return box("border").map((x) => ({ ...x, prop: `${x.prop}-width` }));
     case "background": {
       const hex = toHex(d.value);
+      if (PAINT_VALUE.test(d.value.trim())) return [mk("background-image", d.value)];
       return hex || d.value.trim() === "transparent" || d.value.trim() === "none" || d.value.startsWith("var(")
         ? [mk("background-color", d.value)]
         : [d];
@@ -218,9 +222,25 @@ export function liftParsed(css: ParsedCss): LiftResult {
   const tokens = new Tokens();
   let declarations = 0;
 
+  const resolveVarRaw = (v: string): string | undefined => {
+    let cur = v.trim();
+    for (let i = 0; i < 8; i++) {
+      const m = /^var\(\s*(--[\w-]+)\s*(?:,\s*(.+))?\)$/.exec(cur);
+      if (!m) return cur;
+      const def = css.vars.get(m[1]);
+      if (def) cur = def.value.trim();
+      else if (m[2]) cur = m[2].trim();
+      else return undefined;
+    }
+    return undefined;
+  };
+
   for (const s of css.skipped) unlifted.push({ file: css.file, line: s.line, selector: s.text, reason: s.reason, kind: "none" });
 
   // 1. Classify rules.
+  let pageBackground: Decl | undefined;
+  /** Elements whose children are all placed in one grid cell (a layer), per state max px. */
+  const layerChildren = new Map<string, Set<number>>();
   const byClass = new Map<string, { block: string; element?: string; rules: ElementRule[] }>();
   const blockOrder: string[] = [];
   for (const rule of css.rules) {
@@ -242,6 +262,26 @@ export function liftParsed(css: ParsedCss): LiftResult {
     }
 
     for (const sel of sels) {
+      // The page background: :root / html / body { background-color }.
+      if (/^(?::root|html|body)$/.test(sel) && !rule.media) {
+        const rest: Decl[] = [];
+        for (const d of rule.decls.flatMap(expand))
+          if (d.prop === "background-color" && toHex(resolveVarRaw(d.value) ?? "")) pageBackground = d;
+          else if (!(d.prop === "margin-top" || d.prop === "margin-right" || d.prop === "margin-bottom" || d.prop === "margin-left") || !isZero(d.value)) rest.push(d);
+        if (rest.length)
+          unlifted.push({ file: css.file, line: rule.line, selector: sel, decl: rest.map((d) => `${d.prop}: ${d.value}`).join("; "), reason: "page-level styles other than the background are not modelled", kind: worst(rest.map((d) => kindOf(d.prop))) });
+        continue;
+      }
+      // Layer children: ".x > * { grid-area: 1 / 1 }".
+      const lc = /^(.+?)\s*>\s*\*$/.exec(sel);
+      const lt = lc ? classify(lc[1]) : undefined;
+      if (lt && (lt.kind === "root" || lt.kind === "slot") && rule.decls.length === 1 && /^grid-area$/.test(rule.decls[0].prop) && /^1\s*\/\s*1(\s*\/\s*2\s*\/\s*2)?$/.test(rule.decls[0].value.trim()) && (!rule.media || rule.media.maxPx !== undefined)) {
+        const cls = lt.kind === "root" ? lt.block : `${lt.block}__${lt.element}`;
+        const set = layerChildren.get(cls) ?? new Set<number>();
+        set.add(rule.media?.maxPx ?? Infinity);
+        layerChildren.set(cls, set);
+        continue;
+      }
       const t = classify(sel);
       if ((t.kind === "root" || t.kind === "slot") && !where && !(rule.media && rule.media.maxPx === undefined)) {
         const className = t.kind === "root" ? t.block : `${t.block}__${t.element}`;
@@ -401,6 +441,30 @@ export function liftParsed(css: ParsedCss): LiftResult {
         ...(gap && { gap }),
         ...(!column && clusterAlign && clusterAlign !== "center" && { align: clusterAlign }),
       };
+    } else if (display && display.value.trim() === "grid") {
+      const cols = take("grid-template-columns");
+      const align = take("align-items");
+      const justify = take("justify-items");
+      const rowGap = take("row-gap");
+      const colGap = take("column-gap");
+      const cv = cols?.value.trim() ?? "";
+      const auto = /^repeat\(\s*auto-fill\s*,\s*minmax\(\s*(?:min\(\s*(.+?)\s*,\s*100%\s*\)|([^,]+?))\s*,\s*1fr\s*\)\s*\)$/.exec(cv);
+      const layered = [...(layerChildren.get(e.className) ?? [])].some((px) => px >= s);
+      const GA: Record<string, string> = { start: "start", "flex-start": "start", center: "center", end: "end", "flex-end": "end", stretch: "stretch", normal: "stretch" };
+      const a = align ? GA[align.value.trim()] : "stretch";
+      if (align && !a) note(e, s, align, `align-items: ${align.value.trim()} has no Cadesa equivalent`, "geometry");
+      if (justify && !["stretch", "normal"].includes(justify.value.trim())) note(e, s, justify, "grid items always stretch across their column", "geometry");
+      if (auto) {
+        const min = lengthToken("size", auto[1] ?? auto[2]);
+        if (!min) note(e, s, cols!, "the grid's minimum column width must be a px or rem length", "geometry");
+        else {
+          if (rowGap && colGap && rowGap.value.trim() !== colGap.value.trim()) note(e, s, rowGap, "a grid has one gap for rows and columns", "geometry");
+          const g = rowGap && !isZero(rowGap.value) ? lengthToken("space", rowGap.value) : undefined;
+          out.layout = { pattern: "grid", min, ...(g && { gap: g }), ...(a && a !== "stretch" && { align: a }) };
+        }
+      } else if (layered && (!cols || /^(?:minmax\(\s*0(?:px)?\s*,\s*1fr\s*\)|1fr)$/.test(cv))) {
+        out.layout = { pattern: "layer", ...(a && a !== "stretch" && { align: a }) };
+      } else note(e, s, cols ?? display, cols ? `grid-template-columns: ${cv} has no Cadesa pattern (grid needs repeat(auto-fill, minmax(<min>, 1fr)))` : "a grid without columns or layered children has no Cadesa pattern", "geometry");
     } else if (display && !["block", "flow-root"].includes(display.value.trim())) {
       note(e, s, display, `display: ${display.value.trim()} has no Cadesa pattern`, "geometry");
     }
@@ -466,9 +530,8 @@ export function liftParsed(css: ParsedCss): LiftResult {
     if (maxW && maxW.value.trim() !== "none") {
       const t = lengthToken("size", maxW.value);
       if (!t) note(e, s, maxW, "max-width must be a px or rem length", "geometry");
-      else if (!isRoot) note(e, s, maxW, "maxWidth is only supported on a component root", "geometry");
-      else if (!autoX) note(e, s, maxW, "Cadesa centers a max-width root (margin-inline: auto); this CSS doesn't", "geometry");
-      else out.maxWidth = t;
+      else if (autoX) out.maxWidth = t;
+      else out.measure = t;
     }
     margins.forEach((d, i) => {
       if (!d || isZero(d.value)) return;
@@ -499,6 +562,33 @@ export function liftParsed(css: ParsedCss): LiftResult {
     if (grow && !isZero(grow.value)) note(e, s, grow, "flex-grow has no Cadesa equivalent", "geometry");
     if (basis && basis.value.trim() !== "auto") note(e, s, basis, "flex-basis has no Cadesa equivalent", "geometry");
     void shrink;
+    const ar = take("aspect-ratio");
+    if (ar) {
+      const m = /^([\d.]+)\s*(?:\/\s*([\d.]+))?$/.exec(ar.value.trim());
+      if (m) out.aspect = m[2] ? `${m[1]}:${m[2]}` : `${m[1]}:1`;
+      else if (ar.value.trim() !== "auto") note(e, s, ar, "aspect-ratio must be a ratio like 16 / 9", "geometry");
+    }
+    const fit = take("object-fit");
+    if (fit && ["cover", "contain"].includes(fit.value.trim())) out.fit = fit.value.trim();
+    else if (fit && fit.value.trim() !== "fill") note(e, s, fit, "paint only; no effect on layout", "paint");
+    const bi = take("background-image");
+    if (bi && bi.value.trim() !== "none") {
+      const r = resolveVar(bi.value);
+      if (r && PAINT_VALUE.test(r.raw)) {
+        out.backdrop = r.varName ? tokens.named("paint", r.varName, r.raw) : tokens.literal("paint", r.raw);
+        const BG: Record<string, string> = { "background-size": "cover", "background-position": "center", "background-repeat": "no-repeat" };
+        for (const [k, want] of Object.entries(BG)) {
+          const d = take(k);
+          if (d && d.value.trim() !== want && !(k === "background-position" && d.value.trim() === "center center"))
+            note(e, s, d, `Cadesa backdrops are ${want}; this paints differently`, "paint");
+        }
+      } else note(e, s, bi, "background-image must be a gradient or url()", "paint");
+    }
+    const sh = take("box-shadow");
+    if (sh && sh.value.trim() !== "none") {
+      const r = resolveVar(sh.value);
+      if (r) out.shadow = r.varName ? tokens.named("shadow", r.varName, r.raw) : tokens.literal("shadow", r.raw);
+    }
     const height = take("height");
     if (height && height.value.trim() !== "auto") {
       const t = lengthToken("size", height.value);
@@ -555,6 +645,19 @@ export function liftParsed(css: ParsedCss): LiftResult {
         if (!fw) {
           /* weight defaults to 400; impact.ts flags tags whose UA weight differs */
         }
+        const lsD = take("letter-spacing");
+        let letterSpacing: number | undefined;
+        if (lsD && !["normal", "0"].includes(lsD.value.trim())) {
+          const v = resolveVar(lsD.value)?.raw ?? "";
+          const em = /^(-?[\d.]+)em$/.exec(v);
+          const px = /^(-?[\d.]+)px$/.exec(v);
+          if (em) letterSpacing = parseFloat(em[1]);
+          else if (px) letterSpacing = Math.round((parseFloat(px[1]) / sizePx) * 1e4) / 1e4;
+          else note(e, s, lsD, "letter-spacing must be in em or px", "text");
+        }
+        const tt = take("text-transform");
+        const transform = tt?.value.trim();
+        if (tt && transform !== "uppercase" && transform !== "none") note(e, s, tt, `text-transform: ${transform} is not measured`, "text");
         const deco = take("text-decoration") ?? take("text-decoration-line");
         const decoration = deco?.value.trim().split(/\s+/)[0];
         if (deco && decoration !== "none" && decoration !== "underline") note(e, s, deco, "paint only; no effect on layout", "paint");
@@ -565,6 +668,8 @@ export function liftParsed(css: ParsedCss): LiftResult {
           lineHeight: lineHeight!,
           color: colorTok!,
           ...((decoration === "none" || decoration === "underline") && { decoration }),
+          ...(letterSpacing !== undefined && { letterSpacing }),
+          ...(transform === "uppercase" && { transform }),
         };
         const key = JSON.stringify(spec);
         let role = roles.get(key);
@@ -677,7 +782,13 @@ export function liftParsed(css: ParsedCss): LiftResult {
   unlifted.sort((a, b) => a.line - b.line || (a.decl ?? "").localeCompare(b.decl ?? ""));
 
   const tokenData: Record<string, Record<string, string>> = {};
-  for (const cat of ["space", "size", "color", "radius", "font"] as Cat[]) {
+  let pageData: { background: string } | undefined;
+  if (pageBackground) {
+    const r = resolveVar(pageBackground.value);
+    const hex = r && toHex(r.raw);
+    if (hex) pageData = { background: r!.varName ? tokens.named("color", r!.varName, hex) : tokens.literal("color", hex) };
+  }
+  for (const cat of ["space", "size", "color", "radius", "font", "paint", "shadow"] as Cat[]) {
     const m = tokens.cats.get(cat);
     if (m?.size) tokenData[cat] = Object.fromEntries(m);
   }
@@ -687,6 +798,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
   if (roles.size) data.text = Object.fromEntries([...roles.values()].map((r) => [r.name, r.spec]));
   const bps = bpPx.filter((p) => usedBps.has(p));
   if (bps.length) data.breakpoints = Object.fromEntries(bps.map((p) => [bpName(p), bpRaw.get(p)!]));
+  if (pageData) data.page = pageData;
   data.styles = styles;
 
   return {

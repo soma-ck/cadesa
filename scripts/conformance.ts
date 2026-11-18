@@ -55,7 +55,7 @@ const builtSha = sha(css);
 
 // 2. Serve the repo and record every stylesheet byte stream the page actually loads.
 const served = new Map<string, string>();
-const types: Record<string, string> = { ".html": "text/html", ".css": "text/css" };
+const types: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2", ".ttf": "font/ttf" };
 const server = createServer((req, res) => {
   const path = resolve(root, "." + decodeURIComponent(new URL(req.url!, "http://x").pathname));
   if (!path.startsWith(root) || !existsSync(path)) return void res.writeHead(404).end();
@@ -93,6 +93,7 @@ for (const layout of layouts) {
   const page = await browser.newPage({ viewport: { width: layout.width, height: 900 } });
   await page.goto(`http://127.0.0.1:${port}/${fixtureFile}`);
   await page.evaluate("document.fonts.ready");
+  await page.evaluate("Promise.all([...document.images].map((i) => i.decode().catch(() => {})))");
   for (const family of families) {
     const ok = await page.evaluate(`document.fonts.check(${JSON.stringify(`16px "${family}"`)}) && ![...document.fonts].some((f) => f.status === "error")`);
     if (!ok) throw new Error(`font "${family}" did not load in ${fixtureFile}`);

@@ -27,12 +27,18 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   pattern: "layout",
   gap: "layout",
   align: "layout",
+  min: "layout",
   textAlign: "textAlign",
+  aspect: "aspect",
+  fit: "fit",
+  backdrop: "backdrop",
+  shadow: "shadow",
   padding: "padding",
   background: "background",
   border: "border",
   radius: "radius",
   maxWidth: "maxWidth",
+  measure: "measure",
   width: "width",
   height: "height",
   text: "text",
@@ -52,7 +58,13 @@ function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: s
     case "gap":
       return { value: p.layout!.gap ? tok(p.layout!.gap) : "0 (no gap)", path: p.layout!.path };
     case "align":
-      return p.layout!.pattern === "cluster" ? { value: p.layout!.align ?? "center (default)", path: p.layout!.path } : undefined;
+      return p.layout!.pattern === "stack" ? undefined : { value: p.layout!.align ?? (p.layout!.pattern === "cluster" ? "center (default)" : "stretch (default)"), path: p.layout!.path };
+    case "min":
+      return p.layout!.min ? { value: tok(p.layout!.min), path: p.layout!.min.path } : undefined;
+    case "aspect":
+      return { value: p.aspect!.raw, path: p.aspect!.path };
+    case "fit":
+      return { value: p.fit!.value, path: p.fit!.path };
     case "textAlign":
       return { value: p.textAlign!.value, path: p.textAlign!.path };
     case "padding": {

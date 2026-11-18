@@ -168,8 +168,14 @@ export function layoutText(
   sizePx: number,
   weight: number,
   maxWidth: number,
+  opts: { letterSpacing?: number } = {},
 ): TextLayout {
-  const w = (s: string) => m.measure(s.trimEnd(), sizePx, weight) ?? 0;
+  // letter-spacing is added after every character, including the last one on a line.
+  const ls = opts.letterSpacing ?? 0;
+  const w = (s: string) => {
+    const t = s.trimEnd();
+    return (m.measure(t, sizePx, weight) ?? 0) + (ls ? [...t].length * ls : 0);
+  };
   const ps = pieces(text);
   const lines: Line[] = [];
   let line = "";

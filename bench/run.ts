@@ -145,7 +145,7 @@ function runClaude(dir: string, arm: Arm, text: string) {
 // ---------------------------------------------------------------- measurement (Chromium)
 
 function serve(dir: string): Promise<{ server: Server; port: number }> {
-  const types: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".woff2": "font/woff2" };
+  const types: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".woff2": "font/woff2", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".webp": "image/webp" };
   const server = createServer((req, res) => {
     const p = resolve(dir, "." + decodeURIComponent(new URL(req.url!, "http://x").pathname));
     if (!p.startsWith(dir) || !existsSync(p)) return void res.writeHead(404).end();

@@ -166,3 +166,45 @@ describe("selectors", () => {
     expect(match("section .item", li[0]).matches).toBe(false);
   });
 });
+
+describe("lift of expressive CSS", () => {
+  const one = (css: string) => lift("t.css", css);
+  const style = (r: ReturnType<typeof lift>, c: string) => (r.data.styles as Record<string, Record<string, unknown>>)[c];
+  const slots = (r: ReturnType<typeof lift>, c: string) => style(r, c).slots as Record<string, Record<string, unknown>>;
+
+  it("lifts an auto-fill grid, aspect-ratio images, gradients and shadows", () => {
+    const r = one(`
+      .gallery { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 24px; align-items: start; }
+      .gallery__photo { aspect-ratio: 4 / 3; object-fit: cover; height: auto; box-shadow: 0 4px 12px #0003; }
+      .gallery__caption { background: linear-gradient(#0000, #000c); }`);
+    expect(r.unlifted).toEqual([]);
+    expect(style(r, "gallery").layout).toEqual({ pattern: "grid", min: "px-240", gap: "px-24", align: "start" });
+    expect(slots(r, "gallery").photo).toEqual({ shadow: "shadow-1", aspect: "4:3", fit: "cover" });
+    expect(slots(r, "gallery").caption).toEqual({ backdrop: "paint-1" });
+  });
+
+  it("lifts a layered hero (grid with every child in one cell)", () => {
+    const r = one(`.hero { display: grid; align-items: end; } .hero > * { grid-area: 1 / 1; } .hero__art { aspect-ratio: 16 / 9 }`);
+    expect(r.unlifted).toEqual([]);
+    expect(style(r, "hero").layout).toEqual({ pattern: "layer", align: "end" });
+  });
+
+  it("lifts letter-spacing (em and px) and uppercase into the text role", () => {
+    const r = one(`.c__a { font: 600 12px/16px Inter; color: #111; letter-spacing: 0.96px; text-transform: uppercase }`);
+    expect(r.data.text).toEqual({ a: { font: "inter", size: "12px", weight: 600, lineHeight: 1.333333, color: "hex-111", letterSpacing: 0.08, transform: "uppercase" } });
+  });
+
+  it("maps max-width without auto margins to a left-aligned measure", () => {
+    const r = one(`.c { display: flex; flex-direction: column } .c__p { max-width: 38rem }`);
+    expect(slots(r, "c").p).toEqual({ measure: "px-608" });
+  });
+
+  it("takes the page background from :root, html or body", () => {
+    expect(one(`body { margin: 0; background: #e9f0f1 } .c { padding: 8px }`).data.page).toEqual({ background: "hex-e9f0f1" });
+  });
+
+  it("still reports grids it can't express", () => {
+    const r = one(`.c { display: grid; grid-template-columns: 1fr 2fr }`);
+    expect(r.unlifted[0].reason).toMatch(/grid-template-columns: 1fr 2fr has no Cadesa pattern/);
+  });
+});

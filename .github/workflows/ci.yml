@@ -44,6 +44,8 @@ jobs:
         run: npm run conformance:lift
       - name: Nested components (143 widths)
         run: npm run conformance:pricing
+      - name: Landing page: grid, layer, aspect, paint (123 widths)
+        run: npm run conformance:landing
       - uses: actions/upload-artifact@v4
         if: always()
         with:

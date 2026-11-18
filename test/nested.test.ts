@@ -81,7 +81,7 @@ describe("alignment, text alignment, decoration", () => {
 
   it("rejects align on a stack", () => {
     const bad = text.replace("layout: { pattern: stack, gap: card }", "layout: { pattern: stack, gap: card, align: center }");
-    expect(() => modelOf(loadSource(SRC, bad))).toThrow(/align only applies to a cluster/);
+    expect(() => modelOf(loadSource(SRC, bad))).toThrow(/align doesn't apply to a stack/);
   });
 
   it("lifts align-items, text-align and text-decoration back", () => {
@@ -109,7 +109,9 @@ describe("diagnostics for CSS habits", () => {
   it("explains that literals must be declared as tokens", () => {
     expect(err(settings.replace("padding: compact", "padding: 12px"))).toMatch(/"12px" is a literal; values are token names[\s\S]*tokens\.space\.<name>: 12px/);
   });
-  it("explains maxWidth is root-only", () => {
-    expect(err(settings.replace("primary: { text: label-inverse,", "primary: { maxWidth: panel, text: label-inverse,"))).toMatch(/maxWidth is only allowed on a component root[\s\S]*width: fill/);
+  it("rejects maxWidth inside a cluster, where auto margins would push the row apart", () => {
+    const m = modelOf(loadSource("s.yaml", settings.replace("primary: { text: label-inverse,", "primary: { maxWidth: panel, text: label-inverse,")));
+    const [l] = render(m, parseFixture("fixtures/settings.html"), [1280]);
+    expect(l.issues[0].message).toMatch(/maxWidth inside a cluster/);
   });
 });

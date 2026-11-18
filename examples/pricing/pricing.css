@@ -63,7 +63,7 @@
   align-items: stretch;
   gap: var(--ca-space-card);
   padding: var(--ca-space-card);
-  background: var(--ca-color-surface);
+  background-color: var(--ca-color-surface);
   border: 1px solid var(--ca-color-line);
   border-radius: var(--ca-radius-card);
   width: var(--ca-size-card);
@@ -105,7 +105,7 @@
 
 .ca-plan-card .ca-plan-card__cta {
   padding: 0 var(--ca-space-control-inline);
-  background: var(--ca-color-accent);
+  background-color: var(--ca-color-accent);
   border-radius: var(--ca-radius-control);
   height: var(--ca-size-control);
   align-content: center;
@@ -142,7 +142,8 @@
   align-items: stretch;
   gap: var(--ca-space-section);
   padding: var(--ca-space-section);
-  background: var(--ca-color-page);
+  background-color: var(--ca-color-page);
+  width: 100%;
   max-width: var(--ca-size-page);
   margin-inline: auto;
 }
