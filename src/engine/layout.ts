@@ -40,6 +40,8 @@ export interface Box {
   children: Box[];
   /** A run of text the browser wraps in an anonymous box: laid out, but not an element (no DOM box to compare). */
   anonymous?: boolean;
+  /** A cluster item on a line its items overfill (by their flex base sizes): they shrink, or overflow. */
+  overfull?: boolean;
 }
 
 export interface Issue {
@@ -602,6 +604,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       ln.forEach((it, i) => {
         if (it.wraps && it.intr && sizes[i] < it.intr.max - EPS) it.notes.push("its width comes from its content, and a row inside it wraps there: the browser sizes it from the wrapped lines");
       });
+      // Items wanted more than the line (they shrank, or would if they could).
+      const overfull = ln.reduce((t, it) => t + it.hyp + it.out, 0) + gap * (n - 1) > innerW + EPS;
       let free = U(innerW) - ln.reduce((t, it, i) => t + U(sizes[i]) + U(it.out), 0) - U(gap) * (n - 1);
       const autos = ln.reduce((t, it) => t + (it.km.autoLeft ? 1 : 0) + (it.km.autoRight ? 1 : 0), 0);
       // Auto margins take the free space first (justify then has none to place).
@@ -622,6 +626,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       return ln.map((it, i) => {
         const b = measure(it.k.node, it.k.comp, it.k.slot, innerW, "cluster", sizes[i]);
         b.assumptions.push(...it.notes);
+        if (overfull) b.overfull = true;
         for (const e of it.errors) issues.push({ severity: "error", id: b.id, path: e.path, message: e.message(b.id) });
         const al = it.km.autoLeft ? auto() : 0;
         const ar = it.km.autoRight ? auto() : 0;
@@ -860,10 +865,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       ...(n.anonymous && { anonymous: true }),
     };
     // A block with nothing in it (no height, padding, border, lines or non-empty child) lets its
-    // own top and bottom margins collapse through it. Flex and grid containers, form controls,
+    // own top and bottom margins collapse through it (an aspect-ratio box that comes out 0 tall too).
+    // Flex and grid containers, form controls,
     // media and <hr> (overflow: hidden) never do.
     const empty =
-      h === 0 && insY === 0 && !props.height && !props.aspect && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" &&
+      h === 0 && insY === 0 && !props.height && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" &&
       !(isText && n.text) && (pattern === undefined ? !kids.length : pattern === "flow" && !!escaped?.empty);
     const inner = escaped?.empty ? escaped.pending : NONE;
     const mt = strut(m.top);

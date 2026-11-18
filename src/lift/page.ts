@@ -1127,10 +1127,14 @@ export abstract class PageLifter {
 
       // A flex-row item that may not shrink (flex-shrink: 0) without a width: Cadesa shrinks a lone
       // item too wide for its line; dynamic() flags the widths where that happens.
-      if (parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si) && !own.has("width")) {
+      // And the other way round: a width (Cadesa's never shrinks) on an item that may shrink.
+      if (parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si)) {
         const fl = res("flex");
         const sh = res("flex-shrink") ?? (fl ? String(parseFlex(fl)?.shrink ?? 1) : "1");
-        if (parseFloat(sh) === 0 && !/^0(px|%)?$/.test(res("flex-basis") ?? (fl ? parseFlex(fl)?.basis ?? "auto" : "auto"))) el.noShrink[si] = `${(own.get("flex-shrink") ?? own.get("flex"))!.utility} (flex-shrink: 0)`;
+        const basis = res("flex-basis") ?? (fl ? parseFlex(fl)?.basis ?? "auto" : "auto");
+        const width = own.has("width") && res("width") !== "auto";
+        if (!width && parseFloat(sh) === 0 && !/^0(px|%)?$/.test(basis)) el.noShrink[si] = `${(own.get("flex-shrink") ?? own.get("flex"))!.utility} (flex-shrink: 0)`;
+        else if (width && parseFloat(sh) !== 0 && !/^0(px|%)?$/.test(basis)) el.noShrink[si] = `${own.get("width")!.utility} (a width, and flex-shrink: ${sh})`;
       }
 
       // Form controls size themselves from the font and the UA's internal padding, except a text
@@ -1574,14 +1578,11 @@ export abstract class PageLifter {
         const sel = `[data-fixture="${b.id}"]`;
         if (el.rowGap[si] && this.lineCount(b) > 1)
           out.push({ file: this.page, line: el.line, selector: sel, decl: el.rowGap[si], reason: `the row wraps at ${layout.width}px and its row gap differs from its column gap; a cluster has one gap`, kind: "geometry" });
-        // flex-shrink: 0 on a lone item as wide as its line: Cadesa shrank it, the browser lets it overflow.
+        // Shrinking differs from the browser's (flex-shrink 0 without a width; a width with
+        // flex-shrink): it matters only where its line's items want more than the line.
         const parent = parentOf.get(b);
-        if (el.noShrink[si] && parent && parent.props.pattern?.value === "cluster") {
-          const line = linesOf(parent).find((l) => l.includes(b))!;
-          const m = b.props.margin?.value;
-          if (line.length === 1 && b.w + (m ? m.left + m.right : 0) >= innerWidth(parent) - 0.01)
-            out.push({ file: this.page, line: el.line, selector: sel, decl: el.noShrink[si], reason: `the item is as wide as its row at ${layout.width}px and may not shrink; it may overflow instead`, kind: "geometry" });
-        }
+        if (el.noShrink[si] && parent && parent.props.pattern?.value === "cluster" && b.overfull)
+          out.push({ file: this.page, line: el.line, selector: sel, decl: el.noShrink[si], reason: `its row is too full at ${layout.width}px, and it shrinks differently there (Cadesa shrinks an item without a width, never one with)`, kind: "geometry" });
         if (el.nowrap[si] && b.children.length > 1) {
           if (this.lineCount(b) > 1)
             out.push({ file: this.page, line: el.line, selector: sel, decl: "flex (flex-wrap: nowrap)", reason: `the row doesn't fit at ${layout.width}px; Tailwind's flex row shrinks its items instead of wrapping`, kind: "geometry" });
