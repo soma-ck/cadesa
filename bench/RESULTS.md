@@ -1,6 +1,17 @@
 # Benchmark results
 
-## Run 1 (2026-11-18): Cadesa 0.1.0, Claude Code 2.1.327, model `sonnet`
+Two kinds of benchmark live here. They measure different jobs:
+
+| | Job | What it measures | Runs |
+| --- | --- | --- | --- |
+| **Described-bug** (`bench/run.ts`) | Fix a layout bug that the prompt describes, in one component | Solved rate, attempts, regressions at protected widths | 1–2 |
+| **Discovery** (`bench/discovery/`) | Make a realistic site-wide change without being told where it breaks | Defects shipped across a dense width sweep, and collateral regressions in untouched sections | 3 |
+
+Cadesa's value in real use (catching problems nobody described, and edits that move things three sections away) is what the discovery benchmark measures. On the described-bug job, both arms solve everything, so those runs mainly show the cost of using Cadesa's tools on a job that doesn't need them.
+
+## Described-bug benchmark
+
+### Run 1 (2026-11-18): Cadesa 0.1.0, Claude Code 2.1.327, model `sonnet`
 
 3 tasks × 2 arms × 5 trials, up to 4 rounds, one edit per round, judged in Chromium.
 Raw data: [`results/2026-11-18T01-25-14-853Z.json`](results/2026-11-18T01-25-14-853Z.json).
@@ -14,7 +25,7 @@ Raw data: [`results/2026-11-18T01-25-14-853Z.json`](results/2026-11-18T01-25-14-
 | button-overflow | css | 5/5 | 1.00 | 0 | 4.0 | $0.39 |
 | button-overflow | cadesa | 4/5 | 1.50 | 0 | 6.5 | $0.91 |
 
-**Plain CSS won or tied every task.** No arm ever regressed desktop.
+Both arms solved every task; no arm ever regressed desktop. Plain CSS solved all 15 on the first attempt; Cadesa solved 14 of 15 and needed a second round once, because of the language friction described below.
 
 What happened:
 
@@ -31,7 +42,7 @@ Changes made in response (all in the commit after this run):
 
 Next: harder tasks where the right edit is not one obvious media-query line (shared tokens used at several widths, text that re-wraps and pushes siblings, nested components), and a rerun.
 
-## Run 2 (2026-11-18): hard tasks, `free` protocol, model `sonnet`
+### Run 2 (2026-11-18): hard tasks, `free` protocol, model `sonnet`
 
 3 hard tasks × 2 arms × 5 trials. A round is one submission (any number of edits, at most 16 tool calls), up to 3 rounds. Every task was checked with `--verify` first: it starts broken, and a known solution passes without touching the protected widths. Raw data: [`results/2026-11-18T01-42-43-442Z.json`](results/2026-11-18T01-42-43-442Z.json).
 
@@ -44,7 +55,7 @@ Next: harder tasks where the right edit is not one obvious media-query line (sha
 | plans-one-row | css | 5/5 | 5/5 | 0 | 6.4 | $0.51 |
 | plans-one-row | cadesa | 5/5 | 5/5 | 0 | 9.4 | $0.57 |
 
-**Both arms were perfect. Plain CSS was cheaper and used about half the tool calls.** The harder tasks didn't separate the arms either: for a strong model, fixing a *described* layout problem in plain CSS with screenshots is already solved.
+**Both arms solved all 15 on the first try with no regressions. Plain CSS used about half the tool calls and cost less.** The harder tasks didn't separate the arms either: for a strong model, fixing a *described* layout problem in plain CSS with screenshots is already solved.
 
 Why Cadesa cost more:
 
@@ -53,6 +64,6 @@ Why Cadesa cost more:
 
 What this does and doesn't show:
 
-- It shows Cadesa does **not** make a strong model better at fixing a layout problem someone has already described. That claim should not appear anywhere.
+- It shows Cadesa does **not** make a strong model better at fixing a layout problem someone has already described, so Cadesa doesn't claim that.
 - It does **not** measure finding problems nobody has described yet. A field report from building a real site with Cadesa found six such bugs before the first build (collapsed nav, wrapped hero image, small tap targets, an orphaned card, staggered cards, long lines). A benchmark for that would give agents a page to build or change and count the latent bugs that ship.
 - Language gaps to close: range breakpoints (`min-width`), shared flexible widths in a row (`flex: 1`), and no-wrap labels.

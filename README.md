@@ -321,23 +321,12 @@ React, Svelte, server templates and static HTML work the same way, because Cades
 
 - **More of CSS:** grid, `min-width` breakpoints, and a `row` pattern, so lift leaves less behind.
 
-## Benchmark: Cadesa vs. plain CSS
+## Benchmarks
 
-[`bench/`](bench/) measures whether the engine actually helps an agent. There are three mobile layout bugs: buttons that should stack, mobile padding that is too wide, and buttons that overflow at 320px. Each bug runs in two arms that start from identical pixels:
+Two benchmarks compare an agent working in plain CSS (with screenshots) against one with Cadesa, judged in Chromium, never by Cadesa's engine ([`bench/RESULTS.md`](bench/RESULTS.md)):
 
-| | Plain CSS arm | Cadesa arm |
-| --- | --- | --- |
-| Edits | `component.css` | `component.cadesa.yaml` |
-| Screenshots at mobile and 1280px | ✓ | ✓ |
-| `render` / `whatif` / `explain` / `check` | | ✓ |
-
-Each round is one headless `claude -p` run that makes one edit. The harness then measures the page in **Chromium, not with Cadesa's engine**, and records whether the mobile goal is met and whether any box moved at 1280px. Both arms get the same factual feedback, up to N rounds. The scores are attempts to fix and desktop regressions.
-
-```sh
-npm run bench -- --trials 5 --rounds 4 --model sonnet
-```
-
-Results land in `bench/results/`. **Two runs so far ([details](bench/RESULTS.md)): plain CSS matched or beat Cadesa on every task.** On three easy and three hard layout fixes, a strong model fixed the described problem in plain CSS on the first try with screenshots alone, and with fewer tool calls. Cadesa does not make an agent better at fixing a problem someone has already described. Its demonstrated value is elsewhere: catching problems nobody described yet. A real build caught six before the first browser run. That needs its own benchmark, which isn't written yet.
+- **Described-bug** (runs 1–2): fix a layout bug the prompt describes, in one component. Both arms solved every task with no regressions; plain CSS used fewer tool calls. A strong model doesn't need a layout engine to fix a bug it has been told about, and Cadesa doesn't claim otherwise.
+- **Discovery** (run 3, in progress): make a realistic site-wide change, such as a translation, a larger base font or an extra pricing plan, without being told where it breaks. It counts the defects that ship across every 20px from 320 to 1440px, plus regressions in sections the change didn't touch. That's the job Cadesa did in real use.
 
 ## Development
 
