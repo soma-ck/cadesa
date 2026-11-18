@@ -1,14 +1,17 @@
 /** Command implementations shared by the CLI and the MCP server. Each returns text and data. */
 import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { check } from "./check.js";
 import { critique } from "./critique.js";
 import { compile } from "./compile.js";
 import { explain } from "./explain.js";
-import { parseFixture } from "./fixture.js";
-import { loadSource, loadSourceFile } from "./load.js";
-import { modelOf, render, whatif, type Change } from "./project.js";
+import { parseFixture, type Fixture } from "./fixture.js";
+import { loadSource, loadSourceFile, type Source } from "./load.js";
+import { modelOf, render, whatif, type Change, type WhatIf } from "./project.js";
+import type { Layout } from "./engine/layout.js";
+import type { Model } from "./model.js";
+import { liftTailwind, type TailwindLift } from "./tailwind/lift.js";
 import { formatCheck, formatExplain, formatImpact, formatLift, formatRender, formatWhatif } from "./report.js";
 import { impact, type WidthImpact } from "./lift/impact.js";
 import { lift, type LiftResult } from "./lift/lift.js";
@@ -53,21 +56,76 @@ export interface SourceInput {
   sourceText?: string;
   /** Plain CSS to lift on the fly instead of a Cadesa source. */
   css?: string;
+  /**
+   * Compiled Tailwind CSS: the fixture is then a Tailwind page, lifted on the fly (utilities →
+   * source, generated class names and ids → fixture).
+   */
+  tailwind?: string;
 }
 
 const liftFile = (css: string) => lift(css, readFileSync(css, "utf8"));
 
-function load(s: SourceInput) {
+const twCache = new Map<string, TailwindLift>();
+/** Lift a Tailwind page (cached per file contents, so one command lifts once). */
+export function tailwindFile(page: string, css: string): TailwindLift {
+  const html = readFileSync(page, "utf8");
+  const cssText = readFileSync(css, "utf8");
+  const key = createHash("sha256").update(page).update("\0").update(html).update("\0").update(css).update("\0").update(cssText).digest("hex");
+  let t = twCache.get(key);
+  if (!t) {
+    t = liftTailwind(page, html, css, cssText);
+    twCache.clear();
+    twCache.set(key, t);
+  }
+  return t;
+}
+
+/** The page a command lays out: one fixture, or (Tailwind) one per width range. */
+interface Page {
+  label: string;
+  fixture: Fixture;
+  at(width: number): Fixture;
+  tw?: TailwindLift;
+}
+
+function pageOf(s: SourceInput & { fixture: string }): Page {
+  if (s.tailwind) {
+    const tw = tailwindFile(s.fixture, s.tailwind);
+    return { label: `${s.fixture} (Tailwind, ${s.tailwind})`, fixture: tw.fixture, at: tw.fixtureAt, tw };
+  }
+  const f = parseFixture(s.fixture);
+  return { label: s.css ? `${s.css} (lifted)` : s.source!, fixture: f, at: () => f };
+}
+
+function renderPage(model: Model, p: Page, widths: number[]): Layout[] {
+  return p.tw ? widths.map((w) => render(model, p.at(w), [w])[0]) : render(model, p.fixture, widths);
+}
+
+function load(s: SourceInput & { fixture?: string }): Source {
+  if (s.tailwind) {
+    if (!s.fixture) throw new InputError("--tailwind needs the Tailwind page as <fixture.html>");
+    if (s.sourceText !== undefined) return loadSource(s.source ?? `${s.fixture} (tailwind)`, s.sourceText);
+    return loadSource(`${s.fixture} (tailwind)`, tailwindFile(s.fixture, s.tailwind).yaml);
+  }
   if (s.css) return loadSource(`${s.css} (lifted)`, liftFile(s.css).yaml);
   if (!s.source) throw new InputError("needs --source <file.cadesa.yaml> or --css <file.css>");
   return s.sourceText !== undefined ? loadSource(s.source, s.sourceText) : loadSourceFile(s.source);
 }
 
-/** For --css inputs: the lift and its box-level impact at each width. */
+/** For --css and --tailwind inputs: the lift and its box-level impact at each width. */
 function impactFor(s: SourceInput & { fixture: string }, layouts: ReturnType<typeof render>) {
+  if (s.tailwind) {
+    const tw = tailwindFile(s.fixture, s.tailwind);
+    return { lifted: tw.lifted, impacts: tailwindImpact(tw, layouts) };
+  }
   if (!s.css) return undefined;
   const lifted = liftFile(s.css);
   return { lifted, impacts: impact(lifted, parseFixture(s.fixture), layouts) };
+}
+
+/** Box-level impact for a Tailwind lift: static records plus what each layout decides. */
+export function tailwindImpact(tw: TailwindLift, layouts: Layout[]): WidthImpact[] {
+  return layouts.map((l) => impact({ ...tw.lifted, unlifted: [...tw.lifted.unlifted, ...tw.dynamic(l)] }, tw.fixtureAt(l.width), [l])[0]);
 }
 
 export function validateCmd(s: SourceInput): Result {
@@ -91,9 +149,10 @@ export function cssCmd(s: SourceInput): Result {
 
 export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; lines?: boolean }): Result {
   const t0 = performance.now();
-  const layouts = render(modelOf(load(s)), parseFixture(s.fixture), s.widths);
+  const p = pageOf(s);
+  const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
-  const label = s.css ? `${s.css} (lifted)` : s.source!;
+  const label = p.label;
   return {
     text:
       formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts }) +
@@ -106,20 +165,26 @@ export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; 
 export function whatifCmd(s: SourceInput & { fixture: string; widths: number[]; changes: Change[] }): Result {
   if (!s.changes.length) throw new InputError("whatif needs at least one change (path=value)");
   const t0 = performance.now();
-  const result = whatif(load(s), parseFixture(s.fixture), s.widths, s.changes);
+  const p = pageOf(s);
+  let result: WhatIf;
+  if (p.tw) {
+    const src = load(s);
+    const per = s.widths.map((w) => whatif(src, p.at(w), [w], s.changes));
+    result = { changes: per[0].changes, widths: per.flatMap((r) => r.widths) };
+  } else result = whatif(load(s), p.fixture, s.widths, s.changes);
   return { text: formatWhatif(result, { ms: ms(t0) }), data: result, ok: true };
 }
 
 export function explainCmd(s: SourceInput & { fixture: string; widths: number[]; id: string }): Result {
   const id = s.id.replace(/^#/, "");
   const model = modelOf(load(s));
-  const results = render(model, parseFixture(s.fixture), s.widths).map((l) => explain(model, l, id));
+  const results = renderPage(model, pageOf(s), s.widths).map((l) => explain(model, l, id));
   if (results.some((r) => !r)) throw new InputError(`no element with data-fixture="${id}" in ${s.fixture}`);
   return { text: results.map((r) => formatExplain(r!)).join("\n"), data: results, ok: true };
 }
 
 export function checkCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
-  const layouts = render(modelOf(load(s)), parseFixture(s.fixture), s.widths);
+  const layouts = renderPage(modelOf(load(s)), pageOf(s), s.widths);
   const imp = impactFor(s, layouts);
   const findings = check(layouts, imp?.impacts);
   return {
@@ -131,15 +196,16 @@ export function checkCmd(s: SourceInput & { fixture: string; widths: number[] })
 
 export function critiqueCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
   const model = modelOf(load(s));
-  const fixture = parseFixture(s.fixture);
-  const found = critique(model, fixture, render(model, fixture, s.widths));
+  const p = pageOf(s);
+  const found = critique(model, p.fixture, renderPage(model, p, s.widths));
   const text = found.length
     ? found.map((c) => `◇ [${c.check}] ${c.message}${c.path ? `\n    edit: ${c.path}` : ""}`).join("\n") + `\n\n${found.length} suggestion${found.length === 1 ? "" : "s"}\n`
     : `✓ no critique at ${s.widths.join(", ")}px\n`;
   return { text, data: { critique: found }, ok: true };
 }
 
-export function liftCmd(s: { css: string; out?: string; fixture?: string; widths: number[] }): Result {
+export function liftCmd(s: { css: string; out?: string; fixture?: string; widths: number[]; tailwind?: string }): Result {
+  if (s.tailwind) return liftTailwindCmd({ ...s, page: s.tailwind });
   const lifted: LiftResult = liftFile(s.css);
   let impacts: WidthImpact[] | undefined;
   if (s.out) {
@@ -154,6 +220,30 @@ export function liftCmd(s: { css: string; out?: string; fixture?: string; widths
   return {
     text: formatLift(lifted, { out: s.out, impacts }) + (s.out ? "" : "\n" + lifted.yaml),
     data: { source: lifted.yaml, unlifted: lifted.unlifted, stats: lifted.stats, impact: impacts },
+    ok: true,
+  };
+}
+
+/** `cadesa lift --tailwind page.html --css compiled.css`: a source plus the page with generated classes and ids. */
+function liftTailwindCmd(s: { css: string; page: string; out?: string; widths: number[] }): Result {
+  const tw = tailwindFile(s.page, s.css);
+  const fixtureOut = s.out ? join(dirname(s.out), `${basename(s.page).replace(/\.html?$/, "")}.cadesa.html`) : undefined;
+  if (s.out) {
+    mkdirSync(dirname(s.out), { recursive: true });
+    writeFileSync(s.out, tw.yaml);
+    writeFileSync(fixtureOut!, tw.html);
+  }
+  const model = modelOf(loadSource(s.out ?? `${s.page} (tailwind)`, tw.yaml)); // the lift must always produce a valid source
+  const impacts = tailwindImpact(tw, s.widths.map((w) => render(model, tw.fixtureAt(w), [w])[0]));
+  const states = tw.states.map((st) => (st.name ? `${st.name} (≤ ${st.raw})` : "base")).join(", ");
+  const head =
+    formatLift(tw.lifted, { out: s.out, impacts }) +
+    (s.out ? `wrote ${fixtureOut} (the page with generated ca-* classes and data-fixture ids)\n` : "") +
+    `width ranges: ${states}\n` +
+    (tw.responsive.length ? `shown at some widths only: ${tw.responsive.map((id) => `#${id}`).join(", ")} (laid out only where shown with --tailwind)\n` : "");
+  return {
+    text: head + (s.out ? "" : "\n" + tw.yaml),
+    data: { source: tw.yaml, fixture: tw.html, unlifted: tw.lifted.unlifted, stats: tw.lifted.stats, impact: impacts, states: tw.states, responsive: tw.responsive },
     ok: true,
   };
 }

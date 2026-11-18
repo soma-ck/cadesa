@@ -29,6 +29,8 @@ Usage:
   cadesa check    <fixture.html> --source <source.cadesa.yaml>
   cadesa critique <fixture.html> --source <source.cadesa.yaml>   design signals: scale, hierarchy, grouping, alignment, palette, tells
   cadesa lift     <file.css> [--out <file.cadesa.yaml>] [--fixture <fixture.html>]
+  cadesa lift     --tailwind <page.html> --css <compiled.css> [--out <file.cadesa.yaml>]
+                    a Tailwind page → a source plus the page with generated classes and ids
   cadesa metrics  <font-file> --family <name> [--weight <n>] [--out .cadesa/metrics]
                     measure a font once in Chromium so the engine can measure text set in it
                     (omit --weight for a variable font; repeat per face for static fonts)
@@ -36,6 +38,8 @@ Usage:
 
   render, whatif, explain and check also accept --css <file.css> instead of --source:
   the CSS is lifted on the fly, and boxes it can't predict exactly are marked ≈.
+  render, whatif, explain, check and critique also take a Tailwind page as <fixture.html> with
+  --tailwind <compiled.css> (the stylesheet Tailwind built for it): utilities are lifted the same way.
 
 Options:
   --widths   viewport widths in px: "390,1280", or ranges like "320-1440/20" (every 20px)
@@ -53,6 +57,7 @@ async function main(argv: string[]) {
       out: { type: "string" },
       source: { type: "string" },
       css: { type: "string" },
+      tailwind: { type: "string" },
       fixture: { type: "string" },
       widths: { type: "string" },
       set: { type: "string", multiple: true },
@@ -93,8 +98,9 @@ async function main(argv: string[]) {
   // catches problems that exist only between two hand-picked widths.
   const widths = () => parseWidths(values.widths ?? (cmd === "check" || cmd === "critique" ? SWEEP : "390,1280"));
   const page = () => ({
-    source: values.css ? undefined : need(values.source, "--source <source.cadesa.yaml> or --css <file.css>"),
-    css: values.css,
+    source: values.css || values.tailwind ? undefined : need(values.source, "--source <source.cadesa.yaml>, --css <file.css> or --tailwind <compiled.css>"),
+    css: values.tailwind ? undefined : values.css,
+    tailwind: values.tailwind,
     fixture: need(input, "<fixture.html>"),
     widths: widths(),
   });
@@ -123,7 +129,9 @@ async function main(argv: string[]) {
       r = critiqueCmd(page());
       break;
     case "lift":
-      r = liftCmd({ css: need(input, "<file.css>"), out: values.out, fixture: values.fixture, widths: widths() });
+      r = values.tailwind
+        ? liftCmd({ css: need(values.css, "--css <compiled.css> with --tailwind <page.html>"), tailwind: values.tailwind, out: values.out, widths: widths() })
+        : liftCmd({ css: need(input, "<file.css>"), out: values.out, fixture: values.fixture, widths: widths() });
       break;
     default:
       throw new InputError(`unknown command "${cmd}"`);
