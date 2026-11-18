@@ -114,7 +114,7 @@ An agent rebuilt a 20-component French-language WordPress site in Cadesa, checki
 
 Each check took 60–900ms. At that cost, checking every edit at a dozen widths stopped being a chore and became the normal way to work.
 
-The same rebuild found seven cases where Cadesa said "fine" and Chromium disagreed: four layout divergences (image `width`/`height` attributes, no-break spaces, nested centered layers, block children measured as one line) and three gaps in the checks. All seven are fixed and kept as regression tests ([`fixtures/field2.html`](fixtures/field2.html), `npm run conformance:field2`).
+The same rebuild found seven cases where Cadesa said "fine" and Chromium disagreed: four layout divergences (image `width`/`height` attributes, no-break spaces, nested centered layers, block children measured as one line) and three gaps in the checks. All seven are fixed and kept as regression tests ([`fixtures/field2.html`](fixtures/field2.html), `npm run conformance:field2`). A differential fuzzer then compared 39,597 random pages against Chromium, found the next cases (mostly how Chromium rounds text widths and breaks lines), and each fix is now one of 59 regression cases in [`fixtures/fuzz`](fixtures/fuzz). Its final run: 688,902 boxes compared, 0 disagreements.
 
 ## What it does
 
@@ -232,17 +232,17 @@ $ cadesa render fixtures/settings-long.html --source settings.cadesa.yaml --widt
 
 ## Benchmarks
 
-### Speed: 25× faster than driving a browser
+### Speed: 12–17× faster than driving a browser
 
 The same job done two ways: get every box of the landing page at every width. On one laptop core (Ryzen 5 PRO 5675U), both sequential, both producing the same boxes:
 
 | Job | Cadesa engine | Playwright + Chromium |
 | --- | --- | --- |
-| [`examples/landing`](examples/landing), 113 widths (320–1440px, every 10px) | **0.44s** | 9.16s |
-| Same page, **every pixel** from 320 to 1440 (1,121 widths, 49,324 boxes) | **3.5s** | 88.4s |
-| [`examples/pricing`](examples/pricing), 113 widths | **0.24s** | 5.56s |
+| [`examples/landing`](examples/landing), 113 widths (320–1440px, every 10px) | **0.76s** | 9.44s |
+| Same page, **every pixel** from 320 to 1440 (1,121 widths, 49,324 boxes) | **6.2s** | 75.9s |
+| [`examples/pricing`](examples/pricing), 113 widths | **0.31s** | 5.40s |
 
-About 3ms per width instead of about 79ms, with no browser to download or launch. That speed is why an agent can check every width on every edit instead of two or three screenshots at the end, and why a CI job can sweep every pixel width in seconds. Reproduce it with `npm run speed` (`-- --step 1` for every pixel).
+About 3–7ms per width instead of 45–80ms, with no browser to download or launch. That speed is why an agent can check every width on every edit instead of two or three screenshots at the end, and why a CI job can sweep every pixel width in seconds. Reproduce it with `npm run speed` (`-- --step 1` for every pixel).
 
 The comparison covers layout geometry only: where every box lands and how text wraps. Pixel diffs, hover states and interaction tests still need a browser.
 
@@ -276,6 +276,7 @@ There are two separate claims:
 | `npm run conformance:landing` | grid, layered text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `npm run conformance:field2` | every divergence found in real use, kept fixed, plus long words breaking (`wrap: anywhere`) | 2,576 of 2,576 over 161 widths |
 | `npm run conformance:tailwind` | three Tailwind pages read through `--tailwind` | 16,456 boxes marked exact, all 16,456 match, over 113 widths; 2,794 of the 3,000 boxes marked `≈` really differ |
+| `npm run fuzz` | **differential fuzzer**: random valid pages covering the whole language, each laid out by the engine and by Chromium | 39,597 random pages at 148,328 widths: **688,902 boxes compared, 0 disagreements** (and 0 in an independent re-run on fresh seeds) |
 | `npm run conformance:lift` | lifted hand-written CSS vs. the original | 15 of 15 boxes marked exact matched; 17 of 17 marked uncertain really differed |
 
 "Agree" means x, y, width and height all within 0.5px, so a text that wrapped to a different number of lines would fail by a whole line height. The differences in the sample below are about 0.01px. Agreement is with the fixtures above. In real use, Cadesa has said "fine" where Chromium disagreed seven times so far: four layout divergences and three check gaps ([above](#what-it-found-on-a-real-site)). Each one is fixed and became a regression test.
@@ -448,7 +449,6 @@ React, Svelte, server templates and static HTML work the same way, because Cades
 
 - **More of Tailwind:** `justify-*`, `flex-1`, margins and `dark:`, which are reported as `≈` today.
 - **More of CSS:** `min-width` and range breakpoints, a `row` pattern and shared flexible widths, so lift leaves less behind.
-- **A differential fuzzer** that generates random pages and compares the engine against Chromium, to find divergences before users do.
 
 ## Development
 
