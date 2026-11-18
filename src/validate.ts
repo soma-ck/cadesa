@@ -365,8 +365,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         }
         when.push({ breakpoint: bp, path: wp.join("."), props: props(o, wp, ROOT_PROPS), slots: slotOverrides });
       }
-      // Overrides apply in breakpoint declaration order, matching the emitted @media order.
-      when.sort((a, b) => bpNames.indexOf(a.breakpoint) - bpNames.indexOf(b.breakpoint));
+      // Desktop-first: overrides apply widest breakpoint first, so the narrowest active one wins,
+      // whatever order the breakpoints are declared in. The emitted @media order matches.
+      const bpPx = (n: string) => breakpoints.find((b) => b.name === n)!.length.px;
+      when.sort((a, b) => bpPx(b.breakpoint) - bpPx(a.breakpoint) || bpNames.indexOf(a.breakpoint) - bpNames.indexOf(b.breakpoint));
 
       components.set(name, {
         name,

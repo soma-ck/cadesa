@@ -296,3 +296,18 @@ describe("explain and check", () => {
     expect(contrast("#fff", "#fff")).toBe(1);
   });
 });
+
+describe("breakpoint order", () => {
+  it("lets the narrowest active breakpoint win, whatever the declaration order", () => {
+    const text = readFileSync(SOURCE_FILE, "utf8")
+      .replace("breakpoints:\n  narrow: 36rem", "breakpoints:\n  narrow: 36rem\n  medium: 64rem")
+      .replace("    when:\n      narrow:\n", "    when:\n      medium:\n        padding: section\n      narrow:\n");
+    const model = modelOf(src(text));
+    const [phone, tablet, desktop] = render(model, fixture, [390, 800, 1280]);
+    expect(box(phone, "panel").props.padding!.value.block).toBe(16); // narrow beats medium
+    expect(box(tablet, "panel").props.padding!.value.block).toBe(24); // medium only
+    expect(box(desktop, "panel").props.padding!.value.block).toBe(32);
+    const css = compile(model);
+    expect(css.indexOf("@media (max-width: 64rem)")).toBeLessThan(css.indexOf("@media (max-width: 36rem)"));
+  });
+});
