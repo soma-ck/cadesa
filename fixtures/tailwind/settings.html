@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: Tailwind settings card</title>
+    <link rel="stylesheet" href="compiled.css" />
+  </head>
+  <body class="bg-gray-100 text-gray-900">
+    <main class="mx-auto flex max-w-3xl flex-col gap-8 px-4 py-10 sm:px-6 lg:py-16">
+      <div class="flex flex-col gap-2">
+        <h1 class="text-2xl/8 font-bold tracking-tight sm:text-3xl/9">Workspace settings</h1>
+        <p class="text-sm/6 text-gray-600">Changes apply to everyone in <strong class="font-semibold text-gray-900">Rotterdam North</strong> the next time they sign in.</p>
+      </div>
+
+      <div class="flex flex-col gap-6 rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 sm:p-8">
+        <div class="flex flex-col gap-1">
+          <h2 class="text-base/7 font-semibold">Profile</h2>
+          <p class="text-sm/6 text-gray-500">Shown on shift reports and in the handover feed.</p>
+        </div>
+        <div class="grid gap-6 sm:grid-cols-2">
+          <div class="flex flex-col gap-2">
+            <label for="first" class="text-sm/6 font-medium">First name</label>
+            <input id="first" type="text" value="Ada" class="h-9 w-full rounded-md border border-gray-300 px-3 text-sm/6 shadow-xs" />
+          </div>
+          <div class="flex flex-col gap-2">
+            <label for="last" class="text-sm/6 font-medium">Last name</label>
+            <input id="last" type="text" value="Okonkwo" class="h-9 w-full rounded-md border border-gray-300 px-3 text-sm/6 shadow-xs" />
+          </div>
+        </div>
+        <div class="flex flex-col gap-2">
+          <label for="about" class="text-sm/6 font-medium">About</label>
+          <textarea id="about" rows="3" class="h-24 w-full rounded-md border border-gray-300 px-3 py-2 text-sm/6">Night shift lead, aisles 14 to 22.</textarea>
+          <p class="text-xs/5 text-gray-500">A sentence or two. Markdown is not supported.</p>
+        </div>
+      </div>
+
+      <div class="flex flex-col gap-6 rounded-xl bg-white p-6 shadow-sm ring-1 ring-gray-900/5 sm:p-8">
+        <div class="flex flex-col gap-1">
+          <h2 class="text-base/7 font-semibold">Notifications</h2>
+          <p class="text-sm/6 text-gray-500">We only email you about things that need a decision.</p>
+        </div>
+        <div class="flex flex-col gap-4">
+          <div class="flex items-start gap-3">
+            <input id="n1" type="checkbox" checked class="size-4 rounded border border-gray-300" />
+            <div class="flex flex-col">
+              <label for="n1" class="text-sm/6 font-medium">Late trucks</label>
+              <p class="text-sm/6 text-gray-500">When a booked carrier misses its slot by more than 20 minutes.</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <input id="n2" type="checkbox" class="size-4 rounded border border-gray-300" />
+            <div class="flex flex-col">
+              <label for="n2" class="text-sm/6 font-medium">Scanner offline</label>
+              <p class="text-sm/6 text-gray-500">When a handheld hasn't synced for an hour during a shift.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex flex-wrap gap-3 border-t border-gray-200 pt-6">
+        <button type="button" class="rounded-md bg-indigo-600 px-4 py-2 text-sm/6 font-semibold text-white shadow-xs hover:bg-indigo-500">Save changes</button>
+        <button type="button" class="rounded-md bg-white px-4 py-2 text-sm/6 font-semibold text-gray-900 shadow-xs ring-1 ring-gray-300 ring-inset hover:bg-gray-50">Cancel</button>
+      </div>
+    </main>
+  </body>
+</html>

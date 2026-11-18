@@ -1,0 +1,13 @@
+/* Tailwind input for the fixtures in this folder. Rebuild with `npm run tailwind:fixtures`. */
+@import "tailwindcss" source(none);
+@source "./*.html";
+
+@font-face {
+  font-family: "Inter";
+  font-weight: 100 900;
+  src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+}
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+}

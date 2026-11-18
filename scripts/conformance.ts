@@ -16,12 +16,14 @@ import { extname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright";
 import { compile } from "../src/compile.js";
-import { walk } from "../src/engine/layout.js";
+import { walk, type Layout } from "../src/engine/layout.js";
 import { parseFixture } from "../src/fixture.js";
 import { loadSource, loadSourceFile } from "../src/load.js";
-import { impact } from "../src/lift/impact.js";
+import { impact, type WidthImpact } from "../src/lift/impact.js";
 import { lift } from "../src/lift/lift.js";
 import { modelOf, render } from "../src/project.js";
+import { tailwindFile, tailwindImpact, parseWidths } from "../src/commands.js";
+import type { Model } from "../src/model.js";
 
 const { values } = parseArgs({
   options: {
@@ -33,21 +35,28 @@ const { values } = parseArgs({
     out: { type: "string", default: "artifacts" },
     /** Verify a lift instead: the fixture links this hand-written CSS, which the engine sees only through lift. */
     lift: { type: "string" },
+    /**
+     * Verify Tailwind support: --fixtures are Tailwind pages, this is the CSS Tailwind compiled for
+     * them. Each page is served with generated class names and ids added (nothing else changes) and
+     * the engine works from the page's on-the-fly lift.
+     */
+    tailwind: { type: "string" },
   },
 });
 
 const root = process.cwd();
 const tolerance = Number(values.tolerance);
-const widths = values.widths!.split(",").map(Number);
+const widths = parseWidths(values.widths!);
+const tw = values.tailwind;
 const sha = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 
 // 1. Build, so we know exactly which bytes the browser must receive. With --lift, the original CSS
 //    is served untouched and the engine works from its lift.
 const lifted = values.lift ? lift(values.lift, readFileSync(values.lift, "utf8")) : undefined;
-const model = lifted ? modelOf(loadSource(`${values.lift} (lifted)`, lifted.yaml)) : modelOf(loadSourceFile(values.source!));
-const cssFile = values.lift ?? values.css!;
-const css = lifted ? readFileSync(values.lift!, "utf8") : compile(model);
-if (!lifted) {
+const model: Model | undefined = tw ? undefined : lifted ? modelOf(loadSource(`${values.lift} (lifted)`, lifted.yaml)) : modelOf(loadSourceFile(values.source!));
+const cssFile = tw ?? values.lift ?? values.css!;
+const css = tw ? readFileSync(tw, "utf8") : lifted ? readFileSync(values.lift!, "utf8") : compile(model!);
+if (!lifted && !tw) {
   mkdirSync(join(root, values.css!, ".."), { recursive: true });
   writeFileSync(values.css!, css);
 }
@@ -55,11 +64,13 @@ const builtSha = sha(css);
 
 // 2. Serve the repo and record every stylesheet byte stream the page actually loads.
 const served = new Map<string, string>();
+/** Pages served with different bytes (Tailwind: generated classes and ids added). */
+const overrides = new Map<string, string>();
 const types: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2", ".ttf": "font/ttf" };
 const server = createServer((req, res) => {
   const path = resolve(root, "." + decodeURIComponent(new URL(req.url!, "http://x").pathname));
   if (!path.startsWith(root) || !existsSync(path)) return void res.writeHead(404).end();
-  const body = readFileSync(path);
+  const body = overrides.has(path) ? Buffer.from(overrides.get(path)!) : readFileSync(path);
   if (path.endsWith(".css")) served.set(path, sha(body));
   res.writeHead(200, { "content-type": types[extname(path)] ?? "application/octet-stream" }).end(body);
 });
@@ -78,18 +89,34 @@ console.log(`browser: ${browser.version()}${executablePath ? ` (${executablePath
 console.log(`tolerance: ±${tolerance}px\n`);
 
 // Font families the source sets text in; each must load in the fixture or the comparison is meaningless.
-const families = [...new Set([...model.text.values()].filter((r) => r.font).map((r) => model.tokens.get(`font.${r.font!.name}`)!.raw.split(",")[0].trim().replace(/^["']|["']$/g, "")))];
+const familiesOf = (model: Model) => [...new Set([...model.text.values()].filter((r) => r.font).map((r) => model.tokens.get(`font.${r.font!.name}`)!.raw.split(",")[0].trim().replace(/^["']|["']$/g, "")))];
 let checked = 0;
+let assumed = 0;
 const flaggedSame: string[] = [];
 const flaggedDiff: string[] = [];
 for (const fixtureFile of values.fixtures!.split(",")) {
-const fixture = parseFixture(fixtureFile);
 const name = fixtureFile.replace(/^.*\//, "").replace(/\.html$/, "");
 console.log(`── ${fixtureFile}`);
-const layouts = render(model, fixture, widths);
-const impacts = lifted ? impact(lifted, fixture, layouts) : undefined;
+let layouts: Layout[];
+let impacts: WidthImpact[] | undefined;
+let families: string[];
+if (tw) {
+  const t = tailwindFile(fixtureFile, tw);
+  overrides.set(resolve(root, fixtureFile), t.html);
+  const m = modelOf(loadSource(`${fixtureFile} (tailwind)`, t.yaml));
+  layouts = widths.map((w) => render(m, t.fixtureAt(w), [w])[0]);
+  impacts = tailwindImpact(t, layouts);
+  families = familiesOf(m);
+} else {
+  const fixture = parseFixture(fixtureFile);
+  layouts = render(model!, fixture, widths);
+  impacts = lifted ? impact(lifted, fixture, layouts) : undefined;
+  families = familiesOf(model!);
+}
 for (const layout of layouts) {
-  const uncertain = new Set(impacts?.find((i) => i.width === layout.width)?.uncertain.map((u) => u.id));
+  const uncertain = new Set<string>(impacts?.find((i) => i.width === layout.width)?.uncertain.map((u) => u.id));
+  // A text box the engine couldn't measure (no font metrics) is flagged in every report: uncertain.
+  if (tw) for (const b of walk(layout.boxes)) if (b.assumptions.length) (uncertain.add(b.id), assumed++);
   const page = await browser.newPage({ viewport: { width: layout.width, height: 900 } });
   await page.goto(`http://127.0.0.1:${port}/${fixtureFile}`);
   await page.evaluate("document.fonts.ready");
@@ -107,7 +134,7 @@ for (const layout of layouts) {
     ),
   );
   const bottom = Math.max(...Object.values(rects).map((r) => r.y + r.h));
-  await page.screenshot({
+  if (!tw || [400, 760, 1280].includes(layout.width)) await page.screenshot({
     path: join(values.out!, `${name}-${layout.width}.png`),
     clip: { x: 0, y: 0, width: layout.width, height: Math.ceil(bottom) + 24 },
   });
@@ -130,7 +157,8 @@ for (const layout of layouts) {
         ? `  ${b.lines.length} line${b.lines.length > 1 ? "s" : ""}${c ? ` / chromium ${Math.round(c.h / lh)}` : ""}`
         : "";
     checked++;
-    console.log(
+    // Tailwind sweeps are long: print only what isn't a plain match.
+    if (!tw || !ok || flagged) console.log(
       `  ${ok ? (flagged ? "≈" : "✓") : flagged ? "≈" : "✖"} #${b.id.padEnd(12)} ${fmt(b).padEnd(26)} ${(c ? fmt(c) : "missing").padEnd(26)} ${c ? delta.toFixed(3) : "-"}${note}`,
     );
     if (flagged) (ok ? flaggedSame : flaggedDiff).push(`${layout.width}px #${b.id}`);
@@ -154,7 +182,7 @@ console.log(
     : `✖ stylesheet: expected only ${cssFile} (sha256 ${builtSha.slice(0, 12)}), page loaded ${JSON.stringify([...served])}`,
 );
 writeFileSync(join(values.out!, "conformance.json"), JSON.stringify({ tolerance, cssSha256: builtSha, boxes: report }, null, 2) + "\n");
-if (lifted) {
+if (lifted || tw) {
   const exact = checked - flaggedSame.length - flaggedDiff.length;
   console.log(
     failures
@@ -162,5 +190,6 @@ if (lifted) {
       : `\n✓ all ${exact} boxes marked exact agree with Chromium`,
   );
   console.log(`≈ ${flaggedSame.length + flaggedDiff.length} boxes marked uncertain: ${flaggedDiff.length} differ, ${flaggedSame.length} happen to match`);
+  if (tw) console.log(`  (${assumed} of them for unmeasured text; ${widths.length} widths ${widths[0]}–${widths.at(-1)}px, ${values.fixtures!.split(",").length} pages)`);
 } else console.log(failures ? `\n✖ ${failures} mismatch(es) of ${checked} boxes` : `\n✓ engine and Chromium agree on all ${checked} boxes`);
 process.exitCode = failures ? 1 : 0;

@@ -61,7 +61,9 @@
     "conformance:pricing": "tsx scripts/conformance.ts --source examples/pricing/pricing.cadesa.yaml --css examples/pricing/pricing.css --fixtures examples/pricing/pricing.html --widths $(seq -s, 300 7 1300) --out artifacts/pricing",
     "conformance:landing": "tsx scripts/conformance.ts --source examples/landing/landing.cadesa.yaml --css examples/landing/landing.css --fixtures examples/landing/landing.html --widths $(seq -s, 300 9 1400) --out artifacts/landing",
     "conformance:field2": "tsx scripts/conformance.ts --source fixtures/field2.cadesa.yaml --css fixtures/field2.css --fixtures fixtures/field2.html --widths $(seq -s, 280 7 1400) --out artifacts/field2",
-    "speed": "tsx scripts/speed.ts"
+    "speed": "tsx scripts/speed.ts",
+    "tailwind:fixtures": "tailwindcss -i fixtures/tailwind/input.css -o fixtures/tailwind/compiled.css",
+    "conformance:tailwind": "tsx scripts/conformance.ts --tailwind fixtures/tailwind/compiled.css --fixtures fixtures/tailwind/landing.html,fixtures/tailwind/settings.html,fixtures/tailwind/blog.html --widths 320-1440/10 --out artifacts/tailwind"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
