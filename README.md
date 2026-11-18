@@ -206,7 +206,7 @@ Invalid source never produces CSS. The same input always produces byte-identical
 | `maxWidth` (root only) | size token | `max-width; margin-inline:auto` |
 | `text` | text role | font family, size, weight, line-height, color, optional `decoration: none \| underline` |
 | `textAlign` | `start`, `center`, `end` | `text-align`. A text box with a fixed `height` also centers its lines vertically (`align-content: center`) |
-| `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)` after base rules; replaces, never merges |
+| `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)` after base rules. Each property listed replaces its base value; unlisted properties keep their base value. `layout` and `padding` are replaced as a whole. The narrowest active breakpoint wins |
 | `intent` | sentence | a CSS comment; metadata for inspection |
 
 **Components nest.** Any element can be the root of another component. Put a `.ca-plan-card` inside `.ca-pricing__plans` and the parent slot's layout places it, while the card lays out its own slots, breakpoints and all. Repeated elements share their slot's style (three `.ca-plan-card__feature` items, say). See [`examples/pricing`](examples/pricing):
@@ -305,7 +305,7 @@ Each round is one headless `claude -p` run that makes one edit. The harness then
 npm run bench -- --trials 5 --rounds 4 --model sonnet
 ```
 
-Results land in `bench/results/`. **First run ([details](bench/RESULTS.md)): plain CSS won or tied every task.** The three bugs were each a single obvious media-query edit, so the plain-CSS agent solved all 15 runs on the first try with no regressions. The Cadesa agent's only failures were unfamiliar syntax (`width: 100%` instead of `fill`), which the validator now points at directly. A harder task set is next. This section will report whatever it shows.
+Results land in `bench/results/`. **Two runs so far ([details](bench/RESULTS.md)): plain CSS matched or beat Cadesa on every task.** On three easy and three hard layout fixes, a strong model fixed the described problem in plain CSS on the first try with screenshots alone, and with fewer tool calls. Cadesa does not make an agent better at fixing a problem someone has already described. Its demonstrated value is elsewhere: catching problems nobody described yet. A real build caught six before the first browser run. That needs its own benchmark, which isn't written yet.
 
 ## Development
 
