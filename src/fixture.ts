@@ -24,6 +24,11 @@ export interface FixtureNode {
    */
   runMeta: { inBlock: boolean; underlined: boolean; items: number[] }[];
   children: FixtureNode[];
+  /**
+   * Not an element: a run of text between block-level children (an anonymous block, or an
+   * anonymous flex or grid item), laid out as a text box of its own. It has no box in the DOM.
+   */
+  anonymous?: boolean;
 }
 
 export interface Fixture {

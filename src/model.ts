@@ -34,8 +34,13 @@ export interface TextRole {
   /** In em; measured exactly (added after every character, as browsers do). */
   letterSpacing?: number;
   transform?: "uppercase" | "none";
-  /** "anywhere": a word too long for a line breaks between characters (overflow-wrap: anywhere). */
-  wrap?: "anywhere" | "normal";
+  /**
+   * "anywhere": a word too long for a line breaks between characters (overflow-wrap: anywhere), and
+   * the text's min-content width counts single characters. "break-word": the same breaking, but the
+   * min-content width counts whole words (overflow-wrap: break-word). "none": never wraps
+   * (white-space: nowrap).
+   */
+  wrap?: "anywhere" | "break-word" | "none" | "normal";
 }
 
 export interface Breakpoint {
@@ -55,6 +60,8 @@ export interface Ref {
 export type Pattern = "stack" | "cluster" | "grid" | "layer" | "flow";
 
 export type Align = "start" | "center" | "end" | "stretch";
+/** Where a cluster puts the free space of each line (justify-content). */
+export type Justify = "start" | "end" | "center" | "between" | "around" | "evenly";
 export type TextAlign = "start" | "center" | "end";
 
 export interface LayoutProp {
@@ -65,14 +72,38 @@ export interface LayoutProp {
   align?: Align;
   /** Grid only: minimum column width; columns auto-fill the row. */
   min?: Ref;
+  /** Cluster only: where each line's free space goes (default start). */
+  justify?: Justify;
+  /** Cluster only: false keeps every item on one line, shrinking them to fit (flex-wrap: nowrap). */
+  wrap?: boolean;
 }
 
-/** `padding: compact` sets both axes; `padding: { block, inline }` sets each (a missing axis is 0). */
+/**
+ * Inner spacing per side (space tokens; a missing side is 0). `padding: s` sets every side,
+ * `{ block, inline }` each axis, `{ top, right, bottom, left }` each side (a side beats its axis).
+ */
 export interface PaddingProp {
   path: string;
-  block?: Ref;
-  inline?: Ref;
+  top?: Ref;
+  right?: Ref;
+  bottom?: Ref;
+  left?: Ref;
 }
+
+/**
+ * A solid border. `border: line` is 1px on every side; `{ color, width, top, right, bottom, left }`
+ * gives the widths (space tokens): `width` every side, a side beats it, a missing side is 0.
+ */
+export interface BorderProp {
+  path: string;
+  color: Ref;
+  /** Per side; undefined: the 1px default (`border: <color>`). */
+  sides?: { top?: Ref; right?: Ref; bottom?: Ref; left?: Ref };
+}
+
+/** A margin side: a space token (may be negative) or auto (left and right only). */
+export type MarginSide = Ref | { auto: true; path: string };
+export const isAuto = (m: MarginSide | undefined): m is { auto: true; path: string } => !!m && "auto" in m;
 
 /**
  * Outer spacing per side (space tokens; a missing side is 0). `margin: s` sets every side,
@@ -81,22 +112,27 @@ export interface PaddingProp {
 export interface MarginProp {
   path: string;
   top?: Ref;
-  right?: Ref;
+  right?: MarginSide;
   bottom?: Ref;
-  left?: Ref;
+  left?: MarginSide;
 }
+
+/** Props an override can remove (`maxWidth: none`): the element is then as if it never had them. */
+export const UNSETTABLE = ["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "grow"] as const;
+export type Unsettable = (typeof UNSETTABLE)[number];
 
 export interface Props {
   layout?: LayoutProp;
   padding?: PaddingProp;
   margin?: MarginProp;
   background?: Ref;
-  border?: Ref;
+  border?: BorderProp;
   radius?: Ref;
   maxWidth?: Ref;
   /** Max width that stays left-aligned (a line length), unlike maxWidth, which centers. */
   measure?: Ref;
-  width?: Ref | { keyword: "fill"; path: string };
+  /** fill: the parent's full width; fit: shrink-to-fit (its content's width, at most the parent's). */
+  width?: Ref | { keyword: "fill" | "fit"; path: string };
   height?: Ref;
   /** Width / height ratio; height follows the width (images, media, cards). */
   aspect?: { value: number; raw: string; path: string };
@@ -107,6 +143,14 @@ export interface Props {
   shadow?: Ref;
   text?: Ref;
   textAlign?: { value: TextAlign; path: string };
+  /**
+   * In a cluster or stack: grows into the line's free space, in proportion to the number (flex-grow).
+   * basis zero: the free space is shared from nothing (flex-basis: 0, so equal shares), never below
+   * the content's min-content width; content (default): from the box's own size.
+   */
+  grow?: { value: number; basis: "zero" | "content"; path: string };
+  /** Removed by this override (`maxWidth: none`), with the YAML path. */
+  unset?: Partial<Record<Unsettable, string>>;
 }
 
 export const PROP_ORDER: (keyof Props)[] = [
@@ -126,6 +170,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "fit",
   "text",
   "textAlign",
+  "grow",
 ];
 
 export interface Slot {

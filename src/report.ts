@@ -51,7 +51,7 @@ export function formatRender(
       rows.push({
         cells: [
           `${"  ".repeat(depth + 1)}#${b.id}`,
-          b.tag,
+          b.anonymous ? "(text)" : b.tag,
           `${fmtPx(b.x)},${fmtPx(b.y)}`,
           `${uncertain.has(b.id) ? "≈" : ""}${fmtPx(b.w)}×${fmtPx(b.h)}`,
           summary(b),

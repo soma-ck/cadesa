@@ -112,7 +112,7 @@ describe("engine", () => {
 
   it("explains every value back to an editable YAML path", () => {
     const padding = box(mobile, "panel").props.padding!;
-    expect(padding.value).toEqual({ block: 16, inline: 16 });
+    expect(padding.value).toEqual({ top: 16, right: 16, bottom: 16, left: 16 });
     expect(padding.steps.map((s) => s.path)).toEqual([
       "tokens.space.compact",
       "breakpoints.narrow",
@@ -140,8 +140,8 @@ describe("whatif", () => {
 
     const panel = mobile.elements.find((e) => e.id === "panel")!;
     const padding = panel.props.find((p) => p.prop === "padding")!;
-    expect(padding.from!.value).toEqual({ block: 16, inline: 16 });
-    expect(padding.to!.value).toEqual({ block: 32, inline: 32 });
+    expect(padding.from!.value).toEqual({ top: 16, right: 16, bottom: 16, left: 16 });
+    expect(padding.to!.value).toEqual({ top: 32, right: 32, bottom: 32, left: 32 });
     expect(padding.to!.steps.at(-1)!.path).toBe("styles.settings-panel.when.narrow.padding");
     expect(mobile.elements.find((e) => e.id === "title")!.geometry).toEqual([
       { key: "x", from: 16, to: 32 },
@@ -253,7 +253,7 @@ describe("padding axes", () => {
     const css = compile(modelOf(src()));
     expect(css).toContain("padding: 0 var(--ca-space-control-inline);");
     const [l] = render(modelOf(src()), fixture, [1280]);
-    expect(box(l, "save").props.padding!.value).toEqual({ block: 0, inline: 20 });
+    expect(box(l, "save").props.padding!.value).toEqual({ top: 0, right: 20, bottom: 0, left: 20 });
   });
 });
 
@@ -310,9 +310,9 @@ describe("breakpoint order", () => {
       .replace("    when:\n      narrow:\n", "    when:\n      medium:\n        padding: section\n      narrow:\n");
     const model = modelOf(src(text));
     const [phone, tablet, desktop] = render(model, fixture, [390, 800, 1280]);
-    expect(box(phone, "panel").props.padding!.value.block).toBe(16); // narrow beats medium
-    expect(box(tablet, "panel").props.padding!.value.block).toBe(24); // medium only
-    expect(box(desktop, "panel").props.padding!.value.block).toBe(32);
+    expect(box(phone, "panel").props.padding!.value.top).toBe(16); // narrow beats medium
+    expect(box(tablet, "panel").props.padding!.value.top).toBe(24); // medium only
+    expect(box(desktop, "panel").props.padding!.value.top).toBe(32);
     const css = compile(model);
     expect(css.indexOf("@media (max-width: 64rem)")).toBeLessThan(css.indexOf("@media (max-width: 36rem)"));
   });

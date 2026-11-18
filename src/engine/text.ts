@@ -376,6 +376,8 @@ export function layoutText(
     spacesOnly?: boolean;
     hangKern?: boolean;
     wrapAnywhere?: boolean;
+    /** With wrapAnywhere: overflow-wrap: break-word, whose min-content still counts whole words. */
+    breakWord?: boolean;
     /** Inline element edges (character offsets): the text between them is shaped separately. */
     items?: number[];
   } = {},
@@ -547,7 +549,7 @@ export function layoutText(
   // counts with its kerning to the next one, a space included (Inter's thin "WW" kerns apart,
   // "… " together).
   const chars = [...text];
-  const units = opts.wrapAnywhere
+  const units = opts.wrapAnywhere && !opts.breakWord
     ? chars.flatMap((c, i) => {
         if (c === " " || c === SHY) return [];
         const next = chars[i + 1];

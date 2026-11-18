@@ -20,7 +20,7 @@
       "additionalProperties": false,
       "properties": {
         "space": {
-          "$ref": "#/$defs/lengthTokens"
+          "$ref": "#/$defs/spaceTokens"
         },
         "size": {
           "$ref": "#/$defs/sizeTokens"
@@ -147,6 +147,15 @@
               "uppercase",
               "none"
             ]
+          },
+          "wrap": {
+            "enum": [
+              "normal",
+              "anywhere",
+              "break-word",
+              "none"
+            ],
+            "description": "anywhere: a word too long for a line breaks between characters (and min-content counts single characters); break-word: the same breaking, min-content counts whole words; none: never wraps (white-space: nowrap)"
           }
         }
       }
@@ -292,32 +301,26 @@
             "min": {
               "$ref": "#/$defs/ref",
               "description": "grid only: minimum column width (size token)"
+            },
+            "justify": {
+              "enum": [
+                "start",
+                "end",
+                "center",
+                "between",
+                "around",
+                "evenly"
+              ],
+              "description": "cluster only: where each line's free space goes (justify-content: flex-start, flex-end, center, space-between, space-around, space-evenly); default start"
+            },
+            "wrap": {
+              "type": "boolean",
+              "description": "cluster only: false keeps every item on one line, shrinking them to fit (flex-wrap: nowrap); default true"
             }
           }
         },
         "padding": {
-          "description": "space token, or { block, inline } space tokens (a missing axis is 0)",
-          "oneOf": [
-            {
-              "$ref": "#/$defs/ref"
-            },
-            {
-              "type": "object",
-              "additionalProperties": false,
-              "minProperties": 1,
-              "properties": {
-                "block": {
-                  "$ref": "#/$defs/ref"
-                },
-                "inline": {
-                  "$ref": "#/$defs/ref"
-                }
-              }
-            }
-          ]
-        },
-        "margin": {
-          "description": "space token (every side), or { block, inline } and/or { top, right, bottom, left } space tokens (a side beats its axis; a missing side is 0). Collapses in a flow; adds to the outer size in a stack, cluster, grid or layer",
+          "description": "space token (every side), or { block, inline } and/or { top, right, bottom, left } space tokens (a side beats its axis; a missing side is 0); none: in a breakpoint override, removes the value a wider state set",
           "oneOf": [
             {
               "$ref": "#/$defs/ref"
@@ -349,25 +352,110 @@
             }
           ]
         },
+        "margin": {
+          "description": "space token (every side; may be negative), or { block, inline } and/or { top, right, bottom, left } (a side beats its axis; a missing side is 0). left, right and inline may be auto: the free space of a cluster's line, or of a block-flow cell, goes there (two center the box). Collapses in a flow; adds to the outer size in a stack, cluster, grid or layer; none: in a breakpoint override, removes the value a wider state set",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "minProperties": 1,
+              "properties": {
+                "block": {
+                  "$ref": "#/$defs/ref"
+                },
+                "top": {
+                  "$ref": "#/$defs/ref"
+                },
+                "bottom": {
+                  "$ref": "#/$defs/ref"
+                },
+                "inline": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ref"
+                    },
+                    {
+                      "const": "auto"
+                    }
+                  ]
+                },
+                "left": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ref"
+                    },
+                    {
+                      "const": "auto"
+                    }
+                  ]
+                },
+                "right": {
+                  "oneOf": [
+                    {
+                      "$ref": "#/$defs/ref"
+                    },
+                    {
+                      "const": "auto"
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
         "background": {
           "$ref": "#/$defs/ref",
-          "description": "color token"
+          "description": "color token; none: in a breakpoint override, removes the value a wider state set"
         },
         "border": {
-          "$ref": "#/$defs/ref",
-          "description": "color token (1px solid)"
+          "description": "color token (1px solid on every side), or { color, width, top, right, bottom, left } with space tokens as widths (width every side, a side beats it, a missing side is 0; drawn at whole pixels as Chromium does); none: in a breakpoint override, removes the value a wider state set",
+          "oneOf": [
+            {
+              "$ref": "#/$defs/ref"
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "color"
+              ],
+              "properties": {
+                "color": {
+                  "$ref": "#/$defs/ref"
+                },
+                "width": {
+                  "$ref": "#/$defs/ref"
+                },
+                "top": {
+                  "$ref": "#/$defs/ref"
+                },
+                "right": {
+                  "$ref": "#/$defs/ref"
+                },
+                "bottom": {
+                  "$ref": "#/$defs/ref"
+                },
+                "left": {
+                  "$ref": "#/$defs/ref"
+                }
+              }
+            }
+          ]
         },
         "radius": {
           "$ref": "#/$defs/ref",
-          "description": "radius token"
+          "description": "radius token; none: in a breakpoint override, removes the value a wider state set"
         },
         "width": {
           "$ref": "#/$defs/ref",
-          "description": "size token (a length or a percentage of the parent), or fill (stretch inside a stack)"
+          "description": "size token (a length or a percentage of the parent), fill (stretch inside a stack), or fit (as wide as its content, at most the parent: width: fit-content); none: in a breakpoint override, removes the value a wider state set"
         },
         "height": {
           "$ref": "#/$defs/ref",
-          "description": "size token (a length, not a percentage)"
+          "description": "size token (a length, not a percentage); none: in a breakpoint override, removes the value a wider state set"
         },
         "text": {
           "$ref": "#/$defs/ref",
@@ -382,11 +470,11 @@
         },
         "maxWidth": {
           "$ref": "#/$defs/ref",
-          "description": "size token (a length or a percentage); caps the width and centers the box"
+          "description": "size token (a length or a percentage); caps the width and centers the box; none: in a breakpoint override, removes the value a wider state set"
         },
         "measure": {
           "$ref": "#/$defs/ref",
-          "description": "size token (a length or a percentage); caps the width, stays left-aligned"
+          "description": "size token (a length or a percentage); caps the width, stays left-aligned; none: in a breakpoint override, removes the value a wider state set"
         },
         "aspect": {
           "oneOf": [
@@ -397,9 +485,12 @@
             {
               "type": "number",
               "exclusiveMinimum": 0
+            },
+            {
+              "const": "none"
             }
           ],
-          "description": "width:height, e.g. \"16:9\""
+          "description": "width:height, e.g. \"16:9\"; none: in a breakpoint override, removes the value a wider state set"
         },
         "fit": {
           "enum": [
@@ -409,11 +500,42 @@
         },
         "backdrop": {
           "$ref": "#/$defs/ref",
-          "description": "paint token"
+          "description": "paint token; none: in a breakpoint override, removes the value a wider state set"
         },
         "shadow": {
           "$ref": "#/$defs/ref",
-          "description": "shadow token"
+          "description": "shadow token; none: in a breakpoint override, removes the value a wider state set"
+        },
+        "grow": {
+          "description": "in a cluster or stack: takes a share of the line's free space (or the stack's extra height) in proportion to the factor (flex-grow). A number grows from the box's own size; { factor, basis: zero } shares the space from nothing (equal shares: flex: 1 0 0), never below the content's min-content width; none: in a breakpoint override, removes the value a wider state set",
+          "oneOf": [
+            {
+              "type": "number",
+              "exclusiveMinimum": 0
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "factor"
+              ],
+              "properties": {
+                "factor": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "basis": {
+                  "enum": [
+                    "zero",
+                    "content"
+                  ]
+                }
+              }
+            },
+            {
+              "const": "none"
+            }
+          ]
         }
       }
     },
@@ -449,6 +571,28 @@
           }
         ]
       }
+    },
+    "signedLength": {
+      "oneOf": [
+        {
+          "type": "string",
+          "pattern": "^-?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(rem|px)?$"
+        },
+        {
+          "type": "number"
+        }
+      ],
+      "description": "rem or px; a plain number is px; negative only for margins"
+    },
+    "spaceTokens": {
+      "type": "object",
+      "propertyNames": {
+        "$ref": "#/$defs/ident"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/signedLength"
+      },
+      "description": "Spacing. A negative token is only for margins (it pulls the box outward); padding, gaps and border widths must be 0 or more."
     }
   }
 }

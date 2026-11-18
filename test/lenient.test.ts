@@ -55,7 +55,9 @@ styles:
     const bad = (yaml: string) => v(yaml).diagnostics.map((d) => d.message);
     expect(bad("version: 2")).toEqual(["unsupported version"]);
     expect(bad("tokens: { space: { row_gap: 8 } }")[0]).toMatch(/invalid name "row_gap"/);
-    expect(bad("tokens: { space: { s: -4 } }")[0]).toMatch(/invalid space length/);
+    expect(bad("tokens: { space: { s: -4 } }")).toEqual([]); // a negative margin pulls a box outward
+    expect(bad("tokens: { space: { s: -4 } }\nstyles: { a: { padding: s } }")[0]).toMatch(/is negative; padding can.t be/);
+    expect(bad("tokens: { size: { s: -4 } }")[0]).toMatch(/invalid size length/);
     expect(bad("text: { t: { size: 16, weight: 400, lineHeight: normal, color: x } }")).toContain("invalid line height");
     expect(bad('tokens: { color: { c: "hsl(10 20% 30%)" } }')).toEqual(["invalid color"]);
   });

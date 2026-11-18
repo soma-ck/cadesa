@@ -1,5 +1,5 @@
 import { walk, type Box, type Issue, type Layout } from "./engine/layout.js";
-import { tokenKey, type Model, type Props } from "./model.js";
+import { isAuto, tokenKey, type MarginSide, type Model, type Props, type Unsettable } from "./model.js";
 import { fmtPx, type Resolved, type ResolvedProps } from "./resolve.js";
 
 export interface PropExplanation {
@@ -43,11 +43,17 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   width: "width",
   height: "height",
   text: "text",
+  justify: "layout",
+  wrap: "layout",
+  grow: "grow",
 };
 
 function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: string; path: string } | undefined {
   const key = PROP_OF[prop];
   const v = p[key];
+  // An override that removes it (`maxWidth: none`).
+  const removed = p.unset?.[key as Unsettable];
+  if (removed !== undefined && !v) return { value: "none (removed)", path: removed };
   if (!v) return undefined;
   const tok = (r: { kind: string; name: string }) => {
     const t = model.tokens.get(tokenKey(r.kind, r.name))!;
@@ -69,20 +75,33 @@ function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: s
     case "textAlign":
       return { value: p.textAlign!.value, path: p.textAlign!.path };
     case "padding": {
-      const { block, inline, path } = p.padding!;
+      const { top, right, bottom, left, path } = p.padding!;
+      const side = (r?: { kind: string; name: string }) => (r ? tok(r) : "0");
       const value =
-        block && inline && block.name === inline.name
-          ? tok(block)
-          : `block ${block ? tok(block) : "0"}, inline ${inline ? tok(inline) : "0"}`;
+        top && [right, bottom, left].every((r) => r?.name === top.name)
+          ? tok(top)
+          : `top ${side(top)}, right ${side(right)}, bottom ${side(bottom)}, left ${side(left)}`;
       return { value, path };
     }
     case "margin": {
       const m = p.margin!;
-      const side = (r?: { kind: string; name: string }) => (r ? tok(r) : "0");
+      const side = (r?: MarginSide) => (isAuto(r) ? "auto" : r ? tok(r) : "0");
       return { value: `top ${side(m.top)}, right ${side(m.right)}, bottom ${side(m.bottom)}, left ${side(m.left)}`, path: m.path };
     }
+    case "border": {
+      const b = p.border!;
+      if (!b.sides) return { value: `1px ${tok(b.color)}`, path: b.path };
+      const side = (r?: { kind: string; name: string }) => (r ? tok(r) : "0");
+      return { value: `${tok(b.color)}; top ${side(b.sides.top)}, right ${side(b.sides.right)}, bottom ${side(b.sides.bottom)}, left ${side(b.sides.left)}`, path: b.path };
+    }
+    case "wrap":
+      return p.layout!.pattern === "cluster" ? { value: p.layout!.wrap === false ? "false (one line)" : "true (default)", path: p.layout!.path } : undefined;
+    case "justify":
+      return p.layout!.pattern === "cluster" ? { value: p.layout!.justify ?? "start (default)", path: p.layout!.path } : undefined;
+    case "grow":
+      return { value: `${p.grow!.value}${p.grow!.basis === "zero" ? " (from zero)" : ""}`, path: p.grow!.path };
     case "width":
-      return "keyword" in p.width! ? { value: "fill", path: p.width!.path } : { value: tok(p.width!), path: p.width!.path };
+      return "keyword" in p.width! ? { value: p.width!.keyword, path: p.width!.path } : { value: tok(p.width!), path: p.width!.path };
     case "text":
       return { value: p.text!.name, path: p.text!.path };
     default: {

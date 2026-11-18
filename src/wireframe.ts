@@ -4,7 +4,7 @@
  * No browser: this is exactly what `render` computes, drawn.
  */
 import { walk, type Box, type Layout } from "./engine/layout.js";
-import { fmtPx } from "./resolve.js";
+import { fmtPx, insets } from "./resolve.js";
 
 const MEDIA = new Set(["img", "video", "picture", "svg", "canvas", "iframe"]);
 const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
@@ -40,12 +40,12 @@ export function wireframeSvg(l: Layout, opts: { labels?: boolean } = {}): string
     if (b.lines && b.props.text) {
       const t = b.props.text.value;
       const lh = t.sizePx * t.lineHeight;
-      const border = b.props.border ? 1 : 0;
-      const ix = (b.props.padding?.value.inline ?? 0) + border;
-      const iy = (b.props.padding?.value.block ?? 0) + border;
-      const inner = b.w - 2 * ix;
+      const ins = insets(b.props);
+      const ix = ins.left;
+      const iy = ins.top;
+      const inner = b.w - ins.left - ins.right;
       const total = b.lines.length * lh;
-      const top = b.props.height ? b.y + (b.h - total) / 2 : b.y + iy; // fixed-height text is centered
+      const top = b.props.height ? b.y + iy + (b.h - ins.top - ins.bottom - total) / 2 : b.y + iy; // fixed-height text is centered
       const align = b.props.textAlign?.value ?? (b.tag === "button" ? "center" : "start");
       b.lines.forEach((line, i) => {
         const w = Math.min(line.width, inner);

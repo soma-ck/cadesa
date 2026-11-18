@@ -7,8 +7,13 @@ import {
   ROOT_FONT_PX,
   TOKEN_CATEGORIES,
   tokenKey,
+  UNSETTABLE,
+  type BorderProp,
   type Breakpoint,
   type Component,
+  type MarginSide,
+  type PaddingProp,
+  type Unsettable,
   type Length,
   type LayoutProp,
   type MarginProp,
@@ -25,16 +30,18 @@ import {
 // kebab-case or camelCase; no underscores (BEM's "__" separates component and slot).
 const IDENT = /^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*$/;
 const LENGTH = /^(?:\d+(?:\.\d+)?|\.\d+)(rem|px)$/;
+/** A space token may be negative (a negative margin pulls the box outward). */
+const SIGNED = /^-?(?:\d+(?:\.\d+)?|\.\d+)(rem|px)$/;
 const COLOR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
 const IDENT_HELP = "a name of letters, digits and hyphens starting with a letter, e.g. section-title or sectionTitle";
 
 /** Lengths as people write them: "1.5rem", "16px", 16 (px), "16" (px). Returns CSS ("16px") or undefined. */
-function asLength(v: unknown): string | undefined {
-  if (typeof v === "number" && v >= 0 && isFinite(v)) return `${v}px`;
+function asLength(v: unknown, signed = false): string | undefined {
+  if (typeof v === "number" && (v >= 0 || signed) && isFinite(v)) return `${v}px`;
   if (typeof v !== "string") return undefined;
   const t = v.trim();
-  if (LENGTH.test(t)) return t;
-  if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(t)) return `${t}px`;
+  if (LENGTH.test(t) || (signed && SIGNED.test(t))) return t;
+  if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(t) || (signed && /^-(?:\d+(?:\.\d+)?|\.\d+)$/.test(t))) return `${t}px`;
   return undefined;
 }
 
@@ -74,7 +81,7 @@ const isObj = (v: unknown): v is Obj => typeof v === "object" && v !== null && !
 const show = (v: unknown) => (typeof v === "string" ? `"${v}"` : JSON.stringify(v));
 
 export function parseLength(raw: string): Length {
-  const m = LENGTH.exec(raw)!;
+  const m = SIGNED.exec(raw)!;
   const n = parseFloat(raw);
   return { raw, px: m[1] === "rem" ? n * ROOT_FONT_PX : n };
 }
@@ -153,10 +160,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         if (pct !== undefined) {
           tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: `${pct}%`, pct });
         } else if (LENGTH_CATEGORIES.has(category)) {
-          const len = asLength(value);
+          const len = asLength(value, category === "space");
           if (!len) {
             err(path, `invalid ${category} length`, {
-              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px)${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%"' : ""}`,
+              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px)${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%"' : category === "space" ? "; negative for a margin that pulls the box outward" : ""}`,
               got: value,
             });
             continue;
@@ -266,8 +273,8 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         err([...path, "letterSpacing"], "invalid letter spacing", { expected: "a number of em between -0.2 and 1, e.g. 0.08", got: role.letterSpacing });
         ok = false;
       }
-      if (role.wrap !== undefined && role.wrap !== "anywhere" && role.wrap !== "normal") {
-        err([...path, "wrap"], "invalid wrap", { expected: "anywhere (long words may break between letters) or normal", got: role.wrap });
+      if (role.wrap !== undefined && !["anywhere", "break-word", "none", "normal"].includes(role.wrap as string)) {
+        err([...path, "wrap"], "invalid wrap", { expected: "anywhere (long words may break between letters), break-word (the same, but a word's width still counts whole), none (never wraps) or normal", got: role.wrap });
         ok = false;
       }
       if (role.transform !== undefined && role.transform !== "uppercase" && role.transform !== "none") {
@@ -291,7 +298,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         decoration: role.decoration as "none" | "underline" | undefined,
         letterSpacing: role.letterSpacing as number | undefined,
         transform: role.transform as "uppercase" | "none" | undefined,
-        wrap: role.wrap as "anywhere" | "normal" | undefined,
+        wrap: role.wrap as TextRole["wrap"],
         color,
       });
     }
@@ -314,17 +321,49 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   }
 
   // ---- props
-  const props = (o: Obj, path: PathSeg[], allowed: string[]): Props => {
+  /** A space token that must not be negative (padding, gaps, border widths). */
+  const spaceRef = (value: unknown, path: PathSeg[], what: string): Ref | undefined => {
+    const r = ref(value, path, "space");
+    if (r && tokens.get(tokenKey("space", r.name))!.px! < 0) {
+      err(path, `"${r.name}" is negative; ${what} can't be`, { expected: "a space token of 0 or more (only margins may be negative)", got: value });
+      return undefined;
+    }
+    return r;
+  };
+  /** Per-side space tokens: { top, right, bottom, left } and the { block, inline } axes (a side beats its axis). */
+  const sideRefs = (v: Obj, p: PathSeg[], what: string, one: (value: unknown, path: PathSeg[]) => Ref | undefined) => {
+    const SIDES = ["top", "right", "bottom", "left"] as const;
+    const axis = (k: "block" | "inline") => (v[k] === undefined ? undefined : one(v[k], [...p, k]));
+    const block = axis("block");
+    const inline = axis("inline");
+    let ok = (v.block === undefined || !!block) && (v.inline === undefined || !!inline);
+    const out: { top?: Ref; right?: Ref; bottom?: Ref; left?: Ref } = {};
+    for (const s of SIDES) {
+      const own = v[s] === undefined ? undefined : one(v[s], [...p, s]);
+      if (v[s] !== undefined && !own) ok = false;
+      const r = own ?? (s === "top" || s === "bottom" ? block : inline);
+      if (r) out[s] = r;
+    }
+    void what;
+    return ok ? out : undefined;
+  };
+
+  const props = (o: Obj, path: PathSeg[], allowed: string[], override = false): Props => {
     const out: Props = {};
     for (const key of allowed) {
       const v = o[key];
       if (v === undefined) continue;
       const p = [...path, key];
+      if (v === "none" && (UNSETTABLE as readonly string[]).includes(key)) {
+        if (!override) err(p, `${key}: none only applies in a breakpoint override`, { expected: `leave ${key} out (the default is none), or give it in when.<breakpoint> to remove a wider value` });
+        else out.unset = { ...out.unset, [key as Unsettable]: p.join(".") };
+        continue;
+      }
       switch (key) {
         case "layout": {
           const l = obj(v, p, "a layout");
           if (!l) break;
-          keys(l, p, ["pattern", "gap", "align", "min"]);
+          keys(l, p, ["pattern", "gap", "align", "min", "justify", "wrap"]);
           const PATTERNS = ["stack", "cluster", "grid", "layer", "flow"];
           if (!PATTERNS.includes(l.pattern as string)) {
             err([...p, "pattern"], l.pattern === undefined ? 'missing required key "pattern"' : "unsupported layout pattern", {
@@ -350,7 +389,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             err([...p, "gap"], "a flow has no gap (block flow spaces its children with their margins)", { expected: "remove gap, or give the children margin: { top/bottom }, or use pattern: stack" });
             break;
           }
-          const gap = l.gap === undefined ? undefined : ref(l.gap, [...p, "gap"], "space");
+          const gap = l.gap === undefined ? undefined : spaceRef(l.gap, [...p, "gap"], "a gap");
           if (l.gap !== undefined && !gap) break;
           if (l.align !== undefined && (l.pattern === "stack" || l.pattern === "flow" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
             err([...p, "align"], l.pattern === "stack" || l.pattern === "flow" ? `align doesn't apply to a ${l.pattern} (its children always stretch)` : "invalid align", {
@@ -359,21 +398,42 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             });
             break;
           }
-          out.layout = { path: p.join("."), pattern: l.pattern as LayoutProp["pattern"], gap, align: l.align as LayoutProp["align"], min };
+          const JUSTIFY = ["start", "end", "center", "between", "around", "evenly"];
+          if (l.justify !== undefined && (l.pattern !== "cluster" || !JUSTIFY.includes(l.justify as string))) {
+            err([...p, "justify"], l.pattern !== "cluster" ? "justify only applies to a cluster (where each line's free space goes)" : "invalid justify", {
+              expected: "start, end, center, between, around or evenly",
+              got: l.justify,
+              suggestion: typeof l.justify === "string" ? closest(l.justify.replace(/^space-/, ""), JUSTIFY) : undefined,
+            });
+            break;
+          }
+          if (l.wrap !== undefined && (l.pattern !== "cluster" || typeof l.wrap !== "boolean")) {
+            err([...p, "wrap"], l.pattern !== "cluster" ? "wrap only applies to a cluster" : "invalid wrap", { expected: "true (items wrap onto new lines; the default) or false (one line; items shrink to fit)", got: l.wrap });
+            break;
+          }
+          out.layout = {
+            path: p.join("."),
+            pattern: l.pattern as LayoutProp["pattern"],
+            gap,
+            align: l.align as LayoutProp["align"],
+            min,
+            ...(l.justify !== undefined && { justify: l.justify as LayoutProp["justify"] }),
+            ...(l.wrap === false && { wrap: false }),
+          };
           break;
         }
         case "padding": {
           if (isObj(v)) {
-            keys(v, p, ["block", "inline"]);
-            const block = v.block === undefined ? undefined : ref(v.block, [...p, "block"], "space");
-            const inline = v.inline === undefined ? undefined : ref(v.inline, [...p, "inline"], "space");
-            if (v.block === undefined && v.inline === undefined)
-              err(p, "empty padding", { expected: "a space token, or { block, inline } space tokens" });
-            else if ((v.block === undefined || block) && (v.inline === undefined || inline))
-              out.padding = { path: p.join("."), block, inline };
+            keys(v, p, ["block", "inline", "top", "right", "bottom", "left"]);
+            if (!Object.keys(v).length) {
+              err(p, "empty padding", { expected: "a space token, { block, inline } or { top, right, bottom, left } space tokens" });
+              break;
+            }
+            const sides = sideRefs(v, p, "padding", (x, q) => spaceRef(x, q, "padding"));
+            if (sides) out.padding = { path: p.join("."), ...sides } as PaddingProp;
           } else {
-            const r = ref(v, p, "space");
-            if (r) out.padding = { path: p.join("."), block: r, inline: r };
+            const r = spaceRef(v, p, "padding");
+            if (r) out.padding = { path: p.join("."), top: r, right: r, bottom: r, left: r };
           }
           break;
         }
@@ -385,16 +445,26 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
               err(p, "empty margin", { expected: "a space token, { block, inline } or { top, right, bottom, left } space tokens" });
               break;
             }
-            const axis = (k: "block" | "inline") => (v[k] === undefined ? undefined : ref(v[k], [...p, k], "space"));
+            // auto: left and right only (it takes the line's free space, or centers a narrower box).
+            const one = (value: unknown, q: PathSeg[]): MarginSide | undefined => {
+              if (value === "auto") {
+                const side = q[q.length - 1];
+                if (side === "left" || side === "right" || side === "inline") return { auto: true, path: q.join(".") };
+                err(q, "only left and right margins can be auto", { expected: "a space token", got: value });
+                return undefined;
+              }
+              return ref(value, q, "space");
+            };
+            const axis = (k: "block" | "inline") => (v[k] === undefined ? undefined : one(v[k], [...p, k]));
             const block = axis("block");
             const inline = axis("inline");
             const m: MarginProp = { path: p.join(".") };
             let ok = (v.block === undefined || !!block) && (v.inline === undefined || !!inline);
             for (const s of SIDES) {
-              const own = v[s] === undefined ? undefined : ref(v[s], [...p, s], "space");
+              const own = v[s] === undefined ? undefined : one(v[s], [...p, s]);
               if (v[s] !== undefined && !own) ok = false;
               const r = own ?? (s === "top" || s === "bottom" ? block : inline);
-              if (r) m[s] = r;
+              if (r) (m as unknown as Record<string, MarginSide>)[s] = r;
             }
             if (ok) out.margin = m;
           } else {
@@ -406,9 +476,28 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "background":
           out.background = ref(v, p, "color");
           break;
-        case "border":
-          out.border = ref(v, p, "color");
+        case "border": {
+          if (isObj(v)) {
+            keys(v, p, ["color", "width", "top", "right", "bottom", "left"]);
+            const color = ref(v.color, [...p, "color"], "color");
+            const width = v.width === undefined ? undefined : spaceRef(v.width, [...p, "width"], "a border width");
+            if (v.width !== undefined && !width) break;
+            let ok = !!color;
+            const sides: NonNullable<BorderProp["sides"]> = {};
+            for (const s of ["top", "right", "bottom", "left"] as const) {
+              const own = v[s] === undefined ? undefined : spaceRef(v[s], [...p, s], "a border width");
+              if (v[s] !== undefined && !own) ok = false;
+              const r = own ?? width;
+              if (r) sides[s] = r;
+            }
+            const given = ["width", "top", "right", "bottom", "left"].some((k) => v[k] !== undefined);
+            if (ok) out.border = { path: p.join("."), color: color!, ...(given && { sides }) };
+          } else {
+            const color = ref(v, p, "color");
+            if (color) out.border = { path: p.join("."), color };
+          }
           break;
+        }
         case "radius":
           out.radius = ref(v, p, "radius");
           break;
@@ -425,10 +514,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           out.text = ref(v, p, "text");
           break;
         case "width":
-          if (v === "fill") out.width = { keyword: "fill", path: p.join(".") };
+          if (v === "fill" || v === "fit") out.width = { keyword: v, path: p.join(".") };
           else if (typeof v === "string" && /^(?:100%|auto|stretch|full)$/.test(v))
             err(p, `width "${v}" is spelled fill in Cadesa`, {
-              expected: "fill (stretch across the parent stack), or a size token",
+              expected: "fill (stretch across the parent stack), fit (as wide as its content, at most the parent), or a size token",
               got: v,
               suggestion: '"fill"',
             });
@@ -455,6 +544,22 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           if (v === "start" || v === "center" || v === "end") out.textAlign = { value: v, path: p.join(".") };
           else err(p, "invalid textAlign", { expected: "start, center or end", got: v });
           break;
+        case "grow": {
+          // grow: 1, or grow: { factor: 1, basis: zero } (equal shares from nothing, like flex: 1 0 0%).
+          const g = isObj(v) ? v : { factor: v };
+          if (isObj(v)) keys(v, p, ["factor", "basis"]);
+          const f = g.factor;
+          if (typeof f !== "number" || !(f > 0) || !isFinite(f) || f > 1000) {
+            err(isObj(v) ? [...p, "factor"] : p, "invalid grow", { expected: "a number above 0, e.g. 1 (or { factor: 1, basis: zero })", got: f });
+            break;
+          }
+          if (g.basis !== undefined && g.basis !== "zero" && g.basis !== "content") {
+            err([...p, "basis"], "invalid grow basis", { expected: "zero (shares the free space from nothing) or content (grows from its own size; the default)", got: g.basis });
+            break;
+          }
+          out.grow = { value: f, basis: (g.basis as "zero" | "content" | undefined) ?? "content", path: p.join(".") };
+          break;
+        }
       }
     }
     return out;
@@ -515,9 +620,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const sv = obj(slotValue, sp, "slot overrides");
           if (!sv) continue;
           keys(sv, sp, SLOT_PROPS);
-          slotOverrides.set(slotName, props(sv, sp, SLOT_PROPS));
+          slotOverrides.set(slotName, props(sv, sp, SLOT_PROPS, true));
         }
-        when.push({ breakpoint: bp, path: wp.join("."), props: props(o, wp, ROOT_PROPS), slots: slotOverrides });
+        when.push({ breakpoint: bp, path: wp.join("."), props: props(o, wp, ROOT_PROPS, true), slots: slotOverrides });
       }
       // Desktop-first: overrides apply widest breakpoint first, so the narrowest active one wins,
       // whatever order the breakpoints are declared in. The emitted @media order matches.
@@ -544,7 +649,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
     ])
     {
       if (p.aspect && p.height) err([...where.split("."), "aspect"], "aspect and height both set the height", { expected: "keep one of them" });
-      if (p.maxWidth && (p.margin?.left || p.margin?.right))
+      if (p.maxWidth && p.unset?.margin === undefined && (p.margin?.left || p.margin?.right))
         err([...where.split("."), "margin"], "maxWidth centers the box with auto inline margins; it can't also have a left or right margin", {
           expected: "margin: { block: <space> } (top and bottom only), or measure instead of maxWidth",
         });

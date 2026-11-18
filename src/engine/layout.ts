@@ -11,7 +11,7 @@
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import type { Component, Model, Pattern } from "../model.js";
-import { activeBreakpoints, fmtPx, resolveElement, sizeAt, type ResolvedProps, type Sides } from "../resolve.js";
+import { activeBreakpoints, fmtPx, insets, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
 const EPS = 0.001;
@@ -38,6 +38,8 @@ export interface Box {
   overflowY?: number;
   assumptions: string[];
   children: Box[];
+  /** A run of text the browser wraps in an anonymous box: laid out, but not an element (no DOM box to compare). */
+  anonymous?: boolean;
 }
 
 export interface Issue {
@@ -61,40 +63,93 @@ type ParentKind = "page" | Pattern;
 const MEDIA = new Set(["img", "video", "picture", "svg", "canvas", "iframe", "object", "embed"]);
 const CONTROLS = new Set(["button", "input", "select", "textarea"]);
 
-/** margin-inline: auto (from maxWidth) centers a box narrower than its cell; otherwise it starts at the left. */
-const centered = (b: Box, cell: number) => (b.props.maxWidth && b.w < cell ? (cell - b.w) / 2 : 0);
+/**
+ * Where a box sits across a cell it doesn't fill (block flow, a stack, the page): auto inline
+ * margins (maxWidth's, or margin: auto) take the space left over, a narrower box is centered by two
+ * of them; otherwise it starts after its left margin. A box as wide as the cell (or wider) starts
+ * at its left margin.
+ */
+function offsetX(b: Box, cell: number): number {
+  const m = marginOf(b.props);
+  const free = cell - b.w - m.left - m.right;
+  if (b.props.maxWidth && b.w < cell) return (cell - b.w) / 2;
+  if (free <= 0) return m.left;
+  if (m.autoLeft && m.autoRight) return m.left + Math.trunc((free * 64) / 2) / 64;
+  if (m.autoLeft) return m.left + free;
+  return m.left;
+}
 
 /** Children one under another (a stack or block flow): a child that changes size moves only those after it. */
 const inLine = (b: Box) => b.props.pattern?.value === "stack" || b.props.pattern?.value === "flow";
 
-const NO_MARGIN: Sides = { top: 0, right: 0, bottom: 0, left: 0 };
-const marginOf = (p: ResolvedProps): Sides => p.margin?.value ?? NO_MARGIN;
+const NO_MARGIN: Margins = { top: 0, right: 0, bottom: 0, left: 0 };
+const marginOf = (p: ResolvedProps): Margins => p.margin?.value ?? NO_MARGIN;
 /** Height including the vertical margins (a flex or grid item's outer size; they never collapse there). */
 const outerH = (b: Box) => {
   const m = marginOf(b.props);
   return m.top + b.h + m.bottom;
 };
 
+/** Layout units (1/64 px) as integers, and back. */
+const U = (px: number) => Math.round(px * 64);
+const PX = (u: number) => u / 64;
+
+/**
+ * Chromium's LayoutUnitDiffuser: `size` (layout units) shared over `buckets`, each the integer
+ * share or one unit more, the extra units spread evenly (Bresenham).
+ */
+function diffuser(size: number, buckets: number) {
+  const base = Math.trunc(size / buckets);
+  const dx = (size - base * buckets) * 2;
+  const dy = buckets * 2;
+  let x = 0;
+  let y = buckets;
+  let count = buckets;
+  return () => {
+    if (count === 0) return 0;
+    count--;
+    x += dx;
+    if (x >= y) {
+      y += dy;
+      return base + 1;
+    }
+    return base;
+  };
+}
+
+/**
+ * Collapsed margins: the largest positive and the most negative margin that adjoin. Their sum is
+ * the space they make (CSS 2.1 §8.3.1).
+ */
+interface Strut {
+  pos: number;
+  neg: number;
+}
+const NONE: Strut = { pos: 0, neg: 0 };
+const strut = (m: number): Strut => (m >= 0 ? { pos: m, neg: 0 } : { pos: 0, neg: m });
+const join = (...xs: Strut[]): Strut => ({ pos: Math.max(0, ...xs.map((x) => x.pos)), neg: Math.min(0, ...xs.map((x) => x.neg)) });
+const sum = (x: Strut) => x.pos + x.neg;
+
 /** How a block's vertical margins take part in its parent's block flow. */
 interface Collapse {
   /** Its top margin, joined with its first child's when they collapse through it. */
-  top: number;
-  bottom: number;
+  top: Strut;
+  bottom: Strut;
   /** Nothing in it separates its top and bottom margins: they collapse through it into one. */
   empty: boolean;
   /** An empty block's own top margin (where its border box sits). */
-  at: number;
+  at: Strut;
 }
 
 interface FlowResult {
   boxes: Box[];
   contentH: number;
   /** Margins that collapse through the top (first child) and bottom (last child) of the box. */
-  top: number;
-  bottom: number;
+  top: Strut;
+  bottom: Strut;
   /** Only empty children: their margins all collapse into `pending`. */
   empty: boolean;
-  pending: number;
+  pending: Strut;
 }
 
 /**
@@ -116,18 +171,37 @@ function transparent(color: string): boolean {
   return alpha !== undefined && parseFloat(alpha) === 0;
 }
 
-const insetsOf = (p: ResolvedProps) => {
-  const border = p.border ? 1 : 0;
-  return { x: (p.padding?.value.inline ?? 0) + border, y: (p.padding?.value.block ?? 0) + border };
-};
-
 interface Arrangement {
   rows: Box[][];
   /** Natural height of each row. */
   heights: number[];
   gap: number;
   align: "start" | "center" | "end" | "stretch";
+  insetTop: number;
   insetY: number;
+  /** A wrapping flex container's lines share extra height in layout units (Chromium's diffuser). */
+  flexLines: boolean;
+  /** A cluster that doesn't wrap: its one line is its content box's height. */
+  oneLine: boolean;
+}
+
+/** A stack whose children grow into its extra height (flex-grow in a column). */
+interface StackGrow {
+  kids: Box[];
+  gap: number;
+  insetTop: number;
+  insetY: number;
+  /** Each child's own (content) height before growing. */
+  natural: number[];
+}
+
+/** Intrinsic widths (border box, px): min-content and max-content, or why they aren't known. */
+interface Intrinsic {
+  min: number;
+  max: number;
+  why?: string;
+  /** A row of several items inside, whose max-content the browser takes from its wrapped lines when the box is narrower. */
+  wraps?: boolean;
 }
 
 export function layout(model: Model, fixture: Fixture, width: number): Layout {
@@ -142,27 +216,27 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
    */
   function flow(boxes: Box[], cell: number, throughTop: boolean, end: "escape" | "drop" | "keep"): FlowResult {
     let cursor = 0;
-    let strut = 0;
+    let pending: Strut = NONE;
     let atTop = true;
-    let top = 0;
+    let top: Strut = NONE;
     for (const b of boxes) {
       const c = collapse.get(b)!;
-      b.x = marginOf(b.props).left + centered(b, cell);
+      b.x = offsetX(b, cell);
       if (c.empty) {
-        b.y = atTop && throughTop ? 0 : cursor + Math.max(strut, c.at);
-        strut = Math.max(strut, c.top);
+        b.y = atTop && throughTop ? 0 : cursor + sum(join(pending, c.at));
+        pending = join(pending, c.top);
         continue;
       }
       if (atTop && throughTop) {
-        top = Math.max(strut, c.top);
+        top = join(pending, c.top);
         b.y = 0;
-      } else b.y = cursor + Math.max(strut, c.top);
+      } else b.y = cursor + sum(join(pending, c.top));
       atTop = false;
       cursor = b.y + b.h;
-      strut = c.bottom;
+      pending = c.bottom;
     }
-    if (atTop) return { boxes, contentH: throughTop ? 0 : strut, top: strut, bottom: 0, empty: true, pending: strut };
-    return { boxes, contentH: end === "keep" ? cursor + strut : cursor, top, bottom: end === "escape" ? strut : 0, empty: false, pending: 0 };
+    if (atTop) return { boxes, contentH: throughTop ? 0 : Math.max(0, sum(pending)), top: pending, bottom: NONE, empty: true, pending };
+    return { boxes, contentH: Math.max(0, end === "keep" ? cursor + sum(pending) : cursor), top, bottom: end === "escape" ? pending : NONE, empty: false, pending: NONE };
   }
   /** Boxes the engine can't guarantee beyond their own assumptions and errors, and why. */
   const sources = new Map<Box, string>();
@@ -216,9 +290,14 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     return (maxWidth: number) => {
       const parts = runs.map((r, i) => {
-        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, items: items[i] };
+        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i] };
+        // white-space: nowrap: the paragraph is one line, and its min-content is its whole width.
+        if (t.nowrap) {
+          const one = layoutText(m!, r, t.sizePx, t.weight, Infinity, { ...opts, wrapAnywhere: false, hangKern: false });
+          return { ...one, minContent: one.maxContent, widestPiece: r.trim() };
+        }
         // Centered or end-aligned lines measure their hanging space's kerning out too.
-        const plain = t.underline || (!!painted && !meta[i].inBlock) || align !== "start";
+        const plain = t.underline || (!!painted && !meta[i].inBlock) || align !== "start" || t.nowrap;
         const a = layoutText(m!, r, t.sizePx, t.weight, maxWidth, { ...opts, hangKern: !plain });
         if (a.approximate && !anywhereFlagged) {
           anywhereFlagged = true;
@@ -243,81 +322,374 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     };
   }
 
-  function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind): Box {
+  const stackGrow = new WeakMap<Box, StackGrow>();
+  const intrinsicCache = new Map<FixtureNode, Intrinsic>();
+  const contentCache = new Map<FixtureNode, Intrinsic>();
+  /** Intrinsic widths are rounded up to a layout unit, so content fits the box it sizes. */
+  const up = (v: number) => Math.ceil(v * 64 - TEXT_EPS) / 64;
+
+  /** Children that are Cadesa slots or components; anything else inside a text box is inline text. */
+  const classedOf = (n: FixtureNode, c: Component) =>
+    n.children.filter((k) => k.classes.some((cl) => cl.startsWith(model.prefix) && (cl.startsWith(`${model.prefix}${c.name}__`) || model.components.has(cl.slice(model.prefix.length)))));
+
+  /**
+   * Chromium's LineFlexer (line_flexer.cc): the items of a line share its free space. Growing, in
+   * proportion to their grow factors (float); shrinking (a line too full, which only a
+   * non-wrapping cluster has), in proportion to shrink × content size. The last item goes first,
+   * each taking its fraction of what is left (rounded to a layout unit) so the shares add up
+   * exactly; an item pushed past its minimum or maximum is frozen there and the rest shared again.
+   * Everything in layout units; `out` is an item's margins, `pad` its padding and border. Returns
+   * each item's size, or undefined when the line neither grows nor shrinks.
+   */
+  function flexLine(
+    items: { base: number; hyp: number; factor: number; shrink: number; pad: number; min: number; max: number; out: number }[],
+    inner: number,
+    gap: number,
+  ): number[] | undefined {
+    const n = items.length;
+    const grow = items.reduce((t, it) => t + it.hyp + it.out, 0) + gap * (n - 1) < inner;
+    const factor = (i: number) => (grow ? items[i].factor : items[i].shrink);
+    if (!items.some((_, i) => factor(i) > 0)) return undefined;
+    const st = items.map((it, i) => ({ frozen: factor(i) === 0 || (grow ? it.base > it.hyp : it.base < it.hyp), size: it.hyp, frac: 0, viol: 0 }));
+    let total = 0;
+    let free = 0;
+    const freeze = (should: (i: number) => boolean) => {
+      total = 0;
+      let weighted = 0;
+      free = inner;
+      items.forEach((it, i) => {
+        if (st[i].frozen || should(i)) {
+          st[i].frozen = true;
+          free -= st[i].size + it.out + gap;
+          return;
+        }
+        st[i].size = it.hyp;
+        const f = Math.fround(factor(i));
+        total += f;
+        if (grow) st[i].frac = f / total;
+        else {
+          // Shrinking is weighted by the content size (the flex base size without padding and border).
+          const w = f * (it.base - it.pad);
+          weighted += w;
+          st[i].frac = w / weighted;
+        }
+        free -= it.base + it.out + gap;
+      });
+      free += gap;
+    };
+    freeze(() => false);
+    const initial = free;
+    // FromDoubleRound: halves away from zero.
+    const round = (x: number) => Math.sign(x) * Math.round(Math.abs(x));
+    for (let loop = 0; loop <= n; loop++) {
+      // Factors that add up to less than 1 share only that fraction of the free space.
+      if (total > 0 && total < 1) {
+        const part = Math.trunc(initial * total);
+        if (Math.abs(part) < Math.abs(free)) free = part;
+      }
+      if (grow ? free <= 0 : free >= 0) break;
+      let violation = 0;
+      for (let i = n - 1; i >= 0; i--) {
+        if (st[i].frozen) continue;
+        const raw = free * st[i].frac;
+        const extra = st[i].frac === 1 ? free : isFinite(raw) ? round(raw) : 0;
+        free -= extra;
+        const size = items[i].base + extra;
+        const clamped = Math.max(Math.min(size, items[i].max), items[i].min);
+        st[i].size = clamped;
+        st[i].viol = clamped - size;
+        violation += clamped - size;
+      }
+      if (!violation) break;
+      freeze((i) => (violation > 0 ? st[i].viol > 0 : st[i].viol < 0));
+    }
+    return st.map((x) => x.size);
+  }
+
+  /**
+   * An element's min-content and max-content widths (border box), as Chromium computes them for a
+   * box sized by its content: text measured; block flow, stacks and layers the widest child (with
+   * its margins); a cluster's min the widest child, its max all of them side by side with the gaps.
+   */
+  function intrinsic(n: FixtureNode, c: Component, slot: string | undefined, contentOnly = false): Intrinsic {
+    const cache = contentOnly ? contentCache : intrinsicCache;
+    let r = cache.get(n);
+    if (!r) {
+      r = intrinsicOf(n, c, slot, contentOnly);
+      cache.set(n, r);
+    }
+    return r;
+  }
+  /** contentOnly: the content's own sizes, whatever width the box sets (a flex item's content size suggestion). */
+  function intrinsicOf(n: FixtureNode, c: Component, slot: string | undefined, contentOnly: boolean): Intrinsic {
+    const p = resolveElement(model, c, slot, width);
+    const ins = insets(p);
+    const insX = ins.left + ins.right;
+    const unknown = (why: string): Intrinsic => ({ min: 0, max: 0, why });
+    const capOf = (r?: { value: number | { pct: number } }) => (r === undefined ? Infinity : typeof r.value === "number" ? r.value : NaN);
+    // (A content size suggestion: the caller clamps it by the box's own max width, which may be a percentage.)
+    const cap = contentOnly ? Infinity : Math.min(capOf(p.maxWidth), capOf(p.measure));
+    if (isNaN(cap)) return unknown(`<${n.tag}> has a percentage max width`);
+    const pw = contentOnly ? undefined : p.width?.value;
+    if (typeof pw === "number") {
+      const w = Math.max(insX, Math.min(pw, cap));
+      return { min: w, max: w };
+    }
+    if (pw !== undefined && pw !== "fit") return unknown(`<${n.tag}> has a ${pw === "fill" ? "fill" : "percentage"} width, which depends on the box being sized`);
+    if (p.aspect && !contentOnly) return unknown(`<${n.tag}> has an aspect ratio`);
+    let min = 0;
+    let max = 0;
+    let wraps = false;
+    const isText = !!p.text && classedOf(n, c).length === 0;
+    if (isText) {
+      if (n.text) {
+        const mt = text(n, p, "", []);
+        if (!mt) return unknown(`the text of <${n.tag}> can't be measured`);
+        const t = mt(Infinity);
+        min = up(t.minContent);
+        max = up(t.maxContent);
+      }
+    } else if (n.children.length) {
+      const kids = n.children.map((k) => ({ node: k, ...childOf(k, c, true) }));
+      if (kids.some((k) => k.comp === null)) return unknown(`<${n.tag}> has children the engine doesn't lay out`);
+      const pat = p.pattern?.value;
+      if (!pat) return unknown(`<${n.tag}> has children but no layout`);
+      if (pat === "grid") return unknown("a grid's width from its content isn't modelled");
+      let row = 0;
+      let rowMin = 0;
+      for (const k of kids) {
+        const ki = intrinsic(k.node, k.comp!, k.slot);
+        if (ki.why) return ki;
+        const km = marginOf(resolveElement(model, k.comp!, k.slot, width));
+        const mm = km.left + km.right;
+        min = Math.max(min, ki.min + mm);
+        if (pat === "cluster") {
+          row += ki.max + mm;
+          rowMin += ki.min + mm;
+        } else max = Math.max(max, ki.max + mm);
+        wraps ||= !!ki.wraps;
+      }
+      if (pat === "cluster") {
+        const gaps = (p.gap?.value ?? 0) * (kids.length - 1);
+        max = row + gaps;
+        // One line: its min-content is every item's side by side.
+        if (p.wrap?.value === false) min = rowMin + gaps;
+        else wraps ||= kids.length > 1;
+      }
+      // A layer's one column is minmax(0, 1fr): under a min-content constraint it's 0 wide.
+      if (pat === "layer") min = 0;
+    } else if (MEDIA.has(n.tag) || CONTROLS.has(n.tag)) return unknown(`<${n.tag}> has an intrinsic size of its own`);
+    min = Math.max(0, min);
+    max = Math.max(max, min);
+    return { min: Math.max(insX, Math.min(cap, min + insX)), max: Math.max(insX, Math.min(cap, max + insX)), ...(wraps && { wraps }) };
+  }
+
+  /**
+   * A cluster (a wrapping flex row): each item's flex base size (its width, or its max-content
+   * width), lines broken on those, then per line Chromium's flexing (grow; a lone item too wide for
+   * its line shrinks to it, down to its min-content width), auto margins and justify. Items are
+   * laid out at their final widths.
+   */
+  function cluster(kids: { node: FixtureNode; comp: Component; slot: string | undefined }[], innerW: number, gap: number, justify: string, nowrap: boolean): Box[][] {
+    const items = kids.map((k) => {
+      const p = resolveElement(model, k.comp, k.slot, width);
+      const km: Margins = { ...marginOf(p) };
+      const out = km.left + km.right;
+      const kins = insets(p);
+      const insX = kins.left + kins.right;
+      /** Errors, reported against the item's box once it's laid out (its id is known then). */
+      const errors: { path: string; message: (id: string) => string }[] = [];
+      const kpath = k.slot ? `${k.comp.path}.slots.${k.slot}` : k.comp.path;
+      const notes: string[] = [];
+      const cap = Math.min(p.maxWidth ? sizeAt(p.maxWidth.value, innerW) : Infinity, p.measure ? sizeAt(p.measure.value, innerW) : Infinity);
+      // maxWidth is width: 100% (unless a width is set), the max-width, and auto inline margins,
+      // which take the line's free space like any other auto margins.
+      if (p.maxWidth) Object.assign(km, { autoLeft: true, autoRight: true });
+      const pw = p.width?.value ?? (p.maxWidth ? "fill" : undefined);
+      const g = p.grow?.value;
+      let base = 0;
+      let min = insX;
+      // Its automatic minimum (min-width: auto) is known: content-sized, or grows from zero.
+      let minKnown = false;
+      let wraps = false;
+      let intr: Intrinsic | undefined;
+      // The content's own sizes: the item's max width (maybe a percentage of this line) is applied below.
+      const content = () => (intr ??= intrinsic(k.node, k.comp, k.slot, true));
+      const cannot = (why: string) => {
+        errors.push({ path: kpath, message: (id) => (g?.basis === "zero" && pw !== undefined ? `#${id} grows from zero in a cluster, and the minimum width of its content can't be measured (${why})` : `#${id} sits in a cluster without a width, and its content can't be measured (${why}); give it a size token width`) });
+      };
+      if (typeof pw === "number") base = pw;
+      else if (pw !== undefined && typeof pw === "object") base = sizeAt(pw, innerW);
+      else if (pw === "fill") {
+        if (p.width) errors.push({ path: p.width.steps.at(-1)!.path, message: (id) => `#${id} has width: fill inside a cluster; fill only stretches inside a stack` });
+        base = innerW;
+      } else if (pw === "fit") {
+        const it = content();
+        if (it.why) cannot(it.why);
+        else base = Math.min(it.max, Math.max(it.min, innerW - out));
+      } else if (p.aspect) {
+        // aspect compiles to width: 100%. With inline margins (or siblings, in a row that doesn't
+        // wrap) the line is too full, and the item shrinks, but no narrower than its automatic
+        // minimum: its min-content width, at most the 100%. That is measured for a text run only.
+        base = innerW;
+        const isText = !!p.text && classedOf(k.node, k.comp).length === 0;
+        const it = isText && k.node.text ? content() : undefined;
+        // (In a one-line cluster its minimum may also follow its stretched height: not modelled.)
+        if (it && !it.why && !nowrap) {
+          min = Math.max(insX, Math.min(innerW, it.min));
+          minKnown = true;
+        }
+      } else if (!g || g.basis === "content") {
+        // flex-basis: auto → max-content; an item too wide for its line shrinks, down to min-content.
+        const it = content();
+        if (it.why) cannot(it.why);
+        else {
+          base = it.max;
+          min = it.min;
+          minKnown = true;
+          wraps = !!it.wraps;
+        }
+      }
+      if (g && g.basis === "zero") {
+        // flex-basis: 0, never below the automatic minimum: the content's min-content width, capped by a set width.
+        const it = intrinsic(k.node, k.comp, k.slot, true);
+        const specified = typeof pw === "number" ? pw : pw !== undefined && typeof pw === "object" ? sizeAt(pw, innerW) : pw === "fill" ? innerW : Infinity;
+        if (it.why) cannot(it.why);
+        else {
+          min = Math.max(insX, Math.min(it.min, specified));
+          minKnown = true;
+        }
+        base = insX;
+      }
+      min = Math.min(min, Math.max(cap, insX));
+      // The flex base size is never below the padding and border (its content size is at least 0).
+      base = Math.max(base, insX);
+      const hyp = Math.max(Math.min(base, cap), g?.basis === "zero" ? min : 0, insX);
+      // An aspect box that grows: its minimum width also follows its height, which isn't modelled.
+      if (g && p.aspect) notes.push("grow on a box with an aspect ratio: its minimum width also follows its height, which isn't modelled");
+      // flex-shrink: 1 unless a width is set (Cadesa compiles flex: none with it).
+      const shrinkable = !(typeof pw === "number" || (pw !== undefined && typeof pw === "object") || (pw === "fill" && p.width) || pw === "fit");
+      return { k, p, km, out, base, hyp, min, cap, insX, shrink: shrinkable, shrinkUnknown: shrinkable && !minKnown, wraps, intr, factor: g?.factor ?? 0, notes, errors };
+    });
+
+    type Item = (typeof items)[number];
+    const lines: Item[][] = [];
+    let line: Item[] = [];
+    let lineW = 0;
+    for (const it of items) {
+      const outer = it.hyp + it.out;
+      const needed = line.length ? lineW + gap + outer : outer;
+      if (line.length && needed > innerW + EPS && !nowrap) {
+        lines.push(line);
+        line = [];
+      }
+      lineW = line.length ? lineW + gap + outer : outer;
+      line.push(it);
+    }
+    if (line.length) lines.push(line);
+
+    return lines.map((ln) => {
+      const n = ln.length;
+      const flexed = flexLine(
+        ln.map((it) => ({ base: U(it.base), hyp: U(it.hyp), factor: it.factor, shrink: it.shrink ? 1 : 0, pad: U(it.insX), min: U(it.min), max: it.cap === Infinity ? Infinity : U(it.cap), out: U(it.out) })),
+        U(innerW),
+        U(gap),
+      );
+      const sizes = flexed ? flexed.map(PX) : ln.map((it) => it.hyp);
+      ln.forEach((it, i) => {
+        if (it.shrinkUnknown && sizes[i] < it.hyp - EPS) it.notes.push("it shrinks in its row, down to a minimum width the engine doesn't measure (an aspect ratio)");
+      });
+      ln.forEach((it, i) => {
+        if (it.wraps && it.intr && sizes[i] < it.intr.max - EPS) it.notes.push("its width comes from its content, and a row inside it wraps there: the browser sizes it from the wrapped lines");
+      });
+      let free = U(innerW) - ln.reduce((t, it, i) => t + U(sizes[i]) + U(it.out), 0) - U(gap) * (n - 1);
+      const autos = ln.reduce((t, it) => t + (it.km.autoLeft ? 1 : 0) + (it.km.autoRight ? 1 : 0), 0);
+      // Auto margins take the free space first (justify then has none to place).
+      const auto = autos && free > 0 ? diffuser(free, autos) : () => 0;
+      if (autos && free > 0) free = 0;
+      let offset = 0;
+      let between = () => 0;
+      if (justify === "end") offset = free;
+      else if (justify === "center") offset = Math.trunc(free / 2);
+      else if (justify !== "start") {
+        const buckets = justify === "between" ? n - 1 : justify === "evenly" ? n + 1 : n;
+        if (free > 0) {
+          offset = justify === "between" ? 0 : Math.trunc(free / (justify === "around" ? 2 * n : n + 1));
+          if (n > 1) between = diffuser(free, buckets);
+        } else if (justify !== "between") offset = Math.max(0, Math.trunc(free / 2));
+      }
+      let x = offset;
+      return ln.map((it, i) => {
+        const b = measure(it.k.node, it.k.comp, it.k.slot, innerW, "cluster", sizes[i]);
+        b.assumptions.push(...it.notes);
+        for (const e of it.errors) issues.push({ severity: "error", id: b.id, path: e.path, message: e.message(b.id) });
+        const al = it.km.autoLeft ? auto() : 0;
+        const ar = it.km.autoRight ? auto() : 0;
+        b.x = PX(x + al + U(it.km.left));
+        x += al + U(it.km.left) + U(sizes[i]) + U(it.km.right) + ar + U(gap) + between();
+        return b;
+      });
+    });
+  }
+
+  function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind, forcedW?: number): Box {
     const id = idOf(n);
     const props = resolveElement(model, c, slot, width);
     const sourcePath = slot ? `${c.path}.slots.${slot}` : c.path;
     const assumptions: string[] = [];
-    const inset = insetsOf(props);
+    const ins = insets(props);
+    const insX = ins.left + ins.right;
+    const insY = ins.top + ins.bottom;
 
-    // Children that are Cadesa slots; anything else inside a text box is inline text.
-    const classed = n.children.filter((k) => k.classes.some((cl) => cl.startsWith(model.prefix) && (cl.startsWith(`${model.prefix}${c.name}__`) || model.components.has(cl.slice(model.prefix.length)))));
+    const classed = classedOf(n, c);
     const isText = !!props.text && classed.length === 0;
     const measureText = isText && n.text ? text(n, props, id, assumptions) : undefined;
 
     const m = marginOf(props);
-    if (props.maxWidth && (m.left || m.right))
+    if (props.maxWidth && (m.left || m.right || m.autoLeft || m.autoRight))
       issues.push({
         severity: "error",
         id,
         path: props.margin!.steps.at(-1)!.path,
         message: `#${id} has maxWidth (centered by auto inline margins) and a left or right margin; keep one of them`,
       });
+    if ((parent === "grid" || parent === "layer") && (m.autoLeft || m.autoRight))
+      issues.push({ severity: "error", id, path: props.margin!.steps.at(-1)!.path, message: `#${id} has an auto margin in a ${parent}; auto margins are modelled in block flow, stacks and clusters` });
 
     // ---- width
     let w: number;
     const pw = props.width?.value;
-    if (typeof pw === "number") w = pw;
-    else if (pw !== undefined && pw !== "fill") w = sizeAt(pw, avail);
-    else if (parent === "cluster") {
-      if (pw === "fill") {
-        issues.push({
-          severity: "error",
-          id,
-          path: props.width!.steps.at(-1)!.path,
-          message: `#${id} has width: fill inside a cluster; fill only stretches inside a stack`,
-        });
-      }
-      // aspect compiles to width: 100%. With inline margins the line is too full, and the item
-      // shrinks to fit, but no narrower than its automatic minimum: its min-content width, at most
-      // the 100%. That is measured for a text run only.
-      if (pw === undefined && props.aspect) {
-        w = Math.max(0, avail - m.left - m.right);
-        if (w < avail) {
-          if (measureText) w = Math.max(w, Math.min(avail, Math.ceil(measureText(Infinity).minContent * 64 - TEXT_EPS) / 64 + 2 * inset.x));
-          else assumptions.push("an aspect box with left or right margins in a cluster shrinks to its line, down to a minimum width the engine doesn't measure");
-        }
-      } else if (measureText) {
-        // Flex item with flex-basis: auto → max-content, shrinking no further than min-content.
-        const t = measureText(Infinity);
-        // Intrinsic widths are rounded up to a layout unit, so the text fits the box it sizes. A
-        // width within the metrics' precision of a whole unit is on it ("i" at 8px is 134/64 px).
-        const up = (v: number) => Math.ceil(v * 64 - TEXT_EPS) / 64;
-        w = Math.max(Math.min(up(t.maxContent) + 2 * inset.x, avail - m.left - m.right), up(t.minContent) + 2 * inset.x);
-      } else {
-        issues.push({
-          severity: "error",
-          id,
-          path: sourcePath,
-          message: `#${id} sits in a cluster without a width, and its content can't be measured; give it a size token width`,
-        });
-        w = 0;
-      }
-    } else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
-    else w = Math.max(0, avail - m.left - m.right); // page, flow, stack, grid cell, layer: stretch inside the margins
     const maxW = Math.min(props.maxWidth ? sizeAt(props.maxWidth.value, avail) : Infinity, props.measure ? sizeAt(props.measure.value, avail) : Infinity);
-    if (w > maxW) w = maxW;
-    // box-sizing: border-box never makes a box narrower than its padding and border.
-    w = Math.max(w, 2 * inset.x);
-    if (props.maxWidth && parent === "cluster")
-      issues.push({
-        severity: "error",
-        id,
-        path: props.maxWidth.steps.at(-1)!.path,
-        message: `#${id} has maxWidth inside a cluster; its auto margins would push the row apart. Use a width token instead`,
-      });
+    /** fit-content in `room`: the content's max-content width, at most the room, at least its min-content. */
+    const fit = (room: number, what: string): number => {
+      const it = intrinsic(n, c, slot, true);
+      if (it.why) {
+        issues.push({ severity: "error", id, path: props.width?.steps.at(-1)?.path ?? sourcePath, message: `#${id} ${what}, and its content can't be measured (${it.why})` });
+        return room;
+      }
+      const f = Math.min(it.max, Math.max(it.min, room));
+      if (it.wraps && f < it.max - EPS) assumptions.push("its width comes from its content, and a row inside it wraps there: the browser sizes it from the wrapped lines");
+      return f;
+    };
+    if (forcedW !== undefined) w = forcedW;
+    else {
+      if (typeof pw === "number") w = pw;
+      else if (pw !== undefined && typeof pw === "object") w = sizeAt(pw, avail);
+      else if (pw === "fit") {
+        w = fit(Math.max(0, avail - m.left - m.right), "is as wide as its content (width: fit)");
+        if (props.aspect) assumptions.push("width: fit with an aspect ratio: the browser also sizes it from its height, which isn't modelled");
+      }
+      // Auto margins across a stack (a column flexbox) switch off stretching: it's as wide as its content.
+      else if (parent === "stack" && pw === undefined && (m.autoLeft || m.autoRight) && !props.maxWidth && !props.aspect)
+        w = fit(Math.max(0, avail - m.left - m.right), "has an auto margin in a stack, which sizes it to its content");
+      else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
+      else w = Math.max(0, avail - m.left - m.right); // page, flow, stack, grid cell, layer: stretch inside the margins
+      if (w > maxW) w = maxW;
+      // box-sizing: border-box never makes a box narrower than its padding and border.
+      w = Math.max(w, insX);
+    }
 
-    const innerW = Math.max(0, w - 2 * inset.x);
+    const innerW = Math.max(0, w - insX);
 
     // ---- content
     const children: Box[] = [];
@@ -360,9 +732,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let rows: Box[][] | undefined;
     // Block flow in block flow: with no padding or border in between, this box's top margin and
     // its first child's are one margin (likewise at the bottom while its height is auto).
-    const throughTop = (parent === "flow" || parent === "page") && inset.y === 0;
-    const throughBottom = throughTop && !props.height && !props.aspect;
+    const inFlow = parent === "flow" || parent === "page";
+    const throughTop = inFlow && ins.top === 0;
+    const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.aspect;
     let escaped: FlowResult | undefined;
+    let grows: StackGrow | undefined;
 
     if (kids.length && pattern === "grid") {
       const min = props.min!.value;
@@ -377,12 +751,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       rows = [];
       for (let r = 0; r < measured.length; r += cols) {
         const row = measured.slice(r, r + cols);
-        row.forEach((b, i) => (b.x = colX[i] + marginOf(b.props).left + centered(b, colW[i])));
+        row.forEach((b, i) => (b.x = colX[i] + offsetX(b, colW[i])));
         rows.push(row);
       }
     } else if (kids.length && pattern === "layer") {
       const measured = kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "layer"));
-      for (const b of measured) b.x = marginOf(b.props).left + centered(b, innerW);
+      for (const b of measured) b.x = offsetX(b, innerW);
       rows = [measured];
     } else if (kids.length && pattern === "stack") {
       // A column flexbox: margins add to each item's outer size and never collapse.
@@ -390,38 +764,22 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       kids.forEach((k, i) => {
         const b = measure(k.node, k.comp, k.slot, innerW, "stack");
         const km = marginOf(b.props);
-        b.x = km.left + centered(b, innerW);
+        b.x = offsetX(b, innerW);
         b.y = y + km.top;
         y += km.top + b.h + km.bottom + (i < kids.length - 1 ? gap : 0);
         children.push(b);
       });
       contentH = y;
+      if (children.some((b) => b.props.grow)) grows = { kids: children, gap, insetTop: ins.top, insetY: insY, natural: children.map((b) => b.h) };
     } else if (kids.length && pattern === "flow") {
       // A box sized by its aspect ratio keeps its last child's bottom margin neither inside nor out (Chromium drops it).
-      const end = throughBottom ? "escape" : throughTop && props.aspect && !props.height ? "drop" : "keep";
+      const end = throughBottom ? "escape" : inFlow && ins.bottom === 0 && props.aspect && !props.height ? "drop" : "keep";
       const f = flow(kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "flow")), innerW, throughTop, end);
       children.push(...f.boxes);
       contentH = f.contentH;
       escaped = f;
     } else if (kids.length && pattern === "cluster") {
-      const measured = kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "cluster"));
-      rows = [];
-      let line: Box[] = [];
-      let lineW = 0;
-      for (const b of measured) {
-        const km = marginOf(b.props);
-        const outer = km.left + b.w + km.right;
-        const needed = line.length ? lineW + gap + outer : outer;
-        if (line.length && needed > innerW + EPS) {
-          rows.push(line);
-          line = [];
-        }
-        const start = line.length ? lineW + gap : 0;
-        b.x = start + km.left;
-        lineW = start + outer;
-        line.push(b);
-      }
-      rows.push(line);
+      rows = cluster(kids, innerW, gap, props.justify?.value ?? "start", props.wrap?.value === false);
     } else if (isText && n.text) {
       const t = props.text!.value;
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
@@ -430,7 +788,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         lines = tl.lines;
         contentH = lines.length * lineH;
         contentW = Math.max(...lines.map((l) => l.width));
-        if (tl.minContent > innerW + 0.5) {
+        if (tl.minContent > innerW + 0.5 && !t.nowrap) {
           issues.push({
             severity: "warning",
             id,
@@ -442,26 +800,28 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     if (rows) {
       children.push(...rows.flat());
-      contentH = rows.reduce((s, r) => s + Math.max(...r.map(outerH)), 0) + gap * (rows.length - 1);
+      contentH = rows.reduce((s, r) => s + Math.max(0, ...r.map(outerH)), 0) + gap * (rows.length - 1);
     }
 
     // aspect: the height follows the width. Media elements take exactly that; other boxes grow if
     // their content needs more (aspect-ratio's automatic minimum size). In a stack (a column
     // flexbox) that minimum is capped by the max-width converted through the ratio.
     const media = MEDIA.has(n.tag);
-    let h = props.height?.value ?? contentH + 2 * inset.y;
+    let h = props.height?.value ?? contentH + insY;
     if (props.aspect && !props.height) {
       const ratioH = w / props.aspect.value;
-      const contentMin = parent === "stack" ? Math.min(contentH + 2 * inset.y, maxW / props.aspect.value) : contentH + 2 * inset.y;
+      const contentMin = parent === "stack" ? Math.min(contentH + insY, maxW / props.aspect.value) : contentH + insY;
       h = media ? ratioH : Math.max(ratioH, contentMin);
+      // A one-line cluster with an aspect ratio whose content is taller: Chromium sometimes keeps the ratio.
+      if (!media && pattern === "cluster" && props.wrap?.value === false && contentMin > ratioH + EPS) assumptions.push("a one-line cluster with an aspect ratio whose content is taller than the ratio: its height isn't modelled");
     }
-    h = Math.max(h, 2 * inset.y);
+    h = Math.max(h, insY);
     // A box shorter than its content shrinks the items that may shrink: an <hr> clips its overflow
     // (overflow: hidden), so its automatic minimum height is 0 and a stack, grid or layer that is
     // too short squeezes it. The engine doesn't model that.
-    const tallKids = rows ? rows.reduce((s, r) => s + Math.max(...r.map(outerH)), 0) + gap * (rows.length - 1) : contentH;
+    const tallKids = rows ? rows.reduce((s, r) => s + Math.max(0, ...r.map(outerH)), 0) + gap * (rows.length - 1) : contentH;
     // Nor how a box whose height is set (height, aspect) sizes around one.
-    if (tallKids + 2 * inset.y > h + EPS || props.height || props.aspect)
+    if (tallKids + insY > h + EPS || props.height || props.aspect)
       for (const k of rows ? rows.flat() : children)
         if (k.tag === "hr") k.assumptions.push("an <hr> in a box with a set height may shrink (it clips its overflow)");
     // Without aspect (whose width: 100% wins), a media element with only a height takes its width
@@ -497,42 +857,49 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       lines,
       assumptions,
       children,
+      ...(n.anonymous && { anonymous: true }),
     };
     // A block with nothing in it (no height, padding, border, lines or non-empty child) lets its
     // own top and bottom margins collapse through it. Flex and grid containers, form controls,
     // media and <hr> (overflow: hidden) never do.
     const empty =
-      h === 0 && inset.y === 0 && !props.height && !props.aspect && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" &&
+      h === 0 && insY === 0 && !props.height && !props.aspect && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" &&
       !(isText && n.text) && (pattern === undefined ? !kids.length : pattern === "flow" && !!escaped?.empty);
-    const inner = escaped?.empty ? escaped.pending : 0;
+    const inner = escaped?.empty ? escaped.pending : NONE;
+    const mt = strut(m.top);
+    const mb = strut(m.bottom);
     collapse.set(
       box,
       empty
-        ? { top: Math.max(m.top, m.bottom, inner), bottom: Math.max(m.top, m.bottom, inner), empty: true, at: Math.max(m.top, inner) }
+        ? { top: join(mt, mb, inner), bottom: join(mt, mb, inner), empty: true, at: join(mt, inner) }
         : {
-            top: throughTop && escaped ? Math.max(m.top, escaped.top) : m.top,
-            bottom: throughBottom && escaped ? Math.max(m.bottom, escaped.bottom) : m.bottom,
+            top: throughTop && escaped ? join(mt, escaped.top) : mt,
+            bottom: throughBottom && escaped ? join(mb, escaped.bottom) : mb,
             empty: false,
-            at: 0,
+            at: NONE,
           },
     );
     if (skipped.length)
       sources.set(box, `contains ${skipped.map((k) => `<${k.tag}>`).join(", ")} that the engine doesn't lay out`);
-    if (rows) {
+    if (grows) stackGrow.set(box, grows);
+    if (rows)
       arrangement.set(box, {
         rows,
-        heights: rows.map((r) => Math.max(...r.map(outerH))),
+        heights: rows.map((r) => Math.max(0, ...r.map(outerH))),
         gap,
         align: props.align?.value ?? (pattern === "cluster" ? "center" : "stretch"),
-        insetY: inset.y,
+        insetTop: ins.top,
+        insetY: insY,
+        flexLines: pattern === "cluster",
+        oneLine: pattern === "cluster" && props.wrap?.value === false,
       });
-      arrange(box);
-    }
+    if (rows || grows) arrange(box);
 
-    const widest = Math.max(contentW, ...children.map((b) => b.x + b.w));
+    // Overflow: past the content box on the right (a negative right margin may pull a child past it on purpose).
+    const widest = Math.max(contentW, ...children.map((b) => b.x + b.w + Math.min(0, marginOf(b.props).right)));
     if (widest > innerW + 0.5 && children.length) {
       box.overflowX = widest - innerW;
-      const culprit = children.find((b) => b.x + b.w > innerW + EPS)!;
+      const culprit = children.find((b) => b.x + b.w + Math.min(0, marginOf(b.props).right) > innerW + EPS)!;
       issues.push({
         severity: "warning",
         id,
@@ -540,13 +907,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         message: `#${culprit.id} overflows #${id} by ${fmtPx(box.overflowX)}px at ${width}px`,
       });
     } else if (widest > innerW + 0.5) box.overflowX = widest - innerW;
-    if (props.height && contentH > props.height.value - 2 * inset.y + 0.5) {
-      box.overflowY = contentH - (props.height.value - 2 * inset.y);
+    if (props.height && contentH > props.height.value - insY + 0.5) {
+      box.overflowY = contentH - (props.height.value - insY);
       issues.push({
         severity: "warning",
         id,
         path: props.height.steps.at(-1)!.path,
-        message: `content of #${id} needs ${fmtPx(contentH + 2 * inset.y)}px but its height is ${fmtPx(props.height.value)}px at ${width}px${lines ? ` (${lines.length} lines)` : ""}`,
+        message: `content of #${id} needs ${fmtPx(contentH + insY)}px but its height is ${fmtPx(props.height.value)}px at ${width}px${lines ? ` (${lines.length} lines)` : ""}`,
       });
     }
     return box;
@@ -559,22 +926,60 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
    * flex container (align-content: normal). Children are then aligned within their row.
    */
   function arrange(b: Box) {
+    placeStack(b);
     const a = arrangement.get(b);
     if (!a) return;
     const natural = a.heights.reduce((s, h) => s + h, 0) + a.gap * (a.rows.length - 1);
-    const extra = Math.max(0, b.h - 2 * a.insetY - natural) / a.rows.length;
+    const free = Math.max(0, b.h - a.insetY - natural);
+    const next = a.flexLines ? diffuser(U(free), a.rows.length) : () => U(free / a.rows.length);
     let y = 0;
     a.rows.forEach((row, r) => {
-      const rowH = a.heights[r] + extra;
+      // A one-line cluster's line is exactly as tall as its content box, even when shorter than its items.
+      const rowH = a.oneLine ? b.h - a.insetY : a.heights[r] + (a.flexLines ? PX(next()) : free / a.rows.length);
       for (const c of row) {
         // Items are aligned by their margin boxes.
         const m = marginOf(c.props);
         // stretch grows every item without a fixed height, aspect ratio or not.
-        if (a.align === "stretch" && !c.props.height) grow(c, rowH - m.top - m.bottom);
-        const free = rowH - outerH(c);
-        c.y = y + m.top + (a.align === "center" ? free / 2 : a.align === "end" ? free : 0);
+        if (a.align === "stretch" && !c.props.height) {
+          // In a one-line cluster the line may be shorter than the item: stretching then shrinks it (its content overflows).
+          const target = rowH - m.top - m.bottom;
+          if (a.oneLine && target < c.h) {
+            c.h = Math.max(target, insets(c.props).top + insets(c.props).bottom);
+            arrange(c);
+          } else grow(c, target);
+        }
+        const space = rowH - outerH(c);
+        c.y = y + m.top + (a.align === "center" ? space / 2 : a.align === "end" ? space : 0);
       }
       y += rowH + a.gap;
+    });
+  }
+
+  /**
+   * A stack taller than its content: children with grow take the extra height (Chromium's
+   * flex-grow in a column; see growLine), and the ones after them move down.
+   */
+  function placeStack(b: Box) {
+    const g = stackGrow.get(b);
+    if (!g) return;
+    const inner = b.h - g.insetY;
+    const items = g.kids.map((k, i) => {
+      const m = marginOf(k.props);
+      const gr = k.props.grow?.value;
+      const iy = insets(k.props);
+      const natural = g.natural[i];
+      // Grows from its own height (basis content) or from nothing (zero), never below its content (min-height: auto).
+      const base = gr && gr.basis === "zero" ? iy.top + iy.bottom : k.props.height ? k.props.height.value : natural;
+      return { base: U(base), hyp: U(natural), factor: gr?.factor ?? 0, shrink: 0, pad: U(iy.top + iy.bottom), min: U(natural), max: Infinity, out: U(m.top + m.bottom) };
+    });
+    const sizes = flexLine(items, U(inner), U(g.gap));
+    let y = 0;
+    g.kids.forEach((k, i) => {
+      const m = marginOf(k.props);
+      const h = sizes ? PX(sizes[i]) : g.natural[i];
+      if (h > k.h) grow(k, h);
+      k.y = y + m.top;
+      y += m.top + k.h + m.bottom + g.gap;
     });
   }
 
@@ -589,7 +994,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
    * What a child element of component `c` is: one of c's slots, or the root of another (nested)
    * component. Null (reported) if it can't be laid out.
    */
-  function childOf(n: FixtureNode, c: Component): { comp: Component | null; slot: string | undefined } {
+  function childOf(n: FixtureNode, c: Component, quiet = false): { comp: Component | null; slot: string | undefined } {
+    const before = issues.length;
+    const r = childOfLoud(n, c);
+    if (quiet) issues.length = before;
+    return r;
+  }
+  function childOfLoud(n: FixtureNode, c: Component): { comp: Component | null; slot: string | undefined } {
     const prefix = `${model.prefix}${c.name}__`;
     const slotCls = n.classes.find((k) => k.startsWith(prefix));
     const nested = n.classes
@@ -661,7 +1072,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   // collapse with theirs, so the body starts below the first margin (below all of them when every
   // page-level box is empty); the root element contains it.
   const body = flow(boxes, width, true, "escape");
-  for (const b of boxes) b.y += body.empty ? body.pending : body.top;
+  for (const b of boxes) b.y += sum(body.empty ? body.pending : body.top);
   // Its margins can collapse through empty boxes above it too, so every page-level box is unsure.
   if (unknownOnPage) for (const b of boxes) sources.set(b, unknownOnPage);
 
@@ -687,7 +1098,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     for (let b: Box | undefined = src; b; b = parentOf.get(b)) {
       const parent = parentOf.get(b);
       const sibs = parent ? parent.children : boxes;
-      const loose = parent && !inLine(parent);
+      // Siblings in a cluster, grid or layer share rows and lines; in a stack where some grow they share its extra height.
+      const loose = parent && (!inLine(parent) || parent.children.some((k) => k.props.grow));
       const i = sibs.indexOf(b);
       sibs.forEach((s, j) => (j > i || (loose && j !== i)) && flag(s, why, true));
       // A parent that is resized also moves its whole subtree when its own parent aligns it by size
@@ -702,8 +1114,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const place = (b: Box, ox: number, oy: number) => {
     b.x += ox;
     b.y += oy;
-    const inset = insetsOf(b.props);
-    for (const k of b.children) place(k, b.x + inset.x, b.y + inset.y);
+    const inset = insets(b.props);
+    for (const k of b.children) place(k, b.x + inset.left, b.y + inset.top);
   };
   for (const b of boxes) place(b, 0, 0);
 

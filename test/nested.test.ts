@@ -109,9 +109,9 @@ describe("diagnostics for CSS habits", () => {
   it("explains that literals must be declared as tokens", () => {
     expect(err(settings.replace("padding: compact", "padding: 12px"))).toMatch(/"12px" is a literal; values are token names[\s\S]*tokens\.space\.<name>: 12px/);
   });
-  it("rejects maxWidth inside a cluster, where auto margins would push the row apart", () => {
+  it("lays out maxWidth inside a cluster as the browser does: 100% wide, capped, auto margins taking the line's free space", () => {
     const m = modelOf(loadSource("s.yaml", settings.replace("primary: { text: label-inverse,", "primary: { maxWidth: panel, text: label-inverse,")));
     const [l] = render(m, parseFixture("fixtures/settings.html"), [1280]);
-    expect(l.issues[0].message).toMatch(/maxWidth inside a cluster/);
+    expect(l.issues.filter((i) => i.severity === "error")).toEqual([]);
   });
 });

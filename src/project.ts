@@ -92,6 +92,9 @@ const PROPS: (keyof ResolvedProps)[] = [
   "width",
   "height",
   "text",
+  "justify",
+  "wrap",
+  "grow",
 ];
 
 const sig = (r?: Resolved<unknown>) => (r ? JSON.stringify([r.value, r.steps.map((s) => s.path)]) : "");

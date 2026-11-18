@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { tokenKey, type Component, type Model, type Props, type Ref } from "./model.js";
+import { isAuto, tokenKey, type Component, type MarginSide, type Model, type Props, type Ref, type Unsettable } from "./model.js";
 
 /** The package version, read from package.json (works from src/ under tsx and from lib/). */
 export const VERSION: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -10,6 +10,7 @@ const v = (r: Ref) => `var(${varName(r)})`;
 
 const FLEX_ALIGN = { start: "flex-start", center: "center", end: "flex-end", stretch: "stretch" } as const;
 const GRID_ALIGN = { start: "start", center: "center", end: "end", stretch: "stretch" } as const;
+const JUSTIFY = { start: "flex-start", end: "flex-end", center: "center", between: "space-between", around: "space-around", evenly: "space-evenly" } as const;
 
 interface Ctx {
   /** The element is a text leaf in some state (text set, layout never set). */
@@ -24,6 +25,10 @@ interface Ctx {
   aspectBefore: boolean;
   /** A rule that applies whenever this one does (the base, or a wider override) makes it a layer. */
   layerBefore: boolean;
+  /** Some state of the element has a text role that never wraps (so every text rule states white-space). */
+  nowrap: boolean;
+  /** Some state of the element sets a cluster's justify (so every cluster rule states it). */
+  justify: boolean;
 }
 
 function decls(model: Model, p: Props, ctx: Ctx): string[] {
@@ -40,10 +45,12 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
       out.push(
         "display: flex",
         `flex-direction: ${stack ? "column" : "row"}`,
-        `flex-wrap: ${stack ? "nowrap" : "wrap"}`,
+        `flex-wrap: ${stack || l.wrap === false ? "nowrap" : "wrap"}`,
         `align-items: ${stack ? "stretch" : FLEX_ALIGN[l.align ?? "center"]}`,
         gap,
       );
+      // A stack restates flex-start when another state of the element is a justified cluster.
+      if (l.justify || ctx.justify) out.push(`justify-content: ${stack ? "flex-start" : JUSTIFY[l.justify ?? "start"]}`);
     } else {
       // grid: columns auto-fill the row, each at least `min` (never wider than the row) and sharing
       // what's left equally. layer: one cell; every child is placed in it (see the child rule).
@@ -58,48 +65,78 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
       );
     }
   }
+  const unset = (k: Unsettable) => p.unset?.[k] !== undefined;
   if (p.padding) {
-    const { block, inline } = p.padding;
+    const { top, right, bottom, left } = p.padding;
+    const side = (r?: Ref) => (r ? v(r) : "0");
+    const same = (a?: Ref, b?: Ref) => a?.name === b?.name;
     out.push(
-      block && inline && block.name === inline.name
-        ? `padding: ${v(block)}`
-        : `padding: ${block ? v(block) : "0"} ${inline ? v(inline) : "0"}`,
+      same(top, bottom) && same(left, right)
+        ? top && left && top.name === left.name
+          ? `padding: ${v(top)}`
+          : `padding: ${side(top)} ${side(left)}`
+        : `padding: ${side(top)} ${side(right)} ${side(bottom)} ${side(left)}`,
     );
-  }
+  } else if (unset("padding")) out.push("padding: 0");
   if (p.margin) {
     // Every side, so an override replaces the whole margin. With maxWidth (margin-inline: auto),
     // only top and bottom: the validator rejects inline margins next to it.
-    const side = (r?: Ref) => (r ? v(r) : "0");
+    const side = (r?: MarginSide) => (isAuto(r) ? "auto" : r ? v(r) : "0");
     const m = p.margin;
     if (ctx.eff.maxWidth) out.push(`margin-top: ${side(m.top)}`, `margin-bottom: ${side(m.bottom)}`);
     else out.push(`margin: ${side(m.top)} ${side(m.right)} ${side(m.bottom)} ${side(m.left)}`);
-  }
+  } else if (unset("margin")) out.push(...(ctx.eff.maxWidth ? ["margin-top: 0", "margin-bottom: 0"] : ["margin: 0"]));
   // background-color, not the shorthand: an override that changes only the color must not erase a backdrop.
   if (p.background) out.push(`background-color: ${v(p.background)}`);
+  else if (unset("background")) out.push("background-color: transparent");
   if (p.backdrop)
     out.push(`background-image: ${v(p.backdrop)}`, "background-size: cover", "background-position: center", "background-repeat: no-repeat");
-  if (p.border) out.push(`border: 1px solid ${v(p.border)}`);
+  else if (unset("backdrop")) out.push("background-image: none");
+  if (p.border) {
+    const b = p.border;
+    if (!b.sides) out.push(`border: 1px solid ${v(b.color)}`);
+    else {
+      const w = (r?: Ref) => (r ? v(r) : "0");
+      out.push("border-style: solid", `border-color: ${v(b.color)}`, `border-width: ${w(b.sides.top)} ${w(b.sides.right)} ${w(b.sides.bottom)} ${w(b.sides.left)}`);
+    }
+  } else if (unset("border")) out.push("border-width: 0");
   if (p.shadow) out.push(`box-shadow: ${v(p.shadow)}`);
+  else if (unset("shadow")) out.push("box-shadow: none");
   if (p.radius) out.push(`border-radius: ${v(p.radius)}`);
+  else if (unset("radius")) out.push("border-radius: 0");
   // max-width + auto margins. width: 100% so a flex or grid parent doesn't shrink-wrap the box
   // (auto margins switch off stretching). maxWidth and measure share max-width: when both apply
   // (in this rule or merged from an earlier one), the smaller wins.
   const e = ctx.eff;
-  const fixedWidth = !!e.width && !("keyword" in e.width);
-  if (p.maxWidth || p.measure) {
+  // A width the box sets itself (a size, or fit): maxWidth then only caps it.
+  const fixedWidth = !!e.width && (!("keyword" in e.width) || e.width.keyword === "fit");
+  if (p.maxWidth || p.measure || unset("maxWidth") || unset("measure")) {
     if (p.maxWidth && !fixedWidth) out.push("width: 100%");
     const caps = [e.maxWidth, e.measure].filter((r): r is Ref => !!r).map(v);
-    out.push(`max-width: ${caps.length > 1 ? `min(${caps.join(", ")})` : caps[0]}`);
+    out.push(`max-width: ${caps.length > 1 ? `min(${caps.join(", ")})` : caps[0] ?? "none"}`);
     if (p.maxWidth) out.push("margin-inline: auto");
+    else if (unset("maxWidth")) {
+      // Back to the box's own width and inline margins.
+      if (!e.width && !e.aspect) out.push("width: auto");
+      const m = e.margin;
+      const side = (r?: MarginSide) => (isAuto(r) ? "auto" : r ? v(r) : "0");
+      out.push(`margin-left: ${side(m?.left)}`, `margin-right: ${side(m?.right)}`);
+    }
   }
   if (p.width) {
     // fill: the full width of the parent. Not align-self: stretch, which in a grid or layer stretches
-    // the height instead.
-    if ("keyword" in p.width) out.push("width: 100%", "align-self: auto", "flex: none");
+    // the height instead. fit: shrink-to-fit (its content's width, at most the parent's).
+    if ("keyword" in p.width) out.push(`width: ${p.width.keyword === "fit" ? "fit-content" : "100%"}`, "align-self: auto", "flex: none");
     else out.push(`width: ${v(p.width)}`, "align-self: auto", "flex: none");
-  }
+  } else if (unset("width")) out.push(`width: ${e.maxWidth || e.aspect ? "100%" : "auto"}`, "flex: 0 1 auto");
+  // grow: flex-grow from a basis of 0 (equal shares) or auto (its own size); with a width it never
+  // shrinks. Restated after a width in the same rule, whose flex: none would otherwise switch it off.
+  if (e.grow && (p.grow || p.width || unset("width"))) out.push(`flex: ${e.grow.value} ${e.width ? 0 : 1} ${e.grow.basis === "zero" ? "0px" : "auto"}`);
+  else if (unset("grow")) out.push(`flex: ${e.width ? "none" : "0 1 auto"}`);
   // min-height too: a column flex parent shorter than its content would otherwise shrink the box.
   if (p.height) out.push(`height: ${v(p.height)}`, `min-height: ${v(p.height)}`);
+  else if (unset("height")) out.push("height: auto", "min-height: auto");
+  if (unset("aspect")) out.push("aspect-ratio: auto", ...(e.width || e.maxWidth ? [] : ["width: auto"]));
   // A height that replaces an aspect from a wider rule also undoes what aspect set.
   if (p.height && !p.aspect && ctx.aspectBefore) out.push("aspect-ratio: auto", ...(e.width || e.maxWidth ? [] : ["width: auto"]));
   // width: 100% + height: auto beat <img width/height> attributes, so the slot sizes the image.
@@ -121,7 +158,9 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     // Always set, never left to the reset: descendants (<p>, <a>, <strong>) inherit them.
     out.push(`letter-spacing: ${role.letterSpacing !== undefined ? `${role.letterSpacing}em` : "normal"}`);
     out.push(`text-transform: ${role.transform ?? "none"}`);
-    out.push(`overflow-wrap: ${role.wrap ?? "normal"}`);
+    out.push(`overflow-wrap: ${role.wrap === "anywhere" || role.wrap === "break-word" ? role.wrap : "normal"}`);
+    // white-space: nowrap; restated on the inline content (the reset sets white-space: normal on every element).
+    if (role.wrap === "none" || ctx.nowrap) out.push(`white-space: ${role.wrap === "none" ? "nowrap" : "normal"}`);
     if (role.decoration) out.push(`text-decoration: ${role.decoration}`);
   }
   if (p.textAlign) out.push(`text-align: ${p.textAlign.value}`);
@@ -142,6 +181,8 @@ function rules(model: Model, selector: string, p: Props, ctx: Ctx, indent = ""):
   // A flow's children are blocks, whatever their tag (a <span> or <a> slot would otherwise be
   // inline). No specificity, so a child's own display (flex, grid) still wins.
   if (p.layout?.pattern === "flow") out.push(rule(`:where(${selector} > *)`, ["display: block"], indent));
+  // A text box that never wraps: its inline content (<a>, <strong>) doesn't either (the reset sets white-space: normal on every element).
+  if (p.text && ctx.leafText && model.text.get(p.text.name)!.wrap === "none") out.push(rule(`${selector} :where(*)`, ["white-space: inherit"], indent));
   return out.filter(Boolean);
 }
 
@@ -152,15 +193,21 @@ function usedTokens(model: Model, c: Component): string[] {
     const refs: (Ref | undefined)[] = [
       p.layout?.gap,
       p.layout?.min,
-      p.padding?.block,
-      p.padding?.inline,
+      p.padding?.top,
+      p.padding?.right,
+      p.padding?.bottom,
+      p.padding?.left,
       p.margin?.top,
-      p.margin?.right,
+      isAuto(p.margin?.right) ? undefined : p.margin?.right,
       p.margin?.bottom,
-      p.margin?.left,
+      isAuto(p.margin?.left) ? undefined : p.margin?.left,
       p.background,
       p.backdrop,
-      p.border,
+      p.border?.color,
+      p.border?.sides?.top,
+      p.border?.sides?.right,
+      p.border?.sides?.bottom,
+      p.border?.sides?.left,
       p.shadow,
       p.radius,
       p.maxWidth,
@@ -230,13 +277,20 @@ export function compile(model: Model): string {
       const states = [slot ? c.slots.get(slot)!.props : c.props, ...c.when.map((w) => (slot ? w.slots.get(slot) : w.props))];
       const all = states.filter(Boolean) as Props[];
       const eff: Props = {};
-      for (const s of states.slice(0, upTo + 2)) if (s) Object.assign(eff, s);
+      for (const s of states.slice(0, upTo + 2))
+        if (s) {
+          Object.assign(eff, s);
+          for (const k of Object.keys(s.unset ?? {})) delete eff[k as keyof Props];
+        }
+      delete eff.unset;
       return {
         leafText: all.some((p) => p.text) && !all.some((p) => p.layout),
         height: all.some((p) => p.height),
         layerBefore: states.slice(0, upTo + 1).some((s) => s?.layout?.pattern === "layer"),
         aspectBefore: states.slice(0, upTo + 1).some((s) => s?.aspect),
         eff,
+        justify: all.some((p) => p.layout?.justify),
+        nowrap: all.some((p) => p.text && model.text.get(p.text.name)!.wrap === "none"),
         rootBase: !slot && upTo === -1,
       };
     };
