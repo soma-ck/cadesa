@@ -1,0 +1,10 @@
+{
+  "note": "Letter-spaced min-content",
+  "seed": 3000980,
+  "widths": [
+    771
+  ],
+  "flagged": [
+    " a piece's ends are positioned with the letter-spacing before them, then rounded up"
+  ]
+}

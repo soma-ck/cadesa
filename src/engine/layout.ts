@@ -359,9 +359,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // (overflow: hidden), so its automatic minimum height is 0 and a stack, grid or layer that is
     // too short squeezes it. The engine doesn't model that.
     const tallKids = rows ? rows.reduce((s, r) => s + Math.max(...r.map((b) => b.h)), 0) + gap * (rows.length - 1) : contentH;
-    if (tallKids + 2 * inset.y > h + EPS)
+    // Nor how a box whose height is set (height, aspect) sizes around one.
+    if (tallKids + 2 * inset.y > h + EPS || props.height || props.aspect)
       for (const k of rows ? rows.flat() : children)
-        if (k.tag === "hr") k.assumptions.push("an <hr> in a box shorter than its content shrinks (it clips its overflow)");
+        if (k.tag === "hr") k.assumptions.push("an <hr> in a box with a set height may shrink (it clips its overflow)");
     // Without aspect (whose width: 100% wins), a media element with only a height takes its width
     // from its width attribute, or at the page level from the file's own ratio, instead of stretching.
     if (media && props.height && !props.aspect && typeof pw !== "number" && !props.maxWidth && parent !== "cluster") {

@@ -1,0 +1,20 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: grid
+      min: z1
+    slots:
+      s2:
+        aspect: 16:9
+      s5:
+        layout:
+          pattern: layer
+        border: accent
+        aspect: 16:9
+tokens:
+  size:
+    z1: 75rem
+  color:
+    accent: "#3730a3"
+text: {}

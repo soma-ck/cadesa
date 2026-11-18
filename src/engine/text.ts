@@ -443,9 +443,10 @@ export function layoutText(
     : piecesAt.map(({ p, at }) => {
         // A piece is as wide as the distance between its ends in its item, each rounded up to a
         // layout unit (min-content is in layout units, like the line positions).
-        const x0 = startOf(at);
-        const sp = spacing(p);
-        return { text: trimSpaces(p), width: ceil64(ceil64(x0 + w(p, true) - sp) - ceil64(x0) + sp) };
+        // Positions include the letter-spacing of the characters before.
+        const from = Math.max(0, ...edges.filter((b) => b <= at));
+        const x0 = startOf(at) + spacing(all.slice(from, at).join("") + "x") - spacing("x");
+        return { text: trimSpaces(p), width: ceil64(x0 + w(p, true)) - ceil64(x0) };
       });
   for (const u of units) {
     if (u.width > minContent) {
