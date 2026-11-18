@@ -1,0 +1,10 @@
+{
+  "note": "Roboto: Chromium never breaks inside a ligature (\"ffl\"), so a word with one that breaks anywhere is flagged",
+  "widths": [
+    380
+  ],
+  "flagged": [
+    "n2",
+    "n11"
+  ]
+}

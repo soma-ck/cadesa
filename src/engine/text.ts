@@ -38,6 +38,11 @@ export interface FontMetrics {
   unsupported(text: string): string[];
   /** Why this weight can't be measured exactly (e.g. a synthesized bold), if so. */
   weightIssue(weight: number): string | undefined;
+  /**
+   * A ligature or contextual run of this font in the text (a pair the font shapes differently when
+   * letter-spacing turns ligatures off, or a longer run), if any: Chromium never breaks inside one.
+   */
+  ligatureIn(text: string): string | undefined;
 }
 
 const registry = new Map<string, FontMetrics | undefined>();
@@ -152,6 +157,9 @@ function load(file: string): FontMetrics {
   // Letter-spaced kerning: the normal table with the pairs that differ replaced, merged once.
   const ctxRuns = Object.values(m.contextual ?? {}).flatMap((c) => Object.keys(c));
   const ctxStarts = new Set(ctxRuns.map((r) => [...r][0]));
+  // Tables from before ligatures were measured (no upm) don't say which pairs are ligatures.
+  const ligRuns =
+    m.upm === undefined ? [] : [...new Set([...Object.values(m.kerningSpaced ?? {}), ...Object.values(m.contextual ?? {})].flatMap((k) => Object.keys(k)))];
   const ctxMax = Math.max(0, ...ctxRuns.map((r) => [...r].length));
 
   const spacedTables = new Map<number, Record<string, number>>();
@@ -176,6 +184,10 @@ function load(file: string): FontMetrics {
       ...(m.machineSpecific && { machineSpecific: m.machineSpecific }),
     },
     unsupported: (text) => [...new Set([...text].filter((c) => !index.has(c)))],
+    ligatureIn(text) {
+      if (!ligRuns.length) return undefined;
+      return ligRuns.find((r) => text.includes(r));
+    },
     weightIssue(weight) {
       if (kind !== "static") return undefined;
       const face = matchWeight(m.weights, weight);
@@ -497,6 +509,10 @@ export function layoutText(
         cur = ch;
       } else cur += ch;
     });
+    // Chromium never breaks inside a ligature glyph ("ffl" in Roboto): where the word breaks then
+    // isn't known exactly. (Letter-spaced text has no ligatures.)
+    const lig = broke && !ls ? m.ligatureIn(trimSpaces(p).replaceAll(SHY, "")) : undefined;
+    if (lig) approximate ??= `a word with a ligature ("${lig}") breaks between characters`;
     if (!broke) return void (line = p);
     line = "";
     return cur + p.slice(trimSpaces(p).length);
