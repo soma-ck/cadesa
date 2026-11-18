@@ -20,6 +20,8 @@ interface Ctx {
   rootBase: boolean;
   /** The element has a height in some state. */
   height: boolean;
+  /** A rule that applies whenever this one does sets aspect. */
+  aspectBefore: boolean;
   /** A rule that applies whenever this one does (the base, or a wider override) makes it a layer. */
   layerBefore: boolean;
 }
@@ -88,6 +90,8 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   }
   // min-height too: a column flex parent shorter than its content would otherwise shrink the box.
   if (p.height) out.push(`height: ${v(p.height)}`, `min-height: ${v(p.height)}`);
+  // A height that replaces an aspect from a wider rule also undoes what aspect set.
+  if (p.height && !p.aspect && ctx.aspectBefore) out.push("aspect-ratio: auto", ...(e.width || e.maxWidth ? [] : ["width: auto"]));
   // width: 100% + height: auto beat <img width/height> attributes, so the slot sizes the image.
   if (p.aspect)
     out.push(...(e.width || e.maxWidth ? [] : ["width: 100%"]), `aspect-ratio: ${p.aspect.raw}`, "height: auto", ...(ctx.height ? ["min-height: auto"] : []));
@@ -214,6 +218,7 @@ export function compile(model: Model): string {
         leafText: all.some((p) => p.text) && !all.some((p) => p.layout),
         height: all.some((p) => p.height),
         layerBefore: states.slice(0, upTo + 1).some((s) => s?.layout?.pattern === "layer"),
+        aspectBefore: states.slice(0, upTo + 1).some((s) => s?.aspect),
         eff,
         rootBase: !slot && upTo === -1,
       };

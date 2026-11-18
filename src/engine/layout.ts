@@ -12,7 +12,7 @@ import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import type { Component, Model, Pattern } from "../model.js";
 import { activeBreakpoints, fmtPx, resolveElement, type ResolvedProps } from "../resolve.js";
-import { layoutText, metricsFor, type Line } from "./text.js";
+import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
 const EPS = 0.001;
 
@@ -139,12 +139,17 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const painted = (props.background && !transparent(props.background.value)) || props.backdrop || props.border || props.shadow;
     const meta = runs.map((_, i) => n.runMeta[i] ?? { inBlock: false, underlined: false });
     let ambiguous = false;
+    let anywhereFlagged = false;
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     return (maxWidth: number) => {
       const parts = runs.map((r, i) => {
         const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere };
         const plain = t.underline || (!!painted && !meta[i].inBlock);
         const a = layoutText(m!, r, t.sizePx, t.weight, maxWidth, { ...opts, hangKern: !plain });
+        if (a.approximate && !anywhereFlagged) {
+          anywhereFlagged = true;
+          assumptions.push(`line breaks are approximate: ${a.approximate} (wrap: anywhere)`);
+        }
         if (!plain && meta[i].underlined && !ambiguous) {
           const b = layoutText(m!, r, t.sizePx, t.weight, maxWidth, { ...opts, hangKern: false });
           if (b.lines.length !== a.lines.length || b.lines.some((l, k) => l.text !== a.lines[k].text) || Math.abs(b.minContent - a.minContent) > 1e-9) {
@@ -193,8 +198,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       else if (measureText) {
         // Flex item with flex-basis: auto → max-content, shrinking no further than min-content.
         const t = measureText(Infinity);
-        // Intrinsic widths are rounded up to a layout unit, so the text fits the box it sizes.
-        const up = (v: number) => Math.ceil(v * 64 - 1e-6) / 64;
+        // Intrinsic widths are rounded up to a layout unit, so the text fits the box it sizes. A
+        // width within the metrics' precision of a whole unit is on it ("i" at 8px is 134/64 px).
+        const up = (v: number) => Math.ceil(v * 64 - TEXT_EPS) / 64;
         w = Math.max(Math.min(up(t.maxContent) + 2 * inset.x, avail), up(t.minContent) + 2 * inset.x);
       } else {
         issues.push({
@@ -263,12 +269,17 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (kids.length && pattern === "grid") {
       const min = props.min!.value;
       const cols = Math.max(1, Math.floor((innerW + gap + EPS) / (min + gap)));
-      const colW = cols === 1 ? innerW : (innerW - gap * (cols - 1)) / cols;
-      const measured = kids.map((k) => measure(k.node, k.comp, k.slot, colW, "grid"));
+      // The 1fr columns share the space in layout units (1/64 px): column i ends at
+      // floor((i + 1) × share), so some columns are one unit wider than others.
+      const share = (Math.round((innerW - gap * (cols - 1)) * 64) / cols);
+      const edge = (i: number) => Math.floor(i * share + 1e-6);
+      const colW = Array.from({ length: cols }, (_, i) => (cols === 1 ? innerW : (edge(i + 1) - edge(i)) / 64));
+      const colX = colW.map((_, i) => (cols === 1 ? 0 : edge(i) / 64 + i * gap));
+      const measured = kids.map((k, j) => measure(k.node, k.comp, k.slot, colW[j % cols], "grid"));
       rows = [];
       for (let r = 0; r < measured.length; r += cols) {
         const row = measured.slice(r, r + cols);
-        row.forEach((b, i) => (b.x = i * (colW + gap) + centered(b, colW)));
+        row.forEach((b, i) => (b.x = colX[i] + centered(b, colW[i])));
         rows.push(row);
       }
     } else if (kids.length && pattern === "layer") {
@@ -336,6 +347,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       h = media ? ratioH : Math.max(ratioH, contentMin);
     }
     h = Math.max(h, 2 * inset.y);
+    // A stack shorter than its content shrinks the items that may shrink: an <hr> clips its
+    // overflow (overflow: hidden), so its automatic minimum height is 0. The engine doesn't model
+    // flex shrinking.
+    if (pattern === "stack" && contentH + 2 * inset.y > h + EPS)
+      for (const k of children) if (k.tag === "hr") k.assumptions.push("an <hr> in a stack shorter than its content shrinks (it clips its overflow)");
     // Without aspect (whose width: 100% wins), a media element with only a height takes its width
     // from its width attribute, or at the page level from the file's own ratio, instead of stretching.
     if (media && props.height && !props.aspect && typeof pw !== "number" && !props.maxWidth && parent !== "cluster") {
