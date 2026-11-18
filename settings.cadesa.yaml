@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=./schema/cascadio.schema.json
+# yaml-language-server: $schema=./schema/cadesa.schema.json
 version: 1
 tokens:
   space: { section: 1.5rem, panel: 2rem, compact: 1rem, control: 0.75rem, control-inline: 1.25rem }

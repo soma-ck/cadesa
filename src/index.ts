@@ -1,6 +1,6 @@
-/** Cascadio as a library. The CLI and MCP server are thin wrappers over these. */
+/** Cadesa as a library. The CLI and MCP server are thin wrappers over these. */
 export { compile, VERSION } from "./compile.js";
-export { CascadioError, formatDiagnostic, type Diagnostic } from "./diagnostics.js";
+export { CadesaError, formatDiagnostic, type Diagnostic } from "./diagnostics.js";
 export { loadSource, loadSourceFile, type Source } from "./load.js";
 export { validate } from "./validate.js";
 export { parseFixture, type Fixture, type FixtureNode } from "./fixture.js";

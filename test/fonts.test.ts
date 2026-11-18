@@ -18,9 +18,9 @@ const fake = (weights: number[], kind: "static" | "variable" = "static"): Metric
 });
 
 describe("custom font metrics", () => {
-  const saved = process.env.CASCADIO_METRICS;
+  const saved = process.env.CADESA_METRICS;
   afterEach(() => {
-    process.env.CASCADIO_METRICS = saved;
+    process.env.CADESA_METRICS = saved;
   });
 
   it("matches static faces like CSS Fonts 4 §5.2", () => {
@@ -33,11 +33,11 @@ describe("custom font metrics", () => {
     expect(matchWeight([400, 700], 900)).toBe(700);
   });
 
-  it("finds metrics on $CASCADIO_METRICS and measures the matched face", () => {
-    const dir = mkdtempSync(join(tmpdir(), "cascadio-"));
+  it("finds metrics on $CADESA_METRICS and measures the matched face", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-"));
     writeMetrics(fake([400]), dir);
     writeMetrics(fake([700]), dir); // a second static face merges into the same family file
-    process.env.CASCADIO_METRICS = dir;
+    process.env.CADESA_METRICS = dir;
     const m = metricsFor('"Brand Sans", sans-serif')!;
     expect(m.file).toBe(join(dir, metricsFileName("Brand Sans")));
     expect(m.measure("ab", 10, 400)).toBeCloseTo(2 * 0.54 * 10, 9);
@@ -46,18 +46,18 @@ describe("custom font metrics", () => {
   });
 
   it("refuses to guess a synthesized bold", () => {
-    const dir = mkdtempSync(join(tmpdir(), "cascadio-"));
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-"));
     const f = fake([400]);
     f.family = "Only Regular";
     writeMetrics(f, dir);
-    process.env.CASCADIO_METRICS = dir;
+    process.env.CADESA_METRICS = dir;
     expect(metricsFor("Only Regular")!.weightIssue(700)).toMatch(/synthesized from the 400 face/);
   });
 
   it("ignores a metrics file whose family doesn't match", () => {
-    const dir = mkdtempSync(join(tmpdir(), "cascadio-"));
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-"));
     writeFileSync(join(dir, metricsFileName("Other")), JSON.stringify({ ...fake([400]), family: "Brand Sans" }));
-    process.env.CASCADIO_METRICS = dir;
+    process.env.CADESA_METRICS = dir;
     expect(metricsFor("Other")).toBeUndefined();
   });
 });

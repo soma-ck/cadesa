@@ -15,13 +15,13 @@ const geometry = (ls: Layout[]) =>
   ls.map((l) => [...walk(l.boxes)].map((b) => [b.id, +b.x.toFixed(4), +b.y.toFixed(4), +b.w.toFixed(4), +b.h.toFixed(4), b.lines?.length]));
 
 describe("lift(build(source)) round trip", () => {
-  const source = loadSource("settings.cascade.yaml", readFileSync("settings.cascade.yaml", "utf8"));
+  const source = loadSource("settings.cadesa.yaml", readFileSync("settings.cadesa.yaml", "utf8"));
   const original = modelOf(source);
   const lifted = lift("dist/settings.css", compile(original));
-  const relifted = modelOf(loadSource("lifted.cascade.yaml", lifted.yaml));
+  const relifted = modelOf(loadSource("lifted.cadesa.yaml", lifted.yaml));
   const widths = Array.from({ length: 49 }, (_, i) => 280 + i * 20);
 
-  it("lifts every declaration Cascadio emits", () => {
+  it("lifts every declaration Cadesa emits", () => {
     expect(lifted.unlifted).toEqual([]);
     expect(lifted.stats.unlifted).toBe(0);
     expect(lifted.prefix).toBe("ca-");
@@ -117,7 +117,7 @@ describe("lift details", () => {
     expect(r.unlifted).toEqual([]);
   });
 
-  it("flags flex settings Cascadio can't express", () => {
+  it("flags flex settings Cadesa can't express", () => {
     const r = one(".c{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap}");
     expect(r.unlifted.map((u) => u.decl)).toEqual(["align-items: flex-end", "justify-content: space-between"]);
   });

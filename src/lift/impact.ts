@@ -121,7 +121,7 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
     }
   }
 
-  // Browser defaults the original CSS never overrode (and Cascadio's reset would).
+  // Browser defaults the original CSS never overrode (and Cadesa's reset would).
   const element = new Map(lifted.elements.map((e) => [e.className, e]));
   for (const loc of located) {
     const b = boxOf.get(loc.node);
@@ -135,7 +135,7 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
     const tag = loc.node.tag;
     const src = lifted.file;
     if (UA_MARGIN.has(tag) && ["top", "right", "bottom", "left"].some((k) => !has(`margin-${k}`)))
-      sizeChange(b, `${src}: <${tag}> keeps the browser's default margin (no margin set); Cascadio's reset removes it`);
+      sizeChange(b, `${src}: <${tag}> keeps the browser's default margin (no margin set); Cadesa's reset removes it`);
     if (UA_CONTROL.has(tag)) {
       if (["top", "right", "bottom", "left"].some((k) => !has(`padding-${k}`)))
         sizeChange(b, `${src}: <${tag}> keeps the browser's default padding`);
@@ -143,9 +143,9 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
         sizeChange(b, `${src}: <${tag}> keeps the browser's default border`);
     }
     if (b.props.text && UA_BOLD.has(tag) && !has("font-weight"))
-      sizeChange(b, `${src}: <${tag}> is bold by default; no font-weight is set, Cascadio assumes 400`);
+      sizeChange(b, `${src}: <${tag}> is bold by default; no font-weight is set, Cadesa assumes 400`);
     if (b.props.width && typeof b.props.width.value === "number" && !has("box-sizing") && !UA_CONTROL.has(tag) && (b.props.padding || b.props.border))
-      sizeChange(b, `${src}: box-sizing is content-box here; Cascadio sizes border-box`);
+      sizeChange(b, `${src}: box-sizing is content-box here; Cadesa sizes border-box`);
   }
 
   const exact: string[] = [];

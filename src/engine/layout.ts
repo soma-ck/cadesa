@@ -1,11 +1,11 @@
 /**
- * The Cascadio reference layout engine.
+ * The Cadesa reference layout engine.
  *
- * Cascadio's layout semantics are defined here, without a browser. The language is
+ * Cadesa's layout semantics are defined here, without a browser. The language is
  * deliberately small (no cascade, no inheritance, two layout patterns, explicit tokens),
  * so the box tree is fully determined by source + fixture + viewport width.
  *
- * Text is measured with bundled font metrics (see text.ts). Text in a font Cascadio has not
+ * Text is measured with bundled font metrics (see text.ts). Text in a font Cadesa has not
  * measured falls back to a one-line assumption, which every report flags.
  */
 import { closest } from "../diagnostics.js";
@@ -72,7 +72,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const t = props.text!.value;
     const m = metricsFor(t.font);
     const why = !m
-      ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cascadio metrics; run cascadio metrics <font-file>`
+      ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; run cadesa metrics <font-file>`
       : m.unsupported(n.text).length
         ? `characters outside the measured set: ${m.unsupported(n.text).join(" ")}`
         : m.weightIssue(t.weight);
@@ -90,7 +90,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const assumptions: string[] = [];
     const inset = insetsOf(props);
 
-    // Children that are Cascadio slots; anything else inside a text box is inline text.
+    // Children that are Cadesa slots; anything else inside a text box is inline text.
     const classed = n.children.filter((k) => k.classes.some((cl) => cl.startsWith(`${model.prefix}${c.name}__`)));
     const isText = !!props.text && classed.length === 0;
     const measureText = isText && n.text ? text(n, props, id, assumptions) : undefined;
@@ -297,7 +297,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         id: idOf(n),
         message: guess
           ? `fixture uses .${p}${guess} but styles.${guess} is not declared`
-          : `<${n.tag}> at the page level has no Cascadio component class`,
+          : `<${n.tag}> at the page level has no Cadesa component class`,
         suggestion: guess ? closest(guess, model.components.keys()) : undefined,
       });
       continue;

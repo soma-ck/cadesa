@@ -22,9 +22,9 @@ jobs:
       - run: npm run build:ts
       - name: CLI smoke test (no browser)
         run: |
-          node lib/cli.js build settings.cascade.yaml --out dist/settings.css
+          node lib/cli.js build settings.cadesa.yaml --out dist/settings.css
           git diff --exit-code dist/settings.css
-          node lib/cli.js whatif fixtures/settings.html --source settings.cascade.yaml --set styles.settings-panel.when.narrow.padding=panel
+          node lib/cli.js whatif fixtures/settings.html --source settings.cadesa.yaml --set styles.settings-panel.when.narrow.padding=panel
 
   conformance:
     runs-on: ubuntu-latest

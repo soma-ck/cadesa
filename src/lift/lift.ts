@@ -1,9 +1,9 @@
 /**
- * lift: convert plain CSS into a Cascadio source, as far as it fits the language.
+ * lift: convert plain CSS into a Cadesa source, as far as it fits the language.
  *
  * Each element (BEM root or slot) gets the declarations the cascade would give it in every
  * breakpoint state (base + each `max-width` media query, ordered by specificity and source
- * order). Those effective declarations are mapped to Cascadio props; each narrower state becomes
+ * order). Those effective declarations are mapped to Cadesa props; each narrower state becomes
  * a `when` override holding only what changed. Everything that doesn't map is kept as an
  * `Unlifted` record with what it can affect (geometry, text, visual, paint, state), so impact.ts
  * can say which boxes are no longer exactly predicted.
@@ -258,7 +258,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
           selector: sel,
           decl: rule.decls.map((d) => `${d.prop}: ${d.value}`).join("; "),
           reason: rule.media && rule.media.maxPx === undefined
-            ? `@media ${rule.media.raw} is not modelled (Cascadio breakpoints are max-width)`
+            ? `@media ${rule.media.raw} is not modelled (Cadesa breakpoints are max-width)`
             : state
               ? "interactive state; the default state is unaffected"
               : pseudoEl
@@ -271,7 +271,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
     }
   }
 
-  // Prefix: "ca-" if every block uses it (e.g. CSS compiled by Cascadio), else none.
+  // Prefix: "ca-" if every block uses it (e.g. CSS compiled by Cadesa), else none.
   const prefix = blockOrder.length && blockOrder.every((b) => b.startsWith("ca-") && b.length > 3) ? "ca-" : "";
   const component = (block: string) => block.slice(prefix.length);
 
@@ -376,7 +376,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
       const rowGap = take("row-gap");
       const colGap = take("column-gap");
       const column = dir === "column";
-      if (dir !== "row" && dir !== "column") note(e, s, display, `flex-direction: ${dir} has no Cascadio pattern`, "geometry");
+      if (dir !== "row" && dir !== "column") note(e, s, display, `flex-direction: ${dir} has no Cadesa pattern`, "geometry");
       const pattern = column ? "stack" : "cluster";
       if (!column && wrap === "nowrap")
         note(e, s, display, "a non-wrapping flex row is lifted as a cluster; items may shrink instead of wrapping", "geometry");
@@ -385,7 +385,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
       if (!column && av !== "center") note(e, s, align ?? display, "cluster items are centered; this CSS aligns them differently", "geometry");
       const jv = justify?.value.trim();
       if (justify && !["flex-start", "start", "normal", "left"].includes(jv!) && !(column && !m.has("height")))
-        note(e, s, justify, `justify-content: ${jv} has no Cascadio equivalent`, "geometry");
+        note(e, s, justify, `justify-content: ${jv} has no Cadesa equivalent`, "geometry");
       const gapDecl = column ? rowGap : colGap ?? rowGap;
       let gap: string | undefined;
       if (gapDecl && !isZero(resolveVar(gapDecl.value)?.raw ?? "x")) {
@@ -396,7 +396,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
         note(e, s, rowGap, "a cluster has one gap for rows and columns", "geometry");
       out.layout = gap ? { pattern, gap } : { pattern };
     } else if (display && !["block", "flow-root"].includes(display.value.trim())) {
-      note(e, s, display, `display: ${display.value.trim()} has no Cascadio pattern`, "geometry");
+      note(e, s, display, `display: ${display.value.trim()} has no Cadesa pattern`, "geometry");
     }
     for (const p of ["flex-direction", "flex-wrap", "align-items", "justify-content", "row-gap", "column-gap"]) {
       const d = take(p);
@@ -433,7 +433,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
         const c = colorToken(bc[0]!.value);
         if (c) out.border = c;
         else note(e, s, bc[0]!, "border color must be a hex or rgb() color", "paint");
-      } else note(e, s, bw.find(Boolean)!, "Cascadio borders are 1px solid on every side", "geometry");
+      } else note(e, s, bw.find(Boolean)!, "Cadesa borders are 1px solid on every side", "geometry");
     }
 
     // radius
@@ -461,7 +461,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
       const t = lengthToken("size", maxW.value);
       if (!t) note(e, s, maxW, "max-width must be a px or rem length", "geometry");
       else if (!isRoot) note(e, s, maxW, "maxWidth is only supported on a component root", "geometry");
-      else if (!autoX) note(e, s, maxW, "Cascadio centers a max-width root (margin-inline: auto); this CSS doesn't", "geometry");
+      else if (!autoX) note(e, s, maxW, "Cadesa centers a max-width root (margin-inline: auto); this CSS doesn't", "geometry");
       else out.maxWidth = t;
     }
     margins.forEach((d, i) => {
@@ -487,11 +487,11 @@ export function liftParsed(css: ParsedCss): LiftResult {
       }
     }
     if (alignSelf && !["auto", "stretch", "normal"].includes(alignSelf.value.trim()))
-      note(e, s, alignSelf, `align-self: ${alignSelf.value.trim()} has no Cascadio equivalent`, "geometry");
+      note(e, s, alignSelf, `align-self: ${alignSelf.value.trim()} has no Cadesa equivalent`, "geometry");
     if (flex && !["none", "0 0 auto", "initial", "0 1 auto"].includes(flex.value.trim()))
-      note(e, s, flex, `flex: ${flex.value.trim()} has no Cascadio equivalent`, "geometry");
-    if (grow && !isZero(grow.value)) note(e, s, grow, "flex-grow has no Cascadio equivalent", "geometry");
-    if (basis && basis.value.trim() !== "auto") note(e, s, basis, "flex-basis has no Cascadio equivalent", "geometry");
+      note(e, s, flex, `flex: ${flex.value.trim()} has no Cadesa equivalent`, "geometry");
+    if (grow && !isZero(grow.value)) note(e, s, grow, "flex-grow has no Cadesa equivalent", "geometry");
+    if (basis && basis.value.trim() !== "auto") note(e, s, basis, "flex-basis has no Cadesa equivalent", "geometry");
     void shrink;
     const height = take("height");
     if (height && height.value.trim() !== "auto") {
@@ -504,9 +504,9 @@ export function liftParsed(css: ParsedCss): LiftResult {
       if (d && !["0", "auto", "none", "0px"].includes(d.value.trim())) note(e, s, d, `${p} is not modelled`, "geometry");
     }
 
-    // box-sizing: Cascadio is always border-box
+    // box-sizing: Cadesa is always border-box
     const bsz = take("box-sizing");
-    if (bsz && bsz.value.trim() !== "border-box") note(e, s, bsz, "Cascadio boxes are border-box", "geometry");
+    if (bsz && bsz.value.trim() !== "border-box") note(e, s, bsz, "Cadesa boxes are border-box", "geometry");
 
     // position
     const pos = take("position");
@@ -563,7 +563,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
       }
     }
 
-    // Declarations Cascadio's own output emits as part of a reset or a width/fill pattern.
+    // Declarations Cadesa's own output emits as part of a reset or a width/fill pattern.
     for (const p of ["font-kerning", "letter-spacing", "word-spacing", "text-indent", "text-transform", "white-space", "overflow-wrap", "word-break", "hyphens"]) {
       const d = m.get(p);
       if (d && ["normal", "0", "none", "manual"].includes(d.value.trim())) m.delete(p);
@@ -626,7 +626,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
               file: css.file,
               line: 0,
               selector: `.${cls}`,
-              reason: `${k} is removed below ${bpRaw.get(s)}; Cascadio overrides can't unset it`,
+              reason: `${k} is removed below ${bpRaw.get(s)}; Cadesa overrides can't unset it`,
               kind: k === "background" ? "paint" : k === "text" ? "text" : "geometry",
               className: cls,
               when: { maxPx: s, raw: `max-width: ${bpRaw.get(s)}` },
@@ -690,7 +690,7 @@ function emitYaml(data: Record<string, unknown>, file: string, unlifted: Unlifte
       if (depth >= 2 && leafy && JSON.stringify(node.toJSON()).length < 110) node.flow = true;
     },
   });
-  const head = `# Lifted from ${file} by cascadio lift. Edit freely; this file is now the source.\n`;
+  const head = `# Lifted from ${file} by cadesa lift. Edit freely; this file is now the source.\n`;
   const tail = unlifted.length
     ? `\n# Not lifted (${unlifted.length}):\n${unlifted
         .map((u) => `#   ${u.line ? `${file}:${u.line}` : file} ${u.selector}${u.decl ? ` { ${u.decl} }` : ""}\n#     ${u.kind}: ${u.reason}${u.when ? ` (${u.when.raw})` : ""}`)

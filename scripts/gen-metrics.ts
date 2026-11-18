@@ -3,7 +3,7 @@
  *
  *   npm run metrics
  *
- * Users measure their own fonts with `cascadio metrics <font> --family <name>`.
+ * Users measure their own fonts with `cadesa metrics <font> --family <name>`.
  */
 import { generateMetrics, writeMetrics } from "../src/metrics.js";
 

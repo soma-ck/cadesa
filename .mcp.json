@@ -1,6 +1,6 @@
 {
   "mcpServers": {
-    "cascadio": {
+    "cadesa": {
       "command": "npx",
       "args": ["tsx", "src/cli.ts", "mcp"]
     }

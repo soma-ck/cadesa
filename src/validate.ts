@@ -86,7 +86,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   };
 
   const data = src.data;
-  const top = obj(data, [], "a Cascadio document");
+  const top = obj(data, [], "a Cadesa document");
   if (!top) return { diagnostics };
   keys(top, [], TOP_KEYS);
   if (top.version !== 1) err(["version"], "unsupported or missing version", { expected: "1", got: top.version });

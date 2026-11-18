@@ -71,7 +71,7 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
             severity: "warning",
             inconclusive: true,
             id: b.id,
-            message: `contrast of #${b.id} is inconclusive: no Cascadio background behind it (the page background is outside the source)`,
+            message: `contrast of #${b.id} is inconclusive: no Cadesa background behind it (the page background is outside the source)`,
           });
         } else {
           const ratio = contrast(t.color, here.color);

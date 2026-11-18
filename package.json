@@ -1,7 +1,7 @@
 {
-  "name": "cascadio",
+  "name": "cadesa",
   "version": "0.1.0",
-  "description": "Predict what a style edit will do before you make it. Cascadio computes layout without a browser and ships plain CSS.",
+  "description": "Predict what a style edit will do before you make it. Cadesa computes layout without a browser and ships plain CSS.",
   "keywords": [
     "css",
     "ai",
@@ -20,11 +20,11 @@
       "types": "./lib/index.d.ts",
       "default": "./lib/index.js"
     },
-    "./schema.json": "./schema/cascadio.schema.json",
+    "./schema.json": "./schema/cadesa.schema.json",
     "./package.json": "./package.json"
   },
   "bin": {
-    "cascadio": "lib/cli.js"
+    "cadesa": "lib/cli.js"
   },
   "files": [
     "lib",
@@ -37,13 +37,13 @@
     "node": ">=20"
   },
   "scripts": {
-    "cascadio": "tsx src/cli.ts",
+    "cadesa": "tsx src/cli.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "build:ts": "rm -rf lib && tsc -p tsconfig.json",
     "prepublishOnly": "npm run typecheck && npm test && npm run build:ts",
     "conformance": "tsx scripts/conformance.ts",
-    "demo": "tsx src/cli.ts build settings.cascade.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cascade.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel",
+    "demo": "tsx src/cli.ts build settings.cadesa.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cadesa.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel",
     "conformance:sweep": "tsx scripts/conformance.ts --fixtures fixtures/settings-long.html --widths $(seq -s, 260 3 1000) --out artifacts/sweep",
     "metrics": "tsx scripts/gen-metrics.ts",
     "conformance:lift": "tsx scripts/conformance.ts --lift fixtures/legacy.css --fixtures fixtures/legacy.html --out artifacts/legacy"

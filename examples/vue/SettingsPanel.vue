@@ -1,7 +1,7 @@
 <!--
   The same stylesheet the fixture loads, used in a real component.
   Import it once, e.g. in main.ts:  import "../../dist/settings.css";
-  Cascadio has no runtime: these are ordinary classes on ordinary elements.
+  Cadesa has no runtime: these are ordinary classes on ordinary elements.
 -->
 <script setup lang="ts">
 defineEmits<{ save: []; cancel: [] }>();

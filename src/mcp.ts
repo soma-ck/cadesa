@@ -1,7 +1,7 @@
 /**
- * Cascadio MCP server (stdio). Exposes the same commands as the CLI as agent tools.
+ * Cadesa MCP server (stdio). Exposes the same commands as the CLI as agent tools.
  *
- *   { "mcpServers": { "cascadio": { "command": "npx", "args": ["-y", "cascadio", "mcp"] } } }
+ *   { "mcpServers": { "cadesa": { "command": "npx", "args": ["-y", "cadesa", "mcp"] } } }
  */
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
@@ -19,18 +19,18 @@ import {
   type Result,
 } from "./commands.js";
 import { VERSION } from "./compile.js";
-import { CascadioError, formatDiagnostic } from "./diagnostics.js";
+import { CadesaError, formatDiagnostic } from "./diagnostics.js";
 
-const INSTRUCTIONS = `Cascadio is a small styling language (YAML, *.cascade.yaml) that compiles to plain CSS.
+const INSTRUCTIONS = `Cadesa is a small styling language (YAML, *.cadesa.yaml) that compiles to plain CSS.
 Its layout engine runs without a browser, so you can predict what a style edit does before making it.
 
 Workflow for a style change:
-1. cascadio_render the fixture at the widths you care about to see every box (x, y, w×h, wrapped lines).
-2. cascadio_explain an element to see where each value comes from (token → breakpoint → YAML path).
-3. cascadio_whatif your candidate edit: it applies in memory and reports which boxes move at every width,
+1. cadesa_render the fixture at the widths you care about to see every box (x, y, w×h, wrapped lines).
+2. cadesa_explain an element to see where each value comes from (token → breakpoint → YAML path).
+3. cadesa_whatif your candidate edit: it applies in memory and reports which boxes move at every width,
    new or fixed issues, and confirms widths that did not change. Iterate here; nothing is written.
-4. Edit the .cascade.yaml file, then cascadio_check and cascadio_build.
-Existing CSS: cascadio_lift converts it (or pass css instead of source to any read tool). Boxes marked ≈ are not
+4. Edit the .cadesa.yaml file, then cadesa_check and cadesa_build.
+Existing CSS: cadesa_lift converts it (or pass css instead of source to any read tool). Boxes marked ≈ are not
 exactly predicted for the original CSS; the report says which declaration or browser default is responsible.
 
 Language: tokens.{space,size,color,radius,font}, text roles {font,size,weight,lineHeight,color}, breakpoints
@@ -40,11 +40,11 @@ slots.<slot> (same props), and when.<breakpoint> overrides that replace properti
 HTML uses class="ca-<component>" on the root and "ca-<component>__<slot>" on slots; data-fixture="id" names boxes.`;
 
 const sourceShape = {
-  source: z.string().optional().describe("Path to the .cascade.yaml source (or pass css instead)"),
+  source: z.string().optional().describe("Path to the .cadesa.yaml source (or pass css instead)"),
   css: z
     .string()
     .optional()
-    .describe("Path to a plain CSS file to lift on the fly instead of a Cascadio source; boxes it can't predict exactly are marked ≈"),
+    .describe("Path to a plain CSS file to lift on the fly instead of a Cadesa source; boxes it can't predict exactly are marked ≈"),
   sourceText: z
     .string()
     .optional()
@@ -66,27 +66,27 @@ function respond(run: () => Result, format: "text" | "json" = "text") {
     };
   } catch (e) {
     const text =
-      e instanceof CascadioError
+      e instanceof CadesaError
         ? format === "json"
           ? JSON.stringify({ diagnostics: e.diagnostics }, null, 2)
           : e.diagnostics.map(formatDiagnostic).join("\n\n")
         : e instanceof InputError
           ? e.message
-          : `cascadio: ${(e as Error).message}`;
+          : `cadesa: ${(e as Error).message}`;
     return { content: [{ type: "text" as const, text }], isError: true };
   }
 }
 
 export function createServer(): McpServer {
-  const server = new McpServer({ name: "cascadio", version: VERSION }, { instructions: INSTRUCTIONS });
+  const server = new McpServer({ name: "cadesa", version: VERSION }, { instructions: INSTRUCTIONS });
   const readOnly = { readOnlyHint: true, openWorldHint: false };
 
   server.registerTool(
-    "cascadio_render",
+    "cadesa_render",
     {
       title: "Render layout",
       description:
-        "Lay out an HTML fixture with a Cascadio source at each viewport width, without a browser. Returns every box (x, y, w×h), its layout/padding/width/text and where breakpoint overrides apply, plus layout issues. Set lines=true to see each wrapped text line with its width.",
+        "Lay out an HTML fixture with a Cadesa source at each viewport width, without a browser. Returns every box (x, y, w×h), its layout/padding/width/text and where breakpoint overrides apply, plus layout issues. Set lines=true to see each wrapped text line with its width.",
       inputSchema: { ...pageShape, lines: z.boolean().default(false).describe("Include wrapped text lines") },
       annotations: readOnly,
     },
@@ -94,11 +94,11 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
-    "cascadio_whatif",
+    "cadesa_whatif",
     {
       title: "Predict an edit",
       description:
-        "Apply one or more edits to the Cascadio source IN MEMORY and report, for every width, which boxes move or resize, which properties change and the provenance of their new values, new and fixed issues, and widths that stay unchanged. Use this before editing the file to choose an edit and to rule out regressions at other widths. Nothing is written.",
+        "Apply one or more edits to the Cadesa source IN MEMORY and report, for every width, which boxes move or resize, which properties change and the provenance of their new values, new and fixed issues, and widths that stay unchanged. Use this before editing the file to choose an edit and to rule out regressions at other widths. Nothing is written.",
       inputSchema: {
         ...pageShape,
         changes: z
@@ -113,7 +113,7 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
-    "cascadio_explain",
+    "cadesa_explain",
     {
       title: "Explain an element",
       description:
@@ -125,7 +125,7 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
-    "cascadio_check",
+    "cadesa_check",
     {
       title: "Check design rules",
       description:
@@ -137,14 +137,14 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
-    "cascadio_lift",
+    "cadesa_lift",
     {
-      title: "Lift CSS into Cascadio",
+      title: "Lift CSS into Cadesa",
       description:
-        "Convert plain CSS (BEM classes: .block, .block__element) into a Cascadio source. Reports every declaration it could not lift and what it can affect (geometry, text, visual, paint, state). With a fixture, reports per width which boxes are still exactly predicted and which may differ from the original CSS, and why. Writes the source only when `out` is given.",
+        "Convert plain CSS (BEM classes: .block, .block__element) into a Cadesa source. Reports every declaration it could not lift and what it can affect (geometry, text, visual, paint, state). With a fixture, reports per width which boxes are still exactly predicted and which may differ from the original CSS, and why. Writes the source only when `out` is given.",
       inputSchema: {
         css: z.string().describe("Path to the CSS file"),
-        out: z.string().optional().describe("Write the lifted .cascade.yaml here"),
+        out: z.string().optional().describe("Write the lifted .cadesa.yaml here"),
         fixture: z.string().optional().describe("HTML fixture for box-level impact"),
         widths: pageShape.widths,
         format: pageShape.format,
@@ -155,11 +155,11 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
-    "cascadio_validate",
+    "cadesa_validate",
     {
       title: "Validate source",
       description:
-        "Validate a Cascadio source. Errors include file:line:col, the YAML path, the expected values and a did-you-mean suggestion.",
+        "Validate a Cadesa source. Errors include file:line:col, the YAML path, the expected values and a did-you-mean suggestion.",
       inputSchema: { ...sourceShape, format: pageShape.format },
       annotations: readOnly,
     },
@@ -167,10 +167,10 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
-    "cascadio_css",
+    "cadesa_css",
     {
       title: "Show compiled CSS",
-      description: "Compile a Cascadio source and return the CSS without writing it. Output is deterministic.",
+      description: "Compile a Cadesa source and return the CSS without writing it. Output is deterministic.",
       inputSchema: sourceShape,
       annotations: readOnly,
     },
@@ -178,11 +178,11 @@ export function createServer(): McpServer {
   );
 
   server.registerTool(
-    "cascadio_build",
+    "cadesa_build",
     {
       title: "Build CSS",
-      description: "Compile a Cascadio source and write the CSS file. Invalid sources write nothing.",
-      inputSchema: { source: z.string().describe("Path to the .cascade.yaml source"), sourceText: sourceShape.sourceText, out: z.string().describe("Output .css path") },
+      description: "Compile a Cadesa source and write the CSS file. Invalid sources write nothing.",
+      inputSchema: { source: z.string().describe("Path to the .cadesa.yaml source"), sourceText: sourceShape.sourceText, out: z.string().describe("Output .css path") },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     },
     (a) => respond(() => buildCmd({ ...a, css: undefined })),

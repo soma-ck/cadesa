@@ -94,13 +94,13 @@ function load(file: string): FontMetrics {
 }
 
 /**
- * Where metrics tables are found, in priority order: $CASCADIO_METRICS (path list),
- * ./.cascadio/metrics (written by `cascadio metrics`), then the fonts bundled with Cascadio.
+ * Where metrics tables are found, in priority order: $CADESA_METRICS (path list),
+ * ./.cadesa/metrics (written by `cadesa metrics`), then the fonts bundled with Cadesa.
  */
 export function metricsDirs(): string[] {
   return [
-    ...(process.env.CASCADIO_METRICS?.split(delimiter).filter(Boolean) ?? []),
-    join(process.cwd(), ".cascadio", "metrics"),
+    ...(process.env.CADESA_METRICS?.split(delimiter).filter(Boolean) ?? []),
+    join(process.cwd(), ".cadesa", "metrics"),
     fileURLToPath(new URL("../../fonts/", import.meta.url)),
   ];
 }

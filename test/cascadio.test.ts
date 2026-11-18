@@ -4,7 +4,7 @@ import { describe, expect, it } from "vitest";
 import { check, contrast } from "../src/check.js";
 import { compile } from "../src/compile.js";
 import { explain } from "../src/explain.js";
-import { CascadioError } from "../src/diagnostics.js";
+import { CadesaError } from "../src/diagnostics.js";
 import { walk, type Box, type Layout } from "../src/engine/layout.js";
 import { parseFixture } from "../src/fixture.js";
 import { layoutText, metricsFor, pieces } from "../src/engine/text.js";
@@ -12,7 +12,7 @@ import { loadSource } from "../src/load.js";
 import { modelOf, render, whatif } from "../src/project.js";
 import { validate } from "../src/validate.js";
 
-const SOURCE_FILE = "settings.cascade.yaml";
+const SOURCE_FILE = "settings.cadesa.yaml";
 const FIXTURE_FILE = "fixtures/settings.html";
 const sourceText = readFileSync(SOURCE_FILE, "utf8");
 const fixture = parseFixture(FIXTURE_FILE);
@@ -58,7 +58,7 @@ describe("validation", () => {
   });
 
   it("does not emit CSS when the source is invalid", () => {
-    expect(() => modelOf(src(sourceText.replace("color: ink }", "color: inc }")))).toThrow(CascadioError);
+    expect(() => modelOf(src(sourceText.replace("color: ink }", "color: inc }")))).toThrow(CadesaError);
   });
 });
 
@@ -221,7 +221,7 @@ describe("text", () => {
   it("falls back to a flagged one-line assumption for fonts without metrics", () => {
     const r = whatif(src(), long, [390], [{ path: "tokens.font.ui", value: "Georgia, serif" }]);
     const [l] = render(modelOf(loadSource(SOURCE_FILE, sourceText.replace('"Inter, system-ui, sans-serif"', '"Georgia, serif"'))), long, [390]);
-    expect(box(l, "description").assumptions[0]).toMatch(/Georgia.*no Cascadio metrics/);
+    expect(box(l, "description").assumptions[0]).toMatch(/Georgia.*no Cadesa metrics/);
     expect(box(l, "description").h).toBe(24);
     expect(r.widths[0].elements.find((e) => e.id === "description")!.geometry.find((g) => g.key === "h")).toEqual({
       key: "h",

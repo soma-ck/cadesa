@@ -11,7 +11,7 @@ export interface Diagnostic {
   suggestion?: string;
 }
 
-export class CascadioError extends Error {
+export class CadesaError extends Error {
   constructor(public diagnostics: Diagnostic[]) {
     super(diagnostics.map(formatDiagnostic).join("\n\n"));
   }

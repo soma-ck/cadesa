@@ -1,5 +1,5 @@
 import { parse as parseYaml } from "yaml";
-import { CascadioError, type Diagnostic } from "./diagnostics.js";
+import { CadesaError, type Diagnostic } from "./diagnostics.js";
 import { layout, walk, type Box, type Issue, type Layout } from "./engine/layout.js";
 import type { Fixture } from "./fixture.js";
 import type { Source } from "./load.js";
@@ -9,7 +9,7 @@ import { validate } from "./validate.js";
 
 export function modelOf(src: Source): Model {
   const { model, diagnostics } = validate(src);
-  if (!model) throw new CascadioError(diagnostics);
+  if (!model) throw new CadesaError(diagnostics);
   return model;
 }
 

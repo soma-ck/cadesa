@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Cascadio source",
-  "description": "Editor autocomplete for *.cascade.yaml. The CLI's validator is authoritative: it also checks that every reference names a declared token, role, breakpoint or slot.",
+  "title": "Cadesa source",
+  "description": "Editor autocomplete for *.cadesa.yaml. The CLI's validator is authoritative: it also checks that every reference names a declared token, role, breakpoint or slot.",
   "type": "object",
   "additionalProperties": false,
   "required": ["version"],

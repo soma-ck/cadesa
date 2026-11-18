@@ -1,5 +1,5 @@
 /**
- * Generate a Cascadio metrics table for a font: glyph advances and pair kerning, measured once in
+ * Generate a Cadesa metrics table for a font: glyph advances and pair kerning, measured once in
  * Chromium. Requires Playwright (an optional peer dependency) and a Chrome/Chromium.
  *
  * Variable fonts are sampled every 100 weight units and interpolated. Static faces are stored at
@@ -32,7 +32,7 @@ const FORMATS: Record<string, string> = { ".woff2": "woff2", ".woff": "woff", ".
 
 export function findChrome(): string | undefined {
   return (
-    process.env.CASCADIO_CHROME ??
+    process.env.CADESA_CHROME ??
     [
       "/usr/bin/chromium",
       "/usr/bin/chromium-browser",
@@ -57,7 +57,7 @@ export async function generateMetrics(opts: {
   try {
     ({ chromium } = await import("playwright"));
   } catch {
-    throw new Error("cascadio metrics needs Playwright: npm i -D playwright (and a Chrome/Chromium, or npx playwright install chromium)");
+    throw new Error("cadesa metrics needs Playwright: npm i -D playwright (and a Chrome/Chromium, or npx playwright install chromium)");
   }
   const format = FORMATS[extname(opts.font).toLowerCase()];
   if (!format) throw new Error(`unsupported font file ${opts.font}; use .woff2, .woff, .ttf or .otf`);
@@ -69,7 +69,7 @@ export async function generateMetrics(opts: {
     const data = readFileSync(opts.font).toString("base64");
     const range = opts.weight ? `${opts.weight}` : "100 900";
     await page.setContent(
-      `<style>@font-face{font-family:"__cascadio";font-weight:${range};src:url(data:font/${format};base64,${data}) format("${format}")}</style>`,
+      `<style>@font-face{font-family:"__cadesa";font-weight:${range};src:url(data:font/${format};base64,${data}) format("${format}")}</style>`,
     );
     // Passed as a string so bundlers/transpilers can't inject helpers that don't exist in the page.
     const result = (await page.evaluate(`(async ({ CHARS, KERN_CHARS, WEIGHTS, SIZE, UNITS }) => {
@@ -77,8 +77,8 @@ export async function generateMetrics(opts: {
       ctx.fontKerning = "normal";
       const advances = {}, kerning = {};
       for (const w of WEIGHTS) {
-        await document.fonts.load(w + " " + SIZE + "px __cascadio");
-        ctx.font = w + " " + SIZE + "px __cascadio";
+        await document.fonts.load(w + " " + SIZE + "px __cadesa");
+        ctx.font = w + " " + SIZE + "px __cadesa";
         const width = (s) => ctx.measureText(s).width;
         advances[w] = [...CHARS].map((c) => Math.round((width(c) / SIZE) * UNITS));
         const kc = [...KERN_CHARS], single = new Map(kc.map((c) => [c, width(c)])), k = {};
@@ -88,7 +88,7 @@ export async function generateMetrics(opts: {
         }
         kerning[w] = k;
       }
-      return { advances, kerning, loaded: document.fonts.check(WEIGHTS[0] + " 16px __cascadio") };
+      return { advances, kerning, loaded: document.fonts.check(WEIGHTS[0] + " 16px __cadesa") };
     })(${JSON.stringify({ CHARS, KERN_CHARS, WEIGHTS: weights, SIZE, UNITS })})`)) as {
       advances: Record<string, number[]>;
       kerning: Record<string, Record<string, number>>;

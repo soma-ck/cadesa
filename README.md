@@ -1,10 +1,10 @@
-# Cascadio
+# Cadesa
 
 **Predict what a style edit will do before you make it.**
-Cascadio computes layout without a browser and ships plain CSS.
+Cadesa computes layout without a browser and ships plain CSS.
 
 ```console
-$ cascadio whatif fixtures/settings.html --source settings.cascade.yaml \
+$ cadesa whatif fixtures/settings.html --source settings.cadesa.yaml \
     --set styles.settings-panel.when.narrow.padding=panel
 
 whatif styles.settings-panel.when.narrow.padding: compact → panel
@@ -30,13 +30,13 @@ One proposed edit, every affected box, the YAML path that explains each value, a
 | --- | --- |
 | <img src="docs/settings-long-390.png" width="260" alt="Settings panel with long copy at 390px: wrapped text, stacked full-width buttons"> | <img src="docs/settings-long-1280.png" width="520" alt="Settings panel with long copy at 1280px: buttons side by side"> |
 
-<sub>Screenshots are from the Chromium conformance run, loading the exact CSS bytes `cascadio build` wrote. The engine predicted every line break shown here, without a browser.</sub>
+<sub>Screenshots are from the Chromium conformance run, loading the exact CSS bytes `cadesa build` wrote. The engine predicted every line break shown here, without a browser.</sub>
 
 ## Why
 
 Agents write CSS blind. CSS layout is emergent (cascade, specificity, inheritance, intrinsic sizing), so the only way to know what an edit does is to render it in a browser. That answer comes *after* the edit, takes seconds, and arrives as pixels that language models read poorly.
 
-Cascadio is a styling language deliberately small enough to simulate exactly: no cascade, no inheritance, two layout patterns, and named tokens for every value. Its reference engine is a few hundred lines of TypeScript. It answers in milliseconds as **text**: box geometry, the provenance chain for each value, and a diff between before and after.
+Cadesa is a styling language deliberately small enough to simulate exactly: no cascade, no inheritance, two layout patterns, and named tokens for every value. Its reference engine is a few hundred lines of TypeScript. It answers in milliseconds as **text**: box geometry, the provenance chain for each value, and a diff between before and after.
 
 Production gets ordinary, readable CSS with no runtime.
 
@@ -44,9 +44,9 @@ Production gets ordinary, readable CSS with no runtime.
 
 ```sh
 npm install
-npm run cascadio -- build settings.cascade.yaml --out dist/settings.css
-npm run cascadio -- render fixtures/settings.html --source settings.cascade.yaml --widths 390,1280
-npm run cascadio -- whatif fixtures/settings.html --source settings.cascade.yaml --widths 390,1280 \
+npm run cadesa -- build settings.cadesa.yaml --out dist/settings.css
+npm run cadesa -- render fixtures/settings.html --source settings.cadesa.yaml --widths 390,1280
+npm run cadesa -- whatif fixtures/settings.html --source settings.cadesa.yaml --widths 390,1280 \
   --set styles.settings-panel.when.narrow.padding=panel
 ```
 
@@ -55,7 +55,7 @@ Add `--json` to any command for machine-readable output.
 ### Ask why a value is what it is
 
 ```console
-$ cascadio explain fixtures/settings.html --source settings.cascade.yaml --id panel --widths 1280
+$ cadesa explain fixtures/settings.html --source settings.cadesa.yaml --id panel --widths 1280
 #panel <section> at 1280px
   box 320,0 640×208.8 · style styles.settings-panel
 
@@ -71,7 +71,7 @@ $ cascadio explain fixtures/settings.html --source settings.cascade.yaml --id pa
 ### See where text wraps
 
 ```console
-$ cascadio render fixtures/settings-long.html --source settings.cascade.yaml --widths 390 --lines
+$ cadesa render fixtures/settings-long.html --source settings.cadesa.yaml --widths 390 --lines
     #description  p        16,97.6   358×120    text body-muted · 5 lines
                   │ We’ll email you when someone joins, leaves, or  (354.87px)
                   │ changes billing details — plus a weekly  (295.56px)
@@ -85,50 +85,50 @@ $ cascadio render fixtures/settings-long.html --source settings.cascade.yaml --w
 With `muted` lightened to `#aab0bb`:
 
 ```console
-$ cascadio check fixtures/settings.html --source settings.cascade.yaml --widths 1280
+$ cadesa check fixtures/settings.html --source settings.cadesa.yaml --widths 1280
 1280px
   ✖ [contrast] #description text #aab0bb on #ffffff is 2.18:1; WCAG AA needs 4.5:1 (background from styles.settings-panel.background)
       edit: text.body-muted.color
 ```
 
-`check` covers overflow (horizontal, unbreakable words, and text taller than a fixed height), tap targets (WCAG 2.5.8 and 2.5.5), text contrast against the nearest Cascadio background, and line length. When the source can't decide a check, for example because the page background sits outside Cascadio, it says *inconclusive* rather than guessing.
+`check` covers overflow (horizontal, unbreakable words, and text taller than a fixed height), tap targets (WCAG 2.5.8 and 2.5.5), text contrast against the nearest Cadesa background, and line length. When the source can't decide a check, for example because the page background sits outside Cadesa, it says *inconclusive* rather than guessing.
 
 ## Use it from your agent (MCP)
 
-Cascadio ships an MCP server, so Claude Code, Cursor, Codex and other MCP clients can call it directly:
+Cadesa ships an MCP server, so Claude Code, Cursor, Codex and other MCP clients can call it directly:
 
 ```json
 {
   "mcpServers": {
-    "cascadio": { "command": "npx", "args": ["-y", "cascadio", "mcp"] }
+    "cadesa": { "command": "npx", "args": ["-y", "cadesa", "mcp"] }
   }
 }
 ```
 
 | Tool | What it answers |
 | --- | --- |
-| `cascadio_whatif` | "If I make this edit, what moves at each width, and does anything regress?" Runs in memory and writes nothing. |
-| `cascadio_render` | "Where is every box, and where does the text wrap?" |
-| `cascadio_explain` | "Why is this value what it is, and which YAML path do I edit?" |
-| `cascadio_check` | "Is anything overflowing, too small to tap, or low contrast?" |
-| `cascadio_lift` | "Turn this existing CSS into Cascadio. What couldn't be converted, and which boxes does that affect?" |
-| `cascadio_validate` / `cascadio_css` / `cascadio_build` | Validate, preview the CSS, write the CSS. |
+| `cadesa_whatif` | "If I make this edit, what moves at each width, and does anything regress?" Runs in memory and writes nothing. |
+| `cadesa_render` | "Where is every box, and where does the text wrap?" |
+| `cadesa_explain` | "Why is this value what it is, and which YAML path do I edit?" |
+| `cadesa_check` | "Is anything overflowing, too small to tap, or low contrast?" |
+| `cadesa_lift` | "Turn this existing CSS into Cadesa. What couldn't be converted, and which boxes does that affect?" |
+| `cadesa_validate` / `cadesa_css` / `cadesa_build` | Validate, preview the CSS, write the CSS. |
 
 Every read tool accepts `sourceText`, so an agent can evaluate an unsaved draft, or `css` to work directly on existing CSS. The server's instructions teach the language and the render → explain → whatif → edit loop. This repo includes a [`.mcp.json`](.mcp.json) that runs the server from source.
 
 ## Already have CSS? Lift it
 
-`cascadio lift` converts plain BEM-style CSS (`.block`, `.block__element`) into a Cascadio source. Whatever doesn't fit isn't guessed. It is reported per box: for each width, which boxes the engine still predicts exactly, which may differ from the original CSS, and which declaration or browser default is responsible.
+`cadesa lift` converts plain BEM-style CSS (`.block`, `.block__element`) into a Cadesa source. Whatever doesn't fit isn't guessed. It is reported per box: for each width, which boxes the engine still predicts exactly, which may differ from the original CSS, and which declaration or browser default is responsible.
 
 ```console
-$ cascadio lift fixtures/legacy.css --fixture fixtures/legacy.html --widths 390,1280 --out legacy.cascade.yaml
+$ cadesa lift fixtures/legacy.css --fixture fixtures/legacy.html --widths 390,1280 --out legacy.cadesa.yaml
 lift fixtures/legacy.css: 49 of 54 declarations lifted · 1 component · 17 tokens · 1 breakpoint
 
 box impact (≈ = may differ from the original CSS)
 390px
   ✓ exact (5): #name #bio #actions #follow #message
   ≈ #meta size
-      fixtures/legacy.css: <p> keeps the browser's default margin (no margin set); Cascadio's reset removes it
+      fixtures/legacy.css: <p> keeps the browser's default margin (no margin set); Cadesa's reset removes it
   ≈ #badge size+position
       fixtures/legacy.css:78 position: absolute: position: absolute takes the box out of normal flow
   · no effect in the default state: fixtures/legacy.css:59 background: #1d4ed8: interactive state
@@ -143,7 +143,7 @@ A `:hover` rule can't move anything in the default state, while a `min-width` qu
 
 Every read command and MCP tool also accepts `--css <file.css>` in place of `--source`. The CSS is lifted on the fly, uncertain boxes are marked `≈`, and `check` findings on them are reported as inconclusive.
 
-**Verified against Chromium:** `npm run conformance:lift` loads the fixture with the *original* hand-written CSS. Every box lift marked exact matched, 15 of 15 at 0.000–0.011px. Every box it marked uncertain really did differ, 17 of 17. Lifting Cascadio's own output gives back the same source, and a test checks that its layout is identical at 49 widths.
+**Verified against Chromium:** `npm run conformance:lift` loads the fixture with the *original* hand-written CSS. Every box lift marked exact matched, 15 of 15 at 0.000–0.011px. Every box it marked uncertain really did differ, 17 of 17. Lifting Cadesa's own output gives back the same source, and a test checks that its layout is identical at 49 widths.
 
 ## The source
 
@@ -171,13 +171,13 @@ styles:
           actions: { layout: { pattern: stack, gap: control } }
 ```
 
-The full example is in [`settings.cascade.yaml`](settings.cascade.yaml), and the CSS it compiles to is in [`dist/settings.css`](dist/settings.css). Add `# yaml-language-server: $schema=./schema/cascadio.schema.json` to get editor autocomplete.
+The full example is in [`settings.cadesa.yaml`](settings.cadesa.yaml), and the CSS it compiles to is in [`dist/settings.css`](dist/settings.css). Add `# yaml-language-server: $schema=./schema/cadesa.schema.json` to get editor autocomplete.
 
 ### Errors point at the field to edit
 
 ```console
-$ cascadio build settings.cascade.yaml --out dist/settings.css
-settings.cascade.yaml:19:36 error styles.settings-panel.layout.gap: unknown space token "sectoin"
+$ cadesa build settings.cadesa.yaml --out dist/settings.css
+settings.cadesa.yaml:19:36 error styles.settings-panel.layout.gap: unknown space token "sectoin"
   expected: one of section, panel, compact, control
   got: "sectoin"
   did you mean "section"?
@@ -208,7 +208,7 @@ Class contract: `.ca-<component>` on the root and `.ca-<component>__<slot>` on s
 
 There are two separate claims:
 
-1. **The engine is the spec.** Cascadio's box tree is defined by its reference engine ([`src/engine/`](src/engine/)). It is deterministic and depends only on source, fixture and width.
+1. **The engine is the spec.** Cadesa's box tree is defined by its reference engine ([`src/engine/`](src/engine/)). It is deterministic and depends only on source, fixture and width.
 2. **Chromium agrees, verified rather than assumed.** `npm run conformance` builds the CSS, serves each fixture, checks that the page loaded those exact bytes, and compares every `data-fixture` box against the engine, including wrapped line counts:
 
 ```
@@ -229,22 +229,22 @@ There are two separate claims:
 
 ### How text is measured without a browser
 
-Cascadio bundles [Inter](https://rsms.me/inter/) (SIL OFL 1.1) and a 136 KB metrics table: glyph advances and 13k kerning pairs, sampled at 9 weights and interpolated. `npm run metrics` regenerates the table, once, from Chromium's own text measurement. At runtime the engine reads only the JSON, with no font parser and no browser. Line breaking follows CSS `white-space: normal`: breaks after spaces, after hyphens between letters, and around dashes. Each component's reset pins the inherited text properties that could change line breaks (letter-spacing, word-spacing, text-transform, kerning and so on), so a host page can't change them behind the engine's back.
+Cadesa bundles [Inter](https://rsms.me/inter/) (SIL OFL 1.1) and a 136 KB metrics table: glyph advances and 13k kerning pairs, sampled at 9 weights and interpolated. `npm run metrics` regenerates the table, once, from Chromium's own text measurement. At runtime the engine reads only the JSON, with no font parser and no browser. Line breaking follows CSS `white-space: normal`: breaks after spaces, after hyphens between letters, and around dashes. Each component's reset pins the inherited text properties that could change line breaks (letter-spacing, word-spacing, text-transform, kerning and so on), so a host page can't change them behind the engine's back.
 
 ### Your own fonts
 
 ```sh
 npm i -D playwright                     # only needed for this one-time step
-cascadio metrics fonts/BrandSans.woff2 --family "Brand Sans"                 # variable font
-cascadio metrics fonts/Brand-Regular.ttf --family "Brand Sans" --weight 400  # or one static face at a time
-cascadio metrics fonts/Brand-Bold.ttf    --family "Brand Sans" --weight 700
+cadesa metrics fonts/BrandSans.woff2 --family "Brand Sans"                 # variable font
+cadesa metrics fonts/Brand-Regular.ttf --family "Brand Sans" --weight 400  # or one static face at a time
+cadesa metrics fonts/Brand-Bold.ttf    --family "Brand Sans" --weight 700
 ```
 
-This measures the font once in Chromium and writes `.cascadio/metrics/brand-sans.metrics.json`. Commit that file, and the engine measures text set in `"Brand Sans"` from then on, with no browser. Static faces are matched by CSS weight rules: a 650 role uses the 700 face. A weight the browser would synthesize, such as bold from a regular-only family, is flagged rather than guessed. Verified with Liberation Sans, using two static faces: all 1,482 boxes across the 247-width sweep agree with Chromium.
+This measures the font once in Chromium and writes `.cadesa/metrics/brand-sans.metrics.json`. Commit that file, and the engine measures text set in `"Brand Sans"` from then on, with no browser. Static faces are matched by CSS weight rules: a 650 role uses the 700 face. A weight the browser would synthesize, such as bold from a regular-only family, is flagged rather than guessed. Verified with Liberation Sans, using two static faces: all 1,482 boxes across the 247-width sweep agree with Chromium.
 
 **Current limits:** a font without metrics, or a character outside the measured Latin set, falls back to a one-line assumption, and every report flags that box. In a `cluster`, a box without a width is sized to its text (max-content, shrinking to min-content), the same way flexbox does it. No hyphenation, no `text-wrap: balance`, and no bidirectional text yet.
 
-The conformance run uses a system Chrome or Chromium when one is found (or `$CASCADIO_CHROME`), otherwise Playwright's bundled browser. A browser is never needed to build, render, explain, check or `whatif`.
+The conformance run uses a system Chrome or Chromium when one is found (or `$CADESA_CHROME`), otherwise Playwright's bundled browser. A browser is never needed to build, render, explain, check or `whatif`.
 
 ## Using the CSS in your app
 
@@ -268,12 +268,12 @@ defineEmits<{ save: []; cancel: [] }>();
 </template>
 ```
 
-React, Svelte, server templates and static HTML work the same way, because Cascadio has no runtime.
+React, Svelte, server templates and static HTML work the same way, because Cadesa has no runtime.
 
 ## Roadmap
 
 - **More of CSS:** grid, `min-width` breakpoints, and a `row` pattern, so lift leaves less behind.
-- **Benchmark:** agents fixing a mobile layout bug with Cascadio vs. plain CSS, on the same fixture with the same edit budget. It measures attempts to fix and desktop regressions.
+- **Benchmark:** agents fixing a mobile layout bug with Cadesa vs. plain CSS, on the same fixture with the same edit budget. It measures attempts to fix and desktop regressions.
 
 ## Development
 
@@ -287,6 +287,6 @@ npm run conformance:lift   # optional: lifted hand-written CSS vs. the original 
 
 ## License
 
-Cascadio's own source code is [MIT](LICENSE). The bundled Inter font is under the [SIL Open Font License 1.1](fonts/OFL.txt).
+Cadesa's own source code is [MIT](LICENSE). The bundled Inter font is under the [SIL Open Font License 1.1](fonts/OFL.txt).
 
-**The CSS you generate is yours.** Running the compiler does not place your `.cascade.yaml` sources or the CSS it emits under the MIT license or any other Cascadio license. License your output however you like, including proprietary.
+**The CSS you generate is yours.** Running the compiler does not place your `.cadesa.yaml` sources or the CSS it emits under the MIT license or any other Cadesa license. License your output however you like, including proprietary.

@@ -25,11 +25,11 @@ export class InputError extends Error {}
 const ms = (t0: number) => Math.round(performance.now() - t0);
 
 export interface SourceInput {
-  /** Path to a .cascade.yaml source. */
+  /** Path to a .cadesa.yaml source. */
   source?: string;
   /** Unsaved YAML to use instead of the file's contents (diagnostics still name `source`). */
   sourceText?: string;
-  /** Plain CSS to lift on the fly instead of a Cascadio source. */
+  /** Plain CSS to lift on the fly instead of a Cadesa source. */
   css?: string;
 }
 
@@ -37,7 +37,7 @@ const liftFile = (css: string) => lift(css, readFileSync(css, "utf8"));
 
 function load(s: SourceInput) {
   if (s.css) return loadSource(`${s.css} (lifted)`, liftFile(s.css).yaml);
-  if (!s.source) throw new InputError("needs --source <file.cascade.yaml> or --css <file.css>");
+  if (!s.source) throw new InputError("needs --source <file.cadesa.yaml> or --css <file.css>");
   return s.sourceText !== undefined ? loadSource(s.source, s.sourceText) : loadSourceFile(s.source);
 }
 
@@ -49,7 +49,7 @@ function impactFor(s: SourceInput & { fixture: string }, layouts: ReturnType<typ
 }
 
 export function validateCmd(s: SourceInput): Result {
-  modelOf(load(s)); // throws CascadioError with diagnostics
+  modelOf(load(s)); // throws CadesaError with diagnostics
   return { text: `✓ ${s.css ? `${s.css} (lifted)` : s.source} is valid\n`, data: { valid: true }, ok: true };
 }
 

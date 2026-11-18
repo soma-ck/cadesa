@@ -1,4 +1,4 @@
-/** The validated Cascadio document. Every value remembers the YAML path it came from. */
+/** The validated Cadesa document. Every value remembers the YAML path it came from. */
 
 export const ROOT_FONT_PX = 16;
 

@@ -10,7 +10,7 @@ export interface Decl {
 
 export interface Media {
   raw: string;
-  /** Set for `(max-width: X)` queries, the only kind Cascadio models. */
+  /** Set for `(max-width: X)` queries, the only kind Cadesa models. */
   maxPx?: number;
   maxRaw?: string;
   minPx?: number;
@@ -35,7 +35,7 @@ export interface ParsedCss {
   rules: CssRule[];
   /** Custom property definitions (`--x: value`), last definition wins. */
   vars: Map<string, Decl>;
-  /** Top-level comments of the form `/* name: text *\/`, as Cascadio emits for `intent`. */
+  /** Top-level comments of the form `/* name: text *\/`, as Cadesa emits for `intent`. */
   notes: Map<string, string>;
   skipped: Skipped[];
 }
@@ -111,7 +111,7 @@ export function parseCss(file: string, text: string): ParsedCss {
           text: `@${a.name} ${a.params}`.trim(),
           reason:
             a.name === "font-face"
-              ? "fonts load outside Cascadio; text is measured only for fonts with Cascadio metrics"
+              ? "fonts load outside Cadesa; text is measured only for fonts with Cadesa metrics"
               : `@${a.name} is not modelled`,
         });
     }

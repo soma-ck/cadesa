@@ -1,12 +1,12 @@
 /**
- * Conformance: does Chromium, loading the exact CSS bytes `cascadio build` wrote, put every
- * fixture box where the Cascadio reference engine says it goes?
+ * Conformance: does Chromium, loading the exact CSS bytes `cadesa build` wrote, put every
+ * fixture box where the Cadesa reference engine says it goes?
  *
  * This is the only place a browser is used. It verifies the engine; it is not part of the dev loop.
  *
  *   npm run conformance [-- --widths 390,1280 --tolerance 0.5]
  *
- * Browser: $CASCADIO_CHROME, else a system Chrome/Chromium, else Playwright's bundled Chromium
+ * Browser: $CADESA_CHROME, else a system Chrome/Chromium, else Playwright's bundled Chromium
  * (`npx playwright install chromium`).
  */
 import { createHash } from "node:crypto";
@@ -25,7 +25,7 @@ import { modelOf, render } from "../src/project.js";
 
 const { values } = parseArgs({
   options: {
-    source: { type: "string", default: "settings.cascade.yaml" },
+    source: { type: "string", default: "settings.cadesa.yaml" },
     fixtures: { type: "string", default: "fixtures/settings.html,fixtures/settings-long.html" },
     css: { type: "string", default: "dist/settings.css" },
     widths: { type: "string", default: "320,390,768,1280" },
@@ -67,7 +67,7 @@ await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
 const port = (server.address() as { port: number }).port;
 
 const executablePath =
-  process.env.CASCADIO_CHROME ??
+  process.env.CADESA_CHROME ??
   ["/usr/bin/chromium", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find(existsSync);
 const browser = await chromium.launch({ executablePath });
 

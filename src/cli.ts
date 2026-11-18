@@ -12,23 +12,23 @@ import {
   type Result,
 } from "./commands.js";
 import { VERSION } from "./compile.js";
-import { CascadioError, formatDiagnostic } from "./diagnostics.js";
+import { CadesaError, formatDiagnostic } from "./diagnostics.js";
 import { parseSet } from "./project.js";
 
-const HELP = `cascadio ${VERSION}: predict what a style edit will do before you make it
+const HELP = `cadesa ${VERSION}: predict what a style edit will do before you make it
 
 Usage:
-  cascadio build    <source.cascade.yaml> --out <file.css>
-  cascadio validate <source.cascade.yaml>
-  cascadio render   <fixture.html> --source <source.cascade.yaml> [--widths 390,1280] [--lines]
-  cascadio whatif   <fixture.html> --source <source.cascade.yaml> --set <path=value> [--set ...]
-  cascadio explain  <fixture.html> --source <source.cascade.yaml> --id <fixture-id>
-  cascadio check    <fixture.html> --source <source.cascade.yaml>
-  cascadio lift     <file.css> [--out <file.cascade.yaml>] [--fixture <fixture.html>]
-  cascadio metrics  <font-file> --family <name> [--weight <n>] [--out .cascadio/metrics]
+  cadesa build    <source.cadesa.yaml> --out <file.css>
+  cadesa validate <source.cadesa.yaml>
+  cadesa render   <fixture.html> --source <source.cadesa.yaml> [--widths 390,1280] [--lines]
+  cadesa whatif   <fixture.html> --source <source.cadesa.yaml> --set <path=value> [--set ...]
+  cadesa explain  <fixture.html> --source <source.cadesa.yaml> --id <fixture-id>
+  cadesa check    <fixture.html> --source <source.cadesa.yaml>
+  cadesa lift     <file.css> [--out <file.cadesa.yaml>] [--fixture <fixture.html>]
+  cadesa metrics  <font-file> --family <name> [--weight <n>] [--out .cadesa/metrics]
                     measure a font once in Chromium so the engine can measure text set in it
                     (omit --weight for a variable font; repeat per face for static fonts)
-  cascadio mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
+  cadesa mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
 
   render, whatif, explain and check also accept --css <file.css> instead of --source:
   the CSS is lifted on the fly, and boxes it can't predict exactly are marked ≈.
@@ -72,7 +72,7 @@ async function main(argv: string[]) {
     const weight = values.weight ? Number(values.weight) : undefined;
     if (weight !== undefined && !(weight >= 1 && weight <= 1000)) throw new InputError(`invalid --weight "${values.weight}"`);
     const m = await generateMetrics({ font: input, family: values.family, weight });
-    const file = writeMetrics(m, values.out ?? ".cascadio/metrics");
+    const file = writeMetrics(m, values.out ?? ".cadesa/metrics");
     const pairs = Object.values(m.kerning).reduce((n, k) => n + Object.keys(k).length, 0);
     process.stdout.write(
       `wrote ${file}: ${m.family} (${m.kind}${weight ? ` ${weight}` : ", 100–900"}), ${m.chars.length} glyphs, ${pairs} kerning pairs\n`,
@@ -91,7 +91,7 @@ async function main(argv: string[]) {
       return n;
     });
   const page = () => ({
-    source: values.css ? undefined : need(values.source, "--source <source.cascade.yaml> or --css <file.css>"),
+    source: values.css ? undefined : need(values.source, "--source <source.cadesa.yaml> or --css <file.css>"),
     css: values.css,
     fixture: need(input, "<fixture.html>"),
     widths: widths(),
@@ -100,10 +100,10 @@ async function main(argv: string[]) {
   let r: Result;
   switch (cmd) {
     case "build":
-      r = buildCmd({ source: need(input, "<source.cascade.yaml>"), out: need(values.out, "--out <file.css>") });
+      r = buildCmd({ source: need(input, "<source.cadesa.yaml>"), out: need(values.out, "--out <file.css>") });
       break;
     case "validate":
-      r = validateCmd({ source: need(input, "<source.cascade.yaml>") });
+      r = validateCmd({ source: need(input, "<source.cadesa.yaml>") });
       break;
     case "render":
       r = renderCmd({ ...page(), lines: values.lines });
@@ -130,13 +130,13 @@ async function main(argv: string[]) {
 try {
   await main(process.argv.slice(2));
 } catch (e) {
-  if (e instanceof CascadioError) {
+  if (e instanceof CadesaError) {
     if (process.argv.includes("--json")) process.stdout.write(JSON.stringify({ diagnostics: e.diagnostics }, null, 2) + "\n");
     else process.stderr.write(e.diagnostics.map(formatDiagnostic).join("\n\n") + "\n");
   } else if (e instanceof InputError) {
-    process.stderr.write(`cascadio: ${e.message}\n\n${HELP}`);
+    process.stderr.write(`cadesa: ${e.message}\n\n${HELP}`);
   } else {
-    process.stderr.write(`cascadio: ${(e as Error).message}\n`);
+    process.stderr.write(`cadesa: ${(e as Error).message}\n`);
   }
   process.exitCode = 1;
 }
