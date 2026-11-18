@@ -10,12 +10,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -56,6 +53,9 @@
   font-weight: 650;
   line-height: 1.2;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-settings-panel .ca-settings-panel__description {
@@ -64,6 +64,9 @@
   font-weight: 400;
   line-height: 1.5;
   color: var(--ca-color-muted);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-settings-panel .ca-settings-panel__actions {
@@ -79,12 +82,16 @@
   background-color: var(--ca-color-ink);
   border-radius: var(--ca-radius-control);
   height: var(--ca-size-control);
+  min-height: var(--ca-size-control);
   align-content: center;
   font-family: var(--ca-font-ui);
   font-size: 0.9375rem;
   font-weight: 600;
   line-height: 1.25;
   color: var(--ca-color-surface);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-settings-panel .ca-settings-panel__secondary {
@@ -92,12 +99,16 @@
   border: 1px solid var(--ca-color-line);
   border-radius: var(--ca-radius-control);
   height: var(--ca-size-control);
+  min-height: var(--ca-size-control);
   align-content: center;
   font-family: var(--ca-font-ui);
   font-size: 0.9375rem;
   font-weight: 600;
   line-height: 1.25;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 @media (max-width: 36rem) {
@@ -114,14 +125,14 @@
   }
 
   .ca-settings-panel .ca-settings-panel__primary {
-    width: auto;
-    align-self: stretch;
+    width: 100%;
+    align-self: auto;
     flex: none;
   }
 
   .ca-settings-panel .ca-settings-panel__secondary {
-    width: auto;
-    align-self: stretch;
+    width: 100%;
+    align-self: auto;
     flex: none;
   }
 }

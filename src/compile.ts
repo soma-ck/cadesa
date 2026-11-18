@@ -14,12 +14,20 @@ const GRID_ALIGN = { start: "start", center: "center", end: "end", stretch: "str
 interface Ctx {
   /** The element is a text leaf in some state (text set, layout never set). */
   leafText: boolean;
-  /** The element has a maxWidth in some state. */
-  maxWidth: boolean;
+  /** What applies once this rule does: the base props with every override up to this one merged in. */
+  eff: Props;
+  /** A component root's base rule. */
+  rootBase: boolean;
+  /** The element has a height in some state. */
+  height: boolean;
+  /** A rule that applies whenever this one does (the base, or a wider override) makes it a layer. */
+  layerBefore: boolean;
 }
 
 function decls(model: Model, p: Props, ctx: Ctx): string[] {
   const out: string[] = [];
+  // A root without a layout is a block, whatever its tag: the engine never lays out inline boxes.
+  if (ctx.rootBase && !p.layout) out.push("display: block");
   if (p.layout) {
     const l = p.layout;
     const gap = `gap: ${l.gap ? v(l.gap) : "0"}`;
@@ -62,16 +70,27 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.shadow) out.push(`box-shadow: ${v(p.shadow)}`);
   if (p.radius) out.push(`border-radius: ${v(p.radius)}`);
   // max-width + auto margins. width: 100% so a flex or grid parent doesn't shrink-wrap the box
-  // (auto margins switch off stretching).
-  if (p.maxWidth) out.push(...(p.width && !("keyword" in p.width) ? [] : ["width: 100%"]), `max-width: ${v(p.maxWidth)}`, "margin-inline: auto");
-  if (p.measure) out.push(`max-width: ${v(p.measure)}`);
+  // (auto margins switch off stretching). maxWidth and measure share max-width: when both apply
+  // (in this rule or merged from an earlier one), the smaller wins.
+  const e = ctx.eff;
+  const fixedWidth = !!e.width && !("keyword" in e.width);
+  if (p.maxWidth || p.measure) {
+    if (p.maxWidth && !fixedWidth) out.push("width: 100%");
+    const caps = [e.maxWidth, e.measure].filter((r): r is Ref => !!r).map(v);
+    out.push(`max-width: ${caps.length > 1 ? `min(${caps.join(", ")})` : caps[0]}`);
+    if (p.maxWidth) out.push("margin-inline: auto");
+  }
   if (p.width) {
-    if ("keyword" in p.width) out.push(ctx.maxWidth ? "width: 100%" : "width: auto", "align-self: stretch", "flex: none");
+    // fill: the full width of the parent. Not align-self: stretch, which in a grid or layer stretches
+    // the height instead.
+    if ("keyword" in p.width) out.push("width: 100%", "align-self: auto", "flex: none");
     else out.push(`width: ${v(p.width)}`, "align-self: auto", "flex: none");
   }
-  if (p.height) out.push(`height: ${v(p.height)}`);
+  // min-height too: a column flex parent shorter than its content would otherwise shrink the box.
+  if (p.height) out.push(`height: ${v(p.height)}`, `min-height: ${v(p.height)}`);
   // width: 100% + height: auto beat <img width/height> attributes, so the slot sizes the image.
-  if (p.aspect) out.push(...(p.width || p.maxWidth ? [] : ["width: 100%"]), `aspect-ratio: ${p.aspect.raw}`, "height: auto");
+  if (p.aspect)
+    out.push(...(e.width || e.maxWidth ? [] : ["width: 100%"]), `aspect-ratio: ${p.aspect.raw}`, "height: auto", ...(ctx.height ? ["min-height: auto"] : []));
   if (p.fit) out.push(`object-fit: ${p.fit.value}`);
   // A fixed-height text box centers its lines vertically. align-content on a block container keeps
   // inline formatting intact (display: flex would split <strong> etc. into separate items).
@@ -85,9 +104,10 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
       `line-height: ${role.lineHeight}`,
       `color: ${v(role.color)}`,
     );
-    if (role.letterSpacing !== undefined) out.push(`letter-spacing: ${role.letterSpacing}em`);
-    if (role.transform) out.push(`text-transform: ${role.transform}`);
-    if (role.wrap) out.push(`overflow-wrap: ${role.wrap}`);
+    // Always set, never left to the reset: descendants (<p>, <a>, <strong>) inherit them.
+    out.push(`letter-spacing: ${role.letterSpacing !== undefined ? `${role.letterSpacing}em` : "normal"}`);
+    out.push(`text-transform: ${role.transform ?? "none"}`);
+    out.push(`overflow-wrap: ${role.wrap ?? "normal"}`);
     if (role.decoration) out.push(`text-decoration: ${role.decoration}`);
   }
   if (p.textAlign) out.push(`text-align: ${p.textAlign.value}`);
@@ -103,6 +123,8 @@ function rule(selector: string, body: string[], indent = ""): string {
 function rules(model: Model, selector: string, p: Props, ctx: Ctx, indent = ""): string[] {
   const out = [rule(selector, decls(model, p, ctx), indent)];
   if (p.layout?.pattern === "layer") out.push(rule(`${selector} > *`, ["grid-area: 1 / 1"], indent));
+  // An override that turns a layer into another pattern must release its children from the one cell.
+  else if (p.layout && ctx.layerBefore) out.push(rule(`${selector} > *`, ["grid-area: auto"], indent));
   return out.filter(Boolean);
 }
 
@@ -150,12 +172,9 @@ const RESET = [
   "color: inherit",
   "background: transparent",
   "font-kerning: normal",
-  "letter-spacing: normal",
   "word-spacing: normal",
   "text-indent: 0",
-  "text-transform: none",
   "white-space: normal",
-  "overflow-wrap: normal",
   "word-break: normal",
   "hyphens: manual",
   "list-style: none",
@@ -185,23 +204,33 @@ export function compile(model: Model): string {
       const t = model.tokens.get(k)!;
       return `${varName({ kind: t.category, name: t.name })}: ${t.raw}`;
     });
-    const ctx = (slot?: string): Ctx => {
-      const all = [slot ? c.slots.get(slot)!.props : c.props, ...c.when.map((w) => (slot ? w.slots.get(slot) : w.props)).filter(Boolean)] as Props[];
-      return { leafText: all.some((p) => p.text) && !all.some((p) => p.layout), maxWidth: all.some((p) => p.maxWidth) };
+    // Overrides are sorted widest breakpoint first, so when override k applies, so do 0..k-1.
+    const ctx = (slot: string | undefined, upTo: number): Ctx => {
+      const states = [slot ? c.slots.get(slot)!.props : c.props, ...c.when.map((w) => (slot ? w.slots.get(slot) : w.props))];
+      const all = states.filter(Boolean) as Props[];
+      const eff: Props = {};
+      for (const s of states.slice(0, upTo + 2)) if (s) Object.assign(eff, s);
+      return {
+        leafText: all.some((p) => p.text) && !all.some((p) => p.layout),
+        height: all.some((p) => p.height),
+        layerBefore: states.slice(0, upTo + 1).some((s) => s?.layout?.pattern === "layer"),
+        eff,
+        rootBase: !slot && upTo === -1,
+      };
     };
-    const [rootRule, ...rootExtra] = rules(model, root, c.props, ctx());
-    const withVars = rule(root, [...vars, ...decls(model, c.props, ctx())]);
+    const [rootRule, ...rootExtra] = rules(model, root, c.props, ctx(undefined, -1));
+    const withVars = rule(root, [...vars, ...decls(model, c.props, ctx(undefined, -1))]);
     parts.push(header + (withVars || rootRule || ""), ...rootExtra);
-    for (const s of c.slots.values()) parts.push(...rules(model, slotSel(s.name), s.props, ctx(s.name)));
+    for (const s of c.slots.values()) parts.push(...rules(model, slotSel(s.name), s.props, ctx(s.name, -1)));
 
-    for (const w of c.when) {
+    c.when.forEach((w, k) => {
       const bp = model.breakpoints.find((b) => b.name === w.breakpoint)!;
       const inner = [
-        ...rules(model, root, w.props, ctx(), "  "),
-        ...[...w.slots].flatMap(([s, p]) => rules(model, slotSel(s), p, ctx(s), "  ")),
+        ...rules(model, root, w.props, ctx(undefined, k), "  "),
+        ...[...w.slots].flatMap(([s, p]) => rules(model, slotSel(s), p, ctx(s, k), "  ")),
       ];
       if (inner.length) parts.push(`@media (max-width: ${bp.length.raw}) {\n${inner.join("\n")}}\n`);
-    }
+    });
   }
   return parts.filter(Boolean).join("\n");
 }

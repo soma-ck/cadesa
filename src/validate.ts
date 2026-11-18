@@ -438,7 +438,11 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
 
   if (diagnostics.length) return { diagnostics };
   for (const c of components.values())
-    for (const [where, p] of [[c.path, c.props] as const, ...[...c.slots.values()].map((s) => [s.path, s.props] as const)])
+    for (const [where, p] of [
+      [c.path, c.props] as const,
+      ...[...c.slots.values()].map((s) => [s.path, s.props] as const),
+      ...c.when.flatMap((w) => [[w.path, w.props] as const, ...[...w.slots].map(([s, p]) => [`${w.path}.slots.${s}`, p] as const)]),
+    ])
       if (p.aspect && p.height) err([...where.split("."), "aspect"], "aspect and height both set the height", { expected: "keep one of them" });
 
   let page: Model["page"];

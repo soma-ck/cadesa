@@ -239,7 +239,8 @@ export function liftParsed(css: ParsedCss): LiftResult {
   // 1. Classify rules.
   let pageBackground: Decl | undefined;
   /** Elements whose children are all placed in one grid cell (a layer), per state max px. */
-  const layerChildren = new Map<string, Set<number>>();
+  /** Per class: the states (max-width px, Infinity = base) whose "> *" rule puts children in one cell (true) or releases them (false). */
+  const layerChildren = new Map<string, Map<number, boolean>>();
   const byClass = new Map<string, { block: string; element?: string; rules: ElementRule[] }>();
   const blockOrder: string[] = [];
   for (const rule of css.rules) {
@@ -274,11 +275,12 @@ export function liftParsed(css: ParsedCss): LiftResult {
       // Layer children: ".x > * { grid-area: 1 / 1 }".
       const lc = /^(.+?)\s*>\s*\*$/.exec(sel);
       const lt = lc ? classify(lc[1]) : undefined;
-      if (lt && (lt.kind === "root" || lt.kind === "slot") && rule.decls.length === 1 && /^grid-area$/.test(rule.decls[0].prop) && /^1\s*\/\s*1(\s*\/\s*2\s*\/\s*2)?$/.test(rule.decls[0].value.trim()) && (!rule.media || rule.media.maxPx !== undefined)) {
+      const ga = rule.decls.length === 1 && /^grid-area$/.test(rule.decls[0].prop) ? rule.decls[0].value.trim() : undefined;
+      if (lt && (lt.kind === "root" || lt.kind === "slot") && ga && /^(?:1\s*\/\s*1(\s*\/\s*2\s*\/\s*2)?|auto)$/.test(ga) && (!rule.media || rule.media.maxPx !== undefined)) {
         const cls = lt.kind === "root" ? lt.block : `${lt.block}__${lt.element}`;
-        const set = layerChildren.get(cls) ?? new Set<number>();
-        set.add(rule.media?.maxPx ?? Infinity);
-        layerChildren.set(cls, set);
+        const states = layerChildren.get(cls) ?? new Map<number, boolean>();
+        states.set(rule.media?.maxPx ?? Infinity, ga !== "auto");
+        layerChildren.set(cls, states);
         continue;
       }
       const t = classify(sel);
@@ -488,7 +490,9 @@ export function liftElements(input: LiftInput): LiftResult {
       const colGap = take("column-gap");
       const cv = cols?.value.trim() ?? "";
       const auto = /^repeat\(\s*auto-fill\s*,\s*minmax\(\s*(?:min\(\s*(.+?)\s*,\s*100%\s*\)|([^,]+?))\s*,\s*1fr\s*\)\s*\)$/.exec(cv);
-      const layered = [...(layerChildren.get(e.className) ?? [])].some((px) => px >= s);
+      // The narrowest "> *" rule that applies in this state decides.
+      const applying = [...(layerChildren.get(e.className) ?? [])].filter(([px]) => px >= s).sort((a, b) => a[0] - b[0]);
+      const layered = applying[0]?.[1] ?? false;
       const GA: Record<string, string> = { start: "start", "flex-start": "start", center: "center", end: "end", "flex-end": "end", stretch: "stretch", normal: "stretch" };
       const a = align ? GA[align.value.trim()] : "stretch";
       if (align && !a) note(e, s, align, `align-items: ${align.value.trim()} has no Cadesa equivalent`, "geometry");
@@ -566,7 +570,16 @@ export function liftElements(input: LiftInput): LiftResult {
     const margins = ["top", "right", "bottom", "left"].map((k) => take(`margin-${k}`));
     const maxW = take("max-width");
     const autoX = margins[1]?.value.trim() === "auto" && margins[3]?.value.trim() === "auto";
-    if (maxW && maxW.value.trim() !== "none") {
+    const both = maxW && /^min\(\s*([^,]+?)\s*,\s*([^,]+?)\s*\)$/.exec(maxW.value.trim());
+    if (both && autoX) {
+      // Cadesa's own output when maxWidth and measure both apply: max-width: min(maxWidth, measure).
+      const a = lengthToken("size", both[1]);
+      const b = lengthToken("size", both[2]);
+      if (a && b) {
+        out.maxWidth = a;
+        out.measure = b;
+      } else note(e, s, maxW!, "max-width must be a px or rem length", "geometry");
+    } else if (maxW && maxW.value.trim() !== "none") {
       const t = lengthToken("size", maxW.value);
       if (!t) note(e, s, maxW, "max-width must be a px or rem length", "geometry");
       else if (autoX) out.maxWidth = t;
@@ -636,6 +649,8 @@ export function liftElements(input: LiftInput): LiftResult {
     }
     for (const p of ["min-width", "min-height", "max-height"]) {
       const d = take(p);
+      // min-height equal to the height is what Cadesa emits with every height.
+      if (p === "min-height" && d && height && d.value.trim() === height.value.trim()) continue;
       if (d && !["0", "auto", "none", "0px"].includes(d.value.trim())) note(e, s, d, `${p} is not modelled`, "geometry");
     }
 

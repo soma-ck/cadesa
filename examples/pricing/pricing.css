@@ -10,12 +10,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -31,12 +28,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -77,6 +71,9 @@
   font-weight: 650;
   line-height: 1.3;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-plan-card .ca-plan-card__price {
@@ -85,6 +82,9 @@
   font-weight: 700;
   line-height: 1.1;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-plan-card .ca-plan-card__features {
@@ -101,6 +101,9 @@
   font-weight: 400;
   line-height: 1.45;
   color: var(--ca-color-muted);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-plan-card .ca-plan-card__cta {
@@ -108,20 +111,24 @@
   background-color: var(--ca-color-accent);
   border-radius: var(--ca-radius-control);
   height: var(--ca-size-control);
+  min-height: var(--ca-size-control);
   align-content: center;
   font-family: var(--ca-font-ui);
   font-size: 0.9375rem;
   font-weight: 600;
   line-height: 1.25;
   color: var(--ca-color-surface);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
   text-decoration: none;
   text-align: center;
 }
 
 @media (max-width: 40rem) {
   .ca-plan-card {
-    width: auto;
-    align-self: stretch;
+    width: 100%;
+    align-self: auto;
     flex: none;
   }
 }
@@ -162,6 +169,9 @@
   font-weight: 700;
   line-height: 1.15;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-pricing .ca-pricing__lede {
@@ -170,6 +180,9 @@
   font-weight: 400;
   line-height: 1.5;
   color: var(--ca-color-muted);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-pricing .ca-pricing__plans {

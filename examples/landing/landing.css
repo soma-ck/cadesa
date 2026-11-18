@@ -15,12 +15,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -36,12 +33,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -57,12 +51,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -78,12 +69,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -162,6 +150,8 @@
   line-height: 0.98;
   color: var(--ca-color-foam);
   letter-spacing: -0.035em;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-hero .ca-hero__lede {
@@ -173,6 +163,9 @@
   font-weight: 420;
   line-height: 1.45;
   color: var(--ca-color-mist);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-hero .ca-hero__actions {
@@ -189,12 +182,16 @@
   box-shadow: var(--ca-shadow-lift);
   border-radius: var(--ca-radius-control);
   height: var(--ca-size-control);
+  min-height: var(--ca-size-control);
   align-content: center;
   font-family: var(--ca-font-ui);
   font-size: 1.0625rem;
   font-weight: 640;
   line-height: 1.25;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
   text-decoration: none;
   text-align: center;
 }
@@ -204,12 +201,16 @@
   border: 1px solid var(--ca-color-mist);
   border-radius: var(--ca-radius-control);
   height: var(--ca-size-control);
+  min-height: var(--ca-size-control);
   align-content: center;
   font-family: var(--ca-font-ui);
   font-size: 1.0625rem;
   font-weight: 600;
   line-height: 1.25;
   color: var(--ca-color-foam);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
   text-decoration: none;
   text-align: center;
 }
@@ -222,8 +223,8 @@
   }
 
   .ca-hero .ca-hero__title {
-    width: auto;
-    align-self: stretch;
+    width: 100%;
+    align-self: auto;
     flex: none;
   }
 }
@@ -250,17 +251,22 @@
     line-height: 1.02;
     color: var(--ca-color-foam);
     letter-spacing: -0.03em;
+    text-transform: none;
+    overflow-wrap: normal;
   }
 
   .ca-hero .ca-hero__lede {
-    width: auto;
-    align-self: stretch;
+    width: 100%;
+    align-self: auto;
     flex: none;
     font-family: var(--ca-font-ui);
     font-size: 1.0625rem;
     font-weight: 420;
     line-height: 1.45;
     color: var(--ca-color-mist);
+    letter-spacing: normal;
+    text-transform: none;
+    overflow-wrap: normal;
   }
 
   .ca-hero .ca-hero__actions {
@@ -272,14 +278,14 @@
   }
 
   .ca-hero .ca-hero__book {
-    width: auto;
-    align-self: stretch;
+    width: 100%;
+    align-self: auto;
     flex: none;
   }
 
   .ca-hero .ca-hero__how {
-    width: auto;
-    align-self: stretch;
+    width: 100%;
+    align-self: auto;
     flex: none;
   }
 }
@@ -324,6 +330,8 @@
   line-height: 1.1;
   color: var(--ca-color-ink);
   letter-spacing: -0.02em;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-trips .ca-trips__intro {
@@ -333,6 +341,9 @@
   font-weight: 400;
   line-height: 1.55;
   color: var(--ca-color-slate);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-trips .ca-trips__list {
@@ -388,6 +399,8 @@
   line-height: 1.25;
   color: var(--ca-color-ink);
   letter-spacing: -0.01em;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-trip-card .ca-trip-card__meta {
@@ -396,6 +409,9 @@
   font-weight: 400;
   line-height: 1.45;
   color: var(--ca-color-slate);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-trip-card .ca-trip-card__price {
@@ -404,6 +420,9 @@
   font-weight: 640;
   line-height: 1.45;
   color: var(--ca-color-kelp);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 /* closing: One quiet, dark band that asks for the booking. */
@@ -452,6 +471,8 @@
   line-height: 1.1;
   color: var(--ca-color-foam);
   letter-spacing: -0.02em;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-closing .ca-closing__body {
@@ -461,6 +482,9 @@
   font-weight: 400;
   line-height: 1.55;
   color: var(--ca-color-mist);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-closing .ca-closing__actions {
@@ -476,12 +500,16 @@
   background-color: var(--ca-color-buoy);
   border-radius: var(--ca-radius-control);
   height: var(--ca-size-control);
+  min-height: var(--ca-size-control);
   align-content: center;
   font-family: var(--ca-font-ui);
   font-size: 1.0625rem;
   font-weight: 640;
   line-height: 1.25;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
   text-decoration: none;
   text-align: center;
 }

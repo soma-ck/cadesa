@@ -15,12 +15,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -36,12 +33,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -57,12 +51,9 @@
   color: inherit;
   background: transparent;
   font-kerning: normal;
-  letter-spacing: normal;
   word-spacing: normal;
   text-indent: 0;
-  text-transform: none;
   white-space: normal;
-  overflow-wrap: normal;
   word-break: normal;
   hyphens: manual;
   list-style: none;
@@ -118,6 +109,9 @@
   font-weight: 760;
   line-height: 1.05;
   color: var(--ca-color-white);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 /* stats */
@@ -151,6 +145,9 @@
   font-weight: 700;
   line-height: 1.2;
   color: var(--ca-color-white);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-stats .ca-stats__mail {
@@ -159,6 +156,8 @@
   font-weight: 500;
   line-height: 1.5;
   color: var(--ca-color-white);
+  letter-spacing: normal;
+  text-transform: none;
   overflow-wrap: anywhere;
 }
 
@@ -188,6 +187,9 @@
   font-weight: 400;
   line-height: 1.5;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
+  overflow-wrap: normal;
 }
 
 .ca-faq .ca-faq__contact {
@@ -199,6 +201,8 @@
   font-weight: 500;
   line-height: 1.5;
   color: var(--ca-color-ink);
+  letter-spacing: normal;
+  text-transform: none;
   overflow-wrap: anywhere;
 }
 
