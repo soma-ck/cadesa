@@ -386,6 +386,8 @@ Every read command and MCP tool also accepts `--css <file.css>` in place of `--s
 
 ## Language reference
 
+Write it the way you would anyway: `version` is optional, names can be kebab-case or camelCase, a plain number is px (`gap: 8`), line heights can be ratios or lengths (`1.5`, `"24px"`, `"150%"`), weights can be `bold`, and colors can be hex or `rgb()`. Everything is normalized before compiling, so the CSS is the same either way.
+
 | Key | Value | Compiles to |
 | --- | --- | --- |
 | `layout.pattern: stack` | | `display:flex; flex-direction:column; align-items:stretch` |

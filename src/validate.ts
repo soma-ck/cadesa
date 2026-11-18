@@ -21,10 +21,36 @@ import {
   type TokenCategory,
 } from "./model.js";
 
-const IDENT = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/;
+// kebab-case or camelCase; no underscores (BEM's "__" separates component and slot).
+const IDENT = /^[A-Za-z][A-Za-z0-9]*(?:-[A-Za-z0-9]+)*$/;
 const LENGTH = /^(?:\d+(?:\.\d+)?|\.\d+)(rem|px)$/;
 const COLOR = /^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/;
-const IDENT_HELP = "a lowercase kebab-case name, e.g. section-title";
+const IDENT_HELP = "a name of letters, digits and hyphens starting with a letter, e.g. section-title or sectionTitle";
+
+/** Lengths as people write them: "1.5rem", "16px", 16 (px), "16" (px). Returns CSS ("16px") or undefined. */
+function asLength(v: unknown): string | undefined {
+  if (typeof v === "number" && v >= 0 && isFinite(v)) return `${v}px`;
+  if (typeof v !== "string") return undefined;
+  const t = v.trim();
+  if (LENGTH.test(t)) return t;
+  if (/^(?:\d+(?:\.\d+)?|\.\d+)$/.test(t)) return `${t}px`;
+  return undefined;
+}
+
+const NAMED_COLORS: Record<string, string> = { white: "#ffffff", black: "#000000", transparent: "#00000000" };
+
+/** Colors as people write them: hex, rgb()/rgba(), white/black/transparent. Returns lowercase hex. */
+function asColor(v: unknown): string | undefined {
+  if (typeof v !== "string") return undefined;
+  const s = v.trim().toLowerCase();
+  if (COLOR.test(s)) return s;
+  if (NAMED_COLORS[s]) return NAMED_COLORS[s];
+  const m = /^rgba?\(\s*(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)[\s,]+(\d+(?:\.\d+)?)(?:[\s,/]+(\d*\.?\d+%?))?\s*\)$/.exec(s);
+  if (!m) return undefined;
+  const h = (n: number) => Math.max(0, Math.min(255, Math.round(n))).toString(16).padStart(2, "0");
+  const a = m[4] === undefined ? 1 : m[4].endsWith("%") ? parseFloat(m[4]) / 100 : parseFloat(m[4]);
+  return `#${h(+m[1])}${h(+m[2])}${h(+m[3])}${a >= 1 ? "" : h(a * 255)}`;
+}
 
 const TOP_KEYS = ["version", "prefix", "tokens", "text", "breakpoints", "page", "styles"];
 const PAINT = /^(?:(?:repeating-)?(?:linear|radial|conic)-gradient|url|image-set)\(/;
@@ -96,7 +122,8 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   const top = obj(data, [], "a Cadesa document");
   if (!top) return { diagnostics };
   keys(top, [], TOP_KEYS);
-  if (top.version !== 1) err(["version"], "unsupported or missing version", { expected: "1", got: top.version });
+  // version defaults to 1; anything else is a future format this release can't read.
+  if (top.version !== undefined && top.version !== 1) err(["version"], "unsupported version", { expected: "1 (or leave it out)", got: top.version });
   if (top.prefix !== undefined && (typeof top.prefix !== "string" || !PREFIX.test(top.prefix)))
     err(["prefix"], "invalid class prefix", { expected: 'a lowercase prefix ending in "-", or "" for none (default "ca-")', got: top.prefix });
 
@@ -113,17 +140,19 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         const path = [...catPath, name];
         if (!ident(name, path)) continue;
         if (LENGTH_CATEGORIES.has(category)) {
-          if (typeof value !== "string" || !LENGTH.test(value)) {
-            err(path, `invalid ${category} length`, { expected: "a length in rem or px, e.g. 1.5rem", got: value });
+          const len = asLength(value);
+          if (!len) {
+            err(path, `invalid ${category} length`, { expected: "a length in rem or px, e.g. 1.5rem or 24px (a plain number is px)", got: value });
             continue;
           }
-          tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: value, px: parseLength(value).px });
+          tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: len, px: parseLength(len).px });
         } else if (category === "color") {
-          if (typeof value !== "string" || !COLOR.test(value)) {
-            err(path, "invalid color", { expected: 'a hex color, e.g. "#191b20"', got: value });
+          const hex = asColor(value);
+          if (!hex) {
+            err(path, "invalid color", { expected: 'a hex or rgb() color, e.g. "#191b20" or "rgb(25, 27, 32)"', got: value });
             continue;
           }
-          tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: value.toLowerCase() });
+          tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: hex });
         } else if (category === "paint") {
           if (typeof value !== "string" || !PAINT.test(value.trim())) {
             err(path, "invalid paint", { expected: 'a background-image value: a gradient or url(), e.g. "linear-gradient(#000a, #0000), url(hero.jpg)"', got: value });
@@ -182,16 +211,29 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           ok = false;
         }
       if (!ok) continue;
-      if (typeof role.size !== "string" || !LENGTH.test(role.size)) {
-        err([...path, "size"], "invalid font size", { expected: "a length in rem or px", got: role.size });
+      const sizeRaw = asLength(role.size);
+      if (!sizeRaw) {
+        err([...path, "size"], "invalid font size", { expected: "a length in rem or px, e.g. 1rem or 16px (a plain number is px)", got: role.size });
         ok = false;
       }
-      if (typeof role.weight !== "number" || !Number.isInteger(role.weight) || role.weight < 1 || role.weight > 1000) {
-        err([...path, "weight"], "invalid font weight", { expected: "an integer from 1 to 1000", got: role.weight });
+      const WEIGHTS: Record<string, number> = { normal: 400, bold: 700 };
+      const weight =
+        typeof role.weight === "number" ? role.weight : typeof role.weight === "string" ? WEIGHTS[role.weight.trim()] ?? Number(role.weight) : NaN;
+      if (!Number.isInteger(weight) || weight < 1 || weight > 1000) {
+        err([...path, "weight"], "invalid font weight", { expected: "an integer from 1 to 1000, or normal/bold", got: role.weight });
         ok = false;
       }
-      if (typeof role.lineHeight !== "number" || role.lineHeight <= 0) {
-        err([...path, "lineHeight"], "invalid line height", { expected: "a unitless number > 0, e.g. 1.5", got: role.lineHeight });
+      // Line height: a ratio (1.5), or "24px"/"1.5rem"/"150%", converted to the ratio CSS will use.
+      let lineHeight = NaN;
+      if (typeof role.lineHeight === "number") lineHeight = role.lineHeight;
+      else if (typeof role.lineHeight === "string") {
+        const t = role.lineHeight.trim();
+        if (/^\d*\.?\d+%$/.test(t)) lineHeight = parseFloat(t) / 100;
+        else if (/^\d*\.?\d+$/.test(t)) lineHeight = parseFloat(t);
+        else if (LENGTH.test(t) && sizeRaw) lineHeight = Math.round((parseLength(t).px / parseLength(sizeRaw).px) * 1e6) / 1e6;
+      }
+      if (!(lineHeight > 0)) {
+        err([...path, "lineHeight"], "invalid line height", { expected: 'a ratio like 1.5, or a length like "24px" or "150%"', got: role.lineHeight });
         ok = false;
       }
       if (role.letterSpacing !== undefined && (typeof role.letterSpacing !== "number" || role.letterSpacing < -0.2 || role.letterSpacing > 1)) {
@@ -217,9 +259,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         name,
         path: path.join("."),
         font,
-        size: parseLength(role.size as string),
-        weight: role.weight as number,
-        lineHeight: role.lineHeight as number,
+        size: parseLength(sizeRaw!),
+        weight,
+        lineHeight,
         decoration: role.decoration as "none" | "underline" | undefined,
         letterSpacing: role.letterSpacing as number | undefined,
         transform: role.transform as "uppercase" | "none" | undefined,
@@ -236,11 +278,12 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
     for (const [name, value] of Object.entries(bpObj)) {
       const path = ["breakpoints", name];
       if (!ident(name, path)) continue;
-      if (typeof value !== "string" || !LENGTH.test(value)) {
-        err(path, "invalid breakpoint", { expected: "a max-width length in rem or px, e.g. 36rem", got: value });
+      const len = asLength(value);
+      if (!len) {
+        err(path, "invalid breakpoint", { expected: "a max-width length in rem or px, e.g. 36rem or 576px", got: value });
         continue;
       }
-      breakpoints.push({ name, path: path.join("."), length: parseLength(value) });
+      breakpoints.push({ name, path: path.join("."), length: parseLength(len) });
     }
   }
 
