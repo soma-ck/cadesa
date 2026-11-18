@@ -106,9 +106,14 @@ const PROPS: (keyof ResolvedProps)[] = [
   "overflow",
 ];
 
-const sig = (r?: Resolved<unknown>) => (r ? JSON.stringify([r.value, r.steps.map((s) => s.path)]) : "");
+const sigOf = (r?: Resolved<unknown>) => (r ? JSON.stringify([r.value, r.steps.map((s) => s.path)]) : "");
 
-export function diffLayouts(a: Layout, b: Layout): WidthDiff {
+/**
+ * Compare two layouts of the same page. `valuesOnly` compares properties by value alone, for two
+ * lifts of different CSS, whose generated source paths aren't comparable.
+ */
+export function diffLayouts(a: Layout, b: Layout, opts: { valuesOnly?: boolean } = {}): WidthDiff {
+  const sig = opts.valuesOnly ? (r?: Resolved<unknown>) => (r ? JSON.stringify(r.value) : "") : sigOf;
   const before = new Map<string, Box>([...walk(a.boxes)].map((x) => [x.id, x]));
   const elements: ElementDiff[] = [];
   const added: string[] = [];

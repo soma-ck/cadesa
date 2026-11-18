@@ -9,7 +9,7 @@ import { compile } from "./compile.js";
 import { explain } from "./explain.js";
 import { parseFixture, type Fixture } from "./fixture.js";
 import { loadSource, loadSourceFile, type Source } from "./load.js";
-import { modelOf, render, whatif, type Change, type WhatIf } from "./project.js";
+import { diffLayouts, modelOf, render, whatif, type Change, type WhatIf } from "./project.js";
 import { walk, type Layout } from "./engine/layout.js";
 import type { Model } from "./model.js";
 import { liftTailwind, type TailwindLift } from "./tailwind/lift.js";
@@ -235,8 +235,11 @@ function whatifWidths(model: Model, p: Page): number[] {
   return [...out].sort((a, b) => a - b);
 }
 
-export function whatifCmd(s: SourceInput & { fixture: string; widths?: number[]; changes: Change[] }): Result {
-  if (!s.changes.length) throw new InputError("whatif needs at least one change (path=value)");
+export function whatifCmd(
+  s: SourceInput & { fixture: string; widths?: number[]; changes: Change[]; after?: string; addCss?: string },
+): Result {
+  if (s.after || s.addCss) return cssWhatifCmd({ ...s, css: s.css ?? "" });
+  if (!s.changes.length) throw new InputError("whatif needs at least one change (path=value), or with --css: --after <new.css> or --add-css <rules>");
   const t0 = performance.now();
   const p = pageOf(s);
   const src = load(s);
@@ -261,6 +264,63 @@ export function whatifCmd(s: SourceInput & { fixture: string; widths?: number[];
   const [a, b] = [approx(result.before!), approx(result.after!)];
   result.widths.forEach((w, i) => (w.approximate = [...new Set([...a[i], ...b[i]])]));
   const cov = coverage(result.after!, impactFor(s, result.after!)?.impacts);
+  return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
+}
+
+/**
+ * whatif for plain CSS: lay the page out with its stylesheets as they are and as edited (other
+ * files in place of them with `after`, or `addCss` rules appended to the last one), and report
+ * what moves at each width. Nothing is written.
+ */
+function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; after?: string; addCss?: string }): Result {
+  if (!s.css) throw new InputError("--after and --add-css preview a CSS edit: they need the page's stylesheets as --css");
+  const t0 = performance.now();
+  const split = (l: string) => l.split(",").map((f) => f.trim()).filter(Boolean);
+  const html = readFileSync(s.fixture, "utf8");
+  const read = (files: string[]) => files.map((file) => ({ file, text: readFileSync(file, "utf8") }));
+  const beforeFiles = read(split(s.css));
+  let afterFiles = beforeFiles;
+  if (s.after) {
+    if (split(s.after).length !== beforeFiles.length)
+      throw new InputError(`--after names ${split(s.after).length} stylesheet(s) and --css ${beforeFiles.length}: give one file for each, in the same order (unchanged ones repeated)`);
+    afterFiles = read(split(s.after));
+    // Rules keep pointing at the file the page links, so the cascade order is unchanged.
+    afterFiles = afterFiles.map((f, i) => ({ file: beforeFiles[i].file, text: f.text }));
+  }
+  if (s.addCss) {
+    const last = afterFiles[afterFiles.length - 1];
+    afterFiles = [...afterFiles.slice(0, -1), { file: last.file, text: `${last.text}\n${s.addCss}\n` }];
+  }
+  const lb = liftCssPage(s.fixture, html, beforeFiles);
+  const la = liftCssPage(s.fixture, html, afterFiles);
+  const mb = modelOf(loadSource(`${s.fixture} (lifted)`, lb.yaml));
+  const ma = modelOf(loadSource(`${s.fixture} (lifted, edited)`, la.yaml));
+  const pb: Page = { label: s.fixture, fixture: lb.fixture, at: lb.fixtureAt, tw: lb };
+  const pa: Page = { label: s.fixture, fixture: la.fixture, at: la.fixtureAt, tw: la };
+  const widths = s.widths?.length ? s.widths : [...new Set([...whatifWidths(mb, pb), ...whatifWidths(ma, pa)])].sort((a, b) => a - b);
+  const before = renderPage(mb, pb, widths);
+  const after = renderPage(ma, pa, widths);
+  const ib = tailwindImpact(lb, before);
+  const ia = tailwindImpact(la, after);
+  const approx = (ls: Layout[], imp: WidthImpact[], i: number) => {
+    const ids = new Set((imp[i]?.uncertain ?? []).map((u) => u.id));
+    for (const b of walk(ls[i].boxes)) if (b.assumptions.length) ids.add(b.id);
+    return ids;
+  };
+  const result: WhatIf = {
+    changes: [
+      ...(s.after ? split(s.css).map((f, i) => ({ path: f, from: "as is", to: split(s.after!)[i] })).filter((c) => c.path !== c.to) : []),
+      ...(s.addCss ? [{ path: split(s.css).pop()!, from: "as is", to: `+ ${s.addCss.replace(/\s+/g, " ").trim()}` }] : []),
+    ],
+    widths: widths.map((w, i) => {
+      const d = diffLayouts(before[i], after[i], { valuesOnly: true });
+      // The generated source's provenance means nothing to someone editing CSS: show values only.
+      for (const e of d.elements) for (const p of e.props) if (p.to) p.to = { ...p.to, steps: [] };
+      d.approximate = [...new Set([...approx(before, ib, i), ...approx(after, ia, i)])];
+      return d;
+    }),
+  };
+  const cov = coverage(after, ia);
   return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
 }
 

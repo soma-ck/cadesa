@@ -29,6 +29,7 @@ Usage:
   cadesa validate <source.cadesa.yaml>
   cadesa render   <fixture.html> --source <source.cadesa.yaml> [--widths 390,1280] [--lines]
   cadesa whatif   <fixture.html> --source <source.cadesa.yaml> --set <path=value> [--set ...]
+  cadesa whatif   <page.html> --css <a.css,b.css> (--after <a.css,b.new.css> | --add-css "<rules>")
   cadesa explain  <fixture.html> --source <source.cadesa.yaml> --id <fixture-id>
   cadesa check    <fixture.html> --source <source.cadesa.yaml>
   cadesa check    <page.html> --css <a.css,b.css> [--verify]
@@ -76,6 +77,10 @@ Options:
   --lines    render: print each wrapped line with its width
   --svg f    render: also draw the predicted boxes as an SVG wireframe (f-<width>.svg per width)
   --verify   check: confirm each finding in Chromium (with --css or --tailwind)
+  --after f  whatif with --css: preview the page with these stylesheets instead (one per --css
+             file, same order), e.g. --css bootstrap.css,app.css --after bootstrap.css,app.new.css
+  --add-css  whatif with --css: preview the page with these rules appended to the last
+             stylesheet, e.g. --add-css ".card { padding: 24px }"
   -h, --help show this help
 `;
 
@@ -91,6 +96,8 @@ async function main(argv: string[]) {
       fixture: { type: "string" },
       widths: { type: "string" },
       set: { type: "string", multiple: true },
+      after: { type: "string" },
+      "add-css": { type: "string" },
       id: { type: "string" },
       family: { type: "string" },
       weight: { type: "string" },
@@ -180,7 +187,13 @@ async function main(argv: string[]) {
       r = renderCmd({ ...page(), lines: values.lines, svg: values.svg });
       break;
     case "whatif":
-      r = whatifCmd({ ...page(), widths: values.widths ? widths() : undefined, changes: (values.set ?? []).map(parseSet) });
+      r = whatifCmd({
+        ...page(),
+        widths: values.widths ? widths() : undefined,
+        changes: (values.set ?? []).map(parseSet),
+        after: values.after,
+        addCss: values["add-css"],
+      });
       break;
     case "explain":
       r = explainCmd({ ...page(), id: need(values.id, "--id <fixture-id>") });

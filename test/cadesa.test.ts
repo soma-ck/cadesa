@@ -370,3 +370,21 @@ describe("diffLayouts", () => {
     expect(diffLayouts(fewer, l).added).toEqual(["title"]);
   });
 });
+
+describe("whatif on plain CSS", () => {
+  it("previews rules added to the page's CSS", async () => {
+    const { whatifCmd } = await import("../src/commands.js");
+    const r = whatifCmd({ css: "fixtures/css/panel.css", fixture: "fixtures/css/panel.html", widths: [390], changes: [], addCss: ".icon-button { width: 44px; height: 44px }" });
+    expect(r.text).toContain("whatif fixtures/css/panel.css: as is → + .icon-button { width: 44px; height: 44px }");
+    expect(r.text).toMatch(/#close +width 32px → 44px/);
+    expect(r.text).toMatch(/\d+ boxes below move y \+\d+/);
+    expect(r.text).not.toContain("← ");
+  });
+
+  it("compares edited stylesheets, one per --css file", async () => {
+    const { whatifCmd } = await import("../src/commands.js");
+    const same = whatifCmd({ css: "fixtures/css/panel.css", fixture: "fixtures/css/panel.html", widths: [390, 1280], changes: [], after: "fixtures/css/panel.css" });
+    expect(same.text).toContain("✓ unchanged at 390, 1280px");
+    expect(() => whatifCmd({ css: "fixtures/css/panel.css", fixture: "fixtures/css/panel.html", changes: [], after: "a.css,b.css" })).toThrow(/one file for each/);
+  });
+});

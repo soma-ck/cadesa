@@ -119,8 +119,24 @@ export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage;
     const one = g.w.length === 1;
     const approx = new Set(g.w.flatMap((x) => x.approximate ?? []));
     out.push(`at ${widthRanges(g.widths, all)}${one && w.activeAfter.length ? ` · ${w.activeAfter.join(", ")} active` : ""}`);
-    const idW = Math.max(0, ...w.elements.map((e) => e.id.length)) + 6;
+    // Boxes that only shift vertically (everything below a change) fold into one line per shift.
+    const shiftKey = (e: (typeof w.elements)[number]) => {
+      if (e.props.length || e.geometry.length !== 1 || e.geometry[0].key !== "y") return undefined;
+      const g = e.geometry[0];
+      return signed(g.to - g.from);
+    };
+    const shifts = new Map<string, string[]>();
     for (const e of w.elements) {
+      const k = shiftKey(e);
+      if (k !== undefined) shifts.set(k, [...(shifts.get(k) ?? []), e.id]);
+    }
+    const isFolded = (e: (typeof w.elements)[number]) => {
+      const k = shiftKey(e);
+      return k !== undefined && shifts.get(k)!.length > 2;
+    };
+    const shown = w.elements.filter((e) => !isFolded(e));
+    const idW = Math.max(0, ...shown.map((e) => e.id.length)) + 6;
+    for (const e of shown) {
       const lead = pad(`  ${approx.has(e.id) ? "≈" : " "}#${e.id}`, idW);
       const blank = " ".repeat(idW);
       let first = true;
@@ -131,12 +147,17 @@ export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage;
       for (const p of e.props) {
         line(`${p.prop} ${p.from?.display ?? "unset"} → ${p.to?.display ?? "unset"}`);
         // The breakpoint step names one width ("390px ≤ 576px"); for a range, name the condition.
-        if (p.to) out.push(blank + "  ← " + p.to.steps.map((s) => (one ? s.label : s.label.replace(/\(\d+(?:\.\d+)?px ≤ /, "(≤ "))).join(" ← "));
+        if (p.to?.steps.length) out.push(blank + "  ← " + p.to.steps.map((s) => (one ? s.label : s.label.replace(/\(\d+(?:\.\d+)?px ≤ /, "(≤ "))).join(" ← "));
       }
       // One width: absolute values. Several: the delta, which is what they share.
       if (e.geometry.length)
         line(e.geometry.map((x) => (one ? `${x.key} ${fmtPx(x.from)} → ${fmtPx(x.to)}` : `${x.key} ${signed(x.to - x.from)}`)).join("  "));
     }
+    for (const [k, ids] of shifts)
+        if (ids.length > 2) {
+          const n = ids.filter((id) => approx.has(id)).length;
+          out.push(`  ${n ? "≈" : " "}${ids.length} boxes below move y ${k}: ${list(ids, 4)}${n ? ` (${n} approximate)` : ""}`);
+        }
     if (w.added.length) out.push(`  + shown after the edit: ${list(w.added)}`);
     if (w.removed.length) out.push(`  − hidden after the edit: ${list(w.removed)}`);
     const fresh = w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message));
@@ -217,7 +238,7 @@ export interface Coverage {
 function rootCause(r: string): string {
   return shortenPaths(r)
     .replace(/^(?:moved|resized) by #[\w-]+: /, "")
-    .replace(/(?:\S+\.(?:css|html|ya?ml)(?::\d+)?|\(\S+\.(?:css|html)(?::\d+)?\))\s*/g, "")
+    .replace(/(?:\(\S+\.(?:css|html)(?::\d+)?\)|\S+\.(?:css|html|ya?ml)(?::\d+)?)\s*/g, "")
     .replace(/\s+/g, " ")
     .replace(/ at \d+(?:\.\d+)?px/g, "")
     .trim()

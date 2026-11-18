@@ -37,7 +37,9 @@ Workflow for a style change:
 3. cadesa_whatif your candidate edit: it applies in memory and reports which boxes move at every width,
    new or fixed issues, and confirms widths that did not change. Iterate here; nothing is written.
 4. Edit the .cadesa.yaml file, then cadesa_check and cadesa_build.
-Existing CSS: cadesa_lift converts it (or pass css instead of source to any read tool). Boxes marked ≈ are not
+Existing CSS: pass the page as fixture and its stylesheets as css to any read tool (cadesa_check first). To
+preview a CSS edit before making it, call cadesa_whatif with css and addCss (rules to append) or after
+(the edited files). cadesa_lift converts CSS to a Cadesa source. Boxes marked ≈ are not
 exactly predicted for the original CSS; the report says which declaration or browser default is responsible.
 Tailwind pages: pass the page as fixture and the compiled Tailwind CSS as tailwind to any read tool; utilities are
 lifted the same way, with generated ids (cadesa_lift with tailwind shows them and the source).
@@ -135,7 +137,7 @@ export function createServer(): McpServer {
     {
       title: "Predict an edit",
       description:
-        "Apply one or more edits to the Cadesa source IN MEMORY and report which boxes move or resize, which properties change and the provenance of their new values, new and fixed issues, and the widths that stay unchanged. By default it checks every 20px from 320 to 1440 plus both sides of each breakpoint, grouping widths where the edit does the same thing. Boxes marked ≈ are approximate: unchanged is only guaranteed for boxes predicted exactly. Use this before editing the file to choose an edit and to rule out regressions at other widths. Nothing is written.",
+        "Preview an edit IN MEMORY: edits to the Cadesa source (changes), or with plain CSS (css) rules to add (addCss) or edited stylesheets (after). Reports which boxes move or resize, which properties change and the provenance of their new values, new and fixed issues, and the widths that stay unchanged. By default it checks every 20px from 320 to 1440 plus both sides of each breakpoint, grouping widths where the edit does the same thing. Boxes marked ≈ are approximate: unchanged is only guaranteed for boxes predicted exactly. Use this before editing the file to choose an edit and to rule out regressions at other widths. Nothing is written.",
       inputSchema: {
         ...pageShape,
         widths: z
@@ -144,13 +146,23 @@ export function createServer(): McpServer {
           .describe("Viewport widths in px (default: every 20px from 320 to 1440 plus both sides of each breakpoint)"),
         changes: z
           .record(z.string(), z.unknown())
+          .optional()
           .describe(
-            'Map of dotted YAML path → new value, e.g. {"styles.settings-panel.when.narrow.padding": "panel"}. Values are token names, objects, or YAML scalars.',
+            'With a Cadesa source: map of dotted YAML path → new value, e.g. {"styles.settings-panel.when.narrow.padding": "panel"}. Values are token names, objects, or YAML scalars.',
           ),
+        addCss: z
+          .string()
+          .optional()
+          .describe('With css: CSS rules to append to the last stylesheet in memory, e.g. ".card { padding: 24px }". Use this to preview an edit to plain CSS before making it.'),
+        after: z
+          .string()
+          .optional()
+          .describe("With css: the edited stylesheets to compare against, one per css file in the same order (comma-separated; repeat unchanged ones), e.g. bootstrap.css,app.new.css"),
       },
       annotations: readOnly,
     },
-    (a) => respond(() => whatifCmd({ ...a, changes: Object.entries(a.changes).map(([path, value]) => ({ path, value })) }), a.format),
+    (a) =>
+      respond(() => whatifCmd({ ...a, changes: Object.entries(a.changes ?? {}).map(([path, value]) => ({ path, value })) }), a.format),
   );
 
   server.registerTool(

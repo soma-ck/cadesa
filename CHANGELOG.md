@@ -20,6 +20,11 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
 ## Unreleased
 
+- `whatif` previews edits to plain CSS: `--css app.css --add-css ".card { padding: 24px }"`
+  appends rules in memory, and `--after app.new.css` compares edited stylesheets (one per
+  `--css` file). It reports what moves at each width like an edit to a Cadesa source. The MCP
+  tool takes `addCss` and `after`.
+- `whatif` folds boxes that only move down into one line per shift.
 - On `--css` and `--tailwind` pages, each `check` finding names the element (page file:line,
   tag, classes, the start of its text) and the stylesheet rules behind it (file:line and
   selector, following `var()` to where the variable is set) instead of a path in the generated
