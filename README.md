@@ -93,6 +93,28 @@ $ cascadio check fixtures/settings.html --source settings.cascade.yaml --widths 
 
 `check` covers overflow (horizontal, unbreakable words, and text taller than a fixed height), tap targets (WCAG 2.5.8 and 2.5.5), text contrast against the nearest Cascadio background, and line length. When the source can't decide a check, for example because the page background sits outside Cascadio, it says *inconclusive* rather than guessing.
 
+## Use it from your agent (MCP)
+
+Cascadio ships an MCP server, so Claude Code, Cursor, Codex and other MCP clients can call it directly:
+
+```json
+{
+  "mcpServers": {
+    "cascadio": { "command": "npx", "args": ["-y", "cascadio", "mcp"] }
+  }
+}
+```
+
+| Tool | What it answers |
+| --- | --- |
+| `cascadio_whatif` | "If I make this edit, what moves at each width, and does anything regress?" Runs in memory and writes nothing. |
+| `cascadio_render` | "Where is every box, and where does the text wrap?" |
+| `cascadio_explain` | "Why is this value what it is, and which YAML path do I edit?" |
+| `cascadio_check` | "Is anything overflowing, too small to tap, or low contrast?" |
+| `cascadio_validate` / `cascadio_css` / `cascadio_build` | Validate, preview the CSS, write the CSS. |
+
+Every read tool accepts `sourceText`, so an agent can evaluate an unsaved draft. The server's instructions teach the language and the render → explain → whatif → edit loop. This repo includes a [`.mcp.json`](.mcp.json) that runs the server from source.
+
 ## The source
 
 ```yaml
@@ -210,7 +232,6 @@ React, Svelte, server templates and static HTML work the same way, because Casca
 ## Roadmap
 
 - **Bring your own font:** `cascadio metrics <font.woff2>` to measure any font the way Inter is measured.
-- **MCP server:** `render`, `whatif` and `build` as agent tools.
 - **`lift`:** convert existing CSS into Cascadio. This starts with a round-trip test on Cascadio's own output, then moves to hand-written CSS, where uncertainty is reported per box (which boxes an unliftable rule could move) rather than as a coverage score.
 - **Benchmark:** agents fixing a mobile layout bug with Cascadio vs. plain CSS, on the same fixture with the same edit budget. It measures attempts to fix and desktop regressions.
 
