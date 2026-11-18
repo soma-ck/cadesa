@@ -214,6 +214,20 @@ $ cadesa render fixtures/settings-long.html --source settings.cadesa.yaml --widt
                   │ integrations, and long-running deployments.  (335.12px)
 ```
 
+## Speed: 25× faster than driving a browser
+
+The same job done two ways: get every box of the landing page at every width. On one laptop core (Ryzen 5 PRO 5675U), both sequential, both producing the same boxes:
+
+| Job | Cadesa engine | Playwright + Chromium |
+| --- | --- | --- |
+| [`examples/landing`](examples/landing), 113 widths (320–1440px, every 10px) | **0.44s** | 9.16s |
+| Same page, **every pixel** from 320 to 1440 (1,121 widths, 49,324 boxes) | **3.5s** | 88.4s |
+| [`examples/pricing`](examples/pricing), 113 widths | **0.24s** | 5.56s |
+
+About 3ms per width instead of about 79ms, with no browser to download or launch. That speed is why an agent can check every width on every edit instead of two or three screenshots at the end, and why a CI job can sweep every pixel width in seconds. Reproduce it with `npm run speed` (`-- --step 1` for every pixel).
+
+The comparison covers layout geometry only: where every box lands and how text wraps. Pixel diffs, hover states and interaction tests still need a browser.
+
 ## How exact is "exact"?
 
 There are two separate claims:
