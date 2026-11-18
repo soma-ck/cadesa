@@ -1,0 +1,33 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: stack
+    slots:
+      s1:
+        layout:
+          pattern: cluster
+        padding: s4
+        border: accent
+        maxWidth: z4
+      s6:
+        text: t1
+        padding: s1
+tokens:
+  space:
+    s1: 3rem
+    s4: 6px
+  size:
+    z4: 9rem
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 20px
+    weight: 804
+    lineHeight: 1.4
+    color: accent
+    wrap: anywhere

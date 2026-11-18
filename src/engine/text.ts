@@ -274,7 +274,7 @@ export function layoutText(
   } = {},
 ): TextLayout {
   // letter-spacing is added after every character, including the last one on a line (or, with
-  // spacesOnly, after every U+0020 only).
+  // spacesOnly, after every U+0020 and U+00A0 only).
   const ls = opts.letterSpacing ?? 0;
   // Letter-spaced text is shaped without contextual alternates.
   const measure = (s: string) => m.measure(s, sizePx, weight, ls !== 0) ?? 0;
@@ -294,7 +294,7 @@ export function layoutText(
       : hangKern && s.endsWith(" ") && body
         ? measure(body + " ") - spaceW
         : measure(body);
-    const spaced = opts.spacesOnly ? [...body].filter((c) => c === " ").length : [...body].length;
+    const spaced = opts.spacesOnly ? [...body].filter((c) => c === " " || c === "\u00a0").length : [...body].length;
     return shaped + (ls ? spaced * ls : 0);
   };
   const ps = pieces(text);
@@ -315,12 +315,12 @@ export function layoutText(
   const spacing = (s: string) => {
     if (!ls) return 0;
     const body = trimSpaces(s).replaceAll(SHY, "");
-    return (opts.spacesOnly ? [...body].filter((c) => c === " ").length : [...body].length) * ls;
+    return (opts.spacesOnly ? [...body].filter((c) => c === " " || c === "\u00a0").length : [...body].length) * ls;
   };
   /** The full width of text inside a line (spaces included). */
   const full = (s: string) => {
     const body = s.replaceAll(SHY, "");
-    const spaced = opts.spacesOnly ? [...body].filter((c) => c === " ").length : [...body].length;
+    const spaced = opts.spacesOnly ? [...body].filter((c) => c === " " || c === "\u00a0").length : [...body].length;
     return measure(body) + (ls ? spaced * ls : 0);
   };
   const floor64 = (v: number) => Math.floor(v * 64 + TEXT_EPS) / 64;
@@ -382,7 +382,8 @@ export function layoutText(
     if (pending) chars.push(pending);
     let broke = false;
     const fragW = (frag: string, k: number, kerned = mid || broke) => {
-      const next = chars[k]?.replaceAll(SHY, "");
+      // The word's last fragment counts its kerning to a space after it, as a line end does.
+      const next = chars[k]?.replaceAll(SHY, "") ?? (p.endsWith(" ") ? " " : undefined);
       return next && kerned ? w(frag + next) - w(next) : w(frag);
     };
     let cur = "";

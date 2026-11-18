@@ -1,0 +1,10 @@
+{
+  "note": "wrap",
+  "seed": 6029532,
+  "widths": [
+    840
+  ],
+  "flagged": [
+    " anywhere: a word's last fragment counts its kerning to the space after it (within reach of the width: flagged):n8"
+  ]
+}

@@ -124,7 +124,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Chromium drops letter-spacing from text that has a U+202F (narrow no-break space) and no
     // letter: the run's script resolves to Mongolian, a cursive script, which is never spaced out.
     const unspaced = (s: string) => s.includes(" ") && !/\p{L}/u.test(s);
-    // Only its ordinary spaces keep their letter-spacing.
+    // Only its ordinary and no-break spaces keep their letter-spacing.
     const spacesOnly = !!t.letterSpacing && unspaced(shown);
     if (t.letterSpacing && !spacesOnly && runs.length > 1 && runs.some(unspaced))
       assumptions.push("letter-spacing may be dropped from a paragraph that has a U+202F and no letters");

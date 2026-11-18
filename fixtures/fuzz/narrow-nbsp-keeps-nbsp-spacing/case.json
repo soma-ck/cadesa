@@ -1,0 +1,7 @@
+{
+  "note": "Text with a U+202F and no letters keeps letter-spacing on its U+0020 and U+00A0 spaces only",
+  "seed": 6047573,
+  "widths": [
+    828
+  ]
+}
