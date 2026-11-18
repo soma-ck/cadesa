@@ -238,7 +238,7 @@ export function checkCmd(s: SourceInput & { fixture: string; widths: number[] })
   const p = pageOf(s);
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
-  const findings = check(layouts, imp?.impacts);
+  const findings = check(layouts, imp?.impacts, p.tw);
   const cov = coverage(layouts, imp?.impacts);
   if (p.tw || s.css) {
     // Tailwind: also name the element in the page, where the utilities are edited.

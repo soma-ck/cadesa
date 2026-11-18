@@ -15,6 +15,7 @@ import { createServer } from "node:http";
 import { extname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { chromium } from "playwright";
+import { widthUncertainty } from "../src/check.js";
 import { compile } from "../src/compile.js";
 import { walk, type Layout } from "../src/engine/layout.js";
 import { parseFixture } from "../src/fixture.js";
@@ -107,6 +108,9 @@ let linesChecked = 0;
 let assumed = 0;
 const flaggedSame: string[] = [];
 const flaggedDiff: string[] = [];
+/** ≈ boxes whose width check still treats as known (clipped and overflowing text stay conclusive there). */
+let widthKnown = 0;
+const widthWrong: string[] = [];
 for (const fixtureFile of values.fixtures!.split(",")) {
 const name = fixtureFile.replace(/^.*\//, "").replace(/\.html$/, "");
 console.log(`── ${fixtureFile}`);
@@ -128,6 +132,7 @@ if (tw) {
 }
 for (const layout of layouts) {
   const uncertain = new Set<string>(impacts?.find((i) => i.width === layout.width)?.uncertain.map((u) => u.id));
+  const widthUnsure = widthUncertainty(layout, impacts?.find((i) => i.width === layout.width));
   // A text box the engine couldn't measure (no font metrics) is flagged in every report: uncertain.
   if (tw) for (const b of walk(layout.boxes)) if (b.assumptions.length) (uncertain.add(b.id), assumed++);
   const page = await browser.newPage({ viewport: { width: layout.width, height: 900 } });
@@ -193,6 +198,14 @@ for (const layout of layouts) {
       `  ${ok ? (flagged ? "≈" : "✓") : flagged ? "≈" : "✖"} #${b.id.padEnd(12)} ${fmt(b).padEnd(26)} ${(c ? fmt(c) : "missing").padEnd(26)} ${c ? delta.toFixed(3) : "-"}${note}`,
     );
     if (flagged) (ok ? flaggedSame : flaggedDiff).push(`${layout.width}px #${b.id}`);
+    // Flagged, but its width is claimed: that claim must hold too.
+    if (flagged && !widthUnsure.has(b.id) && c) {
+      widthKnown++;
+      if (Math.abs(b.w - c.w) > tolerance) {
+        widthWrong.push(`${layout.width}px #${b.id} w ${+b.w.toFixed(2)} vs ${+c.w.toFixed(2)}`);
+        failures++;
+      }
+    }
     report.push({ fixture: fixtureFile, width: layout.width, id: b.id, lines: b.lines?.length, flagged, engine: { x: b.x, y: b.y, w: b.w, h: b.h }, chromium: c, delta, ok });
   }
   console.log("");
@@ -220,6 +233,11 @@ if (tw) {
       : `\n✓ all ${exact} boxes marked exact agree with Chromium`,
   );
   console.log(`≈ ${flaggedSame.length + flaggedDiff.length} boxes marked uncertain: ${flaggedDiff.length} differ, ${flaggedSame.length} happen to match`);
+  console.log(
+    widthWrong.length
+      ? `✖ ${widthWrong.length} of ${widthKnown} uncertain boxes whose width check treats as known differ in width:\n  ${widthWrong.slice(0, 20).join("\n  ")}`
+      : `✓ all ${widthKnown} uncertain boxes whose width check treats as known have Chromium's width`,
+  );
   if (tw) console.log(`  (${assumed} of them flagged by the engine itself, e.g. unmeasured text; ${widths.length} widths ${widths[0]}–${widths.at(-1)}px, ${values.fixtures!.split(",").length} pages)`);
 } else console.log(failures ? `\n✖ ${failures} mismatch(es) of ${checked} boxes` : `\n✓ engine and Chromium agree on all ${checked} boxes${strict ? `, none flagged; line counts agree on all ${linesChecked} text boxes` : ""}`);
 process.exitCode = failures ? 1 : 0;

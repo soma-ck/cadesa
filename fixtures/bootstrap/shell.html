@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: an Angular + Bootstrap app shell</title>
+    <link rel="stylesheet" href="bootstrap.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      [_nghost-pln-c10] { display: block; }
+      .kpi-total[_ngcontent-pln-c10] { font-size: 0.875rem; }
+    </style>
+  </head>
+  <body>
+    <app-root _nghost-pln-c10="" ng-version="17.3.12">
+      <nav class="navbar navbar-expand-lg navbar-dark bg-primary">
+        <div class="container-fluid">
+          <a class="navbar-brand" href="#">Planner Operations Console</a>
+          <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation">
+            <span class="navbar-toggler-icon"></span>
+          </button>
+          <div class="collapse navbar-collapse" id="mainNav">
+            <ul class="navbar-nav me-auto mb-2 mb-lg-0">
+              <li class="nav-item"><a class="nav-link active" aria-current="page" href="#">Dashboard</a></li>
+              <li class="nav-item"><a class="nav-link" href="#">Orders and returns</a></li>
+              <li class="nav-item"><a class="nav-link" href="#">Production planning</a></li>
+              <li class="nav-item"><a class="nav-link" href="#">Warehouse capacity</a></li>
+              <li class="nav-item"><a class="nav-link" href="#">Reports</a></li>
+            </ul>
+            <span class="navbar-text">Signed in as M. Jansen</span>
+          </div>
+        </div>
+      </nav>
+      <div class="container-fluid">
+        <div class="row">
+          <aside class="col-lg-2 d-none d-lg-block bg-light border-end py-3">
+            <h2 class="section-title mb-2">Sites</h2>
+            <ul class="nav flex-column">
+              <li class="nav-item"><a class="nav-link" href="#">North Yard</a></li>
+              <li class="nav-item"><a class="nav-link" href="#">Harbor Supply</a></li>
+            </ul>
+          </aside>
+          <main class="col-lg-10 py-3">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+              <h1 class="page-title">Shipments<span class="d-none d-md-inline"> this week</span></h1>
+              <button type="button" class="btn btn-outline-primary d-lg-none">Sites</button>
+              <div class="d-none d-lg-flex gap-2">
+                <button type="button" class="btn btn-outline-secondary">Export</button>
+                <button type="button" class="btn btn-primary">New shipment</button>
+              </div>
+            </div>
+            <div class="row g-3 mb-3">
+              <div class="col-md-4">
+                <div class="card text-bg-success">
+                  <div class="card-body">
+                    <p class="stat-label">On time</p>
+                    <p class="stat-value">94.1%</p>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="card text-bg-warning">
+                  <div class="card-body">
+                    <p class="stat-label">Late</p>
+                    <p class="stat-value">18</p>
+                  </div>
+                </div>
+              </div>
+              <div class="col-md-4">
+                <div class="card">
+                  <div class="card-body">
+                    <p class="stat-label text-muted">Largest customer</p>
+                    <p class="customer-name text-truncate mb-0">Harbor Supply and Logistics International Holdings</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div class="alert alert-danger" role="alert">Three shipments are missing a delivery address.</div>
+            <div class="card">
+              <div class="card-header d-flex justify-content-between align-items-center">
+                <h2 class="section-title">Shipments this week</h2>
+                <span class="kpi-total" _ngcontent-pln-c10=""><span class="fw-semibold">Total</span><span>1,284</span></span>
+              </div>
+              <div class="table-responsive">
+                <table class="table text-nowrap">
+                  <thead>
+                    <tr><th>Shipment</th><th>Customer</th><th>Origin</th><th>Destination</th><th>Carrier</th><th>Departs</th><th>Arrives</th><th>Status</th></tr>
+                  </thead>
+                  <tbody>
+                    <tr><td>SH-20931</td><td>Harbor Supply</td><td>North Yard</td><td>Rotterdam Europoort</td><td>Blue Line Freight</td><td>12 May 08:00</td><td>14 May 17:30</td><td>In transit</td></tr>
+                    <tr><td>SH-20932</td><td>Field Works</td><td>Harbor</td><td>Antwerp</td><td>Coastal Haulage</td><td>12 May 10:15</td><td>13 May 09:00</td><td>Loading</td></tr>
+                  </tbody>
+                </table>
+              </div>
+              <div class="card-footer text-muted small">Updated every five minutes</div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </app-root>
+  </body>
+</html>

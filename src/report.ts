@@ -163,6 +163,7 @@ function rootCause(r: string): string {
     .replace(/^(?:moved|resized) by #[\w-]+: /, "")
     .replace(/(?:\S+\.(?:css|html|ya?ml)(?::\d+)?|\(\S+\.(?:css|html)(?::\d+)?\))\s*/g, "")
     .replace(/\s+/g, " ")
+    .replace(/ at \d+(?:\.\d+)?px/g, "")
     .trim()
     // Keep the cause, drop the explanation: "display: inline-block: an inline-level box in block flow".
     .replace(/^(.{24,}?)(?:;| \().*$/, "$1")
@@ -217,7 +218,8 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
   // One line per issue (same check, element, severity and edit path), listing the widths it occurs at.
   const groups = new Map<string, { first: Finding; widths: number[] }>();
   for (const f of findings) {
-    const key = [f.check, f.id, f.severity, f.inconclusive ? 1 : 0, f.path ?? ""].join("|");
+    // Text running together: one line per pair (several pairs can share a box).
+    const key = [f.check, f.id, f.severity, f.inconclusive ? 1 : 0, f.path ?? "", f.check === "spacing" ? f.message : ""].join("|");
     const g = groups.get(key) ?? { first: f, widths: [] };
     g.widths.push(f.width);
     groups.set(key, g);

@@ -18,7 +18,7 @@
  *      count); `dynamic()` reports those per width.
  */
 import { parse } from "parse5";
-import { walk, type Box, type Layout } from "../engine/layout.js";
+import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
 import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type P5Node } from "../fixture.js";
 import { loadSource } from "../load.js";
 import { modelOf, render } from "../project.js";
@@ -361,6 +361,11 @@ export interface PageLift {
   states: State[];
   /** Data-fixture ids of elements hidden at some widths but not others. */
   responsive: string[];
+  /**
+   * Text that runs together at `width` (`<span>Total</span><span>42</span>` reads "Total42"):
+   * decided from the markup and the cascade, so it holds even where the layout is approximate.
+   */
+  spacing(width: number): (Issue & { inconclusive?: boolean })[];
 }
 
 /**
@@ -575,6 +580,19 @@ export abstract class PageLifter {
         const part = parts.get(p);
         if (part === undefined) own.delete(p);
         else own.set(p, { value: part, utility: o.utility, important: o.important });
+      }
+      // inherit on a property that doesn't inherit (Bootstrap's .navbar > .container { flex-wrap: inherit }):
+      // the parent's value; initial and unset: the initial value (left out). Parents come first.
+      for (const [p, o] of [...own]) {
+        if (p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p)) continue;
+        const v = this.resolve(el, si, o.value)?.trim();
+        if (v === "initial" || v === "unset") own.delete(p);
+        else if (v === "inherit") {
+          const from = el.parent?.own[si]?.get(p);
+          // The parent's computed value: its var()s resolved where they're declared.
+          if (from) own.set(p, { value: this.resolve(el.parent!, si, from.value) ?? from.value, utility: `${o.utility} (inherit: ${from.utility})`, important: o.important });
+          else own.delete(p);
+        }
       }
     });
   }
@@ -916,10 +934,13 @@ export abstract class PageLifter {
     return px("margin-top") >= 0 && px("margin-top") + h + px("margin-bottom") <= line;
   }
 
-  /** Inline children make an element a text box when every element child is inline in every state. */
+  /**
+   * Inline children make an element a text box when every element child is inline in every state
+   * where it is displayed (`<span class="d-none d-md-inline">`: its text is left out where it's hidden).
+   */
   inlineChild(el: El): boolean {
     if (el.tag === "br" || this.ignorable(el)) return true;
-    return this.states.every((_, si) => this.isInlineLevel(el, si) && !this.outOfFlow(el, si) && this.displayOf(el, si) !== "none") && !REPLACED_BLOCK.has(el.tag) && !INLINE_BLOCK.has(el.tag);
+    return this.states.every((_, si) => this.displayOf(el, si) === "none" || (this.isInlineLevel(el, si) && !this.outOfFlow(el, si))) && !REPLACED_BLOCK.has(el.tag) && !INLINE_BLOCK.has(el.tag);
   }
 
   /** Never displayed: hidden or out of flow at every width. */
@@ -1308,7 +1329,8 @@ export abstract class PageLifter {
       const sameText = kt.size === pt.size && kt.weight === pt.weight && kt.family.value === pt.family.value && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight) && kt.letterSpacing === pt.letterSpacing;
       const whole = k.parent === el && shown.length === 1 && shown[0] === k && !el.ownText && !boxy && sameText && this.displayOf(k, si) === "inline-block";
       for (const c of changes) {
-        if ((c.prop === "box-sizing" && !boxy) || (c.prop === "display" && whole)) continue;
+        // display: inline on an inline run (Bootstrap's d-md-inline where it shows) is what it was anyway.
+        if ((c.prop === "box-sizing" && !boxy) || (c.prop === "display" && (whole || this.displayOf(k, si) === "inline"))) continue;
         if (c.kind === "paint" || c.kind === "none" || c.kind === "state") {
           if (c.kind === "paint") this.note(el, si, { decl: `${c.utility} on <${k.tag}>`, reason: "inline paint; no effect on layout", kind: "paint" });
           continue;
@@ -1507,6 +1529,8 @@ export abstract class PageLifter {
     const fixture = parseFixture(this.page, fixtureHtml);
     const byId = new Map(this.els.filter((e) => e.id).map((e) => [e.id!, e]));
     const hiddenNodes = new Set(this.els.filter((e) => this.ignorable(e)).map((e) => e.node));
+    // Per width range: also what display: none hides there (inline content of a text box hidden at some widths).
+    const hiddenAt = this.states.map((_, si) => new Set(this.els.filter((e) => e.anonymous === undefined && (hiddenNodes.has(e.node) || this.displayOf(e, si) === "none")).map((e) => e.node)));
     /** An anonymous text run's node: a text box of the run's text, with the class lift gave it. */
     const anonNode = (k: El, si: number | undefined): FixtureNode | undefined =>
       k.className && (si === undefined || k.roles[si] === "text")
@@ -1527,7 +1551,8 @@ export abstract class PageLifter {
         if (!isText && el.children.some((k) => k.anonymous !== undefined)) return { ...n, children, ownText: "" };
         // A replaced element or form control has no text box (a textarea's text is its value).
         if (el.roles.every((r) => r !== "text" && r !== "container") && n.text) return { ...n, children, text: "", runs: [] };
-        if (isText && hiddenNodes.size) return { ...n, children, ...textAndRuns(el.node as unknown as P5Node, (x) => hiddenNodes.has(x as unknown as P5)) };
+        const hidden = si === undefined ? hiddenNodes : hiddenAt[si];
+        if (isText && hidden.size) return { ...n, children, ...textAndRuns(el.node as unknown as P5Node, (x) => hidden.has(x as unknown as P5)) };
         return { ...n, children };
       };
       return { ...fixture, body: fixture.body.map(keep).filter(Boolean) as FixtureNode[] };
@@ -1567,6 +1592,7 @@ export abstract class PageLifter {
     this.relabel(lifted);
 
     const responsive = this.els.filter((e) => e.id && e.roles.some((r) => r === "hidden" || r === "out") && e.roles.some((r) => r !== "hidden" && r !== "out")).map((e) => e.id!);
+    const spacingAt: (Issue & { inconclusive?: boolean })[][] = [];
     const dynamic = (layout: Layout): Unlifted[] => {
       const si = this.states.indexOf(stateAt(this.states, layout.width));
       const out: Unlifted[] = [];
@@ -1619,7 +1645,108 @@ export abstract class PageLifter {
       dynamic,
       states: this.states,
       responsive,
+      spacing: (w: number) => {
+        const si = this.states.indexOf(stateAt(this.states, w));
+        return (spacingAt[si] ??= this.runTogether(si));
+      },
     };
+  }
+
+  /**
+   * Neighbours whose text runs together in state si: two inline elements, or a text and an inline
+   * element, with nothing between them (no whitespace, and no margin, padding or border on the
+   * touching sides), where a letter or digit meets a letter or digit. In a flex row whitespace
+   * between items doesn't count, only the gap and the items' margins, padding and borders do.
+   */
+  runTogether(si: number): (Issue & { inconclusive?: boolean })[] {
+    const out: (Issue & { inconclusive?: boolean })[] = [];
+    const byNode = new Map(this.els.filter((e) => e.anonymous === undefined).map((e) => [e.node, e] as const));
+    const res = (el: El, p: string) => {
+      const o = el.own[si]?.get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    const px = (el: El, p: string) => {
+      const v = res(el, p);
+      return v === undefined || v === "normal" ? 0 : (lengthPx(v, this.textOf(el, si).size) ?? NaN);
+    };
+    const border = (el: El, side: string) => (/^(none|hidden)$/.test(res(el, `border-${side}-style`) ?? "none") ? 0 : borderPx(px(el, `border-${side}-width`)));
+    const gone = (el: El) => this.displayOf(el, si) === "none" || this.outOfFlow(el, si);
+    const shown = (el: El) => {
+      for (let x: El | undefined = el; x && x !== this.bodyEl; x = x.parent) if (gone(x)) return false;
+      return true;
+    };
+    /** Element and text children as rendered: hidden and out-of-flow elements left out. */
+    const kids = (n: P5): P5[] =>
+      (n.childNodes ?? []).filter((c) => (c.nodeName === "#text" ? !!c.value : !!c.tagName && !SKIP.has(c.tagName) && !(byNode.has(c) && gone(byNode.get(c)!))));
+    const textOf = (n: P5): string => (n.nodeName === "#text" ? (n.value ?? "") : n.tagName === "br" ? "\n" : kids(n).map(textOf).join(""));
+    /** Margin, padding and border on one side of an element and of the descendants whose text ends there. */
+    const edge = (n: P5, side: "left" | "right"): number => {
+      const el = byNode.get(n);
+      if (!el) return 0;
+      const k = side === "right" ? kids(n).at(-1) : kids(n)[0];
+      return px(el, `margin-${side}`) + px(el, `padding-${side}`) + border(el, side) + (k?.tagName ? edge(k, side) : 0);
+    };
+    /** Notes that make the answer unsure: generated content on the touching side, or a selector Cadesa can't decide. */
+    const unsure = (n: P5, side: "left" | "right"): string | undefined => {
+      const el = byNode.get(n);
+      if (!el) return undefined;
+      for (const { note, states } of el.notes.values()) {
+        if (!states.has(si)) continue;
+        if (note.reason.includes(side === "right" ? "::after" : "::before")) return `${note.decl.split(" {")[0]} adds content Cadesa doesn't model`;
+        if (/may match; Cadesa can't decide it/.test(note.reason) && note.kind !== "paint" && note.kind !== "none") return note.reason;
+      }
+      const k = side === "right" ? kids(n).at(-1) : kids(n)[0];
+      return k?.tagName ? unsure(k, side) : undefined;
+    };
+    const words = (s: string, end: boolean) => {
+      const w = s.trim().split(/\s+/);
+      const t = end ? w.at(-1)! : w[0];
+      return t.length > 24 ? (end ? `…${t.slice(-23)}` : `${t.slice(0, 23)}…`) : t;
+    };
+    const tagOf = (n: P5) => (n.nodeName === "#text" ? "text" : `<${n.tagName}>`);
+    for (const p of [this.bodyEl, ...this.els]) {
+      if (!p || p.anonymous !== undefined || !shown(p) || p.tag === "svg") continue;
+      if (/^(table|tr|thead|tbody|tfoot|colgroup|col|select|option|optgroup|textarea|script|style)$/.test(p.tag)) continue;
+      const d = this.displayOf(p, si);
+      const flex = /^(inline-)?flex$/.test(d);
+      if (/^(inline-)?grid$/.test(d) || d === "none") continue;
+      if (flex) {
+        if (/^column/.test(res(p, "flex-direction") ?? "row")) continue;
+        // Free space between the items: they meet only on a full line.
+        if (/^space-(between|around|evenly)$/.test(res(p, "justify-content") ?? "")) continue;
+        if (!(px(p, "column-gap") === 0)) continue;
+      }
+      const seq = kids(p.node).filter((n) => !flex || n.nodeName !== "#text" || !isWs(n.value ?? ""));
+      for (let i = 0; i + 1 < seq.length; i++) {
+        const [a, b] = [seq[i], seq[i + 1]];
+        if (a.nodeName === "#text" && b.nodeName === "#text") continue;
+        if ([a, b].some((n) => n.tagName && /^(sub|sup|br|wbr|img|svg|input|select|textarea|button|video|canvas|iframe)$/.test(n.tagName))) continue;
+        // Outside a flex row, a block-level neighbour starts a new line.
+        if (!flex && [a, b].some((n) => byNode.has(n) && !this.isInlineLevel(byNode.get(n)!, si))) continue;
+        const ta = textOf(a);
+        const tb = textOf(b);
+        const last = [...ta].at(-1) ?? "";
+        const first = [...tb][0] ?? "";
+        if (!/[\p{L}\p{N}]/u.test(last) || !/[\p{L}\p{N}]/u.test(first)) continue;
+        const space = (a.tagName ? edge(a, "right") : 0) + (b.tagName ? edge(b, "left") : 0);
+        if (space > 0) continue;
+        const why = (a.tagName ? unsure(a, "right") : undefined) ?? (b.tagName ? unsure(b, "left") : undefined) ?? (isNaN(space) ? "a margin or padding between them couldn't be resolved" : undefined);
+        let box: El | undefined = p;
+        while (box && !(box.id && box.className && (box.roles[si] === "text" || box.roles[si] === "container" || box.roles[si] === "leaf"))) box = box.parent;
+        if (!box) continue;
+        const line = (b.sourceCodeLocation?.startLine ?? p.line) || p.line;
+        const [wa, wb] = [words(ta, true), words(tb, false)];
+        const wrapNote = flex && res(p, "flex-wrap") === "wrap" ? " when they share a line" : "";
+        out.push({
+          severity: "warning",
+          id: box.id!,
+          path: `${this.page}:${line}`,
+          message: `"${wa}" and "${wb}" run together as "${wa}${wb}"${wrapNote}: nothing separates the ${tagOf(a)} and the ${tagOf(b)} in #${box.id} (no space, and no margin, padding${flex ? ", gap" : ""} or border); add a space or a margin`,
+          ...(why && { inconclusive: true, message: `"${wa}" and "${wb}" may run together as "${wa}${wb}" in #${box.id}: ${why}` }),
+        });
+      }
+    }
+    return out;
   }
 
   /** Lines a cluster box laid its children out on. */

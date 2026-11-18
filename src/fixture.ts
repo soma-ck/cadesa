@@ -143,8 +143,8 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): { runs: string[]; run
  * Text and runs of a parse5 element, leaving out descendants `skip` rejects (e.g. elements that
  * are never displayed). Same rules as the fixture parser.
  */
-export function textAndRuns(n: P5Node, skip?: (n: P5Node) => boolean): { text: string; runs: string[] } {
-  return { text: collapse(textOf(n, skip)), runs: runsOf(n, skip).runs };
+export function textAndRuns(n: P5Node, skip?: (n: P5Node) => boolean): { text: string; runs: string[]; runMeta: FixtureNode["runMeta"] } {
+  return { text: collapse(textOf(n, skip)), ...runsOf(n, skip) };
 }
 
 function convert(n: P5Node): FixtureNode {

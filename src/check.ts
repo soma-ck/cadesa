@@ -2,12 +2,13 @@
  * Design checks over engine layouts. Every finding names the element, the width, and the
  * YAML path to edit. Checks that can't be decided from the source say "inconclusive".
  */
-import type { Box, Issue, Layout } from "./engine/layout.js";
+import { walk, type Box, type Issue, type Layout } from "./engine/layout.js";
 import type { WidthImpact } from "./lift/impact.js";
-import { fmtPx } from "./resolve.js";
+import type { PageLift } from "./lift/page.js";
+import { fmtPx, insets } from "./resolve.js";
 
 export interface Finding extends Issue {
-  check: "layout" | "tap-target" | "contrast";
+  check: "layout" | "tap-target" | "contrast" | "clipped" | "spacing";
   width: number;
   inconclusive?: boolean;
 }
@@ -61,28 +62,113 @@ interface Behind {
   image?: string;
 }
 
+const quote = (s: string, n = 40) => `"${s.length > n ? `${s.slice(0, n - 1).trimEnd()}…` : s}"`;
+const innerOf = (b: Box) => {
+  const i = insets(b.props);
+  return { w: b.w - i.left - i.right, h: b.h - i.top - i.bottom, left: b.x + i.left, top: b.y + i.top };
+};
+
+/**
+ * Text a box cuts off: overflow hidden or clip (with or without text-overflow: ellipsis) on a box
+ * narrower than its unwrapped text, or shorter than its lines. Scrolling boxes (auto, scroll) are
+ * fine: the text is still reachable.
+ */
+function clippedText(b: Box): { id: string; message: (width: number) => string } | undefined {
+  const ov = b.props.overflow?.value;
+  if (!ov) return undefined;
+  const how = `overflow: ${b.props.overflow!.display}`;
+  const inner = innerOf(b);
+  if ((ov.x === "hidden" || ov.x === "clip") && (b.overflowX ?? 0) > 0.5) {
+    if (b.text && b.lines?.length) {
+      const widest = b.lines.reduce((a, l) => (l.width > a.width ? l : a));
+      return { id: b.id, message: (w) => `the text of #${b.id} is cut off at ${w}px: ${quote(widest.text)} needs ${fmtPx(widest.width)}px, the box shows ${fmtPx(inner.w)}px (${how}); let it wrap, or make room for it` };
+    }
+    // A child's text past the right edge.
+    for (const k of walk(b.children)) {
+      if (k === b || !k.text || !k.lines?.length) continue;
+      if (k.x + k.w > inner.left + inner.w + 0.5)
+        return { id: k.id, message: (w) => `the text of #${k.id} is cut off by #${b.id} at ${w}px: it ends ${fmtPx(k.x + k.w - inner.left - inner.w)}px past #${b.id}'s edge (${how} on #${b.id})` };
+    }
+  }
+  if ((ov.y === "hidden" || ov.y === "clip") && (b.overflowY ?? 0) > 0.5 && b.text && b.lines?.length) {
+    const lineH = b.lines.length ? (b.h - (insets(b.props).top + insets(b.props).bottom) + (b.overflowY ?? 0)) / b.lines.length : 0;
+    const shown = Math.max(0, Math.floor((inner.h + 0.5) / lineH));
+    return { id: b.id, message: (w) => `the text of #${b.id} is cut off at the bottom at ${w}px: ${b.lines!.length} lines, ${shown} fit in its ${fmtPx(inner.h)}px (${how}); remove the height or let it grow` };
+  }
+  return undefined;
+}
+
 export function contrast(a: string, b: string): number {
   const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
   return (x + 0.05) / (y + 0.05);
 }
 
-/** With `impacts` (from a lift), findings on boxes the engine can't predict exactly are inconclusive. */
-export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
+const PROPAGATED = /^(?:moved by|resized by|stretched with|geometry depends on) /;
+
+/**
+ * Boxes whose width (or the width of their text) may differ from the browser's. Coarser than "≈":
+ * a box that is only moved down by something uncertain above it keeps its width. A width can be
+ * wrong when the box itself is uncertain, when its parent's width is, when it sits in a cluster
+ * (its width comes from its content and its siblings') next to anything uncertain, or when it is
+ * sized to its content (width: fit) and something inside is uncertain.
+ */
+export function widthUncertainty(l: Layout, imp?: WidthImpact): Set<string> {
+  const own = new Set<string>();
+  for (const u of imp?.uncertain ?? []) if (u.reasons.some((r) => !PROPAGATED.test(r))) own.add(u.id);
+  for (const b of walk(l.boxes)) if (b.assumptions.some((a) => !PROPAGATED.test(a))) own.add(b.id);
+  const inside = new Map<Box, boolean>();
+  const anyInside = (b: Box): boolean => {
+    let r = inside.get(b);
+    if (r === undefined) inside.set(b, (r = own.has(b.id) || b.children.some(anyInside)));
+    return r;
+  };
+  const out = new Set<string>();
+  const visit = (b: Box, parent: Box | undefined, parentUnknown: boolean) => {
+    // A cluster item with its own width (a length or a percentage, which never shrinks) and no grow keeps it.
+    const w = b.props.width?.value;
+    const fixed = (typeof w === "number" || (typeof w === "object" && "pct" in w)) && !b.props.grow;
+    const cluster = parent?.props.pattern?.value === "cluster" && !fixed;
+    const unknown =
+      own.has(b.id) || parentUnknown || (cluster && parent!.children.some(anyInside)) || (b.props.width?.value === "fit" && anyInside(b));
+    if (unknown) out.add(b.id);
+    for (const k of b.children) visit(k, b, unknown);
+  };
+  for (const b of l.boxes) visit(b, undefined, false);
+  return out;
+}
+
+/**
+ * With `impacts` (from a lift), findings on boxes the engine can't predict exactly are inconclusive.
+ * With `page` (a page lift), also text that runs together, which the markup and cascade decide.
+ */
+export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Pick<PageLift, "spacing">): Finding[] {
   const out: Finding[] = [];
   for (const l of layouts) {
     const imp = impacts?.find((i) => i.width === l.width);
-    const geometryUnknown = new Set(imp?.uncertain.map((u) => u.id));
+    // Boxes the lift can't guarantee, and boxes the engine itself flags (unmeasured text, a scrollbar...).
+    const geometryUnknown = new Set([...(imp?.uncertain.map((u) => u.id) ?? []), ...[...walk(l.boxes)].filter((b) => b.assumptions.length).map((b) => b.id)]);
     const paintUnknown = new Set([...(imp?.uncertain ?? []), ...(imp?.paintOnly ?? [])].filter((u) => u.effects.includes("paint")).map((u) => u.id));
+    const widthUnknown = widthUncertainty(l, imp);
+    const byId = new Map([...walk(l.boxes)].map((b) => [b.id, b]));
     const start = out.length;
     for (const i of l.issues) out.push({ ...i, check: "layout", width: l.width });
+    for (const i of page?.spacing(l.width) ?? []) out.push({ ...i, check: "spacing", width: l.width });
     const visit = (b: Box, bg: Behind) => {
       let here: Behind = bg;
       if (b.props.background) {
         const c = b.props.background.value;
-        const opaque = rgba(c)[3] >= 0.999;
-        here = opaque
-          ? { color: c, path: b.props.background.steps.at(-1)!.path }
-          : { ...bg, stops: [...(bg.stops ?? []), c], stopsPath: b.props.background.steps.at(-1)!.path };
+        const a = rgba(c)[3];
+        const path = b.props.background.steps.at(-1)!.path;
+        // Opaque: the new background. Translucent over a known solid color (a tinted card header
+        // over a card): the two blended. Over a gradient or nothing known: one more stop.
+        here =
+          a >= 0.999
+            ? { color: c, path }
+            : a <= 0.001
+              ? bg
+              : bg.color && !bg.stops?.length && !bg.image
+                ? { color: composite(c, bg.color), path: `${path} (${Math.round(a * 100)}% opaque) over ${bg.path}` }
+                : { ...bg, stops: [...(bg.stops ?? []), c], stopsPath: path };
       }
       if (b.props.backdrop) {
         const raw = b.props.backdrop.value;
@@ -135,7 +221,10 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
             ...(here.color && !stopsOpaque ? [{ c: here.color, from: here.path! }] : []),
             ...(here.stops ?? []).map((s) => ({ c: rgba(s)[3] >= 0.999 ? s.slice(0, 7) : composite(s, base), from: `gradient stop ${s} in ${here.stopsPath}` })),
           ];
-          const worst = candidates.map((x) => ({ ...x, ratio: contrast(t.color, x.c) })).sort((a, b) => a.ratio - b.ratio)[0];
+          // Translucent text (rgba, Bootstrap's .text-muted and navbar links) shows as its color over the background.
+          const alpha = rgba(t.color)[3];
+          const shown = (bg: string) => (alpha < 0.999 ? composite(t.color, bg) : t.color.slice(0, 7));
+          const worst = candidates.map((x) => ({ ...x, ratio: contrast(shown(x.c), x.c) })).sort((a, b) => a.ratio - b.ratio)[0];
           if (worst && worst.ratio < min)
             out.push({
               check: "contrast",
@@ -143,10 +232,12 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
               severity: "error",
               id: b.id,
               path: colorPath,
-              message: `#${b.id} text ${t.color} on ${worst.c} is ${worst.ratio.toFixed(2)}:1; WCAG AA needs ${min}:1 (background: ${worst.from})`,
+              message: `#${b.id} text ${t.color}${alpha < 0.999 ? ` (${Math.round(alpha * 100)}% opaque, shows as ${shown(worst.c)})` : ""} on ${worst.c} is ${worst.ratio.toFixed(2)}:1; WCAG AA needs ${min}:1 (background: ${worst.from})`,
             });
         }
       }
+      const clip = clippedText(b);
+      if (clip) out.push({ check: "clipped", width: l.width, severity: "warning", id: clip.id, path: b.props.overflow!.steps.at(-1)!.path, message: clip.message(l.width) });
       // In a layer, children after an image sit on top of it.
       let behind = here;
       for (const k of b.children) {
@@ -158,7 +249,17 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
     for (const b of l.boxes) visit(b, pageBg);
     for (const f of out.slice(start)) {
       // Contrast depends on colours, not geometry: only unknown paint makes it inconclusive.
-      const unknown = f.check === "contrast" ? paintUnknown.has(f.id) : geometryUnknown.has(f.id);
+      // Text running together depends on the markup and the cascade only (decided by the lift).
+      // Clipped and overflowing text compare widths: a box that only moves up or down doesn't change them.
+      const horizontal = f.check === "clipped" ? !/cut off at the bottom/.test(f.message) : f.check === "layout" && /overflows|can't wrap/.test(f.message);
+      const unknown =
+        f.check === "contrast"
+          ? paintUnknown.has(f.id)
+          : f.check === "spacing"
+            ? false
+            : horizontal
+              ? widthUnknown.has(f.id) || !!byId.get(f.id)?.children.some((k) => widthUnknown.has(k.id))
+              : geometryUnknown.has(f.id);
       if (unknown && !f.inconclusive) {
         f.inconclusive = true;
         f.severity = "warning";
