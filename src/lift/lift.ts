@@ -863,7 +863,7 @@ export function liftElements(input: LiftInput): LiftResult {
   };
 }
 
-function emitYaml(data: Record<string, unknown>, file: string, unlifted: Unlifted[]): string {
+export function emitYaml(data: Record<string, unknown>, file: string, unlifted: Unlifted[]): string {
   const doc = new Document(data);
   visit(doc, {
     Map(_, node, path) {
