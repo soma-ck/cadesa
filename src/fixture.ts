@@ -19,9 +19,10 @@ export interface FixtureNode {
   /**
    * Per run: whether it sits in a block-level descendant (its own block container) rather than
    * directly in this element, and whether any of it is inside an underlined inline element
-   * (<a href>, <u>, <ins>, <s>, <del>, <strike>).
+   * (<a href>, <u>, <ins>, <s>, <del>, <strike>). `items`: where inline elements start or end in
+   * the run (character offsets): Chromium shapes and measures each such piece of text separately.
    */
-  runMeta: { inBlock: boolean; underlined: boolean }[];
+  runMeta: { inBlock: boolean; underlined: boolean; items: number[] }[];
   children: FixtureNode[];
 }
 
@@ -60,6 +61,40 @@ function textOf(n: P5Node, skip?: (n: P5Node) => boolean): string {
 
 const UNDERLINED = new Set(["u", "ins", "s", "del", "strike"]);
 
+/** Marks an inline element's start or end in raw run text. */
+const EDGE = "\u0001";
+
+/** collapse(), also returning where the EDGE marks fall (in characters of the collapsed text). */
+function collapseItems(raw: string): { text: string; items: number[] } {
+  let out = "";
+  let n = 0;
+  let pending = false;
+  const items: number[] = [];
+  const space = () => {
+    // A collapsible space after another one (even across an element edge) disappears.
+    if (pending && n > 0 && !out.endsWith(" ")) {
+      out += " ";
+      n++;
+    }
+    pending = false;
+  };
+  for (const ch of raw) {
+    if (ch === EDGE) {
+      // A space before an edge belongs to the text before it.
+      space();
+      if (n > 0 && items.at(-1) !== n) items.push(n);
+    } else if (/[ \t\n\r\f]/.test(ch)) pending = true;
+    else {
+      space();
+      out += ch;
+      n++;
+    }
+  }
+  const text = out.replace(/ $/, "");
+  const len = [...text].length;
+  return { text, items: items.filter((b) => b < len) };
+}
+
 function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): { runs: string[]; runMeta: FixtureNode["runMeta"] } {
   const runs: string[] = [];
   const runMeta: FixtureNode["runMeta"] = [];
@@ -67,10 +102,10 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): { runs: string[]; run
   let underlined = false;
   let depth = 0;
   const flush = () => {
-    const t = collapse(cur);
+    const { text: t, items } = collapseItems(cur);
     if (t) {
       runs.push(t);
-      runMeta.push({ inBlock: depth > 0, underlined });
+      runMeta.push({ inBlock: depth > 0, underlined, items });
     }
     cur = "";
     underlined = false;
@@ -89,7 +124,9 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): { runs: string[]; run
       depth--;
     } else {
       const ul = u || UNDERLINED.has(k.tagName ?? "") || (k.tagName === "a" && attr(k, "href") !== undefined);
+      cur += EDGE;
       (k.childNodes ?? []).forEach((c) => walk(c, ul));
+      cur += EDGE;
     }
   };
   (n.childNodes ?? []).forEach((c) => walk(c, false));

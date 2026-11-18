@@ -1,0 +1,10 @@
+{
+  "note": "A line after a break before an em dash is within a layout unit of the width: Chromium's choice varies, so the box is flagged",
+  "seed": 419142,
+  "widths": [
+    606
+  ],
+  "flagged": [
+    "n6"
+  ]
+}

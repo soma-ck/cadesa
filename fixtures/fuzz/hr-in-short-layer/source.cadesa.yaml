@@ -1,0 +1,24 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: grid
+      min: z3
+    slots:
+      s1:
+        layout:
+          pattern: stack
+        width: z1
+  c4:
+    layout:
+      pattern: layer
+    height: z6
+    slots:
+      s1:
+        aspect: 1:1
+tokens:
+  size:
+    z1: 72rem
+    z3: 26.7656rem
+    z6: 648px
+text: {}

@@ -1,0 +1,7 @@
+{
+  "note": "Text split by an inline element is shaped item by item: earlier items on a line count their widths rounded up",
+  "seed": 401557,
+  "widths": [
+    347
+  ]
+}

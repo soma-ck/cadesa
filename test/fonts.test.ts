@@ -40,8 +40,9 @@ describe("custom font metrics", () => {
     process.env.CADESA_METRICS = dir;
     const m = metricsFor('"Brand Sans", sans-serif')!;
     expect(m.file).toBe(join(dir, metricsFileName("Brand Sans")));
-    expect(m.measure("ab", 10, 400)).toBeCloseTo(2 * 0.54 * 10, 9);
-    expect(m.measure("ab", 10, 650)).toBeCloseTo(2 * 0.57 * 10, 9); // 650 → the 700 face
+    // Glyph advances are rounded to 1/65536 px, as Chromium positions them.
+    expect(m.measure("ab", 10, 400)).toBe(2 * (Math.round(0.54 * 10 * 65536) / 65536));
+    expect(m.measure("ab", 10, 650)).toBe(2 * (Math.round(0.57 * 10 * 65536) / 65536)); // 650 → the 700 face
     expect(m.weightIssue(650)).toBeUndefined();
   });
 

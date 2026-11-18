@@ -1,7 +1,10 @@
 {
-  "note": "A later line is placed by the positions of its ends in the paragraph, each truncated to a layout unit",
+  "note": "A line after a break inside a word (\"mid-|2024 x-\") may count its width rounded up: when that decides, the box is flagged",
   "seed": 305114,
   "widths": [
     924
+  ],
+  "flagged": [
+    "n10"
   ]
 }

@@ -109,7 +109,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   function text(n: FixtureNode, props: ResolvedProps, id: string, assumptions: string[]) {
     const t = props.text!.value;
     const m = metricsFor(t.font);
-    const runs = (n.runs.length ? n.runs : [n.text]).map((r) => (t.uppercase ? r.toUpperCase() : r));
+    const raw = n.runs.length ? n.runs : [n.text];
+    const runs = raw.map((r) => (t.uppercase ? r.toUpperCase() : r));
     const shown = runs.join(" ");
     const why = !m
       ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; run cadesa metrics <font-file>`
@@ -137,18 +138,25 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // (<a href>, <u>...) it varies with where the element starts and ends, so both ways are tried
     // and the box is flagged when they disagree.
     const painted = (props.background && !transparent(props.background.value)) || props.backdrop || props.border || props.shadow;
-    const meta = runs.map((_, i) => n.runMeta[i] ?? { inBlock: false, underlined: false });
+    const meta = runs.map((_, i) => n.runMeta[i] ?? { inBlock: false, underlined: false, items: [] });
+    // Inline element edges, moved for uppercasing that changes lengths ("ß" is "SS").
+    const items = raw.map((r, i) => {
+      if (!t.uppercase) return meta[i].items;
+      const cs = [...r];
+      return meta[i].items.map((b) => [...cs.slice(0, b).join("").toUpperCase()].length);
+    });
     let ambiguous = false;
     let anywhereFlagged = false;
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     return (maxWidth: number) => {
       const parts = runs.map((r, i) => {
-        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere };
-        const plain = t.underline || (!!painted && !meta[i].inBlock);
+        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, items: items[i] };
+        // Centered or end-aligned lines measure their hanging space's kerning out too.
+        const plain = t.underline || (!!painted && !meta[i].inBlock) || (props.textAlign !== undefined && props.textAlign.value !== "start");
         const a = layoutText(m!, r, t.sizePx, t.weight, maxWidth, { ...opts, hangKern: !plain });
         if (a.approximate && !anywhereFlagged) {
           anywhereFlagged = true;
-          assumptions.push(`line breaks are approximate: ${a.approximate} (wrap: anywhere)`);
+          assumptions.push(`line breaks are approximate: ${a.approximate}`);
         }
         if (!plain && meta[i].underlined && !ambiguous) {
           const b = layoutText(m!, r, t.sizePx, t.weight, maxWidth, { ...opts, hangKern: false });
@@ -347,11 +355,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       h = media ? ratioH : Math.max(ratioH, contentMin);
     }
     h = Math.max(h, 2 * inset.y);
-    // A stack shorter than its content shrinks the items that may shrink: an <hr> clips its
-    // overflow (overflow: hidden), so its automatic minimum height is 0. The engine doesn't model
-    // flex shrinking.
-    if (pattern === "stack" && contentH + 2 * inset.y > h + EPS)
-      for (const k of children) if (k.tag === "hr") k.assumptions.push("an <hr> in a stack shorter than its content shrinks (it clips its overflow)");
+    // A box shorter than its content shrinks the items that may shrink: an <hr> clips its overflow
+    // (overflow: hidden), so its automatic minimum height is 0 and a stack, grid or layer that is
+    // too short squeezes it. The engine doesn't model that.
+    const tallKids = rows ? rows.reduce((s, r) => s + Math.max(...r.map((b) => b.h)), 0) + gap * (rows.length - 1) : contentH;
+    if (tallKids + 2 * inset.y > h + EPS)
+      for (const k of rows ? rows.flat() : children)
+        if (k.tag === "hr") k.assumptions.push("an <hr> in a box shorter than its content shrinks (it clips its overflow)");
     // Without aspect (whose width: 100% wins), a media element with only a height takes its width
     // from its width attribute, or at the page level from the file's own ratio, instead of stretching.
     if (media && props.height && !props.aspect && typeof pw !== "number" && !props.maxWidth && parent !== "cluster") {

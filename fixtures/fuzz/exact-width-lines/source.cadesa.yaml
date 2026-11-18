@@ -1,0 +1,19 @@
+version: 1
+styles:
+  c1:
+    text: t1
+    padding: s4
+tokens:
+  space:
+    s4: 20px
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 41px
+    weight: 733
+    lineHeight: 1
+    color: ink

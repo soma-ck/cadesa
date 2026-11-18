@@ -1,0 +1,28 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: stack
+    slots:
+      s2:
+        text: t3
+        padding:
+          inline: s2
+        width: z6
+tokens:
+  space:
+    s2: 0.5rem
+  size:
+    z6: 17rem
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t3:
+    font: inter
+    size: 1.25rem
+    weight: 568
+    lineHeight: 1.5
+    color: ink
+    letterSpacing: 0.172

@@ -1,0 +1,36 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: grid
+      min: z5
+    padding:
+      inline: s2
+    width: z2
+  c2:
+    layout:
+      pattern: cluster
+    padding: s2
+    slots:
+      s4:
+        text: t1
+        padding:
+          inline: s3
+tokens:
+  space:
+    s2: 3rem
+    s3: 0.75rem
+  size:
+    z2: 44.625rem
+    z5: 332px
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 1.75rem
+    weight: 347
+    lineHeight: 1.6
+    color: ink

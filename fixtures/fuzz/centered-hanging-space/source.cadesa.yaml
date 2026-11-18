@@ -1,0 +1,21 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: cluster
+    slots:
+      s1:
+        text: t3
+        textAlign: center
+tokens:
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t3:
+    font: inter
+    size: 24px
+    weight: 800
+    lineHeight: 1.333
+    color: ink

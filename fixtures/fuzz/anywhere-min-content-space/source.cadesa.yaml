@@ -1,0 +1,27 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: cluster
+    padding: s1
+    width: z2
+    slots:
+      s3:
+        text: t2
+tokens:
+  space:
+    s1: 1.5rem
+  size:
+    z2: 4.3438rem
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t2:
+    font: inter
+    size: 43px
+    weight: 517
+    lineHeight: 1.75
+    color: accent
+    wrap: anywhere

@@ -1,0 +1,7 @@
+{
+  "note": "Text widths are exact multiples of 1/65536 px (glyph advances and kerning rounded as HarfBuzz positions them)",
+  "seed": 418836,
+  "widths": [
+    1058
+  ]
+}

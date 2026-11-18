@@ -1,0 +1,10 @@
+{
+  "note": "An <hr> with aspect in a layer shorter than it shrinks: flagged",
+  "seed": 408680,
+  "widths": [
+    1001
+  ],
+  "flagged": [
+    "n27"
+  ]
+}

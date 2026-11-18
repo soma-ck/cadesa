@@ -1,0 +1,26 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: layer
+    slots:
+      s1:
+        text: t2
+        padding: s1
+        width: z2
+tokens:
+  space:
+    s1: 3rem
+  size:
+    z2: 21rem
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t2:
+    font: inter
+    size: 26.48px
+    weight: 200
+    lineHeight: 2.046
+    color: accent

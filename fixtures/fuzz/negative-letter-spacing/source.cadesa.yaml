@@ -1,0 +1,27 @@
+version: 1
+styles:
+  c4:
+    layout:
+      pattern: layer
+    padding: s2
+    width: z5
+    slots:
+      s2:
+        text: t1
+tokens:
+  space:
+    s2: 20px
+  size:
+    z5: 16rem
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 2rem
+    weight: 869
+    lineHeight: 1
+    color: ink
+    letterSpacing: -0.005

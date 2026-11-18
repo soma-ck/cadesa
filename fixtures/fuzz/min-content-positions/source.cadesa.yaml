@@ -1,0 +1,26 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: stack
+    width: z4
+  c2:
+    layout:
+      pattern: cluster
+    slots:
+      s1:
+        text: t1
+tokens:
+  size:
+    z4: 27.7px
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 0.75rem
+    weight: 300
+    lineHeight: 1.333
+    color: accent

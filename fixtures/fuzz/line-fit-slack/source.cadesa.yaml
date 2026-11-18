@@ -1,0 +1,33 @@
+version: 1
+styles:
+  c3:
+    layout:
+      pattern: stack
+    padding: s4
+    border: line
+  c6:
+    layout:
+      pattern: grid
+      min: z1
+    slots:
+      s1:
+        text: t1
+      s2:
+        text: t1
+tokens:
+  space:
+    s4: 0.25rem
+  size:
+    z1: 3.5rem
+  color:
+    accent: "#3730a3"
+    line: "#d4d4d8"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 0.75rem
+    weight: 300
+    lineHeight: 0.96
+    color: accent

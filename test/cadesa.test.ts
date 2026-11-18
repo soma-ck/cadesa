@@ -201,7 +201,9 @@ describe("text", () => {
     const t = layoutText(inter, "Save notification preferences", 15, 600, 130);
     expect(t.lines.map((l) => l.text)).toEqual(["Save notification", "preferences"]);
     expect(t.lines.every((l) => l.width <= 130)).toBe(true);
-    expect(t.minContent).toBe(inter.measure("preferences", 15, 600));
+    // min-content is in layout units: the piece's ends in the paragraph, each rounded up to 1/64 px.
+    expect(Math.abs(t.minContent - inter.measure("preferences", 15, 600)!)).toBeLessThan(1 / 64);
+    expect(t.minContent * 64).toBe(Math.round(t.minContent * 64));
     expect(t.widestPiece).toBe("preferences");
   });
 
