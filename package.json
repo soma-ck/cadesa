@@ -66,7 +66,9 @@
     "conformance:field2": "tsx scripts/conformance.ts --source fixtures/field2.cadesa.yaml --css fixtures/field2.css --fixtures fixtures/field2.html --widths $(seq -s, 280 7 1400) --out artifacts/field2",
     "speed": "tsx scripts/speed.ts",
     "tailwind:fixtures": "tailwindcss -i fixtures/tailwind/input.css -o fixtures/tailwind/compiled.css",
-    "conformance:tailwind": "tsx scripts/conformance.ts --tailwind fixtures/tailwind/compiled.css --fixtures fixtures/tailwind/landing.html,fixtures/tailwind/settings.html,fixtures/tailwind/blog.html --widths 320-1440/10 --out artifacts/tailwind"
+    "conformance:tailwind": "tsx scripts/conformance.ts --tailwind fixtures/tailwind/compiled.css --fixtures fixtures/tailwind/landing.html,fixtures/tailwind/settings.html,fixtures/tailwind/blog.html --widths 320-1440/10 --out artifacts/tailwind",
+    "conformance:fonts": "CADESA_METRICS=fixtures/fonts/metrics tsx scripts/conformance.ts --strict --source fixtures/fonts/fonts.cadesa.yaml --css fixtures/fonts/fonts.css --fixtures fixtures/fonts/fonts.html --widths $(seq -s, 280 7 1400) --out artifacts/fonts",
+    "metrics:bundled": "tsx scripts/gen-bundled.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

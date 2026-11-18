@@ -7,24 +7,50 @@
  * Chromium's line breaker puts them (hyphens, dashes, soft hyphens, some punctuation), from a
  * table measured once in Chromium (breaks.generated.ts). Scope: Latin text in the measured set.
  */
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { metricsFileName, type MetricsFile } from "../metrics.js";
+import { metricsFileName, readMetrics, type MetricsFace } from "../metrics.js";
 import { BREAK_CHARS, BREAKS } from "./breaks.generated.js";
+
+export interface MetricsInfo {
+  source: string;
+  generatedWith: string;
+  /** The table ships with Cadesa (fonts/). */
+  bundled: boolean;
+  kind: "variable" | "static";
+  weights: number[];
+  files?: MetricsFace[];
+  /** Set for a font measured as installed on one machine (a system font). */
+  machineSpecific?: string;
+}
+
+const BUNDLED = fileURLToPath(new URL("../../fonts/", import.meta.url));
 
 export interface FontMetrics {
   family: string;
   file: string;
+  /** Where the table came from: what was measured, with what, and whether it ships with Cadesa. */
+  info: MetricsInfo;
   /** Width in px, or undefined if the text has a character outside the measured set. */
   /** With `spaced`, as letter-spaced text (no contextual alternates); letter-spacing itself isn't added. */
   measure(text: string, sizePx: number, weight: number, spaced?: boolean): number | undefined;
   unsupported(text: string): string[];
   /** Why this weight can't be measured exactly (e.g. a synthesized bold), if so. */
   weightIssue(weight: number): string | undefined;
+  /**
+   * A ligature or contextual run of this font in the text (a pair the font shapes differently when
+   * letter-spacing turns ligatures off, or a longer run), if any: Chromium never breaks inside one.
+   */
+  ligatureIn(text: string): string | undefined;
 }
 
 const registry = new Map<string, FontMetrics | undefined>();
+
+/** Forget loaded (and missing) metrics, after new tables were written. */
+export function clearMetricsCache() {
+  registry.clear();
+}
 
 /** CSS Fonts 4 §5.2 weight matching for a family made of static faces. */
 export function matchWeight(available: number[], desired: number): number {
@@ -40,7 +66,7 @@ export function matchWeight(available: number[], desired: number): number {
 }
 
 function load(file: string): FontMetrics {
-  const m = JSON.parse(readFileSync(file, "utf8")) as MetricsFile;
+  const m = readMetrics(file);
   const kind = m.kind ?? "variable";
   const index = new Map([...m.chars].map((c, i) => [c, i]));
   const kernChars = new Set(m.kernChars ?? "");
@@ -79,19 +105,63 @@ function load(file: string): FontMetrics {
     }
     return row;
   };
+  /** Exact values of the contextual runs at an integer weight of a variable font. */
+  const runRows = new Map<number, Map<string, number>>();
+  const runDeltas = m.fine?.runDeltas?.map((d) => d.split(",").map(Number));
+  const runRow = (weight: number): Map<string, number> | undefined => {
+    const f = m.fine;
+    if (!f?.runs || !Number.isInteger(weight)) return undefined;
+    const w = Math.min(Math.max(weight, f.from), f.to);
+    let row = runRows.get(w);
+    if (!row) {
+      row = new Map(
+        f.runs.map((r, i) => {
+          let a = f.runBase![i];
+          for (let k = 0; k < w - f.from; k++) a += runDeltas![i][k];
+          return [r, a];
+        }),
+      );
+      runRows.set(w, row);
+    }
+    return row;
+  };
 
   // The font's units per em, when the measured advances are whole font units at one of the usual
   // sizes (as for Inter): widths can then be computed exactly as
   // Chromium does. Otherwise they are scaled from the measured fractions.
-  const upm = [2048, 1000, 1024, 4096, 2000, 512, 256].find((u) =>
+  const upm = m.upm ?? [2048, 1000, 1024, 4096, 2000, 512, 256].find((u) =>
     Object.values(m.advances).every((row) => row.every((a) => Math.abs((a / m.units) * u - Math.round((a / m.units) * u)) < 0.003)),
   );
+  // A table that records the font file's units per em scales the way FreeType and HarfBuzz do, in
+  // fixed point. With a units per em that isn't a power of two, that differs from exact scaling.
+  // (The measured values carry the same rounding, from Chromium's 64px canonical size: a few
+  // thousandths of a unit.)
+  const fixedPoint = m.upm !== undefined;
   /** A value in font units, whole when it is within the metrics' precision of a whole unit. */
-  const snap = (v: number) => (Math.abs(v - Math.round(v)) < 0.003 ? Math.round(v) : v);
+  const snap = (v: number) => (Math.abs(v - Math.round(v)) < (fixedPoint ? 0.02 : 0.003) ? Math.round(v) : v);
   /** A length in px rounded to 1/65536 px. */
   const fixed = (v: number) => Math.round(v * 65536) / 65536;
+  /** A glyph advance in px: FreeType's x_scale = FT_DivFix(size in 26.6, upm), advance = FT_MulDiv(units, x_scale, 64). */
+  const advancePx = (u: number, gs: number) => {
+    if (!fixedPoint || !Number.isInteger(u) || u < 0) return fixed((u * gs) / upm!);
+    const xs = Math.floor((gs * 64 * 65536 + upm! / 2) / upm!);
+    return Math.floor((u * xs + 32) / 64) / 65536;
+  };
+  /** A kerning value in px: HarfBuzz's scale is the size in 16.16, and em_scale(v) = (v * ((scale << 16) / upm) + 32768) >> 16. */
+  const kernPx = (k: number, sizePx: number) => {
+    if (!fixedPoint || !Number.isInteger(k)) return fixed((k * sizePx) / upm!);
+    const mult = Math.floor((Math.trunc(Math.fround(sizePx) * 65536) * 65536) / upm!);
+    return Math.floor((k * mult + 32768) / 65536) / 65536;
+  };
 
   // Letter-spaced kerning: the normal table with the pairs that differ replaced, merged once.
+  const ctxRuns = Object.values(m.contextual ?? {}).flatMap((c) => Object.keys(c));
+  const ctxStarts = new Set(ctxRuns.map((r) => [...r][0]));
+  // Tables from before ligatures were measured (no upm) don't say which pairs are ligatures.
+  const ligRuns =
+    m.upm === undefined ? [] : [...new Set([...Object.values(m.kerningSpaced ?? {}), ...Object.values(m.contextual ?? {})].flatMap((k) => Object.keys(k)))];
+  const ctxMax = Math.max(0, ...ctxRuns.map((r) => [...r].length));
+
   const spacedTables = new Map<number, Record<string, number>>();
   const kerningAt = (w: number, spaced: boolean): Record<string, number> => {
     const over = spaced ? m.kerningSpaced?.[w] : undefined;
@@ -104,7 +174,20 @@ function load(file: string): FontMetrics {
   return {
     family: m.family,
     file,
+    info: {
+      source: m.source,
+      generatedWith: m.generatedWith,
+      bundled: file.startsWith(BUNDLED),
+      kind,
+      weights: m.weights,
+      ...(m.files && { files: m.files }),
+      ...(m.machineSpecific && { machineSpecific: m.machineSpecific }),
+    },
     unsupported: (text) => [...new Set([...text].filter((c) => !index.has(c)))],
+    ligatureIn(text) {
+      if (!ligRuns.length) return undefined;
+      return ligRuns.find((r) => text.includes(r));
+    },
     weightIssue(weight) {
       if (kind !== "static") return undefined;
       const face = matchWeight(m.weights, weight);
@@ -120,6 +203,8 @@ function load(file: string): FontMetrics {
       const kernA = kerningAt(wa, !!spaced);
       const kernB = kerningAt(wb, !!spaced);
       const gs = glyphSize(sizePx);
+      // A variable font's ligatures and contextual runs, exact at an integer weight (not letter-spaced).
+      const exactRuns = spaced ? undefined : runRow(weight);
       let units = 0;
       let kern = 0;
       let px = 0;
@@ -128,17 +213,38 @@ function load(file: string): FontMetrics {
         const i = index.get(c);
         if (i === undefined) return undefined;
         const adv = advA[i] + (advB[i] - advA[i]) * t;
-        if (upm) px += fixed((snap((adv / m.units) * upm) * gs) / upm);
+        if (upm) px += advancePx(snap((adv / m.units) * upm), gs);
         else units += adv;
         if (prev !== undefined) {
           const pair = kernBase(prev) + kernBase(c);
           const ka = kernA[pair] ?? 0;
           const kb = kernB[pair] ?? 0;
-          const k = ka + (kb - ka) * t;
-          if (upm) px += k ? fixed((snap((k / m.units) * upm) * sizePx) / upm) : 0;
+          const k = exactRuns?.get(pair) ?? ka + (kb - ka) * t;
+          if (upm) px += k ? kernPx(snap((k / m.units) * upm), sizePx) : 0;
           else kern += k;
         }
         prev = c;
+      }
+      // Ligatures and contextual forms (not in letter-spaced text): what each listed run adds,
+      // mostly a substituted glyph's advance, so at the glyph size.
+      if (ctxMax && !spaced) {
+        const cs = [...text];
+        const ca = m.contextual![wa] ?? {};
+        const cb = m.contextual![wb] ?? {};
+        for (let i = 0; i + 3 <= cs.length; i++) {
+          if (!ctxStarts.has(cs[i])) continue;
+          let run = cs[i] + cs[i + 1];
+          for (let n = 3; n <= ctxMax && i + n <= cs.length; n++) {
+            run += cs[i + n - 1];
+            const va = ca[run] ?? 0;
+            const v = exactRuns ? (exactRuns.get(run) ?? 0) : va + ((cb[run] ?? 0) - va) * t;
+            if (!v) continue;
+            if (upm) px += fixed((snap((v / m.units) * upm) * gs) / upm);
+            else units += v;
+            // (A run's value is a difference of advances, so it isn't rounded like one: at most
+            // 1/65536 px off where the units per em isn't a power of two.)
+          }
+        }
       }
       // Glyph advances come from the font set up at the quantized glyph size; kerning is applied by
       // the shaper at the size as specified. Each is rounded to 1/65536 px (HarfBuzz positions).
@@ -155,7 +261,7 @@ export function metricsDirs(): string[] {
   return [
     ...(process.env.CADESA_METRICS?.split(delimiter).filter(Boolean) ?? []),
     join(process.cwd(), ".cadesa", "metrics"),
-    fileURLToPath(new URL("../../fonts/", import.meta.url)),
+    BUNDLED,
   ];
 }
 
@@ -164,8 +270,9 @@ export function metricsFor(fontFamily: string | undefined): FontMetrics | undefi
   if (!fontFamily) return undefined;
   const first = fontFamily.split(",")[0].trim().replace(/^["']|["']$/g, "");
   const name = metricsFileName(first);
+  // A table may be gzipped (.metrics.json.gz), as the bundled ones are.
   const file = metricsDirs()
-    .map((d) => join(d, name))
+    .flatMap((d) => [join(d, name), join(d, `${name}.gz`)])
     .find(existsSync);
   const key = file ?? `missing:${name}`;
   if (!registry.has(key)) {
@@ -402,6 +509,10 @@ export function layoutText(
         cur = ch;
       } else cur += ch;
     });
+    // Chromium never breaks inside a ligature glyph ("ffl" in Roboto): where the word breaks then
+    // isn't known exactly. (Letter-spaced text has no ligatures.)
+    const lig = broke && !ls ? m.ligatureIn(trimSpaces(p).replaceAll(SHY, "")) : undefined;
+    if (lig) approximate ??= `a word with a ligature ("${lig}") breaks between characters`;
     if (!broke) return void (line = p);
     line = "";
     return cur + p.slice(trimSpaces(p).length);

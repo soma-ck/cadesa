@@ -28,7 +28,9 @@ describe("MCP server", () => {
       "cadesa_critique",
       "cadesa_css",
       "cadesa_explain",
+      "cadesa_fonts",
       "cadesa_lift",
+      "cadesa_metrics",
       "cadesa_render",
       "cadesa_validate",
       "cadesa_whatif",
@@ -77,6 +79,14 @@ describe("MCP server", () => {
     expect(c.text).toBe("✓ no findings at 57 widths from 320 to 1440px\n");
     const missing = await call("cadesa_explain", { ...page, id: "nope" });
     expect(missing).toEqual({ text: 'no element with data-fixture="nope" in fixtures/settings.html', isError: true });
+  });
+
+  it("finds the page's fonts and the metrics that measure them", async () => {
+    const r = await call("cadesa_fonts", { source: "fixtures/fonts/fonts.cadesa.yaml", fixture: "fixtures/fonts/fonts.html" });
+    expect(r.isError).toBe(false);
+    expect(r.text).toContain("Roboto · 300, 400, 450, 500, 600, 650, 700 · 12 text boxes");
+    expect(r.text).toContain("✓ metrics: bundled with Cadesa, measured from Google Fonts Roboto (latin subset, wght axis), SIL OFL 1.1");
+    expect(r.text).toContain("✓ every font the text uses has metrics");
   });
 
   it("returns the compiled CSS without writing", async () => {

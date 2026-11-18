@@ -44,12 +44,18 @@ const { values: args } = parseArgs({
     record: { type: "boolean", default: false },
     "max-shrinks": { type: "string", default: "40" },
     quiet: { type: "boolean", default: false },
+    font: { type: "string" },
   },
 });
 
 const ROOT = process.cwd();
 const TOL = Number(args.tolerance);
-const FONT_REL = "../../../fonts/InterVariable-latin.woff2";
+/**
+ * The font text is set in: --font "Family=path/to/font.woff2" (a variable font with a wght axis;
+ * the engine needs metrics for it, bundled or on $CADESA_METRICS). Default: the bundled Inter.
+ */
+const [FONT_FAMILY, FONT_PATH] = (args.font ?? "Inter=fonts/InterVariable-latin.woff2").split("=");
+const FONT_REL = `../../../${FONT_PATH}`;
 
 // ------------------------------------------------------------------ random
 
@@ -177,7 +183,7 @@ function genTokens(g: Gen) {
       [lengthValue(r, 8, 80), 1],
     ]);
   const color = { ink: "#1e1b4b", paper: "#ffffff", accent: "#3730a3", line: "#d4d4d8" };
-  const font: Obj = { inter: "Inter, sans-serif" };
+  const font: Obj = { inter: `${FONT_FAMILY}, sans-serif` };
   if (r.chance(0.1)) font.serif = "Georgia, serif";
   g.doc.tokens = { space, size, color, radius: { round: "8px" }, font, paint: { band: "linear-gradient(90deg, #3730a3, #0f766e)" }, shadow: { lift: "0 8px 24px #0002" } };
   g.spaces = Object.keys(space);
@@ -462,7 +468,7 @@ export function fixtureHtml(body: Node[]): string {
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <link rel="stylesheet" href="style.css" />
     <style>
-      @font-face { font-family: "Inter"; font-weight: 100 900; src: url("${FONT_REL}") format("woff2"); }
+      @font-face { font-family: "${FONT_FAMILY}"; font-weight: 100 900; src: url("${FONT_REL}") format("woff2"); }
       body { margin: 0; }
     </style>
   </head>
@@ -526,10 +532,10 @@ function excludedReason(l: Layout, id: string, assumptions: string[]): string | 
 }
 
 const LOAD = `(async () => {
-  await document.fonts.load('400 16px Inter');
+  await document.fonts.load('400 16px "${FONT_FAMILY}"');
   await document.fonts.ready;
   await Promise.all([...document.images].map((i) => i.decode().catch(() => {})));
-  return document.fonts.check('16px Inter') && ![...document.fonts].some((f) => f.status === 'error');
+  return document.fonts.check('16px "${FONT_FAMILY}"') && ![...document.fonts].some((f) => f.status === 'error');
 })()`;
 const RECTS = `(() => {
   const o = {};
@@ -544,7 +550,7 @@ async function chromeSide(page: Page, html: string, css: string, widths: number[
   const doc = html.replace('<link rel="stylesheet" href="style.css" />', () => `<style>\n${css}</style>`);
   await page.setViewportSize({ width: widths[0], height: 800 });
   await page.setContent(doc, { waitUntil: "load" });
-  if (!(await page.evaluate(LOAD))) throw new Error("Inter did not load");
+  if (!(await page.evaluate(LOAD))) throw new Error(`${FONT_FAMILY} did not load`);
   const out: Record<string, Rect>[] = [];
   for (const w of widths) {
     await page.setViewportSize({ width: w, height: 800 });

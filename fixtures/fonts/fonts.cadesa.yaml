@@ -1,0 +1,64 @@
+# Conformance fixture for fonts other than Inter: Roboto (a Google variable font, measured with
+# `cadesa metrics --google Roboto`) and Lato (two static faces, 400 and 700, declared with
+# @font-face in fonts.html and measured with `cadesa fonts ... --measure`).
+version: 1
+tokens:
+  space: { xs: 0.25rem, s: 0.5rem, m: 1rem, l: 1.5rem, xl: 2rem }
+  size: { content: 64rem, card-min: 15rem, chip: 7.5rem, side: 18rem }
+  color: { page: "#f6f7f9", ink: "#111827", muted: "#4b5563", brand: "#1d4ed8", white: "#ffffff", line: "#d1d5db" }
+  radius: { s: 6px, m: 12px }
+  font: { roboto: "Roboto, sans-serif", lato: "Lato, sans-serif" }
+text:
+  display: { font: roboto, size: 2.375rem, weight: 700, lineHeight: 1.1, color: ink }
+  title: { font: roboto, size: 1.3rem, weight: 600, lineHeight: 1.3, color: ink }
+  body: { font: roboto, size: 1rem, weight: 400, lineHeight: 1.5, color: muted }
+  fine: { font: roboto, size: 0.8125rem, weight: 300, lineHeight: 1.4, color: muted }
+  label: { font: roboto, size: 0.875rem, weight: 500, lineHeight: 1.25, color: white }
+  odd: { font: roboto, size: 15.5px, weight: 450, lineHeight: 1.5, color: ink }
+  caps: { font: roboto, size: 0.75rem, weight: 650, lineHeight: 1.3, color: brand, transform: uppercase, letterSpacing: 0.08 }
+  lato-head: { font: lato, size: 1.75rem, weight: 700, lineHeight: 1.2, color: ink }
+  lato-body: { font: lato, size: 1.0625rem, weight: 400, lineHeight: 1.55, color: muted }
+  lato-strong: { font: lato, size: 1rem, weight: 600, lineHeight: 1.4, color: ink }
+  lato-medium: { font: lato, size: 0.9375rem, weight: 500, lineHeight: 1.45, color: ink }
+  lato-chip: { font: lato, size: 0.8125rem, weight: 700, lineHeight: 1.2, color: white }
+page:
+  background: page
+breakpoints:
+  narrow: 640px
+styles:
+  intro:
+    layout: { pattern: stack, gap: m }
+    padding: { block: xl, inline: l }
+    maxWidth: content
+    slots:
+      kicker: { text: caps }
+      headline: { text: display }
+      lede: { text: body }
+      note: { text: odd }
+      meta: { text: fine }
+    when:
+      narrow: { padding: m }
+  chips:
+    layout: { pattern: cluster, gap: s, align: center }
+    padding: { block: m, inline: l }
+    slots:
+      chip: { text: label, background: brand, radius: s, padding: { block: xs, inline: s } }
+      lato: { text: lato-chip, background: ink, radius: s, padding: { block: xs, inline: s } }
+  cards:
+    layout: { pattern: grid, min: card-min, gap: m }
+    padding: l
+    maxWidth: content
+    slots:
+      card: { layout: { pattern: stack, gap: s }, padding: m, background: white, radius: m, border: line }
+      name: { text: lato-head }
+      text: { text: lato-body }
+      strong: { text: lato-strong }
+      medium: { text: lato-medium }
+      title: { text: title }
+  row:
+    layout: { pattern: cluster, gap: m, align: start }
+    padding: l
+    slots:
+      side: { text: lato-body, width: side }
+      item: { text: body }
+      tag: { text: lato-strong }

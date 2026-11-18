@@ -44,8 +44,14 @@ const { values } = parseArgs({
      * the engine works from the page's on-the-fly lift.
      */
     tailwind: { type: "string" },
+    /**
+     * Also fail on any box the engine flags (a text box it couldn't measure, say) and on any text
+     * box whose line count differs from Chromium's (counted from the text's line boxes).
+     */
+    strict: { type: "boolean", default: false },
   },
 });
+const strict = values.strict!;
 
 const root = process.cwd();
 const tolerance = Number(values.tolerance);
@@ -95,6 +101,7 @@ console.log(`tolerance: ±${tolerance}px\n`);
 // Font families the source sets text in; each must load in the fixture or the comparison is meaningless.
 const familiesOf = (model: Model) => [...new Set([...model.text.values()].filter((r) => r.font).map((r) => model.tokens.get(`font.${r.font!.name}`)!.raw.split(",")[0].trim().replace(/^["']|["']$/g, "")))];
 let checked = 0;
+let linesChecked = 0;
 let assumed = 0;
 const flaggedSame: string[] = [];
 const flaggedDiff: string[] = [];
@@ -137,6 +144,20 @@ for (const layout of layouts) {
       }),
     ),
   );
+  // Lines of text in each element: its text's line boxes, by distinct top edge.
+  const lineCounts: Record<string, number> = strict
+    ? await page.evaluate(`Object.fromEntries([...document.querySelectorAll("[data-fixture]")].map((el) => {
+        const tops = new Set();
+        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          if (!n.textContent.trim()) continue;
+          const r = document.createRange();
+          r.selectNodeContents(n);
+          for (const q of r.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top * 4));
+        }
+        return [el.dataset.fixture, tops.size];
+      }))`)
+    : {};
   const bottom = Math.max(...Object.values(rects).map((r) => r.y + r.h));
   if (!tw || [400, 760, 1280].includes(layout.width)) await page.screenshot({
     path: join(values.out!, `${name}-${layout.width}.png`),
@@ -151,14 +172,16 @@ for (const layout of layouts) {
     const fmt = (r: { x: number; y: number; w: number; h: number }) =>
       `${+r.x.toFixed(2)},${+r.y.toFixed(2)} ${+r.w.toFixed(2)}×${+r.h.toFixed(2)}`;
     const delta = c ? Math.max(...(["x", "y", "w", "h"] as const).map((k) => Math.abs(b[k] - c[k]))) : Infinity;
-    const ok = delta <= tolerance;
-    const flagged = uncertain.has(b.id);
-    if (!ok && !flagged) failures++;
+    const linesOk = !strict || !b.lines || b.lines.length === lineCounts[b.id];
+    const ok = delta <= tolerance && linesOk;
+    const flagged = uncertain.has(b.id) || (strict && b.assumptions.length > 0);
+    if ((!ok && !flagged) || (strict && flagged)) failures++;
+    if (strict && b.lines) linesChecked++;
     const lh = b.props.text ? b.props.text.value.sizePx * b.props.text.value.lineHeight : 0;
     const note = b.assumptions.length
       ? "  (text: 1 line assumed)"
       : b.lines && !b.props.height
-        ? `  ${b.lines.length} line${b.lines.length > 1 ? "s" : ""}${c ? ` / chromium ${Math.round(c.h / lh)}` : ""}`
+        ? `  ${b.lines.length} line${b.lines.length > 1 ? "s" : ""}${c ? ` / chromium ${strict ? lineCounts[b.id] : Math.round(c.h / lh)}` : ""}`
         : "";
     checked++;
     // Tailwind sweeps are long: print only what isn't a plain match.
@@ -195,5 +218,5 @@ if (tw) {
   );
   console.log(`≈ ${flaggedSame.length + flaggedDiff.length} boxes marked uncertain: ${flaggedDiff.length} differ, ${flaggedSame.length} happen to match`);
   if (tw) console.log(`  (${assumed} of them for unmeasured text; ${widths.length} widths ${widths[0]}–${widths.at(-1)}px, ${values.fixtures!.split(",").length} pages)`);
-} else console.log(failures ? `\n✖ ${failures} mismatch(es) of ${checked} boxes` : `\n✓ engine and Chromium agree on all ${checked} boxes`);
+} else console.log(failures ? `\n✖ ${failures} mismatch(es) of ${checked} boxes` : `\n✓ engine and Chromium agree on all ${checked} boxes${strict ? `, none flagged; line counts agree on all ${linesChecked} text boxes` : ""}`);
 process.exitCode = failures ? 1 : 0;

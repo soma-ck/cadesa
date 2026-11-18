@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa conformance fixture: Roboto and Lato</title>
+    <link rel="stylesheet" href="fonts.css" />
+    <style>
+      /* Roboto: the Google Fonts variable font (latin subset), as `cadesa metrics --google Roboto` downloaded it. */
+      @font-face {
+        font-family: "Roboto";
+        font-weight: 100 900;
+        src: url("fonts/roboto/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2") format("woff2");
+      }
+      /* Lato: two static faces. */
+      @font-face {
+        font-family: "Lato";
+        font-weight: 400;
+        src: url("fonts/lato/Lato-Regular.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Lato";
+        font-weight: 700;
+        src: url("fonts/lato/Lato-Bold.woff2") format("woff2");
+      }
+      body { margin: 0; }
+    </style>
+  </head>
+  <body>
+    <header class="ca-intro" data-fixture="intro">
+      <p class="ca-intro__kicker" data-fixture="kicker">Office affiliates · fjord ferries</p>
+      <h1 class="ca-intro__headline" data-fixture="headline">Typefaces that fit: AVATAR, Wavy Yolks &amp; “quoted” offices</h1>
+      <p class="ca-intro__lede" data-fixture="lede">Efficient, affable officials fly fluffy waffles to the fjord’s fifty affiliated offices — VAT to pay, 1,234.56 € in total. The quick brown fox jumps over the lazy dog; WAVE, Toyota, LT-AV.</p>
+      <p class="ca-intro__note" data-fixture="note">At weight 450 the ligatures in “difficult”, “office” and “afflict” are measured exactly, between the sampled weights.</p>
+      <p class="ca-intro__meta" data-fixture="meta">Fine print set light: café naïve façade, Æsir, Ångström — 12:45, ±3°, ¼ ½ ¾, “quotes” ‘single’…</p>
+    </header>
+    <nav class="ca-chips" data-fixture="chips">
+      <span class="ca-chips__chip" data-fixture="chip-1">Office</span>
+      <span class="ca-chips__chip" data-fixture="chip-2">Affiliate offers</span>
+      <span class="ca-chips__lato" data-fixture="chip-3">Fjord WAVE</span>
+      <span class="ca-chips__chip" data-fixture="chip-4">Typography &amp; layout</span>
+      <span class="ca-chips__lato" data-fixture="chip-5">AVATAR fluff</span>
+      <span class="ca-chips__chip" data-fixture="chip-6">To-do</span>
+      <span class="ca-chips__lato" data-fixture="chip-7">Efficient offices</span>
+    </nav>
+    <section class="ca-cards" data-fixture="cards">
+      <article class="ca-cards__card" data-fixture="card-1">
+        <h2 class="ca-cards__name" data-fixture="name-1">Lato, set static</h2>
+        <p class="ca-cards__text" data-fixture="text-1">Two faces only, 400 and 700: a 600 role takes the bold face and a 500 role the regular one, by the CSS weight-matching rules.</p>
+        <p class="ca-cards__strong" data-fixture="strong-1">Semibold asks for 600, gets 700</p>
+        <p class="ca-cards__medium" data-fixture="medium-1">Medium asks for 500, gets 400 — affably, efficiently.</p>
+      </article>
+      <article class="ca-cards__card" data-fixture="card-2">
+        <h2 class="ca-cards__name" data-fixture="name-2">AVA, Tower, Wolf</h2>
+        <p class="ca-cards__text" data-fixture="text-2">Kerning pairs everywhere: AV, To, Wa, Yo, LT, “A” and ‘V’. Office staff fill out affidavits.</p>
+        <h3 class="ca-cards__title" data-fixture="title-2">Roboto semibold in a Lato card</h3>
+      </article>
+      <article class="ca-cards__card" data-fixture="card-3">
+        <h2 class="ca-cards__name" data-fixture="name-3">Numbers</h2>
+        <p class="ca-cards__text" data-fixture="text-3">0123456789 — 3/4 of 1,000,000 is 750,000; 98.6% of 42 is 41.412.</p>
+        <p class="ca-cards__medium" data-fixture="medium-3">Supercalifragilisticexpialidocious-ly hyphenated words-and-dashes—break here.</p>
+      </article>
+    </section>
+    <section class="ca-row" data-fixture="row">
+      <p class="ca-row__side" data-fixture="side">A fixed-width side column in Lato that wraps at its own width.</p>
+      <p class="ca-row__item" data-fixture="item-1">Content-sized item</p>
+      <p class="ca-row__tag" data-fixture="tag-1">Waffle office</p>
+      <p class="ca-row__item" data-fixture="item-2">Another item whose text is long enough to wrap when the row runs out of room.</p>
+      <p class="ca-row__tag" data-fixture="tag-2">fjord</p>
+    </section>
+  </body>
+</html>
