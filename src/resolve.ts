@@ -7,6 +7,7 @@ import {
   type Justify,
   type MarginSide,
   type Model,
+  type Overflow,
   type Pattern,
   type Props,
   type Ref,
@@ -82,6 +83,7 @@ export interface ResolvedProps {
   wrap?: Resolved<boolean>;
   grow?: Resolved<{ factor: number; basis: "zero" | "content" }>;
   aspect?: Resolved<number>;
+  overflow?: Resolved<{ x: Overflow; y: Overflow }>;
   fit?: Resolved<"cover" | "contain">;
   backdrop?: Resolved<string>;
   shadow?: Resolved<string>;
@@ -211,6 +213,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "grow": {
         const g = p.grow!;
         out.grow = { value: { factor: g.value, basis: g.basis }, display: `${g.value}${g.basis === "zero" ? " (from zero)" : ""}`, steps: [...pre, src(g.path)] };
+        break;
+      }
+      case "overflow": {
+        const o = p.overflow!;
+        out.overflow = { value: { x: o.x, y: o.y }, display: o.raw, steps: [...pre, src(o.path)] };
         break;
       }
       case "textAlign": {

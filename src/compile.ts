@@ -143,6 +143,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.aspect)
     out.push(...(e.width || e.maxWidth ? [] : ["width: 100%"]), `aspect-ratio: ${p.aspect.raw}`, "height: auto", ...(ctx.height ? ["min-height: auto"] : []));
   if (p.fit) out.push(`object-fit: ${p.fit.value}`);
+  if (p.overflow) out.push(`overflow-x: ${p.overflow.x}`, `overflow-y: ${p.overflow.y}`);
   // A fixed-height text box centers its lines vertically. align-content on a block container keeps
   // inline formatting intact (display: flex would split <strong> etc. into separate items).
   if (p.height && ctx.leafText) out.push("align-content: center");

@@ -498,6 +498,22 @@
             "contain"
           ]
         },
+        "overflow": {
+          "oneOf": [
+            {
+              "enum": ["visible", "hidden", "clip", "auto", "scroll"]
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "properties": {
+                "x": { "enum": ["visible", "hidden", "clip", "auto", "scroll"] },
+                "y": { "enum": ["visible", "hidden", "clip", "auto", "scroll"] }
+              }
+            }
+          ],
+          "description": "content that doesn't fit scrolls (auto, scroll) or is cut off (hidden, clip) instead of spilling out; one keyword for both axes or { x, y }. Anything but visible and clip also stops margins collapsing through the box and lets it shrink below its content in a cluster"
+        },
         "backdrop": {
           "$ref": "#/$defs/ref",
           "description": "paint token; none: in a breakpoint override, removes the value a wider state set"

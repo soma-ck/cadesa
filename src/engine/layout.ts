@@ -10,7 +10,7 @@
  */
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
-import type { Component, Model, Pattern } from "../model.js";
+import { scrolls, type Component, type Model, type Pattern } from "../model.js";
 import { activeBreakpoints, fmtPx, insets, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
@@ -244,6 +244,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   }
   /** Boxes the engine can't guarantee beyond their own assumptions and errors, and why. */
   const sources = new Map<Box, string>();
+  /**
+   * Scrollbars that take space where they aren't overlaid (Windows, many Linux setups; Cadesa
+   * predicts overlay scrollbars, as on macOS and phones): a horizontal one makes its box taller (the
+   * box and what's around it may move, not its content), a vertical one narrows its content.
+   */
+  const scrollbars = new Map<Box, { taller?: string; narrower?: string }>();
   let auto = 0;
   const idOf = (n: FixtureNode) => n.fixtureId ?? `${n.tag}#${++auto}`;
 
@@ -565,6 +571,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         }
         base = insX;
       }
+      // A scroll container's automatic minimum width is 0: it shrinks below its content (which then scrolls or is clipped).
+      if (scrolls(p.overflow?.value)) {
+        min = insX;
+        minKnown = true;
+      }
       min = Math.min(min, Math.max(cap, insX));
       // The flex base size is never below the padding and border (its content size is at least 0).
       base = Math.max(base, insX);
@@ -740,8 +751,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Block flow in block flow: with no padding or border in between, this box's top margin and
     // its first child's are one margin (likewise at the bottom while its height is auto).
     const inFlow = parent === "flow" || parent === "page";
-    const throughTop = inFlow && ins.top === 0;
-    const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.aspect;
+    // overflow other than visible or clip: a scroll container, a new block formatting context that
+    // keeps its children's margins inside.
+    const ov = props.overflow?.value;
+    const scroller = scrolls(ov);
+    const throughTop = inFlow && ins.top === 0 && !scroller;
+    const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.aspect && !scroller;
     let escaped: FlowResult | undefined;
     let grows: StackGrow | undefined;
 
@@ -780,7 +795,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       if (children.some((b) => b.props.grow)) grows = { kids: children, gap, insetTop: ins.top, insetY: insY, natural: children.map((b) => b.h) };
     } else if (kids.length && pattern === "flow") {
       // A box sized by its aspect ratio keeps its last child's bottom margin neither inside nor out (Chromium drops it).
-      const end = throughBottom ? "escape" : inFlow && ins.bottom === 0 && props.aspect && !props.height ? "drop" : "keep";
+      const end = throughBottom ? "escape" : inFlow && !scroller && ins.bottom === 0 && props.aspect && !props.height ? "drop" : "keep";
       const f = flow(kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "flow")), innerW, throughTop, end);
       children.push(...f.boxes);
       contentH = f.contentH;
@@ -795,7 +810,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         lines = tl.lines;
         contentH = lines.length * lineH;
         contentW = Math.max(...lines.map((l) => l.width));
-        if (tl.minContent > innerW + 0.5 && !t.nowrap) {
+        // Text in a box that clips or scrolls it (overflow-x other than visible) doesn't spill out: check reports it as clipped.
+        if (tl.minContent > innerW + 0.5 && !t.nowrap && (!ov || ov.x === "visible")) {
           issues.push({
             severity: "warning",
             id,
@@ -831,6 +847,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (tallKids + insY > h + EPS || props.height || props.aspect)
       for (const k of rows ? rows.flat() : children)
         if (k.tag === "hr") k.assumptions.push("an <hr> in a box with a set height may shrink (it clips its overflow)");
+        else if (scrolls(k.props.overflow?.value) && pattern === "stack") k.assumptions.push(`a box with overflow: ${k.props.overflow!.display} in a stack with a set height may shrink (its minimum height is 0)`);
     // Without aspect (whose width: 100% wins), a media element with only a height takes its width
     // from its width attribute, or at the page level from the file's own ratio, instead of stretching.
     if (media && props.height && !props.aspect && (pw === undefined || pw === "fill") && !props.maxWidth && parent !== "cluster") {
@@ -872,7 +889,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Flex and grid containers, form controls,
     // media and <hr> (overflow: hidden) never do.
     const empty =
-      h === 0 && insY === 0 && !props.height && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" &&
+      h === 0 && insY === 0 && !props.height && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" && !scroller &&
       !(isText && n.text) && (pattern === undefined ? !kids.length : pattern === "flow" && !!escaped?.empty);
     const inner = escaped?.empty ? escaped.pending : NONE;
     const mt = strut(m.top);
@@ -906,7 +923,19 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
 
     // Overflow: past the content box on the right (a negative right margin may pull a child past it on purpose).
     const widest = Math.max(contentW, ...children.map((b) => b.x + b.w + Math.min(0, marginOf(b.props).right)));
-    if (widest > innerW + 0.5 && children.length) {
+    // A box that clips or scrolls its content horizontally: what doesn't fit is cut off or scrolls,
+    // it doesn't spill out (check reports clipped text). Scrollbars take space only where they
+    // aren't overlaid (Windows, many Linux setups); Cadesa predicts overlay scrollbars.
+    const clipsX = !!ov && ov.x !== "visible";
+    const where = "where scrollbars aren't overlaid (Windows, many Linux setups)";
+    const sb: { taller?: string; narrower?: string } = {};
+    if (!props.height && !props.aspect && (ov?.x === "scroll" || (ov?.x === "auto" && widest > innerW + 0.5)))
+      sb.taller = ov.x === "scroll" ? `overflow-x: scroll always shows a horizontal scrollbar, which adds height ${where}` : `its content is wider than it at ${width}px and scrolls (overflow-x: auto): a horizontal scrollbar adds height ${where}`;
+    if (ov?.y === "scroll" || (ov?.y === "auto" && props.height && contentH > props.height.value - insY + 0.5))
+      sb.narrower = ov.y === "scroll" ? `overflow-y: scroll always shows a vertical scrollbar, which takes width from its content ${where}` : `its content is taller than its height at ${width}px and scrolls (overflow-y: auto): a vertical scrollbar takes width from its content ${where}`;
+    if (sb.taller || sb.narrower) scrollbars.set(box, sb);
+    if (clipsX && widest > innerW + 0.5) box.overflowX = widest - innerW;
+    else if (widest > innerW + 0.5 && children.length) {
       box.overflowX = widest - innerW;
       const culprit = children.find((b) => b.x + b.w + Math.min(0, marginOf(b.props).right) > innerW + EPS)!;
       issues.push({
@@ -915,8 +944,20 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         path: culprit.props.width?.steps.at(-1)?.path ?? culprit.sourcePath,
         message: `#${culprit.id} overflows #${id} by ${fmtPx(box.overflowX)}px at ${width}px`,
       });
-    } else if (widest > innerW + 0.5) box.overflowX = widest - innerW;
-    if (props.height && contentH > props.height.value - insY + 0.5) {
+    } else if (widest > innerW + 0.5) {
+      box.overflowX = widest - innerW;
+      // white-space: nowrap text wider than its box spills out of it.
+      if (lines && props.text?.value.nowrap && contentW > innerW + 0.5)
+        issues.push({
+          severity: "warning",
+          id,
+          path: props.text.steps.at(-1)!.path,
+          message: `the text of #${id} doesn't wrap (white-space: nowrap) and overflows it by ${fmtPx(contentW - innerW)}px at ${width}px`,
+        });
+    }
+    const clipsY = !!ov && ov.y !== "visible";
+    if (props.height && contentH > props.height.value - insY + 0.5 && clipsY) box.overflowY = contentH - (props.height.value - insY);
+    else if (props.height && contentH > props.height.value - insY + 0.5) {
       box.overflowY = contentH - (props.height.value - insY);
       issues.push({
         severity: "warning",
@@ -1101,9 +1142,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (!flagged.has(b)) flagged.set(b, why);
     if (deep) for (const k of b.children) flag(k, why, true);
   };
-  for (const [src, reason] of sources) {
+  for (const [src, sb] of scrollbars) if (sb.narrower) for (const k of src.children) flag(k, `its width depends on #${src.id}'s scrollbar (${sb.narrower})`, true);
+  const spread: [Box, string, boolean][] = [...[...sources].map(([b, r]) => [b, r, true] as [Box, string, boolean]), ...[...scrollbars].filter(([, sb]) => sb.taller).map(([b, sb]) => [b, sb.taller!, false] as [Box, string, boolean])];
+  for (const [src, reason, deep] of spread) {
     const why = `geometry depends on #${src.id}, which the engine can't guarantee (${reason})`;
-    flag(src, `${reason}`, true);
+    flag(src, `${reason}`, deep);
     for (let b: Box | undefined = src; b; b = parentOf.get(b)) {
       const parent = parentOf.get(b);
       const sibs = parent ? parent.children : boxes;

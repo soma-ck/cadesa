@@ -149,9 +149,21 @@ export interface Props {
    * the content's min-content width; content (default): from the box's own size.
    */
   grow?: { value: number; basis: "zero" | "content"; path: string };
+  /**
+   * What happens to content that doesn't fit, per axis, as computed (a visible axis next to a
+   * scrolling one computes to auto, clip to hidden). Anything but visible and clip makes a scroll
+   * container: a new block formatting context (margins don't collapse through it) whose automatic
+   * minimum size in a flex row is 0. Overflowing content scrolls or is cut off, never spills out.
+   */
+  overflow?: { x: Overflow; y: Overflow; raw: string; path: string };
   /** Removed by this override (`maxWidth: none`), with the YAML path. */
   unset?: Partial<Record<Unsettable, string>>;
 }
+
+export type Overflow = "visible" | "hidden" | "clip" | "auto" | "scroll";
+export const OVERFLOWS: Overflow[] = ["visible", "hidden", "clip", "auto", "scroll"];
+/** A scroll container: overflow other than visible or clip on either axis. */
+export const scrolls = (o?: { x: Overflow; y: Overflow }) => !!o && [o.x, o.y].some((v) => v !== "visible" && v !== "clip");
 
 export const PROP_ORDER: (keyof Props)[] = [
   "layout",
@@ -171,6 +183,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "text",
   "textAlign",
   "grow",
+  "overflow",
 ];
 
 export interface Slot {

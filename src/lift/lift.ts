@@ -57,12 +57,21 @@ export interface LiftResult {
 // ---------------------------------------------------------------- property classes
 
 const PAINT =
-  /^(color-adjust|print-color-adjust|forced-color-adjust|color|background(-color|-image|-position|-size|-repeat|-clip|-origin|-attachment)?|box-shadow|outline.*|opacity|cursor|transition.*|animation.*|text-decoration.*|text-shadow|text-align|border(-top|-right|-bottom|-left)?-color|border(-top|-right|-bottom|-left)?-(left|right)?-?radius|border-radius|fill|stroke.*|filter|backdrop-filter|visibility|pointer-events|user-select|caret-color|accent-color|will-change|z-index|mix-blend-mode|appearance|-webkit-.*|-moz-.*|list-style.*|object-.*|scroll-.*|isolation|overflow(-x|-y)?|content|resize|touch-action|clip-path|mask.*)$/;
+  /^(color-adjust|print-color-adjust|forced-color-adjust|color|background(-color|-image|-position|-size|-repeat|-clip|-origin|-attachment)?|box-shadow|outline.*|opacity|cursor|transition.*|animation.*|text-decoration.*|text-shadow|text-align|border(-top|-right|-bottom|-left)?-color|border(-top|-right|-bottom|-left)?-(left|right)?-?radius|border-radius|fill|stroke.*|filter|backdrop-filter|visibility|pointer-events|user-select|caret-color|accent-color|will-change|z-index|mix-blend-mode|appearance|-webkit-.*|-moz-.*|list-style.*|object-.*|scroll-.*|isolation|content|resize|touch-action|clip-path|mask.*)$/;
 const TEXT =
   /^(font.*|letter-spacing|word-spacing|text-transform|white-space|line-height|text-indent|word-break|overflow-wrap|word-wrap|hyphens|tab-size|text-wrap.*|direction|unicode-bidi|writing-mode|text-rendering|font-kerning)$/;
 const VISUAL = /^(transform|translate|rotate|scale|perspective.*|transform-origin)$/;
 
+/**
+ * Paint that changes neither a text's color nor what is painted behind it in the default state
+ * (transitions, cursors, outlines, border colors and radii, the ellipsis of text-overflow): no
+ * effect on boxes or on contrast.
+ */
+const COLORLESS =
+  /^((-webkit-)?transition.*|cursor|(-webkit-|-moz-|-ms-)?user-select|pointer-events|touch-action|will-change|resize|scroll-.*|overscroll-.*|caret-color|accent-color|outline.*|border(-top|-right|-bottom|-left)?-color|border(-top|-bottom)?(-left|-right)?-radius|border-(start|end)-(start|end)-radius|list-style.*|isolation|text-decoration.*|(-webkit-)?print-color-adjust|color-adjust|forced-color-adjust|-webkit-tap-highlight-color|(-webkit-|-moz-|-ms-)?text-size-adjust|-webkit-font-smoothing|-moz-osx-font-smoothing|-webkit-touch-callout|-webkit-overflow-scrolling|z-index|text-align|text-overflow)$/;
+
 export function kindOf(prop: string): ImpactKind {
+  if (COLORLESS.test(prop)) return "none";
   if (PAINT.test(prop)) return "paint";
   if (TEXT.test(prop)) return "text";
   if (VISUAL.test(prop)) return "visual";
@@ -211,6 +220,8 @@ function expand(d: Decl): Decl[] {
     }
     case "flex":
       return [mk("flex", d.value.trim())];
+    case "overflow":
+      return axis("overflow", "x", "y", d.value);
     default:
       return [d];
   }
@@ -727,6 +738,19 @@ export function liftElements(input: LiftInput): LiftResult {
     const fit = take("object-fit");
     if (fit && ["cover", "contain"].includes(fit.value.trim())) out.fit = fit.value.trim();
     else if (fit && fit.value.trim() !== "fill") note(e, s, fit, "paint only; no effect on layout", "paint");
+    // overflow: what doesn't fit scrolls or is cut off (overlay is a legacy alias of auto).
+    const ox = take("overflow-x");
+    const oy = take("overflow-y");
+    if (ox || oy) {
+      const kw = (d?: Decl) => {
+        const v = d ? resolveVar(d.value)?.raw.trim().toLowerCase() : "visible";
+        return v === "overlay" ? "auto" : v;
+      };
+      const [x, y] = [kw(ox), kw(oy)];
+      const ok = (v?: string) => !!v && ["visible", "hidden", "clip", "auto", "scroll"].includes(v);
+      if (!ok(x) || !ok(y)) note(e, s, (!ok(x) ? ox : oy)!, "overflow must be visible, hidden, clip, auto or scroll", "geometry");
+      else if (x !== "visible" || y !== "visible") out.overflow = x === y ? x : { x, y };
+    }
     const bi = take("background-image");
     if (bi && bi.value.trim() !== "none") {
       const r = resolveVar(bi.value);
@@ -867,8 +891,14 @@ export function liftElements(input: LiftInput): LiftResult {
     }
 
     for (const d of m.values()) {
-      const k = kindOf(d.prop);
-      note(e, s, d, k === "paint" ? "paint only; no effect on layout" : `${d.prop} is not modelled`, k);
+      // Chromium drops a control's native appearance once the author styles its background or border.
+      const styled = !!bg || bw.some(Boolean);
+      // A background clipped to its border or padding box still paints behind the text (only text clips it to the glyphs).
+      const k =
+        (/(^|-)appearance$/.test(d.prop) && (styled || d.value.trim() === "none")) || (/^(-webkit-)?background-(clip|origin)$/.test(d.prop) && /^(border|padding|content)-box$/.test(d.value.trim()))
+          ? "none"
+          : kindOf(d.prop);
+      note(e, s, d, k === "paint" ? "paint only; no effect on layout" : k === "none" ? "no effect on layout or contrast" : `${d.prop} is not modelled`, k);
     }
     return out;
   }
@@ -915,6 +945,7 @@ export function liftElements(input: LiftInput): LiftResult {
         padding: () => lengthToken("space", "0px"),
         margin: () => lengthToken("space", "0px"),
         radius: () => lengthToken("radius", "0px"),
+        overflow: () => "visible",
       };
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {
         for (const k of lost(a, b)) {

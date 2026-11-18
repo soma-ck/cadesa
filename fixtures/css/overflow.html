@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: boxes that clip or scroll their content</title>
+    <link rel="stylesheet" href="overflow.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page" data-fixture="page">
+      <div class="clipped-card" data-fixture="card">
+        <h2 data-fixture="card-title">Clipped card</h2>
+        <p data-fixture="card-body">Its first and last children's margins stay inside it, because overflow: hidden makes it a new formatting context.</p>
+      </div>
+      <div class="clip-only" data-fixture="clip">
+        <p data-fixture="clip-body">overflow: clip clips without a formatting context, so this paragraph's margins collapse through.</p>
+      </div>
+      <p data-fixture="before-spacer">Before an empty scroll container.</p>
+      <div class="spacer" data-fixture="spacer"></div>
+      <p data-fixture="after-spacer">After it.</p>
+      <div class="row" data-fixture="row">
+        <span class="name" data-fixture="name">Harbor Supply and Logistics International Holdings, Rotterdam Europoort terminal</span>
+        <span class="price" data-fixture="price">€1,284.00</span>
+      </div>
+      <div class="scroller" data-fixture="scroller">
+        <div class="wide" data-fixture="wide">A table-like block 880px wide inside a wrapper that scrolls sideways on narrow screens.</div>
+      </div>
+      <p class="truncate" data-fixture="truncate">Shipment SH-20931 from North Yard to Rotterdam Europoort with Blue Line Freight, departing 12 May</p>
+      <div class="list" data-fixture="list">
+        <p data-fixture="item-1">First item in a list that scrolls.</p>
+        <p data-fixture="item-2">Second item.</p>
+        <p data-fixture="item-3">Third item.</p>
+        <p data-fixture="item-4">Fourth item, below the fold of the list.</p>
+      </div>
+    </main>
+  </body>
+</html>

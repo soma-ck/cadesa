@@ -64,8 +64,9 @@ describe("lift of hand-written CSS", () => {
 
   it("reports what it could not lift, classified by what it can affect", () => {
     expect(r.unlifted.map((u) => [u.line, u.kind])).toEqual([
-      [50, "paint"],
-      [50, "paint"],
+      // cursor: no effect on boxes or contrast.
+      [50, "none"],
+      [50, "none"],
       [59, "state"],
       [78, "geometry"],
       [106, "geometry"],
@@ -133,14 +134,18 @@ describe("lift details", () => {
   });
 
   it("classifies properties by what they can affect", () => {
-    expect(["color", "box-shadow", "cursor", "transform", "letter-spacing", "margin-top", "min-width"].map(kindOf)).toEqual([
+    expect(["color", "box-shadow", "cursor", "transform", "letter-spacing", "margin-top", "min-width", "transition", "text-overflow", "border-top-left-radius", "-webkit-appearance"].map(kindOf)).toEqual([
       "paint",
       "paint",
-      "paint",
+      "none",
       "visual",
       "text",
       "geometry",
       "geometry",
+      "none",
+      "none",
+      "none",
+      "paint",
     ]);
   });
 });

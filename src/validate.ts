@@ -3,6 +3,7 @@ import type { PathSeg, Source } from "./load.js";
 import {
   DEFAULT_PREFIX,
   LENGTH_CATEGORIES,
+  OVERFLOWS,
   PROP_ORDER,
   ROOT_FONT_PX,
   TOKEN_CATEGORIES,
@@ -12,6 +13,7 @@ import {
   type Breakpoint,
   type Component,
   type MarginSide,
+  type Overflow,
   type PaddingProp,
   type Unsettable,
   type Length,
@@ -540,6 +542,26 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           if (v === "cover" || v === "contain") out.fit = { value: v, path: p.join(".") };
           else err(p, "invalid fit", { expected: "cover or contain", got: v });
           break;
+        case "overflow": {
+          // overflow: hidden (both axes), or { x: auto } (y visible): Bootstrap's .table-responsive.
+          if (isObj(v)) keys(v, p, ["x", "y"]);
+          const o = isObj(v) ? v : { x: v, y: v };
+          const ax = (k: "x" | "y") => {
+            const a = o[k] ?? "visible";
+            if (OVERFLOWS.includes(a as Overflow)) return a as Overflow;
+            err(isObj(v) ? [...p, k] : p, "invalid overflow", { expected: "visible, hidden, clip, auto or scroll (or { x, y })", got: a, suggestion: typeof a === "string" ? closest(a, OVERFLOWS) : undefined });
+            return undefined;
+          };
+          let x = ax("x");
+          let y = ax("y");
+          if (!x || !y) break;
+          // As computed: an axis that can't stay visible (or clip) next to a scrolling one.
+          const scrolling = (a: Overflow) => a !== "visible" && a !== "clip";
+          const fix = (a: Overflow, other: Overflow): Overflow => (scrolling(other) && !scrolling(a) ? (a === "visible" ? "auto" : "hidden") : a);
+          [x, y] = [fix(x, y), fix(y, x)];
+          out.overflow = { x, y, raw: x === y ? x : `x ${x}, y ${y}`, path: p.join(".") };
+          break;
+        }
         case "textAlign":
           if (v === "start" || v === "center" || v === "end") out.textAlign = { value: v, path: p.join(".") };
           else err(p, "invalid textAlign", { expected: "start, center or end", got: v });
