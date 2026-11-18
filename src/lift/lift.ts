@@ -44,6 +44,8 @@ export interface LiftResult {
   elements: LiftedElement[];
   /** Per block: properties a `.block *` / `.block :where(*)` reset sets on every descendant. */
   resets: Map<string, Set<string>>;
+  /** Browser defaults (margins, bold headings, control padding) are already in the declarations. */
+  uaInCascade?: boolean;
   stats: { declarations: number; unlifted: number; components: number; tokens: number; breakpoints: number };
 }
 
@@ -119,7 +121,9 @@ class Tokens {
         ? `hex-${raw.slice(1)}`
         : cat === "font"
           ? sanitize(raw.split(",")[0].replace(/["']/g, "")) || "font"
-          : `px-${String(Math.round(pxOf(raw) * 100) / 100).replace(".", "-")}`;
+          : raw.endsWith("%")
+            ? `pct-${String(parseFloat(raw)).replace(".", "-")}`
+            : `px-${String(Math.round(pxOf(raw) * 100) / 100).replace(".", "-")}`;
     return this.add(cat, name, raw);
   }
 
@@ -376,6 +380,8 @@ export interface LiftInput {
   /** Records found before mapping (more are added). */
   unlifted: Unlifted[];
   resets: Map<string, Set<string>>;
+  /** Browser defaults are part of the declarations (a page front end computed the whole cascade). */
+  uaInCascade?: boolean;
   /** Declarations read, for stats. */
   declarations: number;
 }
@@ -432,6 +438,13 @@ export function liftElements(input: LiftInput): LiftResult {
     if (!LENGTH.test(raw)) return undefined;
     return r.varName ? tokens.named(cat, r.varName, raw) : tokens.literal(cat, raw);
   };
+  /** A size token that may be a percentage of the parent's width (width, max-width). */
+  const sizeToken = (value: string): string | undefined => {
+    const r = resolveVar(value);
+    if (r && /^(?:\d+(?:\.\d+)?|\.\d+)%$/.test(r.raw) && parseFloat(r.raw) > 0 && parseFloat(r.raw) <= 100)
+      return r.varName ? tokens.named("size", r.varName, r.raw) : tokens.literal("size", r.raw);
+    return lengthToken("size", value);
+  };
   const colorToken = (value: string): string | undefined => {
     const r = resolveVar(value);
     const hex = r && toHex(r.raw);
@@ -485,6 +498,9 @@ export function liftElements(input: LiftInput): LiftResult {
         ...(gap && { gap }),
         ...(!column && clusterAlign && clusterAlign !== "center" && { align: clusterAlign }),
       };
+    } else if (display && display.value.trim() === "flow") {
+      // A page front end's marker: a block container whose children are block boxes.
+      out.layout = { pattern: "flow" };
     } else if (display && display.value.trim() === "grid") {
       const cols = take("grid-template-columns");
       const align = take("align-items");
@@ -583,16 +599,43 @@ export function liftElements(input: LiftInput): LiftResult {
         out.measure = b;
       } else note(e, s, maxW!, "max-width must be a px or rem length", "geometry");
     } else if (maxW && maxW.value.trim() !== "none") {
-      const t = lengthToken("size", maxW.value);
-      if (!t) note(e, s, maxW, "max-width must be a px or rem length", "geometry");
+      const t = sizeToken(maxW.value);
+      if (!t) note(e, s, maxW, "max-width must be a px or rem length, or a percentage", "geometry");
       else if (autoX) out.maxWidth = t;
       else out.measure = t;
     }
+    // Margins: px or rem lengths per side (auto inline margins are maxWidth's centering).
+    const sideTokens: (string | undefined)[] = [];
+    let marginOk = true;
     margins.forEach((d, i) => {
       if (!d || isZero(d.value)) return;
-      if (d.value.trim() === "auto" && (i === 1 || i === 3) && out.maxWidth) return;
-      note(e, s, d, "margins are not modelled; use gap and padding", "geometry");
+      const v = d.value.trim();
+      if (v === "auto" && (i === 1 || i === 3) && out.maxWidth) return;
+      const t = v === "auto" || v.startsWith("-") ? undefined : lengthToken("space", v);
+      if (t) sideTokens[i] = t;
+      else {
+        marginOk = false;
+        note(e, s, d, v === "auto" ? "an auto margin is modelled only as left and right with max-width (centering)" : v.startsWith("-") ? "negative margins are not modelled" : "a margin must be a px or rem length", "geometry");
+      }
     });
+    if (marginOk && sideTokens.some(Boolean)) {
+      const [t, r, b, l] = [0, 1, 2, 3].map((i) => sideTokens[i]);
+      if (t === r && r === b && b === l) out.margin = t;
+      else {
+        const m: Record<string, string> = {};
+        if (t && t === b) m.block = t;
+        else {
+          if (t) m.top = t;
+          if (b) m.bottom = b;
+        }
+        if (l && l === r) m.inline = l;
+        else {
+          if (r) m.right = r;
+          if (l) m.left = l;
+        }
+        out.margin = m;
+      }
+    }
 
     // width / height / flex item
     const width = take("width");
@@ -605,9 +648,9 @@ export function liftElements(input: LiftInput): LiftResult {
       const v = width.value.trim();
       if (v === "100%" || (v === "auto" && alignSelf?.value.trim() === "stretch")) out.width = "fill";
       else if (v !== "auto") {
-        const t = lengthToken("size", v);
+        const t = sizeToken(v);
         if (t) out.width = t;
-        else note(e, s, width, "width must be a px/rem length, 100%, or auto", "geometry");
+        else note(e, s, width, "width must be a px/rem length, a percentage, or auto", "geometry");
       }
     }
     if (alignSelf && !["auto", "stretch", "normal"].includes(alignSelf.value.trim()))
@@ -697,7 +740,7 @@ export function liftElements(input: LiftInput): LiftResult {
       const missing = [!sizeOk && "font-size (px or rem)", lineHeight === undefined && "line-height", !colorTok && "color", isNaN(weight) && "font-weight"].filter(Boolean);
       if (missing.length) {
         for (const d of [fs, lh, ff, fw, color].filter(Boolean) as Decl[])
-          note(e, s, d, `a text role needs ${missing.join(", ")}; inherited text is not modelled`, d.prop === "color" ? "paint" : "text");
+          note(e, s, d, `a text role needs ${missing.join(", ")}${lhRaw === "normal" ? " (line-height: normal depends on the font)" : ""}`, d.prop === "color" ? "paint" : "text");
       } else {
         if (!fw) {
           /* weight defaults to 400; impact.ts flags tags whose UA weight differs */
@@ -809,6 +852,7 @@ export function liftElements(input: LiftInput): LiftResult {
       const lost = (a: Record<string, unknown>, b: Record<string, unknown>) => Object.keys(a).filter((k) => !(k in b));
       const zero: Record<string, () => unknown> = {
         padding: () => lengthToken("space", "0px"),
+        margin: () => lengthToken("space", "0px"),
         radius: () => lengthToken("radius", "0px"),
       };
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {
@@ -871,6 +915,7 @@ export function liftElements(input: LiftInput): LiftResult {
     unlifted,
     elements,
     resets,
+    uaInCascade: input.uaInCascade,
     stats: {
       declarations,
       unlifted: unlifted.filter((u) => u.decl).length,

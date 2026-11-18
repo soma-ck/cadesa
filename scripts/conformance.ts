@@ -19,10 +19,9 @@ import { compile } from "../src/compile.js";
 import { walk, type Layout } from "../src/engine/layout.js";
 import { parseFixture } from "../src/fixture.js";
 import { loadSource, loadSourceFile } from "../src/load.js";
-import { impact, type WidthImpact } from "../src/lift/impact.js";
-import { lift } from "../src/lift/lift.js";
+import type { WidthImpact } from "../src/lift/impact.js";
 import { modelOf, render } from "../src/project.js";
-import { tailwindFile, tailwindImpact, parseWidths } from "../src/commands.js";
+import { cssPageFile, tailwindFile, tailwindImpact, parseWidths } from "../src/commands.js";
 import type { Model } from "../src/model.js";
 
 const { values } = parseArgs({
@@ -33,7 +32,11 @@ const { values } = parseArgs({
     widths: { type: "string", default: "320,390,768,1280" },
     tolerance: { type: "string", default: "0.5" },
     out: { type: "string", default: "artifacts" },
-    /** Verify a lift instead: the fixture links this hand-written CSS, which the engine sees only through lift. */
+    /**
+     * Verify a lift instead: the fixture links this hand-written CSS, which the engine sees only
+     * through the page lift (as `--css` does). Each page is served with generated class names and
+     * ids added (nothing else changes).
+     */
     lift: { type: "string" },
     /**
      * Verify Tailwind support: --fixtures are Tailwind pages, this is the CSS Tailwind compiled for
@@ -47,16 +50,17 @@ const { values } = parseArgs({
 const root = process.cwd();
 const tolerance = Number(values.tolerance);
 const widths = parseWidths(values.widths!);
-const tw = values.tailwind;
+/** A page lift: Tailwind's compiled CSS, or plain CSS (--lift). */
+const tw = values.tailwind ?? values.lift;
 const sha = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 
 // 1. Build, so we know exactly which bytes the browser must receive. With --lift, the original CSS
 //    is served untouched and the engine works from its lift.
-const lifted = values.lift ? lift(values.lift, readFileSync(values.lift, "utf8")) : undefined;
-const model: Model | undefined = tw ? undefined : lifted ? modelOf(loadSource(`${values.lift} (lifted)`, lifted.yaml)) : modelOf(loadSourceFile(values.source!));
-const cssFile = tw ?? values.lift ?? values.css!;
-const css = tw ? readFileSync(tw, "utf8") : lifted ? readFileSync(values.lift!, "utf8") : compile(model!);
-if (!lifted && !tw) {
+const lifted = !!values.lift;
+const model: Model | undefined = tw ? undefined : modelOf(loadSourceFile(values.source!));
+const cssFile = tw ?? values.css!;
+const css = tw ? readFileSync(tw, "utf8") : compile(model!);
+if (!tw) {
   mkdirSync(join(root, values.css!, ".."), { recursive: true });
   writeFileSync(values.css!, css);
 }
@@ -101,16 +105,16 @@ let layouts: Layout[];
 let impacts: WidthImpact[] | undefined;
 let families: string[];
 if (tw) {
-  const t = tailwindFile(fixtureFile, tw);
+  const t = lifted ? cssPageFile(fixtureFile, tw) : tailwindFile(fixtureFile, tw);
   overrides.set(resolve(root, fixtureFile), t.html);
-  const m = modelOf(loadSource(`${fixtureFile} (tailwind)`, t.yaml));
+  const m = modelOf(loadSource(`${fixtureFile} (${lifted ? "lifted" : "tailwind"})`, t.yaml));
   layouts = widths.map((w) => render(m, t.fixtureAt(w), [w])[0]);
   impacts = tailwindImpact(t, layouts);
   families = familiesOf(m);
 } else {
   const fixture = parseFixture(fixtureFile);
   layouts = render(model!, fixture, widths);
-  impacts = lifted ? impact(lifted, fixture, layouts) : undefined;
+  impacts = undefined;
   families = familiesOf(model!);
 }
 for (const layout of layouts) {
@@ -182,7 +186,7 @@ console.log(
     : `✖ stylesheet: expected only ${cssFile} (sha256 ${builtSha.slice(0, 12)}), page loaded ${JSON.stringify([...served])}`,
 );
 writeFileSync(join(values.out!, "conformance.json"), JSON.stringify({ tolerance, cssSha256: builtSha, boxes: report }, null, 2) + "\n");
-if (lifted || tw) {
+if (tw) {
   const exact = checked - flaggedSame.length - flaggedDiff.length;
   console.log(
     failures

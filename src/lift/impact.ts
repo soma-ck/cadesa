@@ -123,7 +123,7 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
 
   // Browser defaults the original CSS never overrode (and Cadesa's reset would).
   const element = new Map(lifted.elements.map((e) => [e.className, e]));
-  for (const loc of located) {
+  for (const loc of lifted.uaInCascade ? [] : located) {
     const b = boxOf.get(loc.node);
     if (!b) continue;
     const block = lifted.prefix + b.component;
