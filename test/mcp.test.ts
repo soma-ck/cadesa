@@ -25,6 +25,7 @@ describe("MCP server", () => {
     expect(tools.map((t) => t.name).sort()).toEqual([
       "cadesa_build",
       "cadesa_check",
+      "cadesa_critique",
       "cadesa_css",
       "cadesa_explain",
       "cadesa_lift",

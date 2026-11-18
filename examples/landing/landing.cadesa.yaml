@@ -14,8 +14,8 @@ text:
   display-small: { font: ui, size: 2.625rem, weight: 760, lineHeight: 1.02, color: foam, letterSpacing: -0.03 }
   lede: { font: ui, size: 1.25rem, weight: 420, lineHeight: 1.45, color: mist }
   lede-small: { font: ui, size: 1.0625rem, weight: 420, lineHeight: 1.45, color: mist }
-  action: { font: ui, size: 1rem, weight: 640, lineHeight: 1.25, color: ink, decoration: none }
-  action-quiet: { font: ui, size: 1rem, weight: 600, lineHeight: 1.25, color: foam, decoration: none }
+  action: { font: ui, size: 1.0625rem, weight: 640, lineHeight: 1.25, color: ink, decoration: none }
+  action-quiet: { font: ui, size: 1.0625rem, weight: 600, lineHeight: 1.25, color: foam, decoration: none }
   heading: { font: ui, size: 2.25rem, weight: 720, lineHeight: 1.1, color: ink, letterSpacing: -0.02 }
   heading-on-dark: { font: ui, size: 2.25rem, weight: 720, lineHeight: 1.1, color: foam, letterSpacing: -0.02 }
   body: { font: ui, size: 1.0625rem, weight: 400, lineHeight: 1.55, color: slate }

@@ -9,6 +9,7 @@ export { metricsFor, layoutText } from "./engine/text.js";
 export { modelOf, render, whatif, diffLayouts, parseSet, type Change, type WhatIf } from "./project.js";
 export { explain, type Explanation } from "./explain.js";
 export { check, contrast, type Finding } from "./check.js";
+export { critique, type Critique } from "./critique.js";
 export { lift, type LiftResult, type Unlifted } from "./lift/lift.js";
 export { impact, type WidthImpact } from "./lift/impact.js";
 export { createServer } from "./mcp.js";

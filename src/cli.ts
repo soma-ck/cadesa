@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import {
   buildCmd,
   checkCmd,
+  critiqueCmd,
   explainCmd,
   InputError,
   liftCmd,
@@ -24,6 +25,7 @@ Usage:
   cadesa whatif   <fixture.html> --source <source.cadesa.yaml> --set <path=value> [--set ...]
   cadesa explain  <fixture.html> --source <source.cadesa.yaml> --id <fixture-id>
   cadesa check    <fixture.html> --source <source.cadesa.yaml>
+  cadesa critique <fixture.html> --source <source.cadesa.yaml>   design signals: scale, hierarchy, grouping, alignment, palette, tells
   cadesa lift     <file.css> [--out <file.cadesa.yaml>] [--fixture <fixture.html>]
   cadesa metrics  <font-file> --family <name> [--weight <n>] [--out .cadesa/metrics]
                     measure a font once in Chromium so the engine can measure text set in it
@@ -116,6 +118,9 @@ async function main(argv: string[]) {
       break;
     case "check":
       r = checkCmd(page());
+      break;
+    case "critique":
+      r = critiqueCmd(page());
       break;
     case "lift":
       r = liftCmd({ css: need(input, "<file.css>"), out: values.out, fixture: values.fixture, widths: widths() });

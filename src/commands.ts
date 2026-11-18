@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { check } from "./check.js";
+import { critique } from "./critique.js";
 import { compile } from "./compile.js";
 import { explain } from "./explain.js";
 import { parseFixture } from "./fixture.js";
@@ -105,6 +106,16 @@ export function checkCmd(s: SourceInput & { fixture: string; widths: number[] })
     data: { findings },
     ok: !findings.some((f) => f.severity === "error"),
   };
+}
+
+export function critiqueCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
+  const model = modelOf(load(s));
+  const fixture = parseFixture(s.fixture);
+  const found = critique(model, fixture, render(model, fixture, s.widths));
+  const text = found.length
+    ? found.map((c) => `◇ [${c.check}] ${c.message}${c.path ? `\n    edit: ${c.path}` : ""}`).join("\n") + `\n\n${found.length} suggestion${found.length === 1 ? "" : "s"}\n`
+    : `✓ no critique at ${s.widths.join(", ")}px\n`;
+  return { text, data: { critique: found }, ok: true };
 }
 
 export function liftCmd(s: { css: string; out?: string; fixture?: string; widths: number[] }): Result {

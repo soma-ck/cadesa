@@ -93,6 +93,29 @@ $ cadesa check fixtures/settings.html --source settings.cadesa.yaml --widths 128
 
 `check` covers overflow (horizontal, unbreakable words, and text taller than a fixed height), tap targets (WCAG 2.5.8 and 2.5.5), text contrast against the nearest Cadesa background, and line length. When the source can't decide a check, for example because the page background sits outside Cadesa, it says *inconclusive* rather than guessing.
 
+### Critique it
+
+`check` asks whether the page is broken. `critique` asks whether it reads as designed, using signals that are measurable from the source and the box tree rather than from taste:
+
+```console
+$ cadesa critique fixtures/settings-long.html --source settings.cadesa.yaml
+◇ [type-scale] font sizes 15, 16px are within 1.07× of each other, too close to read as different levels
+  (body-muted 16, label 15, label-inverse 15); use one size for that level, or make a real step (≥1.2×)
+◇ [palette] every color in use is a grey, near-black or near-white (#ffffff, #191b20, #555964); with no hue
+  anywhere the page reads as unbranded. One accent, from the subject, on the main action is usually enough
+```
+
+| Signal | What it measures |
+| --- | --- |
+| `type-scale` | bands of font sizes within 1.12× of each other: they read as one level |
+| `hierarchy` | a heading less than 1.25× larger (and not clearly heavier) than the text under it |
+| `grouping` | a group whose inner gap isn't smaller than the gap around it (proximity) |
+| `alignment` | page-column text edges that *almost* line up (2–48px apart), or more than three edges |
+| `palette` | no hue anywhere (an unbranded page), or several accent colors competing on actions |
+| `tells` | small tracked uppercase labels, `A · B · C` meta strings, `→` appended to actions |
+
+Findings are suggestions with numbers and a YAML path, not errors. Taste stays with you or your agent. Critique catches the measurable ways a page drifts toward generic. The landing example above has no findings; the settings panel is genuinely unbranded and gets two.
+
 ## Use it from your agent (MCP)
 
 Cadesa ships an MCP server, so Claude Code, Cursor, Codex and other MCP clients can call it directly:
@@ -111,6 +134,7 @@ Cadesa ships an MCP server, so Claude Code, Cursor, Codex and other MCP clients 
 | `cadesa_render` | "Where is every box, and where does the text wrap?" |
 | `cadesa_explain` | "Why is this value what it is, and which YAML path do I edit?" |
 | `cadesa_check` | "Is anything overflowing, too small to tap, or low contrast?" |
+| `cadesa_critique` | "Does it read as designed: scale, hierarchy, grouping, alignment, palette?" |
 | `cadesa_lift` | "Turn this existing CSS into Cadesa. What couldn't be converted, and which boxes does that affect?" |
 | `cadesa_validate` / `cadesa_css` / `cadesa_build` | Validate, preview the CSS, write the CSS. |
 

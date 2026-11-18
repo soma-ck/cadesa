@@ -9,6 +9,7 @@ import { z } from "zod";
 import {
   buildCmd,
   checkCmd,
+  critiqueCmd,
   cssCmd,
   explainCmd,
   InputError,
@@ -134,6 +135,18 @@ export function createServer(): McpServer {
       annotations: readOnly,
     },
     (a) => respond(() => checkCmd(a), a.format),
+  );
+
+  server.registerTool(
+    "cadesa_critique",
+    {
+      title: "Critique the design",
+      description:
+        "Measurable design signals, beyond correctness: font sizes too close to read as levels, headings that don't stand out from their body text, groups whose inner gap isn't smaller than the gap around them, too many left edges at one width, a palette with no accent (or competing accents), and common template tells. Each finding has numbers and the YAML path to edit. Suggestions, not errors.",
+      inputSchema: pageShape,
+      annotations: readOnly,
+    },
+    (a) => respond(() => critiqueCmd(a), a.format),
   );
 
   server.registerTool(
