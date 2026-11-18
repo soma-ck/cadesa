@@ -20,7 +20,7 @@ export interface FixtureNode {
    * Per run: whether it sits in a block-level descendant (its own block container) rather than
    * directly in this element, and whether any of it is inside an underlined inline element
    * (<a href>, <u>, <ins>, <s>, <del>, <strike>). `items`: where inline elements start or end in
-   * the run (character offsets): Chromium shapes and measures each such piece of text separately.
+   * the run (character offsets): Chromium measures each such piece of text separately when fitting lines.
    */
   runMeta: { inBlock: boolean; underlined: boolean; items: number[] }[];
   children: FixtureNode[];

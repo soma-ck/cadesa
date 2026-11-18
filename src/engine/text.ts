@@ -327,7 +327,7 @@ export function layoutText(
   const ceil64 = (v: number) => Math.ceil(v * 64 - TEXT_EPS) / 64;
   let approximate: string | undefined;
   // A line fits when its width is at most the available width plus one layout unit (1/64 px):
-  // "a b" at 55.515px fits in 55.5px. Text split by inline elements is shaped item by item: the items
+  // "a b" at 55.515px fits in 55.5px. Text split by inline elements is measured item by item: the items
   // before the last on the line count their widths rounded up. A line that starts after a break
   // inside a word (after a hyphen or dash) sometimes counts its width rounded up instead: when
   // that would decide, the break is reported as approximate.
@@ -337,7 +337,9 @@ export function layoutText(
     let used = 0;
     let from = 0;
     for (const cut of cuts) {
-      used += ceil64(full(cs.slice(from, cut).join("")));
+      // Kerning still applies across the element's edge (counted with the item before it).
+      const next = (cs[cut] ?? "").replaceAll(SHY, "");
+      used += ceil64(full(cs.slice(from, cut).join("") + next) - full(next));
       from = cut;
     }
     const last = cs.slice(from).join("");
@@ -447,12 +449,5 @@ export function layoutText(
       widestPiece = u.text;
     }
   }
-  // Max-content: each inline item rounded up to a layout unit.
-  const cuts = [0, ...edges, all.length];
-  let maxContent = 0;
-  for (let k = 0; k + 1 < cuts.length; k++) {
-    const seg = all.slice(cuts[k], cuts[k + 1]).join("");
-    maxContent += k + 2 < cuts.length ? ceil64(full(seg)) : w(seg);
-  }
-  return { lines, maxContent, minContent, widestPiece, ...(approximate && { approximate }) };
+  return { lines, maxContent: w(text), minContent, widestPiece, ...(approximate && { approximate }) };
 }

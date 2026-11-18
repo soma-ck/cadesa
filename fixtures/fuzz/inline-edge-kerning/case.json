@@ -1,0 +1,7 @@
+{
+  "note": "Kerning applies across an inline element edge (\"<a>wait…</a> Écrire\"): max-content is the whole text rounded up",
+  "seed": 509606,
+  "widths": [
+    958
+  ]
+}

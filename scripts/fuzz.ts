@@ -369,6 +369,10 @@ function genOverrides(g: Gen) {
       if (!r.chance(0.55)) continue;
       const o: Obj = {};
       if (r.chance(0.6)) Object.assign(o, genProps(g, c.kind, "stack", true));
+      // Usually an override keeps the pattern and changes its details (switching a box to a
+      // cluster leaves children without widths, which the engine flags).
+      if (o.layout && style.layout && r.chance(0.6)) o.layout = { ...o.layout, pattern: style.layout.pattern, ...(style.layout.pattern === "grid" ? { min: o.layout.min ?? style.layout.min } : {}) };
+      if (o.layout && o.layout.pattern !== "grid") delete o.layout.min;
       const slots: Obj = {};
       for (const s of Object.keys(style.slots)) if (r.chance(0.35)) slots[s] = genProps(g, slotKind(style, s), "stack", true);
       if (Object.keys(slots).length) o.slots = slots;

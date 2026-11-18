@@ -1,0 +1,24 @@
+version: 1
+styles:
+  c1:
+    slots:
+      s1:
+        text: t2
+    when:
+      bp3:
+        layout:
+          pattern: cluster
+tokens:
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t2:
+    font: inter
+    size: 1.125rem
+    weight: 783
+    lineHeight: 1.2
+    color: ink
+breakpoints:
+  bp3: 84.25rem
