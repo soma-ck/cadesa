@@ -46,6 +46,7 @@ Options:
              default: every 20px from 320 to 1440 for check and critique; 390,1280 otherwise
   --json     machine-readable output (for agents)
   --lines    render: print each wrapped line with its width
+  --svg f    render: also draw the predicted boxes as an SVG wireframe (f-<width>.svg per width)
   -h, --help show this help
 `;
 
@@ -66,6 +67,7 @@ async function main(argv: string[]) {
       weight: { type: "string" },
       json: { type: "boolean", default: false },
       lines: { type: "boolean", default: false },
+      svg: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -114,7 +116,7 @@ async function main(argv: string[]) {
       r = validateCmd({ source: need(input, "<source.cadesa.yaml>") });
       break;
     case "render":
-      r = renderCmd({ ...page(), lines: values.lines });
+      r = renderCmd({ ...page(), lines: values.lines, svg: values.svg });
       break;
     case "whatif":
       r = whatifCmd({ ...page(), changes: (values.set ?? []).map(parseSet) });

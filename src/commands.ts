@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { check } from "./check.js";
+import { wireframeSvg } from "./wireframe.js";
 import { critique } from "./critique.js";
 import { compile } from "./compile.js";
 import { explain } from "./explain.js";
@@ -147,16 +148,27 @@ export function cssCmd(s: SourceInput): Result {
   return { text: css, data: { css }, ok: true };
 }
 
-export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; lines?: boolean }): Result {
+export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; lines?: boolean; svg?: string }): Result {
   const t0 = performance.now();
   const p = pageOf(s);
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
+  // --svg out.svg: draw each width's predicted boxes (out.svg for one width, out-<width>.svg for several).
+  const written: string[] = [];
+  if (s.svg) {
+    for (const l of layouts) {
+      const file = layouts.length === 1 ? s.svg : s.svg.replace(/(\.svg)?$/, `-${l.width}.svg`);
+      mkdirSync(dirname(file), { recursive: true });
+      writeFileSync(file, wireframeSvg(l));
+      written.push(file);
+    }
+  }
   const imp = impactFor(s, layouts);
   const label = p.label;
   return {
     text:
       formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts }) +
-      (imp ? "\n" + formatImpact(imp.impacts) : ""),
+      (imp ? "\n" + formatImpact(imp.impacts) : "") +
+      (written.length ? `\nwireframe: ${written.join(", ")}\n` : ""),
     data: { source: label, fixture: s.fixture, layouts, impact: imp?.impacts },
     ok: !layouts.some((l) => l.issues.some((i) => i.severity === "error")),
   };
