@@ -12,6 +12,14 @@
     "compiler"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/soma-ck/cadesa.git"
+  },
+  "homepage": "https://github.com/soma-ck/cadesa#readme",
+  "bugs": {
+    "url": "https://github.com/soma-ck/cadesa/issues"
+  },
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
@@ -41,7 +49,8 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.check.json",
     "build:ts": "rm -rf lib && tsc -p tsconfig.json && chmod +x lib/cli.js",
-    "prepublishOnly": "npm run typecheck && npm test && npm run build:ts",
+    "prepare": "npm run build:ts",
+    "prepublishOnly": "npm run typecheck && npm test",
     "conformance": "tsx scripts/conformance.ts",
     "demo": "tsx src/cli.ts build settings.cadesa.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cadesa.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel",
     "conformance:sweep": "tsx scripts/conformance.ts --fixtures fixtures/settings-long.html --widths $(seq -s, 260 3 1000) --out artifacts/sweep",
