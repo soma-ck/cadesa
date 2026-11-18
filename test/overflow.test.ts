@@ -5,6 +5,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { check } from "../src/check.js";
+import type { WidthImpact } from "../src/lift/impact.js";
 import { compile } from "../src/compile.js";
 import { walk } from "../src/engine/layout.js";
 import { parseFixture } from "../src/fixture.js";
@@ -136,11 +137,11 @@ styles:
 `;
     const html = `<div class="ca-p" data-fixture="p"><button class="ca-p__close" data-fixture="close" type="button"></button></div>`;
     const l = render(modelOf(loadSource("t.yaml", yaml)), parseFixture("t.html", html), [400]);
-    const moved = { width: 400, exact: [], uncertain: [{ id: "close", effects: ["position" as const], reasons: ["moved by #top: x.css:1 something above"] }], paintOnly: [], noEffect: [] };
-    const tap = (imp: typeof moved) => check(l, [imp]).find((x) => x.check === "tap-target")!;
+    const moved: WidthImpact = { width: 400, exact: [], uncertain: [{ id: "close", effects: ["position"], reasons: ["moved by #top: x.css:1 something above"] }], paintOnly: [], noEffect: [] };
+    const tap = (imp: WidthImpact) => check(l, [imp]).find((x) => x.check === "tap-target")!;
     expect(tap(moved).message).toMatch(/^#close is 32×32px; 44×44px is recommended/);
     expect(tap(moved).inconclusive).toBeUndefined();
-    expect(tap({ ...moved, uncertain: [{ id: "close", effects: ["size" as const], reasons: ["x.css:2 .close { min-height: 3em }: min-height is not modelled"] }] }).inconclusive).toBe(true);
+    expect(tap({ ...moved, uncertain: [{ id: "close", effects: ["size"], reasons: ["x.css:2 .close { min-height: 3em }: min-height is not modelled"] }] }).inconclusive).toBe(true);
   });
 
   it("reports nowrap text that spills out of a box that doesn't clip it", () => {

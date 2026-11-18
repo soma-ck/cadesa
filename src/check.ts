@@ -110,7 +110,7 @@ function paintOver(bg: Behind, c: string, path: string): Behind {
   if (a >= 0.999) return { color: c, path };
   if (a <= 0.001) return bg;
   // A tinted card header over a card: the two blended.
-  if (bg.color && !bg.stops?.length && !bg.image) return { color: composite(c, bg.color), path: `${path} (${Math.round(a * 100)}% opaque) over ${bg.path}` };
+  if (bg.color && !bg.stops?.length && !bg.image) return { color: composite(c, bg.color), path: `${path}, ${Math.round(a * 100)}% opaque, over ${bg.path}` };
   return { ...bg, stops: [...(bg.stops ?? []), c], stopsPath: path };
 }
 

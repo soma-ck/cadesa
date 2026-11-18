@@ -74,7 +74,7 @@ describe("contrast against the nearest painted background", () => {
 
   it("blends a translucent background into the one below it", () => {
     const f = findings(`<div class="card"><div class="head"><p class="t">Header</p></div></div>`, `.card { background: #777777 } .head { background: rgba(255, 255, 255, 0.5) } .t { color: #ffffff; margin: 0 }`).filter((x) => x.check === "contrast");
-    expect(f[0].message).toMatch(/^#t text #ffffff on #bbbbbb is 1\.\d+:1; WCAG AA needs 4\.5:1 \(background: .*head\.background \(50% opaque\) over .*card\.background\)/);
+    expect(f[0].message).toMatch(/^#t text #ffffff on #bbbbbb is 1\.\d+:1; WCAG AA needs 4\.5:1 \(background: .*head\.background, 50% opaque, over .*card\.background\)/);
   });
 
   it("checks inline runs in a color or on a background of their own (text-danger, badges) against what's behind them", () => {
