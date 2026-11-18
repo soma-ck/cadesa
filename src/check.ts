@@ -11,6 +11,12 @@ export interface Finding extends Issue {
   check: "layout" | "tap-target" | "contrast" | "clipped" | "spacing";
   width: number;
   inconclusive?: boolean;
+  /** On a lifted page (--css, --tailwind): the element in the page (file:line, tag, classes, text). */
+  element?: import("./pointers.js").ElementRef;
+  /** On a lifted page: the CSS rules that set the properties behind the finding. */
+  source?: import("./pointers.js").SourcePointer[];
+  /** With check --verify: what Chromium showed at this width. */
+  verified?: import("./verify.js").Verified;
 }
 
 const MEDIA = new Set(["img", "video", "picture", "svg", "canvas", "iframe", "object", "embed"]);

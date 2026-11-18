@@ -57,14 +57,54 @@ npx -y cadesa check page.html --tailwind compiled.css
 ```
 
 ```console
-$ cadesa check fixtures/tailwind/blog.html --tailwind fixtures/tailwind/compiled.css --widths 1280
-1280px
-  ⚠ [tap-target] #a is 87.1×32px; 44×44px is recommended for touch (WCAG 2.5.5) [fixtures/tailwind/blog.html:20]
-      edit: styles.div.slots.a
-  ...
+$ cadesa check fixtures/bootstrap/dashboard.html --css fixtures/bootstrap/bootstrap.css,fixtures/bootstrap/app.css
+...
+✖ [contrast] <span.stat-delta.text-success> text #198754 on #f4f6f9 is 4.18:1; WCAG AA needs 4.5:1 · at all 57 widths
+    element: fixtures/bootstrap/dashboard.html:55 <span class="stat-delta text-success"> "+4.2% on last week"
+    color: fixtures/bootstrap/bootstrap.css:8503 .text-success { color: rgba(var(--bs-success-rgb), var(--bs-text-opacity)); --bs-text-opacity: 1 }
+           fixtures/bootstrap/bootstrap.css:7 :root { --bs-success-rgb: 25, 135, 84 }
+    background (on <div.card.stat-card>): fixtures/bootstrap/bootstrap.css:4359 .card { background-color: var(--bs-card-bg); --bs-card-bg: var(--bs-body-bg) }
+                                          fixtures/bootstrap/app.css:8 :root { --bs-body-bg: #f4f6f9 }
 ```
 
+Each finding names the element (its line in the page, tag, classes and the start of its text) and the rules in your stylesheets that set the property behind it, following `var()` to where the variable is set. `--json` has the same, plus the path in the generated Cadesa source (`path`).
+
 `check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. It also understands what Bootstrap 5 and Angular pages are built from: the grid (negative gutters, `.col` growth, `col-*` and `row-cols-*` widths), `.container` max-widths that disappear on phones, `d-flex` rows with `justify-content` and auto margins, per-side padding and borders, form controls, and Angular's component elements. Anything it can't model (tables' heights, floats, and buttons aligned to a line of text, which need font vertical metrics) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
+
+### Pages rendered by JavaScript: `capture`
+
+An Angular, React or Vue app has no HTML file to check until it runs. `capture` loads the page in Chromium, waits for it to render and saves what it rendered:
+
+```sh
+npx -y cadesa capture http://localhost:4200/orders --out capture --wait app-orders
+npx -y cadesa capture https://staging.example.com/orders --login-script login.mjs   # behind a login
+```
+
+It writes `page.html` (the rendered DOM, with scripts removed), every stylesheet in cascade order under `css/` (linked files, `@import`s inlined where they were, `<style>` blocks, and CSS-in-JS rules read back from the browser when the `<style>` element has no text), and the font files the page loaded under `fonts/`. Then it prints the `cadesa check page.html --css ...` command to run on them. A login script is a module that exports `async (page) => {}` (a Playwright page) and runs before the URL is loaded. Cookies and storage are not saved, and password and hidden input values are removed from the page.
+
+### Confirm in Chromium: `--verify`
+
+`cadesa check page.html --css ... --verify` runs the sweep, then loads the page in Chromium at every width with a finding (and six without), measures the elements the findings are about and marks each one:
+
+```console
+$ cadesa check fixtures/verify/page.html --css fixtures/verify/page.css --widths 400,800 --verify
+✖ [tap-target] <button.close> is 20×20px; WCAG 2.5.8 needs at least 24×24px · at 400, 800px
+    element: fixtures/verify/page.html:10 <button class="close"> "x"
+    size: fixtures/verify/page.css:23 .close { width: 20px; height: 20px }
+    chromium: confirmed at 400, 800px (20×20px)
+...
+not reproduced in Chromium (no problem there at the widths it loaded):
+○ [tap-target] <button.zoomed> is 20×20px; WCAG 2.5.8 needs at least 24×24px · at 400, 800px
+    element: fixtures/verify/page.html:10 <button class="zoomed"> "+"
+    size: fixtures/verify/page.css:33 .zoomed { width: 20px; height: 20px }
+    chromium: not reproduced at 400, 800px (60×60px)
+
+2 errors, 1 warning, 1 not reproduced in Chromium (distinct issues across 400, 800px)
+verified in Chromium 153.0.8010.52 at 2 widths (2 with findings, 0 without)
+  boxes marked exact: 10 of 12 match Chromium within 0.5px · boxes marked ≈: 2 of 2 match
+```
+
+Inconclusive findings are decided by what Chromium measures: on `fixtures/bootstrap/orders.html` both inconclusive contrast findings come back confirmed. Tap targets, contrast, horizontal overflow, unbreakable words and text taller than a fixed height are measured; other findings stay as predicted. The last lines compare every box the engine laid out with Chromium's at those widths. `--verify` needs Playwright and a Chrome or Chromium, like `metrics --measure`.
 
 **Or try the examples:**
 
@@ -80,7 +120,7 @@ npx cadesa render examples/landing/landing.html --source examples/landing/landin
 - In a project: `npm i -D cadesa`, then `npx cadesa ...`.
 - The latest commit: `npx -y --allow-git=all github:soma-ck/cadesa ...` (npm 12 needs `--allow-git` for git installs).
 - From a checkout: `npm run build:ts && claude mcp add --scope user cadesa -- node /path/to/cadesa/lib/cli.js mcp`.
-- A browser is only needed for `cadesa metrics` and the conformance suites.
+- A browser is only needed for `cadesa capture`, `check --verify`, `cadesa metrics` and the conformance suites: `npm i -D playwright`, then `npx playwright install chromium` or set `$CADESA_CHROME` to an installed Chrome or Chromium.
 
 </details>
 
@@ -99,12 +139,13 @@ An agent rebuilt a 20-component French-language WordPress site in Cadesa, checki
 | Command / MCP tool | Question it answers |
 | --- | --- |
 | `whatif` · `cadesa_whatif` | If I make this edit, what moves at each width, and does anything regress? Runs in memory, writes nothing. |
-| `check` · `cadesa_check` | Is anything overflowing, too small to tap, low contrast or too long to read, at any width? |
+| `check` · `cadesa_check` | Is anything overflowing, too small to tap or low contrast, at any width? `--verify` confirms each finding in Chromium. |
 | `critique` · `cadesa_critique` | Does it read as designed: type scale, hierarchy, grouping, alignment, palette? |
 | `explain` · `cadesa_explain` | Why is this value what it is, and which line do I edit? |
 | `render` · `cadesa_render` | Where is every box and every wrapped line? (`--lines` lists the lines, `--svg` draws the wireframe above.) |
 | `lift` · `cadesa_lift` | Convert existing CSS to Cadesa. What couldn't be converted, and which boxes does that affect? |
 | `build` · `cadesa_build` | Compile a Cadesa source to plain CSS. |
+| `capture` · `cadesa_capture` | Save a page rendered by JavaScript (DOM, stylesheets, fonts) so `check` can read it. |
 
 Add `--json` to any command for machine-readable output.
 

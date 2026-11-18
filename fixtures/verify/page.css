@@ -1,0 +1,54 @@
+@font-face {
+  font-family: "Inter";
+  font-weight: 100 900;
+  src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  background: #fff;
+}
+
+.page {
+  padding: 16px;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+}
+
+/* Too small to tap, in the engine and in Chromium. */
+.close {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  line-height: 1;
+}
+
+/* As small in the layout, but drawn three times larger: the engine ignores transforms. */
+.zoomed {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  line-height: 1;
+  transform: scale(3);
+}
+
+.note {
+  color: #999;
+  margin: 0;
+}
+
+.box {
+  width: 300px;
+}
+
+.wide {
+  width: 400px;
+}

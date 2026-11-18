@@ -13,11 +13,28 @@ claude mcp add cadesa -- npx -y cadesa@0.1.8 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
-ask for `metrics --google` or a page loads its fonts from there; your pages are never sent
-anywhere. `metrics --measure` and the conformance scripts start a local Chromium.
+ask for `metrics --google` or a page loads its fonts from there, and the ones `capture` makes
+to load the URL you give it; your pages are never sent anywhere. `metrics --measure`,
+`capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
+serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
 ## Unreleased
 
+- On `--css` and `--tailwind` pages, each `check` finding names the element (page file:line,
+  tag, classes, the start of its text) and the stylesheet rules behind it (file:line and
+  selector, following `var()` to where the variable is set) instead of a path in the generated
+  Cadesa source and a generated id. `--json` keeps the Cadesa path in `path` and adds `element`
+  and `source`.
+- `check --verify` loads the page in Chromium at the widths with findings and six others,
+  measures the elements, and marks each finding confirmed or not reproduced. Inconclusive
+  findings are decided by what Chromium measures. The MCP tool takes `verify: true`.
+- `cadesa capture <url>` (and the `cadesa_capture` MCP tool) saves a page as Chromium rendered
+  it: the DOM without scripts, every stylesheet in cascade order (including CSS-in-JS rules
+  read back from the CSSOM, and `@import`s inlined), and the fonts it loaded; then prints the
+  check command. `--login-script` runs a module before loading the page; no cookies or
+  credentials are written.
+- The conformance script's serving and measuring code moved to `src/browser.ts`, shared with
+  `--verify`.
 - `check` and `render` start with a coverage line: how many boxes at how many widths were
   predicted exactly, how many approximately, and the most common reasons. When most of a
   page is approximate, the line says so before any finding.
@@ -29,6 +46,11 @@ anywhere. `metrics --measure` and the conformance scripts start a local Chromium
   warning applies to controls that are under 44px on both sides; under 24px is still an
   error.
 - Contrast stays conclusive when only an element's position is uncertain.
+- `whatif` checks the same widths as `check` by default (every 20px from 320 to 1440px)
+  plus the width on each side of every breakpoint, and groups widths where the edit does the
+  same thing into one block with geometry deltas. It starts with the coverage line, marks
+  approximate boxes with ≈, and only reports "unchanged" for boxes predicted exactly. Boxes
+  an edit shows or hides are listed.
 - Line length moved from `check` to `critique`, reported once per text box with the widths
   where it happens.
 - `check` finds text that runs together (`<span>Total</span><span>42</span>` reads
@@ -54,6 +76,12 @@ anywhere. `metrics --measure` and the conformance scripts start a local Chromium
   doesn't); `text-md-end` and flex alignment on an element that is a block at some widths
   no longer make boxes approximate. Two more pages in `conformance:bootstrap` (an app shell
   and a catalog) and a scroll/clip page in `conformance:css`.
+- Fix: a lone button with a set height shorter than its line of text (a 20px button on a
+  24px line) was marked exact, but the line box makes its parent taller. It's `≈` now.
+- Fix: on a line holding several elements of one tag (minified or captured HTML), records
+  meant for the second (a `transform`, say) were applied to the first, so a transformed box
+  could stay exact. A box with a transform is `≈`, and its tap-target finding inconclusive.
+- `check --verify` measures clipped text in Chromium too.
 
 ## 0.1.7 (2026-11-18)
 

@@ -361,6 +361,8 @@ export interface PageLift {
   states: State[];
   /** Data-fixture ids of elements hidden at some widths but not others. */
   responsive: string[];
+  /** The cascade per element (for pointing findings at the rule that set a property). */
+  elements: { els: El[]; html?: El; body?: El };
   /**
    * Text that runs together at `width` (`<span>Total</span><span>42</span>` reads "Total42"):
    * decided from the markup and the cascade, so it holds even where the layout is approximate.
@@ -1685,6 +1687,7 @@ export abstract class PageLifter {
         const si = this.states.indexOf(stateAt(this.states, w));
         return (runsAt[si] ??= this.coloredRuns(si));
       },
+      elements: { els: this.els, html: this.htmlEl, body: this.bodyEl },
     };
   }
 

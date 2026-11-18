@@ -24,6 +24,7 @@ describe("MCP server", () => {
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "cadesa_build",
+      "cadesa_capture",
       "cadesa_check",
       "cadesa_critique",
       "cadesa_css",
@@ -43,7 +44,8 @@ describe("MCP server", () => {
     const r = await call("cadesa_whatif", { ...page, changes: { "styles.settings-panel.when.narrow.padding": "panel" } });
     expect(r.isError).toBe(false);
     expect(r.text).toContain("padding 16px → 32px");
-    expect(r.text).toContain("1280px\n  ✓ unchanged");
+    expect(r.text).toContain("at 320–576px");
+    expect(r.text).toContain("✓ unchanged at 577–1440px");
   });
 
   it("takes a Tailwind page with its compiled CSS", async () => {
