@@ -230,7 +230,20 @@ About 3ms per width instead of about 79ms, with no browser to download or launch
 
 The comparison covers layout geometry only: where every box lands and how text wraps. Pixel diffs, hover states and interaction tests still need a browser.
 
-All benchmark code, earlier agent runs and raw data are in [`bench/`](bench/) ([`RESULTS.md`](bench/RESULTS.md)).
+### Agents: catching what nobody described
+
+Agents (`sonnet`, Claude Code 2.1.327) got a realistic change request for a six-section page and were **not told where it breaks**. A judge measured what they shipped in Chromium (never Cadesa's engine) at 58 widths from 320 to 1440px, 8 trials per arm per task. "Clean" means the request was met with no layout defect and no box moved in a section the request didn't touch.
+
+| Task | Plain CSS + screenshots | Cadesa |
+| --- | --- | --- |
+| Translate the page to German | 0 of 8 clean | **8 of 8 clean** |
+| Add a fourth pricing plan | **8 of 8** | 5 of 8 |
+| Make the text bigger | 7 of 8 | 8 of 8 |
+| **All** | 15 of 24 · $0.21 per trial | **21 of 24 · $0.18 per trial** |
+
+The gap comes from one task (Fisher's exact p ≈ 0.0002 for German; the other two are within noise). After the German translation, `cadesa check` named both width-specific overflows: "Morgengrauen" in the hero at 320px only, and "Seehundbeobachtungstour" in a trip card from 540px up. Every Cadesa agent fixed them with two token edits. The CSS agents couldn't see what was broken, so they patched defensively, changing 21–56 boxes in sections that already worked, or they left an overflow. Cadesa lost the fourth-plan task: the language had no way to let a long e-mail address break, and three agents missed overflows that occurred only in 20px windows between the widths they checked. Limitations (one model, one page, three tasks chosen by Cadesa's authors) and every trial are in [`bench/RESULTS.md`](bench/RESULTS.md).
+
+All benchmark code, earlier agent runs and raw data are in [`bench/`](bench/).
 
 ## How exact is "exact"?
 
@@ -419,7 +432,6 @@ React, Svelte, server templates and static HTML work the same way, because Cades
 - **Tailwind:** read utility classes (`flex gap-4 p-6 md:grid-cols-3`) straight from a page's HTML, so Tailwind apps get `check`, `whatif` and `critique` without writing any Cadesa source.
 - **More of CSS:** `min-width` and range breakpoints, a `row` pattern and shared flexible widths, so lift leaves less behind.
 - **A differential fuzzer** that generates random pages and compares the engine against Chromium, to find divergences before users do.
-- **A discovery benchmark:** agents make a site-wide change without being told where it breaks; count the defects that ship across every width and the regressions in untouched sections.
 
 ## Development
 
