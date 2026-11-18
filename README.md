@@ -214,7 +214,9 @@ $ cadesa render fixtures/settings-long.html --source settings.cadesa.yaml --widt
                   │ integrations, and long-running deployments.  (335.12px)
 ```
 
-## Speed: 25× faster than driving a browser
+## Benchmarks
+
+### Speed: 25× faster than driving a browser
 
 The same job done two ways: get every box of the landing page at every width. On one laptop core (Ryzen 5 PRO 5675U), both sequential, both producing the same boxes:
 
@@ -227,6 +229,12 @@ The same job done two ways: get every box of the landing page at every width. On
 About 3ms per width instead of about 79ms, with no browser to download or launch. That speed is why an agent can check every width on every edit instead of two or three screenshots at the end, and why a CI job can sweep every pixel width in seconds. Reproduce it with `npm run speed` (`-- --step 1` for every pixel).
 
 The comparison covers layout geometry only: where every box lands and how text wraps. Pixel diffs, hover states and interaction tests still need a browser.
+
+### Agents: catching what nobody described
+
+> **Results pending.** The discovery benchmark gives an agent a realistic site-wide change (a translation, a larger base font, an extra pricing plan) without saying where it breaks. It counts the defects that ship, measured in Chromium every 20px from 320 to 1440px, plus regressions in sections the change didn't touch. That's the job Cadesa did on the real rebuild above.
+
+All benchmark code, earlier agent runs and raw data are in [`bench/`](bench/) ([`RESULTS.md`](bench/RESULTS.md)).
 
 ## How exact is "exact"?
 
@@ -409,15 +417,6 @@ defineEmits<{ save: []; cancel: [] }>();
 ```
 
 React, Svelte, server templates and static HTML work the same way, because Cadesa has no runtime.
-
-## Benchmark
-
-> **Placeholder: discovery benchmark results pending.** This section will report run 3.
-
-Two benchmarks compare an agent working in plain CSS (with screenshots) against one with Cadesa, judged in Chromium, never by Cadesa's engine ([`bench/RESULTS.md`](bench/RESULTS.md)):
-
-- **Described-bug** (runs 1–2): fix a layout bug the prompt describes, in one component. Both arms solved every task with no regressions; plain CSS used fewer tool calls. A strong model doesn't need a layout engine to fix a bug it has been told about, and Cadesa doesn't claim otherwise.
-- **Discovery** (run 3, in progress): make a realistic site-wide change, such as a translation, a larger base font or an extra pricing plan, without being told where it breaks. It counts the defects that ship across every 20px from 320 to 1440px, plus regressions in sections the change didn't touch. That's the job Cadesa did in real use.
 
 ## Roadmap
 
