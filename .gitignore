@@ -3,3 +3,4 @@ lib/
 artifacts/
 Cascadio_Claude_Brief.md
 .claude/
+fuzz/

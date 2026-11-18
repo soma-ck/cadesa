@@ -55,6 +55,8 @@
     "demo": "tsx src/cli.ts build settings.cadesa.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cadesa.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel",
     "conformance:sweep": "tsx scripts/conformance.ts --fixtures fixtures/settings-long.html --widths $(seq -s, 260 3 1000) --out artifacts/sweep",
     "metrics": "tsx scripts/gen-metrics.ts",
+    "fuzz": "tsx scripts/fuzz.ts",
+    "breaks": "tsx scripts/gen-breaks.ts",
     "conformance:lift": "tsx scripts/conformance.ts --lift fixtures/legacy.css --fixtures fixtures/legacy.html --out artifacts/legacy",
     "bench": "npm run build:ts && tsx bench/run.ts",
     "bench:discovery": "npm run build:ts && tsx bench/discovery/run.ts",
