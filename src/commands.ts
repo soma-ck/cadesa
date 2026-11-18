@@ -239,7 +239,7 @@ function liftTailwindCmd(s: { css: string; page: string; out?: string; widths: n
   if (s.out) {
     mkdirSync(dirname(s.out), { recursive: true });
     writeFileSync(s.out, tw.yaml);
-    writeFileSync(fixtureOut!, tw.html);
+    writeFileSync(fixtureOut!, tw.standaloneHtml);
   }
   const model = modelOf(loadSource(s.out ?? `${s.page} (tailwind)`, tw.yaml)); // the lift must always produce a valid source
   const impacts = tailwindImpact(tw, s.widths.map((w) => render(model, tw.fixtureAt(w), [w])[0]));

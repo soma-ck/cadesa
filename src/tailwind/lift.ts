@@ -76,6 +76,7 @@ interface P5Loc {
   startOffset: number;
   endOffset: number;
   startTag?: { startOffset: number; endOffset: number };
+  endTag?: { startOffset: number; endOffset: number };
   attrs?: Record<string, { startOffset: number; endOffset: number }>;
 }
 interface P5 {
@@ -307,6 +308,8 @@ export interface TailwindLift {
   yaml: string;
   /** The page with generated class names and data-fixture ids added (original classes kept). */
   html: string;
+  /** As `html`, for plain Cadesa commands: elements never displayed removed, svg contents emptied. */
+  standaloneHtml: string;
   /** Every element laid out at some width. */
   fixture: Fixture;
   /** The fixture as laid out at `width`: elements hidden there (display: none) are left out. */
@@ -798,7 +801,7 @@ class TailwindLifter {
                 if (m && this.resolve(c, si, m.value) === "auto") {
                   c.autoMargin[si] = true;
                   for (const d of kids.slice(side === "left" ? i : i + 1))
-                    this.note(d, si, { decl: `${m.utility} on #${c.id ?? c.tag} (margin-${side}: auto)`, reason: "auto margins move items along the row; Cadesa packs items at the start", kind: "visual" });
+                    this.note(d, si, { decl: `${m.utility} on <${c.tag}> line ${c.line} (margin-${side}: auto)`, reason: "auto margins move items along the row; Cadesa packs items at the start", kind: "visual" });
                 }
               }
             });
@@ -1266,6 +1269,7 @@ class TailwindLifter {
       lifted,
       yaml: lifted.yaml,
       html: fixtureHtml,
+      standaloneHtml: this.generatedHtml(true),
       fixture: fixtureFor(undefined),
       fixtureAt,
       dynamic,
@@ -1301,7 +1305,7 @@ class TailwindLifter {
       if (!u.className || !u.decl || u.file !== this.page) continue;
       const prop = /^([\w-]+):/.exec(u.decl)?.[1];
       const utility = prop && origin.get(u.className)?.get(prop);
-      if (utility && !u.decl.startsWith(utility)) u.decl = `${utility} → ${u.decl}`;
+      if (utility && !u.decl.startsWith(`${utility} `)) u.decl = `${utility} → ${u.decl}`;
     }
     lifted.yaml = emitYaml(lifted.data, this.page, lifted.unlifted).replace(/^# Lifted from (.*) by cadesa lift\./m, `# Lifted from $1 (Tailwind, ${this.css.file}) by cadesa lift.`);
     const resp = this.els.filter((e) => e.id && e.roles.some((r) => r === "hidden") && e.roles.some((r) => r !== "hidden" && r !== "out"));
@@ -1309,11 +1313,25 @@ class TailwindLifter {
       lifted.yaml += `\n# Shown at some widths only (display: none elsewhere): ${resp.map((e) => `#${e.id}`).join(", ")}.\n# Cadesa sources have no display: none; cadesa --tailwind lays these out only where they're shown.\n`;
   }
 
-  generatedHtml(): string {
+  /**
+   * The page with generated classes and ids. For `standalone` (a fixture for plain Cadesa commands),
+   * elements never displayed are removed and svg contents emptied, since the engine lays out
+   * every element child it's given.
+   */
+  generatedHtml(standalone = false): string {
     const edits: { at: number; end: number; text: string }[] = [];
+    const removed = (el: El): boolean => !!el.parent && (this.ignorable(el.parent) || removed(el.parent));
     for (const el of this.els) {
-      if (!el.className) continue;
       const loc = el.node.sourceCodeLocation;
+      if (standalone && loc) {
+        if (removed(el)) continue;
+        if (this.ignorable(el)) {
+          edits.push({ at: loc.startOffset, end: loc.endOffset, text: "" });
+          continue;
+        }
+        if (el.tag === "svg" && loc.startTag && loc.endTag) edits.push({ at: loc.startTag.endOffset, end: loc.endTag.startOffset, text: "" });
+      }
+      if (!el.className) continue;
       if (!loc?.startTag) continue;
       const cls = loc.attrs?.class;
       const value = [...el.classes, el.className].join(" ");
@@ -1321,6 +1339,7 @@ class TailwindLifter {
       else edits.push({ at: loc.startTag.startOffset + 1 + el.tag.length, end: loc.startTag.startOffset + 1 + el.tag.length, text: ` class="${value}"` });
       if (!attr(el.node, "data-fixture")) edits.push({ at: loc.startTag.startOffset + 1 + el.tag.length, end: loc.startTag.startOffset + 1 + el.tag.length, text: ` data-fixture="${el.id}"` });
     }
+    // Back to front; at one offset, later-inserted text first so attributes keep their order.
     edits.sort((a, b) => b.at - a.at || b.end - a.end);
     let out = this.html;
     for (const e of edits) out = out.slice(0, e.at) + e.text + out.slice(e.end);
