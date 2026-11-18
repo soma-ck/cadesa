@@ -57,7 +57,8 @@ Usage:
 
 Options:
   --widths   viewport widths in px: "390,1280", or ranges like "320-1440/20" (every 20px)
-             default: every 20px from 320 to 1440 for check and critique; 390,1280 otherwise
+             default: every 20px from 320 to 1440 for check and critique, and for whatif
+             also both sides of every breakpoint; 390,1280 otherwise
   --json     machine-readable output (for agents)
   --lines    render: print each wrapped line with its width
   --svg f    render: also draw the predicted boxes as an SVG wireframe (f-<width>.svg per width)
@@ -155,7 +156,7 @@ async function main(argv: string[]) {
       r = renderCmd({ ...page(), lines: values.lines, svg: values.svg });
       break;
     case "whatif":
-      r = whatifCmd({ ...page(), changes: (values.set ?? []).map(parseSet) });
+      r = whatifCmd({ ...page(), widths: values.widths ? widths() : undefined, changes: (values.set ?? []).map(parseSet) });
       break;
     case "explain":
       r = explainCmd({ ...page(), id: need(values.id, "--id <fixture-id>") });

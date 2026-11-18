@@ -10,7 +10,7 @@ import { explain } from "./explain.js";
 import { parseFixture, type Fixture } from "./fixture.js";
 import { loadSource, loadSourceFile, type Source } from "./load.js";
 import { modelOf, render, whatif, type Change, type WhatIf } from "./project.js";
-import type { Layout } from "./engine/layout.js";
+import { walk, type Layout } from "./engine/layout.js";
 import type { Model } from "./model.js";
 import { liftTailwind, type TailwindLift } from "./tailwind/lift.js";
 import { liftCssPage } from "./lift/css-page.js";
@@ -213,17 +213,49 @@ export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; 
   };
 }
 
-export function whatifCmd(s: SourceInput & { fixture: string; widths: number[]; changes: Change[] }): Result {
+/**
+ * The widths whatif checks when none are given: the same sweep as check, plus the width on each
+ * side of every breakpoint, where an edit is most likely to change behaviour.
+ */
+function whatifWidths(model: Model, p: Page): number[] {
+  const out = new Set(parseWidths(SWEEP));
+  const edge = (px: number) => {
+    // A max-width breakpoint applies up to px inclusive: sample the last width inside and the first outside.
+    const inside = Math.floor(px);
+    for (const w of [inside, inside + 1]) if (w >= 320 && w <= 1440) out.add(w);
+  };
+  for (const b of model.breakpoints) edge(b.length.px);
+  for (const st of p.tw?.states ?? []) if (Number.isFinite(st.hi)) edge(Math.ceil(st.hi) - 1);
+  return [...out].sort((a, b) => a - b);
+}
+
+export function whatifCmd(s: SourceInput & { fixture: string; widths?: number[]; changes: Change[] }): Result {
   if (!s.changes.length) throw new InputError("whatif needs at least one change (path=value)");
   const t0 = performance.now();
   const p = pageOf(s);
+  const src = load(s);
+  const widths = s.widths?.length ? s.widths : whatifWidths(modelOf(src), p);
   let result: WhatIf;
   if (p.tw) {
-    const src = load(s);
-    const per = s.widths.map((w) => whatif(src, p.at(w), [w], s.changes));
+    const per = widths.map((w) => whatif(src, p.at(w), [w], s.changes));
     result = { changes: per[0].changes, widths: per.flatMap((r) => r.widths) };
-  } else result = whatif(load(s), p.fixture, s.widths, s.changes);
-  return { text: formatWhatif(result, { ms: ms(t0) }), data: result, ok: true };
+    Object.defineProperty(result, "before", { value: per.flatMap((r) => r.before!), enumerable: false });
+    Object.defineProperty(result, "after", { value: per.flatMap((r) => r.after!), enumerable: false });
+  } else result = whatif(src, p.fixture, widths, s.changes);
+  // Carry the engine's uncertainty into the diff: a box predicted approximately (≈) before or
+  // after the edit can move in a browser even where the prediction says it didn't.
+  const approx = (ls: Layout[]) => {
+    const imp = impactFor(s, ls)?.impacts;
+    return ls.map((l) => {
+      const ids = new Set((imp?.find((i) => i.width === l.width)?.uncertain ?? []).map((u) => u.id));
+      for (const b of walk(l.boxes)) if (b.assumptions.length) ids.add(b.id);
+      return ids;
+    });
+  };
+  const [a, b] = [approx(result.before!), approx(result.after!)];
+  result.widths.forEach((w, i) => (w.approximate = [...new Set([...a[i], ...b[i]])]));
+  const cov = coverage(result.after!, impactFor(s, result.after!)?.impacts);
+  return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
 }
 
 export function explainCmd(s: SourceInput & { fixture: string; widths: number[]; id: string }): Result {

@@ -131,9 +131,13 @@ export function createServer(): McpServer {
     {
       title: "Predict an edit",
       description:
-        "Apply one or more edits to the Cadesa source IN MEMORY and report, for every width, which boxes move or resize, which properties change and the provenance of their new values, new and fixed issues, and widths that stay unchanged. Use this before editing the file to choose an edit and to rule out regressions at other widths. Nothing is written.",
+        "Apply one or more edits to the Cadesa source IN MEMORY and report which boxes move or resize, which properties change and the provenance of their new values, new and fixed issues, and the widths that stay unchanged. By default it checks every 20px from 320 to 1440 plus both sides of each breakpoint, grouping widths where the edit does the same thing. Boxes marked ≈ are approximate: unchanged is only guaranteed for boxes predicted exactly. Use this before editing the file to choose an edit and to rule out regressions at other widths. Nothing is written.",
       inputSchema: {
         ...pageShape,
+        widths: z
+          .array(z.number().positive())
+          .optional()
+          .describe("Viewport widths in px (default: every 20px from 320 to 1440 plus both sides of each breakpoint)"),
         changes: z
           .record(z.string(), z.unknown())
           .describe(

@@ -334,3 +334,39 @@ describe("width specs", () => {
     expect(() => parseWidths("abc")).toThrow(/invalid width/);
   });
 });
+
+describe("whatif command", () => {
+  it("sweeps like check, samples both sides of each breakpoint and groups widths", async () => {
+    const { whatifCmd } = await import("../src/commands.js");
+    const r = whatifCmd({ source: "settings.cadesa.yaml", fixture: "fixtures/settings.html", changes: [{ path: "styles.settings-panel.when.narrow.padding", value: "panel" }] });
+    const ws = (r.data as { widths: { width: number }[] }).widths.map((w) => w.width);
+    expect(ws).toContain(576);
+    expect(ws).toContain(577);
+    expect(ws.length).toBe(59);
+    expect(r.text).toContain("at 320–576px");
+    expect(r.text).toContain("#title        x +16  y +16  w −32");
+    expect(r.text).toContain("← when.narrow (≤ 576px)");
+    expect(r.text).toContain("✓ unchanged at 577–1440px: no box moved");
+  });
+
+  it("only promises unchanged for boxes predicted exactly", async () => {
+    const { whatifCmd } = await import("../src/commands.js");
+    const r = whatifCmd({
+      css: "fixtures/bootstrap/bootstrap.css,fixtures/bootstrap/app.css",
+      fixture: "fixtures/bootstrap/dashboard.html",
+      widths: [390, 1280],
+      changes: [{ path: "tokens.space.nonexistent-for-test", value: "1px" }],
+    });
+    expect(r.text).toMatch(/✓ unchanged at 390, 1280px for every box predicted exactly\n {2}≈ not guaranteed for \d+ approximate box/);
+  });
+});
+
+describe("diffLayouts", () => {
+  it("reports boxes shown or hidden by the edit", async () => {
+    const { diffLayouts } = await import("../src/project.js");
+    const l = render(modelOf(src()), fixture, [390])[0];
+    const fewer = { ...l, boxes: l.boxes.map((b) => ({ ...b, children: b.children.filter((c) => c.id !== "title") })) };
+    expect(diffLayouts(l, fewer).removed).toEqual(["title"]);
+    expect(diffLayouts(fewer, l).added).toEqual(["title"]);
+  });
+});

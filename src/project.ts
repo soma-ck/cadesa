@@ -63,13 +63,21 @@ export interface WidthDiff {
   activeBefore: string[];
   activeAfter: string[];
   elements: ElementDiff[];
+  /** Boxes laid out only after the edit (shown where they were hidden) or only before it. */
+  added: string[];
+  removed: string[];
   issuesBefore: Issue[];
   issuesAfter: Issue[];
+  /** Boxes whose predicted geometry is approximate (≈) at this width, before or after the edit. */
+  approximate?: string[];
 }
 
 export interface WhatIf {
   changes: { path: string; from: unknown; to: unknown }[];
   widths: WidthDiff[];
+  /** The layouts after the edit, one per width (not serialized). */
+  after?: Layout[];
+  before?: Layout[];
 }
 
 const PROPS: (keyof ResolvedProps)[] = [
@@ -102,9 +110,15 @@ const sig = (r?: Resolved<unknown>) => (r ? JSON.stringify([r.value, r.steps.map
 export function diffLayouts(a: Layout, b: Layout): WidthDiff {
   const before = new Map<string, Box>([...walk(a.boxes)].map((x) => [x.id, x]));
   const elements: ElementDiff[] = [];
+  const added: string[] = [];
+  const seen = new Set<string>();
   for (const nb of walk(b.boxes)) {
+    seen.add(nb.id);
     const ob = before.get(nb.id);
-    if (!ob) continue;
+    if (!ob) {
+      added.push(nb.id);
+      continue;
+    }
     const geometry = (["x", "y", "w", "h"] as const)
       .filter((k) => Math.abs(ob[k] - nb[k]) > 0.001)
       .map((k) => ({ key: k, from: ob[k], to: nb[k] }));
@@ -120,6 +134,8 @@ export function diffLayouts(a: Layout, b: Layout): WidthDiff {
     activeBefore: a.active,
     activeAfter: b.active,
     elements,
+    added,
+    removed: [...before.keys()].filter((id) => !seen.has(id)),
     issuesBefore: a.issues,
     issuesAfter: b.issues,
   };
@@ -136,10 +152,11 @@ export function whatif(src: Source, fixture: Fixture, widths: number[], changes:
     return { path: c.path, from, to: c.value };
   });
   const after = modelOf({ ...src, data });
-  return {
-    changes: applied,
-    widths: widths.map((w) => diffLayouts(layout(before, fixture, w), layout(after, fixture, w))),
-  };
+  const ls = widths.map((w) => [layout(before, fixture, w), layout(after, fixture, w)] as const);
+  const r: WhatIf = { changes: applied, widths: ls.map(([a, b]) => diffLayouts(a, b)) };
+  Object.defineProperty(r, "before", { value: ls.map(([a]) => a), enumerable: false });
+  Object.defineProperty(r, "after", { value: ls.map(([, b]) => b), enumerable: false });
+  return r;
 }
 
 export type { Diagnostic };

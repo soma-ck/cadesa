@@ -29,6 +29,11 @@ anywhere. `metrics --measure` and the conformance scripts start a local Chromium
   warning applies to controls that are under 44px on both sides; under 24px is still an
   error.
 - Contrast stays conclusive when only an element's position is uncertain.
+- `whatif` checks the same widths as `check` by default (every 20px from 320 to 1440px)
+  plus the width on each side of every breakpoint, and groups widths where the edit does the
+  same thing into one block with geometry deltas. It starts with the coverage line, marks
+  approximate boxes with ≈, and only reports "unchanged" for boxes predicted exactly. Boxes
+  an edit shows or hides are listed.
 - Line length moved from `check` to `critique`, reported once per text box with the widths
   where it happens.
 
