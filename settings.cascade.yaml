@@ -1,0 +1,36 @@
+# yaml-language-server: $schema=./schema/cascadio.schema.json
+version: 1
+tokens:
+  space: { section: 1.5rem, panel: 2rem, compact: 1rem, control: 0.75rem }
+  size: { panel: 40rem, control: 2.75rem, action: 9rem }
+  color: { surface: "#ffffff", ink: "#191b20", muted: "#555964", line: "#d6d9e0" }
+  radius: { panel: 0.75rem, control: 0.5rem }
+  font: { ui: "system-ui, -apple-system, 'Segoe UI', sans-serif" }
+text:
+  section-title: { font: ui, size: 1.5rem, weight: 650, lineHeight: 1.2, color: ink }
+  body-muted: { font: ui, size: 1rem, weight: 400, lineHeight: 1.5, color: muted }
+  label: { font: ui, size: 0.9375rem, weight: 600, lineHeight: 1.25, color: ink }
+  label-inverse: { font: ui, size: 0.9375rem, weight: 600, lineHeight: 1.25, color: surface }
+breakpoints:
+  narrow: 36rem
+styles:
+  settings-panel:
+    intent: Give the heading and save action the strongest visual hierarchy.
+    layout: { pattern: stack, gap: section }
+    background: surface
+    padding: panel
+    radius: panel
+    maxWidth: panel
+    slots:
+      title: { text: section-title }
+      description: { text: body-muted }
+      actions: { layout: { pattern: cluster, gap: control } }
+      primary: { text: label-inverse, background: ink, radius: control, width: action, height: control }
+      secondary: { text: label, border: line, radius: control, width: action, height: control }
+    when:
+      narrow:
+        padding: compact
+        slots:
+          actions: { layout: { pattern: stack, gap: control } }
+          primary: { width: fill }
+          secondary: { width: fill }

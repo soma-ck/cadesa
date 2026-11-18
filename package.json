@@ -1,0 +1,48 @@
+{
+  "name": "cascadio",
+  "version": "0.1.0",
+  "description": "Predict what a style edit will do before you make it. Cascadio computes layout without a browser and ships plain CSS.",
+  "type": "module",
+  "license": "MIT",
+  "bin": {
+    "cascadio": "dist/cli.js"
+  },
+  "files": [
+    "lib",
+    "schema",
+    "LICENSE",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "cascadio": "tsx src/cli.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build:ts": "tsc -p tsconfig.json",
+    "prepublishOnly": "npm run typecheck && npm test && npm run build:ts",
+    "conformance": "tsx scripts/conformance.ts",
+    "demo": "tsx src/cli.ts build settings.cascade.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cascade.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel"
+  },
+  "keywords": [
+    "css",
+    "ai",
+    "agents",
+    "layout",
+    "design-tokens",
+    "responsive",
+    "compiler"
+  ],
+  "dependencies": {
+    "parse5": "8.1.1",
+    "yaml": "2.9.1"
+  },
+  "devDependencies": {
+    "@types/node": "26.6.6",
+    "playwright": "1.65.0",
+    "tsx": "4.23.15",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0"
+  }
+}

@@ -1,0 +1,143 @@
+import {
+  PROP_ORDER,
+  tokenKey,
+  type Breakpoint,
+  type Component,
+  type Model,
+  type Pattern,
+  type Props,
+  type Ref,
+} from "./model.js";
+
+/** One link in the chain that explains where a computed value came from. */
+export interface Step {
+  kind: "token" | "text" | "when" | "source";
+  label: string;
+  path: string;
+}
+
+export interface Resolved<T> {
+  value: T;
+  display: string;
+  /** Most specific first: token → active breakpoint → the YAML field to edit. */
+  steps: Step[];
+}
+
+export interface ResolvedText {
+  role: string;
+  font?: string;
+  sizePx: number;
+  weight: number;
+  lineHeight: number;
+  color: string;
+}
+
+export interface ResolvedProps {
+  pattern?: Resolved<Pattern>;
+  gap?: Resolved<number>;
+  padding?: Resolved<number>;
+  background?: Resolved<string>;
+  border?: Resolved<string>;
+  radius?: Resolved<number>;
+  maxWidth?: Resolved<number>;
+  width?: Resolved<number | "fill">;
+  height?: Resolved<number>;
+  text?: Resolved<ResolvedText>;
+}
+
+export const fmtPx = (n: number) => `${Math.round(n * 100) / 100}`;
+
+export function activeBreakpoints(model: Model, width: number): Breakpoint[] {
+  return model.breakpoints.filter((b) => width <= b.length.px);
+}
+
+export function resolveElement(model: Model, component: Component, slot: string | undefined, width: number): ResolvedProps {
+  const active = new Set(activeBreakpoints(model, width).map((b) => b.name));
+  const layers: { props: Props; when?: Step }[] = [];
+  const base = slot === undefined ? component.props : component.slots.get(slot)?.props;
+  if (base) layers.push({ props: base });
+  for (const ov of component.when) {
+    if (!active.has(ov.breakpoint)) continue;
+    const props = slot === undefined ? ov.props : ov.slots.get(slot);
+    if (!props) continue;
+    const bp = model.breakpoints.find((b) => b.name === ov.breakpoint)!;
+    layers.push({
+      props,
+      when: { kind: "when", label: `when.${bp.name} (${width}px ≤ ${fmtPx(bp.length.px)}px)`, path: bp.path },
+    });
+  }
+
+  const out: ResolvedProps = {};
+  for (const key of PROP_ORDER) {
+    let layer: (typeof layers)[number] | undefined;
+    for (const l of layers) if (l.props[key] !== undefined) layer = l;
+    if (!layer) continue;
+    const pre = layer.when ? [layer.when] : [];
+    const src = (path: string): Step => ({ kind: "source", label: path, path });
+
+    const tokenStep = (r: Ref): Step => {
+      const t = model.tokens.get(tokenKey(r.kind, r.name))!;
+      return { kind: "token", label: `${r.kind}.${r.name} = ${t.raw}`, path: t.path };
+    };
+    const lengthOf = (r: Ref): Resolved<number> => {
+      const t = model.tokens.get(tokenKey(r.kind, r.name))!;
+      return { value: t.px!, display: `${fmtPx(t.px!)}px`, steps: [tokenStep(r), ...pre, src(r.path)] };
+    };
+    const colorOf = (r: Ref): Resolved<string> => {
+      const t = model.tokens.get(tokenKey(r.kind, r.name))!;
+      return { value: t.raw, display: t.raw, steps: [tokenStep(r), ...pre, src(r.path)] };
+    };
+
+    const p = layer.props;
+    switch (key) {
+      case "layout": {
+        const l = p.layout!;
+        out.pattern = { value: l.pattern, display: l.pattern, steps: [...pre, src(`${l.path}.pattern`)] };
+        out.gap = l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
+        break;
+      }
+      case "padding":
+      case "radius":
+      case "maxWidth":
+      case "height":
+        out[key] = lengthOf(p[key]!);
+        break;
+      case "background":
+      case "border":
+        out[key] = colorOf(p[key]!);
+        break;
+      case "width": {
+        const w = p.width!;
+        out.width =
+          "keyword" in w
+            ? { value: "fill", display: "fill", steps: [...pre, src(w.path)] }
+            : lengthOf(w);
+        break;
+      }
+      case "text": {
+        const r = p.text!;
+        const role = model.text.get(r.name)!;
+        const color = model.tokens.get(tokenKey("color", role.color.name))!;
+        const font = role.font ? model.tokens.get(tokenKey("font", role.font.name))!.raw : undefined;
+        out.text = {
+          value: {
+            role: role.name,
+            font,
+            sizePx: role.size.px,
+            weight: role.weight,
+            lineHeight: role.lineHeight,
+            color: color.raw,
+          },
+          display: `${role.name} (${fmtPx(role.size.px)}px/${role.lineHeight}, ${role.weight})`,
+          steps: [{ kind: "text", label: `text.${role.name}`, path: role.path }, ...pre, src(r.path)],
+        };
+        break;
+      }
+    }
+  }
+  return out;
+}
+
+export function explainChain(r: Resolved<unknown>): string {
+  return [r.display, ...r.steps.map((s) => s.label)].join(" ← ");
+}

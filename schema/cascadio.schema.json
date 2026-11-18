@@ -1,0 +1,125 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Cascadio source",
+  "description": "Editor autocomplete for *.cascade.yaml. The CLI's validator is authoritative: it also checks that every reference names a declared token, role, breakpoint or slot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version"],
+  "properties": {
+    "version": { "const": 1 },
+    "tokens": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "space": { "$ref": "#/$defs/lengthTokens" },
+        "size": { "$ref": "#/$defs/lengthTokens" },
+        "radius": { "$ref": "#/$defs/lengthTokens" },
+        "color": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/ident" },
+          "additionalProperties": { "type": "string", "pattern": "^#(?:[0-9a-fA-F]{3,4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$" }
+        },
+        "font": {
+          "type": "object",
+          "propertyNames": { "$ref": "#/$defs/ident" },
+          "additionalProperties": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "text": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/ident" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["size", "weight", "lineHeight", "color"],
+        "properties": {
+          "font": { "$ref": "#/$defs/ref", "description": "font token" },
+          "size": { "$ref": "#/$defs/length" },
+          "weight": { "type": "integer", "minimum": 1, "maximum": 1000 },
+          "lineHeight": { "type": "number", "exclusiveMinimum": 0 },
+          "color": { "$ref": "#/$defs/ref", "description": "color token" }
+        }
+      }
+    },
+    "breakpoints": {
+      "type": "object",
+      "description": "Each breakpoint applies at viewport widths <= its value (desktop-first).",
+      "propertyNames": { "$ref": "#/$defs/ident" },
+      "additionalProperties": { "$ref": "#/$defs/length" }
+    },
+    "styles": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/ident" },
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "intent": { "type": "string", "description": "Design intent. Metadata only; emitted as a CSS comment." },
+          "slots": {
+            "type": "object",
+            "propertyNames": { "$ref": "#/$defs/ident" },
+            "additionalProperties": { "$ref": "#/$defs/slotProps" }
+          },
+          "when": {
+            "type": "object",
+            "propertyNames": { "$ref": "#/$defs/ident" },
+            "additionalProperties": {
+              "allOf": [{ "$ref": "#/$defs/rootProps" }],
+              "properties": {
+                "slots": {
+                  "type": "object",
+                  "additionalProperties": { "$ref": "#/$defs/slotProps" }
+                }
+              },
+              "unevaluatedProperties": false
+            }
+          }
+        },
+        "allOf": [{ "$ref": "#/$defs/rootProps" }],
+        "unevaluatedProperties": false
+      }
+    }
+  },
+  "$defs": {
+    "ident": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "length": { "type": "string", "pattern": "^(?:\\d+(?:\\.\\d+)?|\\.\\d+)(rem|px)$" },
+    "ref": { "type": "string", "pattern": "^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$" },
+    "lengthTokens": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/ident" },
+      "additionalProperties": { "$ref": "#/$defs/length" }
+    },
+    "boxProps": {
+      "type": "object",
+      "properties": {
+        "layout": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["pattern"],
+          "properties": {
+            "pattern": { "enum": ["stack", "cluster"] },
+            "gap": { "$ref": "#/$defs/ref", "description": "space token" }
+          }
+        },
+        "padding": { "$ref": "#/$defs/ref", "description": "space token" },
+        "background": { "$ref": "#/$defs/ref", "description": "color token" },
+        "border": { "$ref": "#/$defs/ref", "description": "color token (1px solid)" },
+        "radius": { "$ref": "#/$defs/ref", "description": "radius token" },
+        "width": { "$ref": "#/$defs/ref", "description": "size token, or fill (stretch inside a stack)" },
+        "height": { "$ref": "#/$defs/ref", "description": "size token" },
+        "text": { "$ref": "#/$defs/ref", "description": "text role" }
+      }
+    },
+    "rootProps": {
+      "allOf": [{ "$ref": "#/$defs/boxProps" }],
+      "properties": {
+        "maxWidth": { "$ref": "#/$defs/ref", "description": "size token; also centers the component" }
+      }
+    },
+    "slotProps": {
+      "allOf": [{ "$ref": "#/$defs/boxProps" }],
+      "unevaluatedProperties": false
+    }
+  }
+}

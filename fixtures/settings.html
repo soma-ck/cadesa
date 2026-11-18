@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cascadio fixture: settings panel</title>
+    <!-- The exact bytes written by `cascadio build`. Nothing else styles the component. -->
+    <link rel="stylesheet" href="../dist/settings.css" />
+    <!-- Page chrome only. The engine models the page as a 0-margin block container. -->
+    <style>
+      body { margin: 0; background: #eef0f3; }
+    </style>
+  </head>
+  <body>
+    <section class="ca-settings-panel" data-fixture="panel" aria-labelledby="notifications-title">
+      <h2 class="ca-settings-panel__title" data-fixture="title" id="notifications-title">Email notifications</h2>
+      <p class="ca-settings-panel__description" data-fixture="description">Pick what lands in your inbox.</p>
+      <div class="ca-settings-panel__actions" data-fixture="actions">
+        <button class="ca-settings-panel__primary" data-fixture="save" type="submit">Save changes</button>
+        <button class="ca-settings-panel__secondary" data-fixture="cancel" type="button">Cancel</button>
+      </div>
+    </section>
+  </body>
+</html>
