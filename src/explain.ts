@@ -26,6 +26,8 @@ export interface Explanation {
 const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   pattern: "layout",
   gap: "layout",
+  align: "layout",
+  textAlign: "textAlign",
   padding: "padding",
   background: "background",
   border: "border",
@@ -49,6 +51,10 @@ function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: s
       return { value: p.layout!.pattern, path: `${p.layout!.path}.pattern` };
     case "gap":
       return { value: p.layout!.gap ? tok(p.layout!.gap) : "0 (no gap)", path: p.layout!.path };
+    case "align":
+      return p.layout!.pattern === "cluster" ? { value: p.layout!.align ?? "center (default)", path: p.layout!.path } : undefined;
+    case "textAlign":
+      return { value: p.textAlign!.value, path: p.textAlign!.path };
     case "padding": {
       const { block, inline, path } = p.padding!;
       const value =

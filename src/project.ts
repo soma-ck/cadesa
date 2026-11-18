@@ -74,6 +74,8 @@ export interface WhatIf {
 
 const PROPS: (keyof ResolvedProps)[] = [
   "pattern",
+  "align",
+  "textAlign",
   "gap",
   "padding",
   "background",

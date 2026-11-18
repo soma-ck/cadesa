@@ -44,7 +44,8 @@
           "size": { "$ref": "#/$defs/length" },
           "weight": { "type": "integer", "minimum": 1, "maximum": 1000 },
           "lineHeight": { "type": "number", "exclusiveMinimum": 0 },
-          "color": { "$ref": "#/$defs/ref", "description": "color token" }
+          "color": { "$ref": "#/$defs/ref", "description": "color token" },
+          "decoration": { "enum": ["none", "underline"] }
         }
       }
     },
@@ -105,6 +106,7 @@
           "required": ["pattern"],
           "properties": {
             "pattern": { "enum": ["stack", "cluster"] },
+            "align": { "enum": ["start", "center", "end", "stretch"], "description": "cluster only: cross-axis alignment of items in a row (default center)" },
             "gap": { "$ref": "#/$defs/ref", "description": "space token" }
           }
         },
@@ -125,7 +127,8 @@
         "radius": { "$ref": "#/$defs/ref", "description": "radius token" },
         "width": { "$ref": "#/$defs/ref", "description": "size token, or fill (stretch inside a stack)" },
         "height": { "$ref": "#/$defs/ref", "description": "size token" },
-        "text": { "$ref": "#/$defs/ref", "description": "text role" }
+        "text": { "$ref": "#/$defs/ref", "description": "text role" },
+        "textAlign": { "enum": ["start", "center", "end"] }
       }
     },
     "rootProps": {

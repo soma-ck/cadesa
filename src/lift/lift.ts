@@ -382,7 +382,9 @@ export function liftParsed(css: ParsedCss): LiftResult {
         note(e, s, display, "a non-wrapping flex row is lifted as a cluster; items may shrink instead of wrapping", "geometry");
       const av = align?.value.trim();
       if (align && column && !["stretch", "normal"].includes(av!)) note(e, s, align, "stack children always stretch", "geometry");
-      if (!column && av !== "center") note(e, s, align ?? display, "cluster items are centered; this CSS aligns them differently", "geometry");
+      const CLUSTER_ALIGN: Record<string, string> = { center: "center", "flex-start": "start", start: "start", "flex-end": "end", end: "end", stretch: "stretch", normal: "stretch" };
+      const clusterAlign = av === undefined ? "stretch" : CLUSTER_ALIGN[av];
+      if (!column && !clusterAlign) note(e, s, align!, `align-items: ${av} has no Cadesa equivalent`, "geometry");
       const jv = justify?.value.trim();
       if (justify && !["flex-start", "start", "normal", "left"].includes(jv!) && !(column && !m.has("height")))
         note(e, s, justify, `justify-content: ${jv} has no Cadesa equivalent`, "geometry");
@@ -394,7 +396,11 @@ export function liftParsed(css: ParsedCss): LiftResult {
       }
       if (!column && rowGap && colGap && rowGap.value.trim() !== colGap.value.trim())
         note(e, s, rowGap, "a cluster has one gap for rows and columns", "geometry");
-      out.layout = gap ? { pattern, gap } : { pattern };
+      out.layout = {
+        pattern,
+        ...(gap && { gap }),
+        ...(!column && clusterAlign && clusterAlign !== "center" && { align: clusterAlign }),
+      };
     } else if (display && !["block", "flow-root"].includes(display.value.trim())) {
       note(e, s, display, `display: ${display.value.trim()} has no Cadesa pattern`, "geometry");
     }
@@ -549,7 +555,17 @@ export function liftParsed(css: ParsedCss): LiftResult {
         if (!fw) {
           /* weight defaults to 400; impact.ts flags tags whose UA weight differs */
         }
-        const spec = { ...(fontTok && { font: fontTok }), size: sizeRaw!, weight, lineHeight: lineHeight!, color: colorTok! };
+        const deco = take("text-decoration") ?? take("text-decoration-line");
+        const decoration = deco?.value.trim().split(/\s+/)[0];
+        if (deco && decoration !== "none" && decoration !== "underline") note(e, s, deco, "paint only; no effect on layout", "paint");
+        const spec = {
+          ...(fontTok && { font: fontTok }),
+          size: sizeRaw!,
+          weight,
+          lineHeight: lineHeight!,
+          color: colorTok!,
+          ...((decoration === "none" || decoration === "underline") && { decoration }),
+        };
         const key = JSON.stringify(spec);
         let role = roles.get(key);
         if (!role) {
@@ -562,6 +578,16 @@ export function liftParsed(css: ParsedCss): LiftResult {
         out.text = role.name;
       }
     }
+
+    const ta = take("text-align");
+    if (ta) {
+      const v = ({ start: "start", left: "start", center: "center", end: "end", right: "end" } as Record<string, string>)[ta.value.trim()];
+      if (v && v !== "start") out.textAlign = v;
+      else if (!v) note(e, s, ta, "paint only; no effect on layout", "paint");
+    }
+    const ac = take("align-content");
+    if (ac && !(ac.value.trim() === "center" && out.height && out.text) && !["normal", "start"].includes(ac.value.trim()))
+      note(e, s, ac, "align-content moves content inside the box; only centering a fixed-height text box is modelled", "visual");
 
     // Declarations Cadesa's own output emits as part of a reset or a width/fill pattern.
     for (const p of ["font-kerning", "letter-spacing", "word-spacing", "text-indent", "text-transform", "white-space", "overflow-wrap", "word-break", "hyphens"]) {

@@ -42,6 +42,8 @@ jobs:
         run: npm run conformance:sweep
       - name: Lifted hand-written CSS vs. the original
         run: npm run conformance:lift
+      - name: Nested components (143 widths)
+        run: npm run conformance:pricing
       - uses: actions/upload-artifact@v4
         if: always()
         with:

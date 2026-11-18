@@ -197,15 +197,25 @@ Invalid source never produces CSS. The same input always produces byte-identical
 | `layout.pattern: stack` | | `display:flex; flex-direction:column; align-items:stretch` |
 | `layout.pattern: cluster` | | `display:flex; flex-wrap:wrap; align-items:center` |
 | `layout.gap` | space token | `gap` |
+| `layout.align` (cluster) | `start`, `center` (default), `end`, `stretch` | `align-items`. `stretch` gives equal-height cards |
 | `padding` | space token, or `{ block, inline }` | `padding` (a missing axis is 0) |
 | `background`, `border` | color token | `background`, `border: 1px solid` |
 | `radius` | radius token | `border-radius` |
 | `width` | size token, or `fill` | fixed `width; flex:none`, or stretch in a stack. Unset: stretch in a stack, sized to its text in a cluster |
 | `height` | size token | `height` |
 | `maxWidth` (root only) | size token | `max-width; margin-inline:auto` |
-| `text` | text role | font family, size, weight, line-height, color |
+| `text` | text role | font family, size, weight, line-height, color, optional `decoration: none \| underline` |
+| `textAlign` | `start`, `center`, `end` | `text-align`. A text box with a fixed `height` also centers its lines vertically (`align-content: center`) |
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)` after base rules; replaces, never merges |
 | `intent` | sentence | a CSS comment; metadata for inspection |
+
+**Components nest.** Any element can be the root of another component. Put a `.ca-plan-card` inside `.ca-pricing__plans` and the parent slot's layout places it, while the card lays out its own slots, breakpoints and all. Repeated elements share their slot's style (three `.ca-plan-card__feature` items, say). See [`examples/pricing`](examples/pricing):
+
+| 390px | 1280px |
+| --- | --- |
+| <img src="docs/pricing-390.png" width="200" alt="Pricing section at 390px: plan cards stacked"> | <img src="docs/pricing-1280.png" width="560" alt="Pricing section at 1280px: three equal-height plan cards in a row"> |
+
+<sub>All 4,290 boxes agree with Chromium across 143 widths (`npm run conformance:pricing`).</sub>
 
 Class contract: `.ca-<component>` on the root and `.ca-<component>__<slot>` on slots. Set a top-level `prefix: ""` to drop the `ca-` (lift does this to keep existing class names). Slot rules are scoped to the root. Each component gets a scoped reset, so browser defaults can't move boxes the engine doesn't know about.
 
@@ -295,7 +305,7 @@ Each round is one headless `claude -p` run that makes one edit. The harness then
 npm run bench -- --trials 5 --rounds 4 --model sonnet
 ```
 
-Results land in `bench/results/`. *No published numbers yet:* run it and see.
+Results land in `bench/results/`. **First run ([details](bench/RESULTS.md)): plain CSS won or tied every task.** The three bugs were each a single obvious media-query edit, so the plain-CSS agent solved all 15 runs on the first try with no regressions. The Cadesa agent's only failures were unfamiliar syntax (`width: 100%` instead of `fill`), which the validator now points at directly. A harder task set is next. This section will report whatever it shows.
 
 ## Development
 
@@ -305,6 +315,7 @@ npm run typecheck
 npm run conformance        # optional: engine vs. Chromium, 2 fixtures × 4 widths
 npm run conformance:sweep  # optional: 247 widths, line-break boundaries
 npm run conformance:lift   # optional: lifted hand-written CSS vs. the original in Chromium
+npm run conformance:pricing # optional: nested components, 143 widths
 npm run bench              # optional: agent benchmark (uses the claude CLI and model usage)
 ```
 

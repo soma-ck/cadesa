@@ -47,7 +47,8 @@
     "conformance:sweep": "tsx scripts/conformance.ts --fixtures fixtures/settings-long.html --widths $(seq -s, 260 3 1000) --out artifacts/sweep",
     "metrics": "tsx scripts/gen-metrics.ts",
     "conformance:lift": "tsx scripts/conformance.ts --lift fixtures/legacy.css --fixtures fixtures/legacy.html --out artifacts/legacy",
-    "bench": "npm run build:ts && tsx bench/run.ts"
+    "bench": "npm run build:ts && tsx bench/run.ts",
+    "conformance:pricing": "tsx scripts/conformance.ts --source examples/pricing/pricing.cadesa.yaml --css examples/pricing/pricing.css --fixtures examples/pricing/pricing.html --widths $(seq -s, 300 7 1300) --out artifacts/pricing"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",

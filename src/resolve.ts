@@ -34,6 +34,8 @@ export interface ResolvedText {
 
 export interface ResolvedProps {
   pattern?: Resolved<Pattern>;
+  align?: Resolved<"start" | "center" | "end" | "stretch">;
+  textAlign?: Resolved<"start" | "center" | "end">;
   gap?: Resolved<number>;
   padding?: Resolved<{ block: number; inline: number }>;
   background?: Resolved<string>;
@@ -94,6 +96,15 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const l = p.layout!;
         out.pattern = { value: l.pattern, display: l.pattern, steps: [...pre, src(`${l.path}.pattern`)] };
         out.gap = l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
+        if (l.pattern === "cluster") {
+          const a = l.align ?? "center";
+          out.align = { value: a, display: l.align ? a : "center (default)", steps: [...pre, src(l.align ? `${l.path}.align` : l.path)] };
+        }
+        break;
+      }
+      case "textAlign": {
+        const t = p.textAlign!;
+        out.textAlign = { value: t.value, display: t.value, steps: [...pre, src(t.path)] };
         break;
       }
       case "padding": {

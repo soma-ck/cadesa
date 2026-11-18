@@ -1,0 +1,726 @@
+{
+  "model": "sonnet",
+  "rounds": 4,
+  "claude": "2.1.327 (Claude Code)",
+  "results": [
+    {
+      "task": "stack-actions",
+      "arm": "css",
+      "trial": 1,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0759551,
+          "ms": 5189,
+          "reply": "I added a rule inside the existing `@media (max-width: 36rem)` block that makes `.ca-settings-panel__actions` a non-wrapping, stretched column, so on phones the buttons stack at full width and desktop is unchanged. I haven't run `preview.mjs` or looked at the screenshots, so I haven't checked the result visually."
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "cadesa",
+      "trial": 1,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 5,
+          "costUsd": 0.08303429999999999,
+          "ms": 8514,
+          "reply": "I added a `slots.actions` override to the `when.narrow` block that switches the actions layout to a stack with a `control` gap. At 390px the buttons should stack full-width, and 1280px should stay unchanged. I didn't re-run the tools after the edit. The earlier `whatif` check, run with the pattern alone, predicted 358px-wide buttons at 390px and no change at 1280px. It also showed the gap dropping"
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "css",
+      "trial": 2,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0767539,
+          "ms": 5409,
+          "reply": "I added a rule inside the existing `@media (max-width: 36rem)` block that sets the actions container to `flex-direction: column; align-items: stretch;`. That should stack the two buttons at full panel-content width on phones and leave desktop unchanged. I haven't run `node preview.mjs` or looked at the screenshots, so none of this has been checked visually."
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "cadesa",
+      "trial": 2,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 5,
+          "costUsd": 0.0798676,
+          "ms": 7976,
+          "reply": "I added a `when.narrow` override that switches the `actions` slot to a `stack` layout with `gap: control`, so the buttons stack full-width at 390px with the 12px gap kept; desktop is unaffected. I checked the `stack` pattern with `whatif` (390px buttons 358px wide, 1280px unchanged) but didn't re-run it with `gap: control` or the screenshots after the edit."
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "css",
+      "trial": 3,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0760105,
+          "ms": 5680,
+          "reply": "I added a rule to the existing `@media (max-width: 36rem)` block in `component.css` that makes the actions container a non-wrapping column with `align-items: stretch`, so the two buttons stack and each spans the full panel width on phones. Desktop is unaffected. I haven't run `preview.mjs` or checked the screenshots, so the result is unverified."
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "cadesa",
+      "trial": 3,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0775999,
+          "ms": 6425,
+          "reply": "I added a `slots.actions.layout` override of `{ pattern: stack, gap: control }` under `when.narrow`, so on phones the buttons stack at full panel width (358px each at 390px) and desktop at 1280px is unchanged. This comes from the `whatif` prediction. I did not run `preview.mjs` or `check` after the edit."
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "css",
+      "trial": 4,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.07805909999999999,
+          "ms": 6695,
+          "reply": "I added a rule inside the existing `@media (max-width: 36rem)` block in `component.css` that makes the actions container `flex-direction: column; align-items: stretch`, so the buttons stack and fill the panel width on phones. I didn't run `node preview.mjs`, so the 390px and 1280px screenshots haven't been checked. The 1280px layout should be unchanged because the rule only applies at 36rem and na"
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "cadesa",
+      "trial": 4,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.07720450000000001,
+          "ms": 6572,
+          "reply": "I added a `slots.actions` override to the `narrow` breakpoint that switches the actions layout from `cluster` to `stack` (gap `control`), so on phones the two buttons stack and each spans the full 358px panel content width. A `whatif` prediction showed 1280px unchanged. I haven't run `preview.mjs` or `check` on the saved edit, so it hasn't been checked in the screenshots."
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "css",
+      "trial": 5,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0771777,
+          "ms": 6108,
+          "reply": "I added a rule to the existing `@media (max-width: 36rem)` block in `component.css` that makes the actions container a non-wrapping column with `align-items: stretch`, so on phones the two buttons stack and each fills the panel's content width, while desktop styles are untouched. I haven't run `node preview.mjs` or looked at the screenshots, so the result is unchecked."
+        }
+      ]
+    },
+    {
+      "task": "stack-actions",
+      "arm": "cadesa",
+      "trial": 5,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "save 16,241.6 358×44, cancel 16,297.6 358×44, actions 16,241.6 358×100 (stacked, full width)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 5,
+          "costUsd": 0.0829519,
+          "ms": 7524,
+          "reply": "I added a `narrow` override that turns the `actions` slot into a vertical stack with the same `control` gap. I haven't re-run the tools on the edited file, so the result is unconfirmed. An earlier `whatif` of the same pattern change, without the gap, predicted full-width buttons at 390px and no change at 1280px."
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "css",
+      "trial": 1,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0768946,
+          "ms": 5098,
+          "reply": "I changed the panel's padding inside the existing `@media (max-width: 36rem)` block from `var(--ca-space-panel)` (2rem) to `1rem`, so content starts 16px from the edge on phones while desktop styles are untouched. I haven't run `node preview.mjs`, so the screenshots are unchecked."
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "cadesa",
+      "trial": 1,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0721957,
+          "ms": 5022,
+          "reply": "I changed the `narrow` breakpoint override's `padding` from `panel` (2rem) to `compact` (1rem), so mobile content now starts 16px from the edge and the desktop styles are unchanged. I haven't re-run the render or screenshots to confirm it."
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "css",
+      "trial": 2,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0758394,
+          "ms": 4521,
+          "reply": "I changed the padding inside the `@media (max-width: 36rem)` block of `component.css` from `var(--ca-space-panel)` (2rem) to `1rem`, so content starts 16px from the edge on phones and desktop is unchanged. I haven't run `node preview.mjs` to check the screenshots."
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "cadesa",
+      "trial": 2,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.072653,
+          "ms": 4910,
+          "reply": "I changed the `narrow` breakpoint's `padding` in `component.cadesa.yaml` from `panel` (2rem) to `compact` (1rem), so mobile content starts 16px from the edge. I didn't re-run the render or preview to confirm, and the base `panel` padding that desktop uses is unchanged."
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "css",
+      "trial": 3,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.07678800000000001,
+          "ms": 4774,
+          "reply": "I changed the padding in the `@media (max-width: 36rem)` block of `component.css` from `var(--ca-space-panel)` (2rem) to `1rem`, so content starts 16px from the edge on phones. I haven't run the preview, and desktop is untouched because the change is inside the mobile query."
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "cadesa",
+      "trial": 3,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.072651,
+          "ms": 4954,
+          "reply": "I changed the `narrow` breakpoint's `padding` in `component.cadesa.yaml` from `panel` (2rem) to `compact` (1rem), so mobile content now starts 16px from the edge. I haven't re-run the render or preview, so the change is unchecked. Desktop shouldn't change, because the base `padding: panel` is untouched."
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "css",
+      "trial": 4,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0779106,
+          "ms": 5787,
+          "reply": "I changed the panel padding inside the `@media (max-width: 36rem)` block in `component.css` from `var(--ca-space-panel)` (2rem) to `1rem`, so content starts 16px from the edge on phones and desktop is unchanged. I haven't run `node preview.mjs` or looked at the screenshots, so the result is unchecked. The file header says it's generated from `component.cadesa.yaml` and should be edited there inste"
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "cadesa",
+      "trial": 4,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 3,
+          "costUsd": 0.0702588,
+          "ms": 4761,
+          "reply": "I changed the panel's padding in the `narrow` breakpoint of `component.cadesa.yaml` from `panel` (2rem) to `compact` (1rem), so content starts 16px from the edge on phones. The 1280px layout uses the unchanged base padding. I haven't run the preview or `check` to confirm it."
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "css",
+      "trial": 5,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.07665,
+          "ms": 5338,
+          "reply": "I changed the panel's padding inside the `@media (max-width: 36rem)` block in `component.css` from `var(--ca-space-panel)` (32px) to `1rem` (16px). Phone content now starts 16px from the edge, and desktop is untouched. I didn't run `node preview.mjs`, so the screenshots haven't been checked. The file header says it's generated from `component.cadesa.yaml`, so that source will need the same change "
+        }
+      ]
+    },
+    {
+      "task": "mobile-padding",
+      "arm": "cadesa",
+      "trial": 5,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "title 16,16 358×57.6 (needs x=16, right edge 374)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 3,
+          "costUsd": 0.0697813,
+          "ms": 4462,
+          "reply": "I changed the `narrow` breakpoint's `padding` in `component.cadesa.yaml` from `panel` (2rem) to `compact` (1rem). Content should now start 16px from the edge at 390px, and the desktop styles are untouched. I haven't run the preview or `check` to confirm."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "css",
+      "trial": 1,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0766833,
+          "ms": 5163,
+          "reply": "I added `max-width: 100%` to the primary (Save) button rule in `component.css`, so its fixed 20rem width shrinks to fit the panel at 320px, while at 1280px the panel is wide enough that it stays 20rem as before. I haven't run `node preview.mjs`, so the fix is unchecked in screenshots."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "cadesa",
+      "trial": 1,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 7,
+          "costUsd": 0.09405519999999999,
+          "ms": 13568,
+          "reply": "I added `primary: { width: fill }` to the narrow breakpoint's slots, so the Save button fills the 288px actions row instead of staying 320px wide. A `whatif` run before the edit predicted this fixes the 320px overflow and leaves 1280px unchanged. I did not re-run `check` or `preview.mjs` after the edit."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "css",
+      "trial": 2,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0766607,
+          "ms": 5618,
+          "reply": "I added `max-width: 100%` to the primary (Save) button rule in `component.css`, so its fixed 20rem width can no longer exceed the panel at 320px, while desktop stays unchanged since the container is wider there. I haven't run `node preview.mjs` to check the screenshots."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "cadesa",
+      "trial": 2,
+      "solved": false,
+      "attempts": 4,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": false,
+          "goalDetail": "rightmost box edge at 336.0px (viewport 320px)",
+          "desktopChanges": [],
+          "invalidSource": "component.cadesa.yaml:28:105 error styles.settings-panel.slots.primary.maxWidth: unknown key \"maxWidth\"\n  expected: one of layout, padding, background, border, radius, width, height, text",
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0733999,
+          "ms": 5578,
+          "reply": "I added `maxWidth: 100%` to the `primary` slot in `component.cadesa.yaml`, which caps the Save button at its container's width at 320px and leaves its 20rem width unchanged on desktop. I haven't re-run the checks or screenshots to confirm it, since you asked for one edit and then to stop."
+        },
+        {
+          "round": 2,
+          "goal": false,
+          "goalDetail": "rightmost box edge at 336.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0711527,
+          "ms": 8189,
+          "reply": "I removed the invalid `maxWidth: 100%` from the `primary` slot, which fixes the schema error. The 320px overflow is not fixed yet: the Save button is still `width: action` (20rem), so it still sticks out at 320px. I haven't re-run the check or preview, so none of this is verified."
+        },
+        {
+          "round": 3,
+          "goal": false,
+          "goalDetail": "rightmost box edge at 336.0px (viewport 320px)",
+          "desktopChanges": [],
+          "invalidSource": "component.cadesa.yaml:35:29 error styles.settings-panel.when.narrow.slots.primary.width: unknown size token \"100%\"\n  expected: one of panel, control, action\n  got: \"100%\"",
+          "ok": true,
+          "turns": 3,
+          "costUsd": 0.06306,
+          "ms": 4585,
+          "reply": "I added `primary: { width: 100% }` to the `narrow` breakpoint's slots, so the Save button fills its container at 320px instead of keeping its fixed 20rem width. I haven't re-run `check` or `preview.mjs` to confirm it, so the 320px result is unverified."
+        },
+        {
+          "round": 4,
+          "goal": false,
+          "goalDetail": "rightmost box edge at 336.0px (viewport 320px)",
+          "desktopChanges": [],
+          "invalidSource": "component.cadesa.yaml:35:29 error styles.settings-panel.when.narrow.slots.primary.width: unknown size token \"100%\"\n  expected: one of panel, control, action, fit\n  got: \"100%\"",
+          "ok": true,
+          "turns": 12,
+          "costUsd": 0.12476079999999999,
+          "ms": 24820,
+          "reply": "I made the one edit by adding a `fit: 18rem` size token, but that isn't enough. The narrow rule on line 35 still says `width: 100%`, which the validator rejects, so the file is still invalid. I didn't verify the edit, and the next round needs to change line 35 to `width: fit`."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "css",
+      "trial": 3,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.07873390000000001,
+          "ms": 6867,
+          "reply": "I added a rule inside the existing `@media (max-width: 36rem)` block in `component.css` that sets the Save button to `width: auto; max-width: 100%`, so it no longer keeps its fixed 20rem width and sticks out of the panel at 320px. I didn't run `node preview.mjs`, so I haven't checked the 320px or 1280px screenshots. The edit sits inside the media query, so it shouldn't affect the desktop layout.\n\n"
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "cadesa",
+      "trial": 3,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 11,
+          "costUsd": 0.1388487,
+          "ms": 28832,
+          "reply": "I added an `action-narrow: 17rem` size token and set the Save button to that width inside the `narrow` breakpoint. At 320px the button should be 272px, which fits in the 288px actions area. The 1280px layout still uses the original 20rem width. I haven't re-run the checks."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "css",
+      "trial": 4,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0782659,
+          "ms": 6868,
+          "reply": "I added a rule inside the existing `max-width: 36rem` media query that sets the Save button's `width` to `auto`. At 320px it now stretches to the panel's width instead of keeping its fixed 20rem, and the desktop layout is unchanged. I haven't run `node preview.mjs`, so I haven't checked it in a screenshot."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "cadesa",
+      "trial": 4,
+      "solved": true,
+      "attempts": 3,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": false,
+          "goalDetail": "rightmost box edge at 336.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 10,
+          "costUsd": 0.1173458,
+          "ms": 22795,
+          "reply": "I used my one edit this round to add an `action-narrow: 18rem` size token (18rem fits the 288px content width at 320px). The overflow isn't fixed yet, because nothing uses the token. The next edit needs to set `when.narrow.slots.primary.width: action-narrow`, and I haven't run `check` since this edit."
+        },
+        {
+          "round": 2,
+          "goal": false,
+          "goalDetail": "rightmost box edge at 336.0px (viewport 320px)",
+          "desktopChanges": [],
+          "invalidSource": "component.cadesa.yaml:35:29 error styles.settings-panel.when.narrow.slots.primary.width: unknown size token \"100%\"\n  expected: one of panel, control, action, action-narrow\n  got: \"100%\"",
+          "ok": true,
+          "turns": 3,
+          "costUsd": 0.06346639999999999,
+          "ms": 4121,
+          "reply": "I added `primary: { width: 100% }` to the `narrow` block's slots in `component.cadesa.yaml`, so the Save button fills its container instead of keeping its fixed 20rem width at 320px. I haven't re-run the check or preview to confirm it."
+        },
+        {
+          "round": 3,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 3,
+          "costUsd": 0.0642396,
+          "ms": 5060,
+          "reply": "I replaced the invalid `width: 100%` on the narrow-breakpoint `primary` slot with the existing `action-narrow` token (18rem, 288px), so the file should now be valid. That should fit the 288px of content width in a 320px panel with 16px padding. I haven't run the preview or check, so the 320px result is unconfirmed."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "css",
+      "trial": 5,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 4,
+          "costUsd": 0.0787239,
+          "ms": 6594,
+          "reply": "I added a rule inside the existing `max-width: 36rem` media query that sets the save button to `width: auto; max-width: 100%`, replacing its fixed 20rem (320px) width. I haven't run `node preview.mjs`, so the 320px result is unchecked. Desktop styles are untouched."
+        }
+      ]
+    },
+    {
+      "task": "button-overflow",
+      "arm": "cadesa",
+      "trial": 5,
+      "solved": true,
+      "attempts": 1,
+      "desktopRegressionRounds": 0,
+      "finalDesktopRegression": false,
+      "rounds": [
+        {
+          "round": 1,
+          "goal": true,
+          "goalDetail": "rightmost box edge at 320.0px (viewport 320px)",
+          "desktopChanges": [],
+          "ok": true,
+          "turns": 8,
+          "costUsd": 0.0996936,
+          "ms": 14697,
+          "reply": "I added `primary: { width: fill }` to the `narrow` breakpoint's slots, so the Save button shrinks from 320px to the panel's 288px content width at phone sizes. A `whatif` run predicted this fixes the overflow at 320px and leaves 1280px unchanged. I haven't re-run `check` or `preview.mjs` on the edited file."
+        }
+      ]
+    }
+  ]
+}

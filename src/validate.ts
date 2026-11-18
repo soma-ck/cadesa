@@ -10,6 +10,7 @@ import {
   type Breakpoint,
   type Component,
   type Length,
+  type LayoutProp,
   type Model,
   type Override,
   type Props,
@@ -27,7 +28,7 @@ const IDENT_HELP = "a lowercase kebab-case name, e.g. section-title";
 
 const TOP_KEYS = ["version", "prefix", "tokens", "text", "breakpoints", "styles"];
 const PREFIX = /^(?:[a-z][a-z0-9]*-)?$/;
-const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color"];
+const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration"];
 const ROOT_PROPS = PROP_ORDER as string[];
 const SLOT_PROPS = ROOT_PROPS.filter((p) => p !== "maxWidth");
 
@@ -70,7 +71,12 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
 
   const keys = (o: Obj, path: PathSeg[], allowed: string[]) => {
     for (const k of Object.keys(o)) {
-      if (!allowed.includes(k))
+      if (k === "maxWidth" && ROOT_PROPS.includes(k) && !allowed.includes(k))
+        err([...path, k], "maxWidth is only allowed on a component root", {
+          expected: `one of ${allowed.join(", ")}; to keep a slot inside its parent, use width: fill (or a smaller size token)`,
+          key: true,
+        });
+      else if (!allowed.includes(k))
         err([...path, k], `unknown key "${k}"`, {
           expected: `one of ${allowed.join(", ")}`,
           suggestion: closest(k, allowed),
@@ -142,7 +148,12 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
       return undefined;
     }
     if (!names.includes(value)) {
-      err(path, `unknown ${label} "${value}"`, { expected, got: value, suggestion: closest(value, names) });
+      const literal = kind !== "text" && (LENGTH.test(value) || COLOR.test(value) || /^\d/.test(value));
+      err(path, literal ? `"${value}" is a literal; values are token names` : `unknown ${label} "${value}"`, {
+        expected: literal ? `${expected}, or declare it first: tokens.${kind}.<name>: ${value}` : expected,
+        got: value,
+        suggestion: literal ? undefined : closest(value, names),
+      });
       return undefined;
     }
     return { kind, name: value, path: path.join(".") };
@@ -176,6 +187,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         err([...path, "lineHeight"], "invalid line height", { expected: "a unitless number > 0, e.g. 1.5", got: role.lineHeight });
         ok = false;
       }
+      if (role.decoration !== undefined && role.decoration !== "none" && role.decoration !== "underline") {
+        err([...path, "decoration"], "invalid text decoration", { expected: "none or underline", got: role.decoration });
+        ok = false;
+      }
       const color = ref(role.color, [...path, "color"], "color");
       const font = role.font === undefined ? undefined : ref(role.font, [...path, "font"], "font");
       if (!ok || !color || (role.font !== undefined && !font)) continue;
@@ -186,6 +201,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         size: parseLength(role.size as string),
         weight: role.weight as number,
         lineHeight: role.lineHeight as number,
+        decoration: role.decoration as "none" | "underline" | undefined,
         color,
       });
     }
@@ -217,7 +233,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "layout": {
           const l = obj(v, p, "a layout");
           if (!l) break;
-          keys(l, p, ["pattern", "gap"]);
+          keys(l, p, ["pattern", "gap", "align"]);
           if (l.pattern !== "stack" && l.pattern !== "cluster") {
             err([...p, "pattern"], l.pattern === undefined ? 'missing required key "pattern"' : "unsupported layout pattern", {
               expected: "stack or cluster",
@@ -228,7 +244,14 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           }
           const gap = l.gap === undefined ? undefined : ref(l.gap, [...p, "gap"], "space");
           if (l.gap !== undefined && !gap) break;
-          out.layout = { path: p.join("."), pattern: l.pattern, gap };
+          if (l.align !== undefined && (l.pattern !== "cluster" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
+            err([...p, "align"], l.pattern !== "cluster" ? "align only applies to a cluster (stack children always stretch)" : "invalid align", {
+              expected: "start, center, end or stretch",
+              got: l.align,
+            });
+            break;
+          }
+          out.layout = { path: p.join("."), pattern: l.pattern, gap, align: l.align as LayoutProp["align"] };
           break;
         }
         case "padding": {
@@ -265,7 +288,18 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           out.text = ref(v, p, "text");
           break;
         case "width":
-          out.width = v === "fill" ? { keyword: "fill", path: p.join(".") } : ref(v, p, "size");
+          if (v === "fill") out.width = { keyword: "fill", path: p.join(".") };
+          else if (typeof v === "string" && /^(?:100%|auto|stretch|full)$/.test(v))
+            err(p, `width "${v}" is spelled fill in Cadesa`, {
+              expected: "fill (stretch across the parent stack), or a size token",
+              got: v,
+              suggestion: '"fill"',
+            });
+          else out.width = ref(v, p, "size");
+          break;
+        case "textAlign":
+          if (v === "start" || v === "center" || v === "end") out.textAlign = { value: v, path: p.join(".") };
+          else err(p, "invalid textAlign", { expected: "start, center or end", got: v });
           break;
       }
     }

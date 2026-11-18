@@ -28,6 +28,7 @@ export interface TextRole {
   weight: number;
   lineHeight: number;
   color: Ref;
+  decoration?: "none" | "underline";
 }
 
 export interface Breakpoint {
@@ -45,10 +46,15 @@ export interface Ref {
 
 export type Pattern = "stack" | "cluster";
 
+export type Align = "start" | "center" | "end" | "stretch";
+export type TextAlign = "start" | "center" | "end";
+
 export interface LayoutProp {
   path: string;
   pattern: Pattern;
   gap?: Ref;
+  /** Cluster only: cross-axis alignment of items in a row (default center). */
+  align?: Align;
 }
 
 /** `padding: compact` sets both axes; `padding: { block, inline }` sets each (a missing axis is 0). */
@@ -68,6 +74,7 @@ export interface Props {
   width?: Ref | { keyword: "fill"; path: string };
   height?: Ref;
   text?: Ref;
+  textAlign?: { value: TextAlign; path: string };
 }
 
 export const PROP_ORDER: (keyof Props)[] = [
@@ -80,6 +87,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "width",
   "height",
   "text",
+  "textAlign",
 ];
 
 export interface Slot {

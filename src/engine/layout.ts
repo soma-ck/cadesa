@@ -91,7 +91,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const inset = insetsOf(props);
 
     // Children that are Cadesa slots; anything else inside a text box is inline text.
-    const classed = n.children.filter((k) => k.classes.some((cl) => cl.startsWith(`${model.prefix}${c.name}__`)));
+    const classed = n.children.filter((k) => k.classes.some((cl) => cl.startsWith(model.prefix) && (cl.startsWith(`${model.prefix}${c.name}__`) || model.components.has(cl.slice(model.prefix.length)))));
     const isText = !!props.text && classed.length === 0;
     const measureText = isText && n.text ? text(n, props, id, assumptions) : undefined;
 
@@ -135,9 +135,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const gap = props.gap?.value ?? 0;
     const kids = isText
       ? []
-      : (n.children.map((k) => ({ node: k, slot: slotOf(k, c) })).filter((k) => k.slot !== null) as {
+      : (n.children.map((k) => ({ node: k, ...childOf(k, c) })).filter((k) => k.comp !== null) as {
           node: FixtureNode;
-          slot: string;
+          comp: Component;
+          slot: string | undefined;
         }[]);
 
     if (!isText && n.text && !n.children.length) {
@@ -161,23 +162,27 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (kids.length && pattern === "stack") {
       let y = 0;
       kids.forEach((k, i) => {
-        const b = measure(k.node, c, k.slot, innerW, "stack");
+        const b = measure(k.node, k.comp, k.slot, innerW, "stack");
+        b.x = b.props.maxWidth && b.w < innerW ? (innerW - b.w) / 2 : 0; // nested root: margin-inline: auto
         b.y = y;
         y += b.h + (i < kids.length - 1 ? gap : 0);
         children.push(b);
       });
       contentH = y;
     } else if (kids.length && pattern === "cluster") {
-      const measured = kids.map((k) => measure(k.node, c, k.slot, innerW, "cluster"));
+      const measured = kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "cluster"));
       let line: Box[] = [];
       let lineW = 0;
       let y = 0;
+      const align = props.align?.value ?? "center";
       const flush = () => {
         const lh = Math.max(...line.map((b) => b.h));
         let x = 0;
         for (const b of line) {
+          // align-items. stretch only grows items without a fixed height; their content stays top-aligned.
+          if (align === "stretch" && !b.props.height) b.h = lh;
           b.x = x;
-          b.y = y + (lh - b.h) / 2; // align-items: center
+          b.y = y + (align === "start" || align === "stretch" ? 0 : align === "end" ? lh - b.h : (lh - b.h) / 2);
           x += b.w + gap;
         }
         y += lh;
@@ -257,6 +262,30 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     return box;
   }
 
+  /**
+   * What a child element of component `c` is: one of c's slots, or the root of another (nested)
+   * component. Null (reported) if it can't be laid out.
+   */
+  function childOf(n: FixtureNode, c: Component): { comp: Component | null; slot: string | undefined } {
+    const prefix = `${model.prefix}${c.name}__`;
+    const slotCls = n.classes.find((k) => k.startsWith(prefix));
+    const nested = n.classes
+      .filter((k) => k.startsWith(model.prefix) && !k.includes("__"))
+      .map((k) => model.components.get(k.slice(model.prefix.length)))
+      .find(Boolean);
+    if (slotCls && nested) {
+      issues.push({
+        severity: "error",
+        id: idOf(n),
+        message: `<${n.tag}> is both .${slotCls} and the root of .${model.prefix}${nested.name}; mixing a slot and a component on one element isn't modelled. Wrap the component in the slot element instead.`,
+      });
+      return { comp: null, slot: undefined };
+    }
+    if (nested) return { comp: nested, slot: undefined };
+    const slot = slotOf(n, c);
+    return { comp: slot === null ? null : c, slot: slot ?? undefined };
+  }
+
   /** The slot name of a fixture element inside component `c`, or null (reported) if it can't be laid out. */
   function slotOf(n: FixtureNode, c: Component): string | null {
     const prefix = `${model.prefix}${c.name}__`;
@@ -265,7 +294,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       issues.push({
         severity: "error",
         id: idOf(n),
-        message: `<${n.tag}> inside .${model.prefix}${c.name} has no ${prefix}<slot> class; the engine only lays out declared slots`,
+        message: `<${n.tag}> inside .${model.prefix}${c.name} has no ${prefix}<slot> class and isn't another component's root; the engine only lays out declared slots and components`,
       });
       return null;
     }

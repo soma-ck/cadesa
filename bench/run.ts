@@ -95,6 +95,7 @@ function prompt(task: Task, arm: Arm, round: number, feedback: string[]): string
 - \`./cadesa whatif fixture.html --source ${file} --widths ${task.mobile},${DESKTOP} --set <yaml.path>=<value>\` predicts what an edit changes at each width, without writing it.
 - \`./cadesa explain fixture.html --source ${file} --id <data-fixture id>\` shows where each value comes from.
 - \`./cadesa check fixture.html --source ${file} --widths ${task.mobile},${DESKTOP}\` reports overflow and other issues.
+- \`./cadesa validate ${file}\` checks the source; an invalid file wastes the round.
 ${file} is a Cadesa source: a small YAML styling language that compiles to the CSS in component.css. Run \`./cadesa --help\` if needed.`;
   return `You are fixing a layout bug in a settings panel. fixture.html shows the component; ${file} styles it.
 

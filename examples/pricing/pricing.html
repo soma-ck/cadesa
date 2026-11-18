@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa example: pricing with nested components</title>
+    <link rel="stylesheet" href="pricing.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+      body { margin: 0; background: #ffffff; }
+    </style>
+  </head>
+  <body>
+    <section class="ca-pricing" data-fixture="pricing">
+      <header class="ca-pricing__head" data-fixture="head">
+        <h2 class="ca-pricing__title" data-fixture="title">Simple pricing that grows with your team</h2>
+        <p class="ca-pricing__lede" data-fixture="lede">Every plan includes unlimited viewers, version history, and a 14-day trial of Team features.</p>
+      </header>
+      <div class="ca-pricing__plans" data-fixture="plans">
+        <article class="ca-plan-card" data-fixture="starter">
+          <h3 class="ca-plan-card__name" data-fixture="starter-name">Starter</h3>
+          <p class="ca-plan-card__price" data-fixture="starter-price">$0</p>
+          <ul class="ca-plan-card__features" data-fixture="starter-features">
+            <li class="ca-plan-card__feature" data-fixture="starter-f1">1 project</li>
+            <li class="ca-plan-card__feature" data-fixture="starter-f2">Community support</li>
+            <li class="ca-plan-card__feature" data-fixture="starter-f3">Basic analytics</li>
+          </ul>
+          <a class="ca-plan-card__cta" data-fixture="starter-cta" href="#">Start free</a>
+        </article>
+        <article class="ca-plan-card" data-fixture="team">
+          <h3 class="ca-plan-card__name" data-fixture="team-name">Team</h3>
+          <p class="ca-plan-card__price" data-fixture="team-price">$29</p>
+          <ul class="ca-plan-card__features" data-fixture="team-features">
+            <li class="ca-plan-card__feature" data-fixture="team-f1">Unlimited projects</li>
+            <li class="ca-plan-card__feature" data-fixture="team-f2">Priority email support</li>
+            <li class="ca-plan-card__feature" data-fixture="team-f3">Advanced analytics and exports</li>
+            <li class="ca-plan-card__feature" data-fixture="team-f4">Single sign-on</li>
+          </ul>
+          <a class="ca-plan-card__cta" data-fixture="team-cta" href="#">Start a trial</a>
+        </article>
+        <article class="ca-plan-card" data-fixture="enterprise">
+          <h3 class="ca-plan-card__name" data-fixture="enterprise-name">Enterprise</h3>
+          <p class="ca-plan-card__price" data-fixture="enterprise-price">Custom</p>
+          <ul class="ca-plan-card__features" data-fixture="enterprise-features">
+            <li class="ca-plan-card__feature" data-fixture="enterprise-f1">Everything in Team</li>
+            <li class="ca-plan-card__feature" data-fixture="enterprise-f2">Dedicated success manager</li>
+            <li class="ca-plan-card__feature" data-fixture="enterprise-f3">Audit logs and data residency</li>
+          </ul>
+          <a class="ca-plan-card__cta" data-fixture="enterprise-cta" href="#">Talk to sales</a>
+        </article>
+      </div>
+    </section>
+  </body>
+</html>

@@ -117,9 +117,11 @@ describe("lift details", () => {
     expect(r.unlifted).toEqual([]);
   });
 
-  it("flags flex settings Cadesa can't express", () => {
+  it("flags flex settings Cadesa can't express, and lifts the ones it can", () => {
     const r = one(".c{display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap}");
-    expect(r.unlifted.map((u) => u.decl)).toEqual(["align-items: flex-end", "justify-content: space-between"]);
+    expect(r.unlifted.map((u) => u.decl)).toEqual(["justify-content: space-between"]);
+    expect(style(r, "c").layout).toEqual({ pattern: "cluster", align: "end" });
+    expect(one(".c{display:flex;flex-wrap:wrap;align-items:baseline}").unlifted.map((u) => u.decl)).toEqual(["align-items: baseline"]);
   });
 
   it("converts rgb() and px line heights, and asymmetric padding is not lifted", () => {
