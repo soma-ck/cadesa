@@ -103,7 +103,9 @@ lines.forEach((l, i) => {
     // so it applies only to the typing segment, not the whole loop).
     css.push(`@keyframes c${id}{0%,${a}%{width:0;animation-timing-function:steps(${chars},end)}${e}%,100%{width:${(chars * CW + 4).toFixed(1)}px}}#c${id} rect{animation:c${id} ${TOTAL.toFixed(2)}s linear infinite}`);
     body.push(
-      `<clipPath id="c${id}"><rect x="${x0.toFixed(1)}" y="${y - FS}" height="${LH}" width="0"/></clipPath>`,
+      // Full width when nothing animates (npm's README, image proxies, static captures): the
+      // finished transcript is the fallback, and the animation replays the typing from 0.
+      `<clipPath id="c${id}"><rect x="${x0.toFixed(1)}" y="${y - FS}" height="${LH}" width="${(chars * CW + 4).toFixed(1)}"/></clipPath>`,
       `<g id="${id}"><text x="${PAD_X}" y="${y}">${l.prompt ? '<tspan class="p">$</tspan> ' : "  "}</text>` +
         `<text x="${x0.toFixed(1)}" y="${y}" class="cmd" clip-path="url(#c${id})">${esc(l.text.slice(2))}</text></g>`,
     );
