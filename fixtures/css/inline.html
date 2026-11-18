@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: lone inline-blocks on their line, and transforms</title>
+    <link rel="stylesheet" href="inline.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <div class="slot" data-fixture="same-slot"><button type="button" class="same" data-fixture="same">Save changes</button></div>
+    <div class="slot" data-fixture="tight-slot"><button type="button" class="tight" data-fixture="tight">Save changes</button></div>
+    <div class="slot" data-fixture="short-slot"><button type="button" class="short" data-fixture="short">Save changes</button></div>
+    <div class="slot" data-fixture="tall-slot"><button type="button" class="tall" data-fixture="tall">Save changes</button></div>
+    <div class="slot" data-fixture="chip-slot"><a href="#" class="chip" data-fixture="chip">A link on a line of its own</a></div>
+    <div class="row" data-fixture="row"><button type="button" class="same nudged" data-fixture="nudged">Go</button><button type="button" class="same" data-fixture="plain">Plain</button></div>
+    <p data-fixture="after">After the cases.</p>
+  </body>
+</html>

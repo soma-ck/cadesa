@@ -170,7 +170,8 @@ export function sizeUncertainty(l: Layout, imp?: WidthImpact): { width: Set<stri
     for (const k of b.children) visit(k, b, unknown);
   };
   for (const b of l.boxes) visit(b, undefined, false);
-  const sized = new Set((imp?.uncertain ?? []).filter((u) => u.effects.includes("size")).map((u) => u.id));
+  // A transform (visual) may scale the box as drawn.
+  const sized = new Set((imp?.uncertain ?? []).filter((u) => u.effects.includes("size") || u.effects.includes("visual")).map((u) => u.id));
   const size = new Set<string>();
   const visitSize = (b: Box, parent: Box | undefined) => {
     const pat = parent?.props.pattern?.value;

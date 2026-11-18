@@ -121,6 +121,33 @@ describe("the cascade on Bootstrap-like markup", () => {
   });
 });
 
+describe("lone buttons on their line, and transforms (fixtures/css/inline.html, checked by conformance:css)", () => {
+  const page = "fixtures/css/inline.html";
+  const t = liftCssPage(page, readFileSync(page, "utf8"), [{ file: "fixtures/css/inline.css", text: readFileSync("fixtures/css/inline.css", "utf8") }]);
+  const m = modelOf(loadSource("i.yaml", t.yaml));
+  const l = render(m, t.fixtureAt(400), [400])[0];
+  const imp = tailwindImpact(t, [l])[0];
+  // Uncertain in size (not just moved by the cases above it).
+  const unsure = new Set(imp.uncertain.filter((u) => u.effects.some((e) => e !== "position")).map((u) => u.id));
+
+  it("keeps a button exact when its box contains the line's strut, not when a set height is shorter than the line", () => {
+    expect(unsure.has("same-slot")).toBe(false);
+    expect(unsure.has("tall-slot")).toBe(false);
+    // Chromium: the slot is 40px tall (8 + a 24px line + 8), not 8 + 20 + 8.
+    expect(unsure.has("short-slot")).toBe(true);
+    expect(unsure.has("tight-slot")).toBe(true);
+  });
+
+  it("marks a transformed box, and keeps a tap-target finding on it inconclusive", () => {
+    expect(imp.uncertain.find((u) => u.id === "nudged")?.reasons.find((r) => !r.startsWith("moved by"))).toMatch(/transform: translateY\(6px\): transform is not modelled/);
+    // Two elements of a tag on one source line: each gets its own records.
+    expect(unsure.has("plain")).toBe(false);
+    const tap = check([l], [imp]).filter((x) => x.check === "tap-target" && x.id === "nudged");
+    expect(tap.length).toBe(1);
+    expect(tap[0].inconclusive).toBe(true);
+  });
+});
+
 const BS = ["fixtures/bootstrap/bootstrap.css", "fixtures/bootstrap/app.css"].map((file) => ({ file, text: readFileSync(file, "utf8") }));
 
 describe("an Angular + Bootstrap app shell (navbar collapse, d-none / d-lg-flex, table-responsive, text-truncate)", () => {

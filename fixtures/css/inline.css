@@ -1,0 +1,57 @@
+/* Lone buttons and links on a line of their own, whose line box may be taller than they are, and transforms. */
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #111827;
+  background: #ffffff;
+}
+
+.slot {
+  padding: 8px;
+}
+
+/* Same font and line height as the line: the button's box contains the line's strut. */
+.same {
+  font: inherit;
+  padding: 4px 8px;
+  border: 1px solid #333333;
+}
+
+/* A shorter line height than the parent's: the strut sticks out above and below. */
+.tight {
+  font: inherit;
+  line-height: 1.25;
+  padding: 0;
+  border: 0;
+}
+
+/* A fixed height shorter than one line: the line box is taller than the button. */
+.short {
+  font: inherit;
+  height: 20px;
+  padding: 0;
+  border: 0;
+}
+
+/* A fixed height taller than one line: the button contains the strut. */
+.tall {
+  font: inherit;
+  height: 44px;
+  padding: 0 12px;
+  border: 0;
+}
+
+.chip {
+  display: inline-block;
+  line-height: 1.25;
+}
+
+.nudged {
+  transform: translateY(6px);
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+}

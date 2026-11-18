@@ -121,7 +121,7 @@ $ cadesa whatif fixtures/settings.html --source settings.cadesa.yaml --set style
   ✓ unchanged: no box moved, no property changed
 ```
 
-**`check`** covers overflow (horizontal, unbreakable words, text taller than a fixed height), tap targets (WCAG 2.5.8 and 2.5.5), contrast against the nearest known background (every stop of a gradient), and line length. Text over an image, or a background Cadesa can't see, comes back *inconclusive*, not passed.
+**`check`** covers overflow (horizontal, unbreakable words, text taller than a fixed height), text cut off by `overflow: hidden` or an ellipsis, text that runs together (`<span>Total</span><span>42</span>`), tap targets (WCAG 2.5.8 and 2.5.5), and contrast against the nearest painted background (every stop of a gradient, translucent colors blended, inline `<span>`s and badges in their own color). Content scrolling inside a scroll container (`.table-responsive`) isn't an overflow, and elements hidden at a width (`d-none`, a collapsed navbar menu) aren't laid out or reported there. Text over an image, or a background Cadesa can't see, comes back *inconclusive*, not passed; so does a size-dependent finding on a box whose size isn't exactly predicted (a box that only moves keeps its findings).
 
 **`critique`** asks whether the page reads as designed, from measurable signals rather than taste: font sizes within 1.12× of each other (they read as one level), headings that barely stand out, groups spaced as far apart inside as outside, text edges that *almost* line up, a palette with no hue or competing accents, and common template tells. Findings are suggestions with numbers and a source line:
 
@@ -235,6 +235,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `measure` | size token | a left-aligned `max-width`: a comfortable line length |
 | `aspect` | `"16:9"` | `aspect-ratio`: the height follows the width |
 | `text` | text role | font family, size, weight, line height, color; optional `letterSpacing` (em), `transform: uppercase`, `decoration`, `wrap: anywhere` (long words break) |
+| `overflow` | `hidden`, `clip`, `auto`, `scroll`, or `{ x, y }` | `overflow-x` / `overflow-y`: what doesn't fit scrolls or is cut off. Anything but `clip` also keeps the children's margins inside and lets the box shrink below its content in a cluster |
 | `textAlign` | `start`, `center`, `end` | `text-align` (fixed-height text is also centered vertically) |
 | `border` | color token, or `{ color, width, top, right, bottom, left }` | `border` with per-side widths (they count in layout, so it's structure) |
 | `background`, `radius`, `backdrop`, `shadow`, `fit` | tokens | polish: `background-color`, `border-radius`, `background-image`, `box-shadow`, `object-fit` |

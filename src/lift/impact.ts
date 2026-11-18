@@ -91,7 +91,8 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
   const boxes = [...walk(l.boxes)];
   const boxOf = new Map<FixtureNode, Box>();
   for (const loc of located) {
-    const b = boxes.find((x) => x.fixtureLine === loc.node.line && x.tag === loc.node.tag);
+    // By id when the element has one: several elements of a tag can share a source line (minified or captured HTML).
+    const b = loc.node.fixtureId ? boxes.find((x) => x.id === loc.node.fixtureId && x.tag === loc.node.tag) : boxes.find((x) => x.fixtureLine === loc.node.line && x.tag === loc.node.tag);
     if (b) boxOf.set(loc.node, b);
   }
   const parentOf = new Map<Box, Box>();

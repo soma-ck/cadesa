@@ -31,6 +31,29 @@ anywhere. `metrics --measure` and the conformance scripts start a local Chromium
 - Contrast stays conclusive when only an element's position is uncertain.
 - Line length moved from `check` to `critique`, reported once per text box with the widths
   where it happens.
+- `check` finds text that runs together (`<span>Total</span><span>42</span>` reads
+  "Total42": no space, margin, padding, border or gap between them) and text cut off by
+  `overflow: hidden` / `text-overflow: ellipsis` where the box is narrower than the text.
+  Running-together text is decided from the markup and cascade, so it stays conclusive where
+  the layout is approximate.
+- Contrast: translucent text (`rgba`, Bootstrap's `.text-muted` and navbar links) is
+  shown over its background, a translucent background is blended into the one below it,
+  and inline runs with a color or background of their own (`<span class="text-danger">`,
+  badges) are checked against what's behind them. Transitions, cursors, outlines, border
+  colors and `text-overflow` no longer make contrast inconclusive.
+- Findings that depend only on a box's size (tap targets, overflow, clipped text) are
+  inconclusive only when that size is uncertain, not when the box only moves.
+  `conformance` checks those sizes against Chromium too.
+- `overflow` in the language (`hidden`, `clip`, `auto`, `scroll`, or `{ x, y }`) and in
+  `--css`: a scroll container keeps its children's margins inside and can shrink below its
+  content in a row; content scrolling inside it (`.table-responsive`) is not an overflow.
+  Where scrollbars take space (Windows, many Linux setups), the boxes they move are `≈`.
+- Bootstrap: inline text hidden at some widths (`d-none d-md-inline`) is left out where
+  it's hidden; `inherit` on a property that doesn't inherit is resolved (the navbar's
+  container has `flex-wrap: inherit`; Cadesa wrapped an expanded navbar that Chromium
+  doesn't); `text-md-end` and flex alignment on an element that is a block at some widths
+  no longer make boxes approximate. Two more pages in `conformance:bootstrap` (an app shell
+  and a catalog) and a scroll/clip page in `conformance:css`.
 
 ## 0.1.7 (2026-11-18)
 

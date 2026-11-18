@@ -725,6 +725,17 @@ export abstract class PageLifter {
     if (!/^(start|left|unset|initial|-webkit-auto)?$/.test(pt.inherited.get("text-align")?.value ?? "")) return false;
     if (t.inherited.get("direction")?.value === "rtl") return false;
     const px = (k: El, p: string) => lengthPx(res(k, p) ?? "0", this.textOf(k, si).size) ?? NaN;
+    // A set height shorter than its line of text (a 20px button on a 24px line): the parent's
+    // strut sticks out of it, so the line box, not the box, is the height. Only a box at least
+    // one line tall contains the strut.
+    for (const p of ["height", "max-height"]) {
+      const v = res(el, p);
+      if (!v || /^(auto|none)$/.test(v)) continue;
+      const set = lengthPx(v, t.size);
+      const bdr = (side: string) => (/^(none|hidden)$/.test(res(el, `border-${side}-style`) ?? "none") ? 0 : borderPx(px(el, `border-${side}-width`)));
+      const ins = res(el, "box-sizing") === "border-box" ? px(el, "padding-top") + px(el, "padding-bottom") + bdr("top") + bdr("bottom") : 0;
+      if (set === undefined || !(set + 1e-6 >= lh(t) + ins)) return false;
+    }
     const edge = (k: El, side: "top" | "bottom") => px(k, `padding-${side}`) > 0 || (px(k, `border-${side}-width`) > 0 && !/^(none|hidden)$/.test(res(k, `border-${side}-style`) ?? "none"));
     // A margin that would meet nothing: the neighbour's own margin is 0 and nothing collapses through it.
     const tight = (k: El, side: "top" | "bottom") =>
