@@ -1,0 +1,383 @@
+{
+  "spent": 10.603329500000001,
+  "runs": [
+    {
+      "at": "2026-11-18T03:20:11.271Z",
+      "label": "pilot",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.2871869
+    },
+    {
+      "at": "2026-11-18T03:20:31.170Z",
+      "label": "pilot",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.12891229999999998
+    },
+    {
+      "at": "2026-11-18T03:20:55.345Z",
+      "label": "pilot",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.1531891
+    },
+    {
+      "at": "2026-11-18T03:21:32.746Z",
+      "label": "pilot",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.19547309999999998
+    },
+    {
+      "at": "2026-11-18T03:22:35.561Z",
+      "label": "pilot",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.30037590000000003
+    },
+    {
+      "at": "2026-11-18T03:23:25.858Z",
+      "label": "pilot",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.2309971
+    },
+    {
+      "at": "2026-11-18T03:24:36.454Z",
+      "label": "full",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.2141397
+    },
+    {
+      "at": "2026-11-18T03:24:55.151Z",
+      "label": "full",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.11418850000000001
+    },
+    {
+      "at": "2026-11-18T03:25:22.985Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.1484004
+    },
+    {
+      "at": "2026-11-18T03:26:02.798Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.1991741
+    },
+    {
+      "at": "2026-11-18T03:27:04.775Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.28412069999999995
+    },
+    {
+      "at": "2026-11-18T03:27:45.828Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.197038
+    },
+    {
+      "at": "2026-11-18T03:28:18.282Z",
+      "label": "full",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.19292510000000002
+    },
+    {
+      "at": "2026-11-18T03:28:35.186Z",
+      "label": "full",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.10967320000000001
+    },
+    {
+      "at": "2026-11-18T03:29:03.097Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.16915980000000003
+    },
+    {
+      "at": "2026-11-18T03:29:49.079Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.2163041
+    },
+    {
+      "at": "2026-11-18T03:30:34.871Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.2474104
+    },
+    {
+      "at": "2026-11-18T03:31:14.422Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.20196610000000004
+    },
+    {
+      "at": "2026-11-18T03:31:43.906Z",
+      "label": "full",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.18026789999999998
+    },
+    {
+      "at": "2026-11-18T03:32:05.224Z",
+      "label": "full",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.12901390000000001
+    },
+    {
+      "at": "2026-11-18T03:32:33.374Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.1521576
+    },
+    {
+      "at": "2026-11-18T03:33:12.381Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.18455889999999997
+    },
+    {
+      "at": "2026-11-18T03:33:56.255Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.23226329999999995
+    },
+    {
+      "at": "2026-11-18T03:34:48.333Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.2506919000000001
+    },
+    {
+      "at": "2026-11-18T03:35:26.155Z",
+      "label": "full",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.23298539999999995
+    },
+    {
+      "at": "2026-11-18T03:35:48.261Z",
+      "label": "full",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.1340547
+    },
+    {
+      "at": "2026-11-18T03:36:09.158Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.1370645
+    },
+    {
+      "at": "2026-11-18T03:36:43.815Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.17926800000000004
+    },
+    {
+      "at": "2026-11-18T03:37:41.243Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.2760602
+    },
+    {
+      "at": "2026-11-18T03:38:19.590Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.18803070000000002
+    },
+    {
+      "at": "2026-11-18T03:38:51.175Z",
+      "label": "full",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.19013059999999998
+    },
+    {
+      "at": "2026-11-18T03:39:06.448Z",
+      "label": "full",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.10834610000000001
+    },
+    {
+      "at": "2026-11-18T03:39:34.208Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.1462541
+    },
+    {
+      "at": "2026-11-18T03:40:26.798Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.23013389999999997
+    },
+    {
+      "at": "2026-11-18T03:41:21.198Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.2733824
+    },
+    {
+      "at": "2026-11-18T03:42:04.049Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.19407630000000003
+    },
+    {
+      "at": "2026-11-18T03:42:33.778Z",
+      "label": "full",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.1856784
+    },
+    {
+      "at": "2026-11-18T03:42:57.303Z",
+      "label": "full",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.13724309999999998
+    },
+    {
+      "at": "2026-11-18T03:43:18.165Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.1511931
+    },
+    {
+      "at": "2026-11-18T03:44:10.819Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.23823840000000002
+    },
+    {
+      "at": "2026-11-18T03:45:18.194Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.3042405
+    },
+    {
+      "at": "2026-11-18T03:46:01.949Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.21216300000000002
+    },
+    {
+      "at": "2026-11-18T03:46:36.543Z",
+      "label": "full",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.1865096
+    },
+    {
+      "at": "2026-11-18T03:47:01.119Z",
+      "label": "full",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.1409711
+    },
+    {
+      "at": "2026-11-18T03:47:22.301Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.150163
+    },
+    {
+      "at": "2026-11-18T03:48:08.874Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.2226772
+    },
+    {
+      "at": "2026-11-18T03:49:20.110Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.30390330000000004
+    },
+    {
+      "at": "2026-11-18T03:49:56.653Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.1751017
+    },
+    {
+      "at": "2026-11-18T03:50:26.826Z",
+      "label": "full",
+      "task": "german",
+      "arm": "css",
+      "costUsd": 0.19096739999999998
+    },
+    {
+      "at": "2026-11-18T03:50:44.105Z",
+      "label": "full",
+      "task": "german",
+      "arm": "cadesa",
+      "costUsd": 0.12125760000000001
+    },
+    {
+      "at": "2026-11-18T03:51:19.927Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "css",
+      "costUsd": 0.18926830000000003
+    },
+    {
+      "at": "2026-11-18T03:52:04.440Z",
+      "label": "full",
+      "task": "fourth-plan",
+      "arm": "cadesa",
+      "costUsd": 0.1975899
+    },
+    {
+      "at": "2026-11-18T03:53:04.095Z",
+      "label": "full",
+      "task": "bigger-text",
+      "arm": "css",
+      "costUsd": 0.2929704
+    },
+    {
+      "at": "2026-11-18T03:58:07.414Z",
+      "label": "full-t8",
+      "task": "bigger-text",
+      "arm": "cadesa",
+      "costUsd": 0.1938186
+    }
+  ]
+}
