@@ -366,6 +366,23 @@ export interface PageLift {
    * decided from the markup and the cascade, so it holds even where the layout is approximate.
    */
   spacing(width: number): (Issue & { inconclusive?: boolean })[];
+  /** Inline runs of a text box with a color or background of their own (`<span class="text-danger">`, a badge), for contrast. */
+  inlineRuns(width: number): InlineRun[];
+}
+
+/** A run of text inside a text box (`id`) styled on its own. */
+export interface InlineRun {
+  id: string;
+  tag: string;
+  text: string;
+  /** Hex, maybe translucent. */
+  color: string;
+  /** Its own background, if any (hex, maybe translucent). */
+  background?: string;
+  sizePx: number;
+  weight: number;
+  /** page:line of the element. */
+  where: string;
 }
 
 /**
@@ -1311,7 +1328,7 @@ export abstract class PageLifter {
       const changes: { prop: string; utility: string; kind: ImpactKind }[] = [];
       for (const [p, o] of own) {
         if (p.startsWith("--") || (p === "vertical-align" && this.resolve(k, si, o.value) === "baseline")) continue;
-        const kind = TEXT_PROPS.has(p) ? (p === "color" ? "paint" : "text") : INHERITED_PAINT.has(p) ? "paint" : kindOf(p);
+        const kind = TEXT_PROPS.has(p) ? (p === "color" ? "paint" : "text") : INHERITED_PAINT.has(p) && kindOf(p) !== "none" ? "paint" : kindOf(p);
         changes.push({ prop: p, utility: o.utility, kind });
       }
       const kt = this.textOf(k, si);
@@ -1332,7 +1349,9 @@ export abstract class PageLifter {
         // display: inline on an inline run (Bootstrap's d-md-inline where it shows) is what it was anyway.
         if ((c.prop === "box-sizing" && !boxy) || (c.prop === "display" && (whole || this.displayOf(k, si) === "inline"))) continue;
         if (c.kind === "paint" || c.kind === "none" || c.kind === "state") {
-          if (c.kind === "paint") this.note(el, si, { decl: `${c.utility} on <${k.tag}>`, reason: "inline paint; no effect on layout", kind: "paint" });
+          // Its color and background are checked run by run (coloredRuns); other paint (opacity, images) isn't known.
+          const checked = c.prop === "color" || (c.prop === "background-color" && (this.ownBackground(k, si) !== undefined || /^(transparent|none)$/.test(this.resolve(k, si, own.get(c.prop)!.value) ?? "")));
+          if (c.kind === "paint" && !checked) this.note(el, si, { decl: `${c.utility} on <${k.tag}>`, reason: "inline paint; no effect on layout", kind: "paint" });
           continue;
         }
         // Text properties equal to what the run inherits anyway change nothing.
@@ -1594,6 +1613,7 @@ export abstract class PageLifter {
 
     const responsive = this.els.filter((e) => e.id && e.roles.some((r) => r === "hidden" || r === "out") && e.roles.some((r) => r !== "hidden" && r !== "out")).map((e) => e.id!);
     const spacingAt: (Issue & { inconclusive?: boolean })[][] = [];
+    const runsAt: InlineRun[][] = [];
     const dynamic = (layout: Layout): Unlifted[] => {
       const si = this.states.indexOf(stateAt(this.states, layout.width));
       const out: Unlifted[] = [];
@@ -1649,6 +1669,10 @@ export abstract class PageLifter {
       spacing: (w: number) => {
         const si = this.states.indexOf(stateAt(this.states, w));
         return (spacingAt[si] ??= this.runTogether(si));
+      },
+      inlineRuns: (w: number) => {
+        const si = this.states.indexOf(stateAt(this.states, w));
+        return (runsAt[si] ??= this.coloredRuns(si));
       },
     };
   }
@@ -1746,6 +1770,34 @@ export abstract class PageLifter {
           ...(why && { inconclusive: true, message: `"${wa}" and "${wb}" may run together as "${wa}${wb}" in #${box.id}: ${why}` }),
         });
       }
+    }
+    return out;
+  }
+
+  /** A background color an inline element paints itself, as hex (undefined: none, or not a color). */
+  ownBackground(k: El, si: number): string | undefined {
+    const o = k.own[si]?.get("background-color");
+    const v = o ? this.resolve(k, si, o.value) : undefined;
+    const c = v && parseColor(v, parseColor(this.textOf(k, si).color.hex));
+    return c && c.a > 0.0005 ? hexOf(c) : undefined;
+  }
+
+  /** Inline elements in text boxes whose own text is in another color or on a background of its own. */
+  coloredRuns(si: number): InlineRun[] {
+    const out: InlineRun[] = [];
+    for (const el of this.els) {
+      if (el.roles[si] !== "text" || !el.id || el.anonymous !== undefined) continue;
+      const base = this.textOf(el, si).color.hex;
+      const visit = (k: El) => {
+        if (k.anonymous !== undefined || k.tag === "br" || this.displayOf(k, si) === "none" || this.outOfFlow(k, si)) return;
+        const t = this.textOf(k, si);
+        const bg = this.ownBackground(k, si);
+        const own = (k.node.childNodes ?? []).filter((c) => c.nodeName === "#text").map((c) => c.value ?? "").join("").replace(/\s+/g, " ").trim();
+        if (own && (t.color.hex !== base || bg))
+          out.push({ id: el.id!, tag: k.tag, text: own, color: t.color.hex, ...(bg && { background: bg }), sizePx: t.size, weight: t.weight, where: `${this.page}:${k.line}` });
+        k.children.forEach(visit);
+      };
+      el.children.forEach(visit);
     }
     return out;
   }

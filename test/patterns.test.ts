@@ -77,6 +77,17 @@ describe("contrast against the nearest painted background", () => {
     expect(f[0].message).toMatch(/^#t text #ffffff on #bbbbbb is 1\.\d+:1; WCAG AA needs 4\.5:1 \(background: .*head\.background \(50% opaque\) over .*card\.background\)/);
   });
 
+  it("checks inline runs in a color or on a background of their own (text-danger, badges) against what's behind them", () => {
+    const f = findings(
+      `<p class="status">Line 3 is <span class="late">late</span>, <span class="badge">new</span> and <span class="ok">fine</span></p>`,
+      `p { margin: 0 } .late { color: #ff6b6b } .badge { background-color: #ffc107; color: #ffffff } .ok { color: #000000 }`,
+    ).filter((x) => x.check === "contrast");
+    expect(f.map((x) => [x.message.replace(/;.*$/, ""), x.inconclusive, x.path])).toEqual([
+      [`"late" (<span> in #status) text #ff6b6b on #ffffff is 2.78:1`, undefined, "t.html:1"],
+      [`"new" (<span> in #status) text #ffffff on #ffc107 is 1.63:1`, undefined, "t.html:1"],
+    ]);
+  });
+
   it("stays conclusive with transitions, cursors and outlines, which change no color", () => {
     const f = findings(`<button class="btn" type="button">Export</button>`, `body { background: #f4f6f9 } .btn { color: #6c757d; background-color: transparent; border: 1px solid #6c757d; padding: 6px 12px; font: inherit; cursor: pointer; transition: color .15s; outline: 0; -webkit-appearance: button; user-select: none }`).filter((x) => x.check === "contrast");
     expect(f).toHaveLength(1);

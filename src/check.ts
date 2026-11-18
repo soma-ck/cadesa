@@ -98,6 +98,37 @@ function clippedText(b: Box): { id: string; message: (width: number) => string }
   return undefined;
 }
 
+/** `c` painted over what's behind: opaque replaces it, translucent over a solid color blends, else one more stop. */
+function paintOver(bg: Behind, c: string, path: string): Behind {
+  const a = rgba(c)[3];
+  if (a >= 0.999) return { color: c, path };
+  if (a <= 0.001) return bg;
+  // A tinted card header over a card: the two blended.
+  if (bg.color && !bg.stops?.length && !bg.image) return { color: composite(c, bg.color), path: `${path} (${Math.round(a * 100)}% opaque) over ${bg.path}` };
+  return { ...bg, stops: [...(bg.stops ?? []), c], stopsPath: path };
+}
+
+/** The worst contrast of text in `color` over what's behind it (every gradient stop), or why it can't be known. */
+function contrastOf(color: string, sizePx: number, weight: number, here: Behind): { why: string } | { ratio: number; min: number; on: string; from: string; alpha: number; shown: string } {
+  const large = sizePx >= 24 || (sizePx >= 18.66 && weight >= 700);
+  const min = large ? 3 : 4.5;
+  // Translucent stops over an image can't be resolved; nearly opaque ones can.
+  const stopsOpaque = (here.stops ?? []).length > 0 && here.stops!.every((s) => rgba(s)[3] >= 0.9);
+  if (here.image && !stopsOpaque) return { why: `the text sits over ${here.image}; check it by eye, or put an opaque background or scrim behind it` };
+  if (!here.color && !stopsOpaque) return { why: "no background behind it in the source; set page.background or a background on an ancestor" };
+  // The solid color, and every gradient stop composited over it: report the worst.
+  const base = here.color ?? "#ffffff";
+  const candidates = [
+    ...(here.color && !stopsOpaque ? [{ c: here.color, from: here.path! }] : []),
+    ...(here.stops ?? []).map((s) => ({ c: rgba(s)[3] >= 0.999 ? s.slice(0, 7) : composite(s, base), from: `gradient stop ${s} in ${here.stopsPath}` })),
+  ];
+  // Translucent text (rgba, Bootstrap's .text-muted and navbar links) shows as its color over the background.
+  const alpha = rgba(color)[3];
+  const shown = (bg: string) => (alpha < 0.999 ? composite(color, bg) : color.slice(0, 7));
+  const worst = candidates.map((x) => ({ ...x, ratio: contrast(shown(x.c), x.c) })).sort((a, b) => a.ratio - b.ratio)[0];
+  return { ratio: worst.ratio, min, on: worst.c, from: worst.from, alpha, shown: shown(worst.c) };
+}
+
 export function contrast(a: string, b: string): number {
   const [x, y] = [luminance(a), luminance(b)].sort((p, q) => q - p);
   return (x + 0.05) / (y + 0.05);
@@ -141,7 +172,7 @@ export function widthUncertainty(l: Layout, imp?: WidthImpact): Set<string> {
  * With `impacts` (from a lift), findings on boxes the engine can't predict exactly are inconclusive.
  * With `page` (a page lift), also text that runs together, which the markup and cascade decide.
  */
-export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Pick<PageLift, "spacing">): Finding[] {
+export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Partial<Pick<PageLift, "spacing" | "inlineRuns">>): Finding[] {
   const out: Finding[] = [];
   for (const l of layouts) {
     const imp = impacts?.find((i) => i.width === l.width);
@@ -152,24 +183,10 @@ export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Pick<Pa
     const byId = new Map([...walk(l.boxes)].map((b) => [b.id, b]));
     const start = out.length;
     for (const i of l.issues) out.push({ ...i, check: "layout", width: l.width });
-    for (const i of page?.spacing(l.width) ?? []) out.push({ ...i, check: "spacing", width: l.width });
+    for (const i of page?.spacing?.(l.width) ?? []) out.push({ ...i, check: "spacing", width: l.width });
     const visit = (b: Box, bg: Behind) => {
       let here: Behind = bg;
-      if (b.props.background) {
-        const c = b.props.background.value;
-        const a = rgba(c)[3];
-        const path = b.props.background.steps.at(-1)!.path;
-        // Opaque: the new background. Translucent over a known solid color (a tinted card header
-        // over a card): the two blended. Over a gradient or nothing known: one more stop.
-        here =
-          a >= 0.999
-            ? { color: c, path }
-            : a <= 0.001
-              ? bg
-              : bg.color && !bg.stops?.length && !bg.image
-                ? { color: composite(c, bg.color), path: `${path} (${Math.round(a * 100)}% opaque) over ${bg.path}` }
-                : { ...bg, stops: [...(bg.stops ?? []), c], stopsPath: path };
-      }
+      if (b.props.background) here = paintOver(bg, b.props.background.value, b.props.background.steps.at(-1)!.path);
       if (b.props.backdrop) {
         const raw = b.props.backdrop.value;
         const stops = raw.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
@@ -205,36 +222,24 @@ export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Pick<Pa
       if (b.text && b.props.text) {
         const t = b.props.text.value;
         const colorPath = `${b.props.text.steps[0].path}.color`;
-        const large = t.sizePx >= 24 || (t.sizePx >= 18.66 && t.weight >= 700);
-        const min = large ? 3 : 4.5;
-        const inconclusive = (why: string) =>
-          out.push({ check: "contrast", width: l.width, severity: "warning", inconclusive: true, id: b.id, path: colorPath, message: `contrast of #${b.id} is inconclusive: ${why}` });
-        // Translucent stops over an image can't be resolved; nearly opaque ones can.
-        const stopsOpaque = (here.stops ?? []).length > 0 && here.stops!.every((s) => rgba(s)[3] >= 0.9);
-        if (here.image && !stopsOpaque) inconclusive(`the text sits over ${here.image}; check it by eye, or put an opaque background or scrim behind it`);
-        else if (!here.color && !stopsOpaque)
-          inconclusive("no background behind it in the source; set page.background or a background on an ancestor");
-        else {
-          // The solid color, and every gradient stop composited over it: report the worst.
-          const base = here.color ?? "#ffffff";
-          const candidates = [
-            ...(here.color && !stopsOpaque ? [{ c: here.color, from: here.path! }] : []),
-            ...(here.stops ?? []).map((s) => ({ c: rgba(s)[3] >= 0.999 ? s.slice(0, 7) : composite(s, base), from: `gradient stop ${s} in ${here.stopsPath}` })),
-          ];
-          // Translucent text (rgba, Bootstrap's .text-muted and navbar links) shows as its color over the background.
-          const alpha = rgba(t.color)[3];
-          const shown = (bg: string) => (alpha < 0.999 ? composite(t.color, bg) : t.color.slice(0, 7));
-          const worst = candidates.map((x) => ({ ...x, ratio: contrast(shown(x.c), x.c) })).sort((a, b) => a.ratio - b.ratio)[0];
-          if (worst && worst.ratio < min)
+        const judge = (color: string, sizePx: number, weight: number, behind: Behind, who: string, path: string) => {
+          const r = contrastOf(color, sizePx, weight, behind);
+          if ("why" in r)
+            out.push({ check: "contrast", width: l.width, severity: "warning", inconclusive: true, id: b.id, path, message: `contrast of ${who} is inconclusive: ${r.why}` });
+          else if (r.ratio < r.min)
             out.push({
               check: "contrast",
               width: l.width,
               severity: "error",
               id: b.id,
-              path: colorPath,
-              message: `#${b.id} text ${t.color}${alpha < 0.999 ? ` (${Math.round(alpha * 100)}% opaque, shows as ${shown(worst.c)})` : ""} on ${worst.c} is ${worst.ratio.toFixed(2)}:1; WCAG AA needs ${min}:1 (background: ${worst.from})`,
+              path,
+              message: `${who} text ${color}${r.alpha < 0.999 ? ` (${Math.round(r.alpha * 100)}% opaque, shows as ${r.shown})` : ""} on ${r.on} is ${r.ratio.toFixed(2)}:1; WCAG AA needs ${r.min}:1 (background: ${r.from})`,
             });
-        }
+        };
+        judge(t.color, t.sizePx, t.weight, here, `#${b.id}`, colorPath);
+        // Inline runs in a color (or on a background) of their own: <span class="text-danger">, a badge.
+        for (const r of page?.inlineRuns?.(l.width) ?? [])
+          if (r.id === b.id) judge(r.color, r.sizePx, r.weight, r.background ? paintOver(here, r.background, r.where) : here, `${quote(r.text, 30)} (<${r.tag}> in #${b.id})`, r.where);
       }
       const clip = clippedText(b);
       if (clip) out.push({ check: "clipped", width: l.width, severity: "warning", id: clip.id, path: b.props.overflow!.steps.at(-1)!.path, message: clip.message(l.width) });
