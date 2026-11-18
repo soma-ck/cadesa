@@ -20,6 +20,12 @@ export interface MetricsFile {
   advances: Record<string, number[]>;
   kerning: Record<string, Record<string, number>>;
   /**
+   * The pairs whose kerning differs when letter-spacing is on, per weight. Chromium turns off
+   * contextual alternates in letter-spaced text, and Inter's case-sensitive forms (brackets and
+   * dashes next to capitals) kern differently without them.
+   */
+  kerningSpaced?: Record<string, Record<string, number>>;
+  /**
    * The characters whose pairs were measured. Older files measured ASCII only, and looked up an
    * accented letter's kerning through its base letter.
    */
@@ -89,7 +95,7 @@ export async function generateMetrics(opts: {
     const result = (await page.evaluate(`(async ({ CHARS, KERN_CHARS, WEIGHTS, SIZE, UNITS }) => {
       const ctx = document.createElement("canvas").getContext("2d");
       ctx.fontKerning = "normal";
-      const advances = {}, kerning = {};
+      const advances = {}, kerning = {}, kerningSpaced = {};
       for (const w of WEIGHTS) {
         await document.fonts.load(w + " " + SIZE + "px __cadesa");
         ctx.font = w + " " + SIZE + "px __cadesa";
@@ -101,6 +107,19 @@ export async function generateMetrics(opts: {
           if (d !== 0) k[a + b] = d;
         }
         kerning[w] = k;
+        // Again with letter-spacing (which turns contextual alternates off); keep what differs.
+        ctx.letterSpacing = "10px";
+        const spaced = (s) => ctx.measureText(s).width - 10 * s.length;
+        const singleS = new Map(kc.map((c) => [c, spaced(c)])), ks = {};
+        // U+202F is left out: text with one and no letters isn't letter-spaced at all (measured
+        // separately by the engine).
+        for (const a of kc) for (const b of kc) {
+          if (a === "\u202f" || b === "\u202f") continue;
+          const d = Math.round(((spaced(a + b) - singleS.get(a) - singleS.get(b)) / SIZE) * UNITS);
+          if (d !== (k[a + b] ?? 0)) ks[a + b] = d;
+        }
+        ctx.letterSpacing = "0px";
+        kerningSpaced[w] = ks;
       }
       let fine;
       if (WEIGHTS.length > 1) {
@@ -116,10 +135,11 @@ export async function generateMetrics(opts: {
           deltas: [...CHARS].map((_, i) => rows.slice(1).map((r, k) => r[i] - rows[k][i]).join(",")),
         };
       }
-      return { advances, kerning, fine, loaded: document.fonts.check(WEIGHTS[0] + " 16px __cadesa") };
+      return { advances, kerning, kerningSpaced, fine, loaded: document.fonts.check(WEIGHTS[0] + " 16px __cadesa") };
     })(${JSON.stringify({ CHARS, KERN_CHARS, WEIGHTS: weights, SIZE, UNITS })})`)) as {
       advances: Record<string, number[]>;
       kerning: Record<string, Record<string, number>>;
+      kerningSpaced: Record<string, Record<string, number>>;
       fine?: MetricsFile["fine"];
       loaded: boolean;
     };
@@ -134,6 +154,7 @@ export async function generateMetrics(opts: {
       chars: CHARS,
       advances: result.advances,
       kerning: result.kerning,
+      kerningSpaced: result.kerningSpaced,
       kernChars: KERN_CHARS,
       ...(result.fine && { fine: result.fine }),
     };

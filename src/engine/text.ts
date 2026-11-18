@@ -17,7 +17,8 @@ export interface FontMetrics {
   family: string;
   file: string;
   /** Width in px, or undefined if the text has a character outside the measured set. */
-  measure(text: string, sizePx: number, weight: number): number | undefined;
+  /** With `spaced`, as letter-spaced text (no contextual alternates); letter-spacing itself isn't added. */
+  measure(text: string, sizePx: number, weight: number, spaced?: boolean): number | undefined;
   unsupported(text: string): string[];
   /** Why this weight can't be measured exactly (e.g. a synthesized bold), if so. */
   weightIssue(weight: number): string | undefined;
@@ -79,6 +80,16 @@ function load(file: string): FontMetrics {
     return row;
   };
 
+  // Letter-spaced kerning: the normal table with the pairs that differ replaced, merged once.
+  const spacedTables = new Map<number, Record<string, number>>();
+  const kerningAt = (w: number, spaced: boolean): Record<string, number> => {
+    const over = spaced ? m.kerningSpaced?.[w] : undefined;
+    if (!over) return m.kerning[w];
+    let t = spacedTables.get(w);
+    if (!t) spacedTables.set(w, (t = { ...m.kerning[w], ...over }));
+    return t;
+  };
+
   return {
     family: m.family,
     file,
@@ -90,14 +101,15 @@ function load(file: string): FontMetrics {
       if (weight >= 600 && face <= 500) return `weight ${weight} would be synthesized from the ${face} face; measure a bold face too`;
       return undefined;
     },
-    measure(text, sizePx, weight) {
+    measure(text, sizePx, weight, spaced) {
       const [wa, wb, t] = bracket(weight);
       const exact = fineRow(weight);
       const advA = exact ?? m.advances[wa];
       const advB = exact ?? m.advances[wb];
-      const kernA = m.kerning[wa];
-      const kernB = m.kerning[wb];
+      const kernA = kerningAt(wa, !!spaced);
+      const kernB = kerningAt(wb, !!spaced);
       let units = 0;
+      let kern = 0;
       let prev: string | undefined;
       for (const c of text) {
         const i = index.get(c);
@@ -107,12 +119,13 @@ function load(file: string): FontMetrics {
           const pair = kernBase(prev) + kernBase(c);
           const ka = kernA[pair] ?? 0;
           const kb = kernB[pair] ?? 0;
-          units += ka + (kb - ka) * t;
+          kern += ka + (kb - ka) * t;
         }
         prev = c;
       }
-      // Glyphs are scaled at the font size truncated to 1/64 px (38.64px draws at 38.625px).
-      return (units / m.units) * (Math.floor(sizePx * 64 + 1e-6) / 64);
+      // Glyph advances come from the font set up at the quantized glyph size; kerning is applied by
+      // the shaper at the size as specified.
+      return (units / m.units) * glyphSize(sizePx) + (kern / m.units) * sizePx;
     },
   };
 }
@@ -157,7 +170,30 @@ export interface TextLayout {
   /** Width of the widest unbreakable piece. */
   minContent: number;
   widestPiece: string;
+  /**
+   * Set when a word had to break between characters (overflow-wrap: anywhere) at a point the
+   * engine can't call exactly: how Chromium measures the fragments of a word is only partly
+   * known, so a fragment within reach of the line's width, or a soft hyphen in the word, makes
+   * the break points approximate.
+   */
+  approximate?: string;
 }
+
+/**
+ * The size glyphs are scaled at. Chromium keys its font cache on the size in hundredths of a px,
+ * truncated in single precision (16.3px is 1629.9999 hundredths: 16.29px), and the font is set up
+ * at that size truncated to 1/64 px (16.29px draws at 16.28125px, 38.64px at 38.625px).
+ */
+export function glyphSize(sizePx: number): number {
+  const hundredths = Math.trunc(Math.fround(Math.fround(sizePx) * 100));
+  return Math.floor(Math.fround(hundredths / 100) * 64 + 1e-6) / 64;
+}
+
+/**
+ * The precision of measured text widths, in layout units (1/64 px): the metrics store advances to
+ * a millionth of an em, so a width this close to a whole layout unit is taken to be on it.
+ */
+export const TEXT_EPS = 0.002;
 
 const LETTER = /\p{L}/u;
 
@@ -216,9 +252,10 @@ export function layoutText(
   // letter-spacing is added after every character, including the last one on a line (or, with
   // spacesOnly, after every U+0020 only).
   const ls = opts.letterSpacing ?? 0;
-  const measure = (s: string) => m.measure(s, sizePx, weight) ?? 0;
+  // Letter-spaced text is shaped without contextual alternates.
+  const measure = (s: string) => m.measure(s, sizePx, weight, ls !== 0) ?? 0;
   const spaceW = measure(" ");
-  const w = (s: string) => {
+  const w = (s: string, hangKern = opts.hangKern !== false) => {
     const t = trimSpaces(s);
     const body = t.replaceAll(SHY, "");
     // A line broken at a soft hyphen ends in a "-" that Chromium shapes on its own: no kerning
@@ -226,10 +263,11 @@ export function layoutText(
     // A space hanging at the end of a line doesn't count, but in a plain block the kerning between
     // it and the character before does (Inter kerns ", " and ". "): Chromium keeps the line's
     // shaping. In a block that paints a background, border or shadow, or whose text is
-    // underlined, it measures the line without that kerning (hangKern: false).
+    // underlined, it measures the line without that kerning (hangKern: false). Its min-content
+    // width keeps the kerning either way.
     const shaped = t.endsWith(SHY)
       ? measure(body) + measure("-")
-      : opts.hangKern !== false && s.endsWith(" ") && body
+      : hangKern && s.endsWith(" ") && body
         ? measure(body + " ") - spaceW
         : measure(body);
     const spaced = opts.spacesOnly ? [...body].filter((c) => c === " ").length : [...body].length;
@@ -237,43 +275,114 @@ export function layoutText(
   };
   const ps = pieces(text);
   const lines: Line[] = [];
-  // Chromium truncates the line's width to a layout unit (1/64 px) before comparing: "a b" at
-  // 55.508px fits in 55.5px.
-  const fits = (s: string) => Math.floor(w(s) * 64 + 1e-6) / 64 <= maxWidth + 1e-6;
+  const all = [...text];
+  /** Characters of the text already placed on earlier lines. */
+  let consumed = 0;
+  /** Where the character at `at` starts in the text shaped as a whole (kerning with it included). */
+  const startOf = (at: number) => {
+    if (at === 0) return 0;
+    const before = all.slice(0, at).join("").replaceAll(SHY, "");
+    const next = (all[at] ?? "").replaceAll(SHY, "");
+    const spaced = opts.spacesOnly ? [...before].filter((c) => c === " ").length : [...before].length;
+    return measure(before + next) - measure(next) + (ls ? spaced * ls : 0);
+  };
+  // Chromium places a line by the positions of its ends in the text shaped as a whole, each
+  // truncated to a layout unit (1/64 px), and compares their difference: "a b" at 55.508px fits in
+  // 55.5px on a first line, but a later line can need one unit more.
+  const fits = (s: string) => {
+    const x0 = startOf(consumed);
+    return Math.floor((x0 + w(s)) * 64 + TEXT_EPS) / 64 - Math.floor(x0 * 64 + TEXT_EPS) / 64 <= maxWidth + 1e-6;
+  };
   let line = "";
-  /** Start a new line with piece p. With overflow-wrap: anywhere, a piece too wide for a line of
-   * its own is broken between characters; the last fragment stays open for the next pieces. */
-  const start = (p: string) => {
+  let approximate: string | undefined;
+  /**
+   * Start a new line with piece p. With overflow-wrap: anywhere, a piece too wide for a line of
+   * its own is broken between characters. Returns the open last fragment when it did: Chromium
+   * then looks for break opportunities again from that fragment on, with nothing before it (so
+   * "mid-2024" breaks as "m", "id", "-2"...: a "-" that starts a line doesn't break before a digit).
+   */
+  const start = (p: string, mid: boolean): string | undefined => {
     if (!opts.wrapAnywhere || fits(p)) return void (line = p);
-    const trailing = p.slice(trimSpaces(p).length);
-    let cur = "";
+    // Graphemes, with a soft hyphen kept with the character after it (Chromium never ends a
+    // fragment on one). A fragment that starts inside the word counts the kerning to the character
+    // that follows it (Chromium measures it as shaped with the rest of the word); one that starts
+    // the word is measured on its own.
+    if (p.includes(SHY)) approximate ??= "a word with a soft hyphen breaks between characters";
+    const chars: string[] = [];
+    let pending = "";
     for (const ch of trimSpaces(p)) {
-      if (cur && !fits(cur + ch)) {
-        lines.push({ text: cur, width: w(cur) });
+      if (ch === SHY) pending += ch;
+      else {
+        chars.push(pending + ch);
+        pending = "";
+      }
+    }
+    if (pending) chars.push(pending);
+    let broke = false;
+    const fragW = (frag: string, k: number, kerned = mid || broke) => {
+      const next = chars[k]?.replaceAll(SHY, "");
+      return next && kerned ? w(frag + next) - w(next) : w(frag);
+    };
+    let cur = "";
+    chars.forEach((ch, k) => {
+      if (cur) {
+        // Both ways of measuring the fragment must agree, with room to spare.
+        const a = fragW(cur + ch, k + 1, false);
+        const b = fragW(cur + ch, k + 1, true);
+        if (a <= maxWidth !== b <= maxWidth || Math.abs(a - maxWidth) < 0.1 || Math.abs(b - maxWidth) < 0.1)
+          approximate ??= "a word breaks between characters close to the line's width";
+      }
+      if (cur && !(fragW(cur + ch, k + 1) <= maxWidth + 1e-6)) {
+        lines.push({ text: cur, width: fragW(cur, k) });
+        consumed += [...cur].length;
+        broke = true;
         cur = ch;
       } else cur += ch;
-    }
-    line = cur + trailing;
+    });
+    if (!broke) return void (line = p);
+    line = "";
+    return cur + p.slice(trimSpaces(p).length);
   };
-  for (const p of ps) {
-    if (!line) start(p);
+  let queue = ps;
+  let mid = false;
+  for (let i = 0; i < queue.length; i++) {
+    let p = queue[i];
+    // A piece ending in a soft hyphen that can't fit a line of its own is broken between
+    // characters together with the rest of its word.
+    while (opts.wrapAnywhere && p.endsWith(SHY) && i + 1 < queue.length && !fits(p)) p += queue[++i];
+    let open: string | undefined;
+    if (!line) open = start(p, mid);
     else if (fits(line + p)) line += p;
     else {
       lines.push({ text: trimSpaces(line), width: w(line) });
-      start(p);
+      consumed += [...line].length;
+      open = start(p, mid);
+    }
+    mid = open !== undefined;
+    if (open !== undefined) {
+      queue = pieces(open + queue.slice(i + 1).join(""));
+      i = -1;
     }
   }
   if (line || !lines.length) lines.push({ text: trimSpaces(line), width: w(line) });
   let widestPiece = "";
   let minContent = 0;
-  // With anywhere, any character is a soft wrap opportunity for min-content.
-  const units = opts.wrapAnywhere ? [...text].filter((c) => c !== " ") : ps;
-  for (const p of units) {
-    const pw = w(p);
-    if (pw > minContent) {
-      minContent = pw;
-      widestPiece = trimSpaces(p);
+  // With anywhere, any character is a soft wrap opportunity for min-content. Each character
+  // counts with its kerning to the next one (Inter's thin "WW" kerns apart).
+  const chars = [...text];
+  const units = opts.wrapAnywhere
+    ? chars.flatMap((c, i) => {
+        if (c === " " || c === SHY) return [];
+        const next = chars[i + 1];
+        const kern = next && next !== " " && next !== SHY ? measure(c + next) - measure(c) - measure(next) : 0;
+        return [{ text: c, width: w(c) + kern }];
+      })
+    : ps.map((p) => ({ text: trimSpaces(p), width: w(p, true) }));
+  for (const u of units) {
+    if (u.width > minContent) {
+      minContent = u.width;
+      widestPiece = u.text;
     }
   }
-  return { lines, maxContent: w(text), minContent, widestPiece };
+  return { lines, maxContent: w(text), minContent, widestPiece, ...(approximate && { approximate }) };
 }
