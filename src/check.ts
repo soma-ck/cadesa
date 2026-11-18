@@ -7,13 +7,22 @@ import type { WidthImpact } from "./lift/impact.js";
 import { fmtPx } from "./resolve.js";
 
 export interface Finding extends Issue {
-  check: "layout" | "tap-target" | "contrast" | "line-length";
+  check: "layout" | "tap-target" | "contrast";
   width: number;
   inconclusive?: boolean;
 }
 
 const MEDIA = new Set(["img", "video", "picture", "svg", "canvas", "iframe", "object", "embed"]);
-const INTERACTIVE = new Set(["button", "a", "input", "select", "textarea", "summary"]);
+const ROLES = new Set(["button", "link", "tab", "menuitem", "menuitemcheckbox", "menuitemradio", "checkbox", "radio", "switch", "option"]);
+
+/** What a user can actually tap: controls, links with an href, and elements with an interactive role. */
+export function isTapTarget(b: Box): boolean {
+  const a = b.attrs ?? {};
+  if (a.role && ROLES.has(a.role.trim())) return true;
+  if (b.tag === "a") return "href" in a;
+  if (b.tag === "input") return (a.type ?? "").toLowerCase() !== "hidden";
+  return b.tag === "button" || b.tag === "select" || b.tag === "textarea" || b.tag === "summary";
+}
 
 function luminance(hex: string): number {
   let h = hex.slice(1);
@@ -83,8 +92,10 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
           : { ...here, stops: [...(here.stops ?? []), ...stops], stopsPath: b.props.backdrop.steps.at(-1)!.path };
       }
 
-      if (INTERACTIVE.has(b.tag)) {
+      if (isTapTarget(b)) {
         const small = Math.min(b.w, b.h);
+        // WCAG 2.5.8 (AA) needs 24×24. The 44×44 advice (2.5.5, AAA) only for compact controls:
+        // a full-width row 26px tall is easy to hit, a 32×32 icon button isn't.
         if (small < 24)
           out.push({
             check: "tap-target",
@@ -94,7 +105,7 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
             path: (b.h < b.w ? b.props.height : b.props.width)?.steps.at(-1)?.path ?? b.sourcePath,
             message: `#${b.id} is ${fmtPx(b.w)}×${fmtPx(b.h)}px; WCAG 2.5.8 needs at least 24×24px`,
           });
-        else if (small < 44)
+        else if (small < 44 && Math.max(b.w, b.h) < 44)
           out.push({
             check: "tap-target",
             width: l.width,
@@ -135,18 +146,6 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
               message: `#${b.id} text ${t.color} on ${worst.c} is ${worst.ratio.toFixed(2)}:1; WCAG AA needs ${min}:1 (background: ${worst.from})`,
             });
         }
-        if (b.lines && b.lines.length > 1 && !b.props.height) {
-          const longest = Math.max(...b.lines.map((x) => [...x.text].length));
-          if (longest > 80)
-            out.push({
-              check: "line-length",
-              width: l.width,
-              severity: "warning",
-              id: b.id,
-              path: b.sourcePath,
-              message: `#${b.id} has lines up to ${longest} characters at ${l.width}px; 45–75 reads comfortably`,
-            });
-        }
       }
       // In a layer, children after an image sit on top of it.
       let behind = here;
@@ -158,7 +157,8 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
     const pageBg: Behind = l.page ? { color: l.page.background, path: l.page.path } : {};
     for (const b of l.boxes) visit(b, pageBg);
     for (const f of out.slice(start)) {
-      const unknown = f.check === "contrast" ? paintUnknown.has(f.id) || geometryUnknown.has(f.id) : geometryUnknown.has(f.id);
+      // Contrast depends on colours, not geometry: only unknown paint makes it inconclusive.
+      const unknown = f.check === "contrast" ? paintUnknown.has(f.id) : geometryUnknown.has(f.id);
       if (unknown && !f.inconclusive) {
         f.inconclusive = true;
         f.severity = "warning";

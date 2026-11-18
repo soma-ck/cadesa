@@ -10,6 +10,7 @@
  *   palette      no accent at all (only greys), or several accents competing on actions
  *   tells        tracked uppercase labels, " · " meta strings, "→" appended to actions
  *   wrap         a cluster that still wraps at the widest width checked (rarely intended)
+ *   measure      paragraphs whose lines run past 80 characters (45–75 reads comfortably)
  */
 import { walk, type Box, type Layout } from "./engine/layout.js";
 import type { Fixture, FixtureNode } from "./fixture.js";
@@ -17,7 +18,7 @@ import { tokenKey, type Model } from "./model.js";
 import { fmtPx } from "./resolve.js";
 
 export interface Critique {
-  check: "type-scale" | "hierarchy" | "grouping" | "alignment" | "palette" | "tells" | "wrap";
+  check: "type-scale" | "hierarchy" | "grouping" | "alignment" | "palette" | "tells" | "wrap" | "measure";
   message: string;
   /** YAML path to edit, when there is one. */
   path?: string;
@@ -169,6 +170,26 @@ export function critique(model: Model, fixture: Fixture, layouts: Layout[]): Cri
         message: `text starts at ${edges.size} different left edges at ${l.width}px (${xs.map(list).join("; ")}); a shared content column reads as designed`,
       });
   }
+
+  // ---- line length: reported once per text box, with the widths where it happens
+  const long = new Map<string, { box: Box; widths: number[]; chars: number }>();
+  for (const l of layouts)
+    for (const b of walk(l.boxes)) {
+      if (!b.lines || b.lines.length < 2 || b.props.height) continue;
+      const chars = Math.max(...b.lines.map((x) => [...x.text].length));
+      if (chars <= 80) continue;
+      const e = long.get(b.id) ?? { box: b, widths: [], chars: 0 };
+      e.widths.push(l.width);
+      e.chars = Math.max(e.chars, chars);
+      long.set(b.id, e);
+    }
+  for (const [id, e] of long)
+    out.push({
+      check: "measure",
+      id,
+      message: `#${id} has lines up to ${e.chars} characters (at ${e.widths.length === 1 ? `${e.widths[0]}px` : `${e.widths[0]}–${e.widths[e.widths.length - 1]}px`}); 45–75 reads comfortably, so cap its width with measure`,
+      path: e.box.sourcePath,
+    });
 
   // ---- clusters that wrap even at the widest width
   const widest = layouts.reduce((a, b) => (b.width > a.width ? b : a), layouts[0]);

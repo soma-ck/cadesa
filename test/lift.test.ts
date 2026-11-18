@@ -89,15 +89,15 @@ describe("lift of hand-written CSS", () => {
     expect(wide.uncertain.find((u) => u.id === "name")!.reasons[0]).toMatch(/legacy\.css:106 max-width: 560px/);
   });
 
-  it("makes checks on uncertain boxes inconclusive", () => {
+  it("keeps contrast conclusive when only geometry is uncertain", () => {
     const html = '<article class="profile-card"><p class="profile-card__meta" data-fixture="m">x</p></article>';
     const css = ".profile-card{display:flex;flex-direction:column;background:#fff}.profile-card__meta{font:400 13px/18px Inter;color:#bbbbbb}";
     const rr = lift("t.css", css);
     const fx = parseFixture("t.html", html);
     const ls = render(modelOf(loadSource("t", rr.yaml)), fx, [390]);
     const [f] = check(ls, impact(rr, fx, ls)).filter((x) => x.check === "contrast");
-    expect(f.inconclusive).toBe(true);
-    expect(f.severity).toBe("warning");
+    expect(f.inconclusive).toBeFalsy();
+    expect(f.severity).toBe("error");
   });
 });
 

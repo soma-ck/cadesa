@@ -15,7 +15,7 @@ import type { Model } from "./model.js";
 import { liftTailwind, type TailwindLift } from "./tailwind/lift.js";
 import { liftCssPage } from "./lift/css-page.js";
 import type { PageLift } from "./lift/page.js";
-import { formatCheck, formatExplain, formatImpact, formatLift, formatRender, formatWhatif } from "./report.js";
+import { coverage, formatCoverage, formatCheck, shortenPaths, formatExplain, formatImpact, formatLift, formatRender, formatWhatif } from "./report.js";
 import { impact, type WidthImpact } from "./lift/impact.js";
 import { lift, type LiftResult } from "./lift/lift.js";
 import { readFileSync } from "node:fs";
@@ -202,11 +202,12 @@ export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; 
   const label = p.label;
   const fonts = fontsOf(s, layouts);
   return {
-    text:
+    text: shortenPaths(
+      formatCoverage(coverage(layouts, imp?.impacts)) +
       formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts }) +
       (imp ? "\n" + formatImpact(imp.impacts) : "") +
       (written.length ? `\nwireframe: ${written.join(", ")}\n` : "") +
-      fontsNote(fonts, s, true),
+      fontsNote(fonts, s, true)),
     data: { source: label, fixture: s.fixture, layouts, impact: imp?.impacts, fonts: fontsData(fonts) },
     ok: !layouts.some((l) => l.issues.some((i) => i.severity === "error")),
   };
@@ -238,7 +239,8 @@ export function checkCmd(s: SourceInput & { fixture: string; widths: number[] })
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
   const findings = check(layouts, imp?.impacts);
-  if (p.tw) {
+  const cov = coverage(layouts, imp?.impacts);
+  if (p.tw || s.css) {
     // Tailwind: also name the element in the page, where the utilities are edited.
     const lines = new Map<string, number>();
     const visit = (ns: Fixture["body"]) => ns.forEach((n) => (n.fixtureId && n.line && lines.set(n.fixtureId, n.line), visit(n.children)));
@@ -247,8 +249,8 @@ export function checkCmd(s: SourceInput & { fixture: string; widths: number[] })
   }
   const fonts = fontsOf(s, layouts);
   return {
-    text: formatCheck(findings, s.widths) + fontsNote(fonts, s, false),
-    data: { findings, fonts: fontsData(fonts) },
+    text: formatCheck(findings, s.widths, cov) + fontsNote(fonts, s, false),
+    data: { coverage: cov, findings, fonts: fontsData(fonts) },
     ok: !findings.some((f) => f.severity === "error"),
   };
 }

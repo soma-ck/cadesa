@@ -24,6 +24,8 @@ export interface Box {
   /** Editable YAML path for this element's style. */
   sourcePath: string;
   fixtureLine?: number;
+  /** The element's HTML attributes (href, role, type...), for checks that depend on them. */
+  attrs?: Record<string, string>;
   x: number;
   y: number;
   w: number;
@@ -853,6 +855,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       slot,
       sourcePath,
       fixtureLine: n.line,
+      attrs: n.attrs,
       x: 0,
       y: 0,
       w,

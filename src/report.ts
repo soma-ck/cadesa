@@ -1,5 +1,5 @@
 import type { Finding } from "./check.js";
-import type { Box, Issue, Layout } from "./engine/layout.js";
+import { walk, type Box, type Issue, type Layout } from "./engine/layout.js";
 import type { Explanation } from "./explain.js";
 import type { WidthImpact } from "./lift/impact.js";
 import type { LiftResult } from "./lift/lift.js";
@@ -127,23 +127,124 @@ export function formatExplain(e: Explanation): string {
   return out.join("\n") + "\n";
 }
 
-export function formatCheck(findings: Finding[], widths: number[]): string {
-  if (!findings.length) return `✓ no findings at ${describeWidths(widths)}\n`;
-  const out: string[] = [];
-  for (const w of widths) {
-    const fs = findings.filter((f) => f.width === w);
-    if (!fs.length) continue;
-    out.push(`${w}px`);
-    for (const f of fs) {
-      const icon = f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠";
-      out.push(`  ${icon} [${f.check}] ${f.message}${f.path ? `\n      edit: ${f.path}` : ""}`);
-    }
-    out.push("");
+/** Show absolute paths relative to the working directory, or by file name when they're elsewhere. */
+export function shortenPaths(text: string): string {
+  const cwd = process.cwd() + "/";
+  return text.replace(/(?<![\w.])\/(?:[\w.@+-]+\/)+[\w.@+-]+/g, (p) => (p.startsWith(cwd) ? p.slice(cwd.length) : p.slice(p.lastIndexOf("/") + 1)));
+}
+
+/** "320–760px, 1280px" from the widths a finding occurs at, in the order they were checked. */
+export function widthRanges(at: number[], all: number[]): string {
+  if (at.length === all.length && all.length > 2) return `all ${all.length} widths`;
+  const idx = [...new Set(at)].map((w) => all.indexOf(w)).sort((a, b) => a - b);
+  const parts: string[] = [];
+  for (let i = 0; i < idx.length; ) {
+    let j = i;
+    while (j + 1 < idx.length && idx[j + 1] === idx[j] + 1) j++;
+    parts.push(j - i >= 2 ? `${all[idx[i]]}–${all[idx[j]]}` : j > i ? `${all[idx[i]]}, ${all[idx[j]]}` : `${all[idx[i]]}`);
+    i = j + 1;
   }
-  const errors = findings.filter((f) => f.severity === "error").length;
-  const warnings = findings.length - errors;
-  out.push(`${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}`);
+  return parts.join(", ") + "px";
+}
+
+export interface Coverage {
+  widths: number;
+  /** Box × width counts. */
+  boxes: number;
+  exact: number;
+  approximate: number;
+  /** Causes of approximate boxes, most common first (count = box × width). */
+  reasons: { reason: string; count: number }[];
+}
+
+/** Normalize a ≈ reason to its root cause, so the same cause groups across boxes and widths. */
+function rootCause(r: string): string {
+  return shortenPaths(r)
+    .replace(/^(?:moved|resized) by #[\w-]+: /, "")
+    .replace(/(?:\S+\.(?:css|html|ya?ml)(?::\d+)?|\(\S+\.(?:css|html)(?::\d+)?\))\s*/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    // Keep the cause, drop the explanation: "display: inline-block: an inline-level box in block flow".
+    .replace(/^(.{24,}?)(?:;| \().*$/, "$1")
+    .slice(0, 90);
+}
+
+export function coverage(layouts: Layout[], impacts?: WidthImpact[]): Coverage {
+  let boxes = 0;
+  let approximate = 0;
+  const reasons = new Map<string, number>();
+  const add = (r: string) => reasons.set(rootCause(r), (reasons.get(rootCause(r)) ?? 0) + 1);
+  for (const l of layouts) {
+    const all = [...walk(l.boxes)];
+    boxes += all.length;
+    const imp = impacts?.find((i) => i.width === l.width);
+    const uncertain = new Map((imp?.uncertain ?? []).map((u) => [u.id, u]));
+    for (const b of all) {
+      const u = uncertain.get(b.id);
+      if (u || b.assumptions.length) {
+        approximate++;
+        const rs = u ? u.reasons : b.assumptions;
+        add(rs.find((r) => !/^(?:moved|resized) by/.test(r)) ?? rs[0] ?? "unknown");
+      }
+    }
+  }
+  return {
+    widths: layouts.length,
+    boxes,
+    exact: boxes - approximate,
+    approximate,
+    reasons: [...reasons].sort((a, b) => b[1] - a[1]).map(([reason, count]) => ({ reason, count })),
+  };
+}
+
+/** The first thing to read: how much of the page Cadesa actually predicted. */
+export function formatCoverage(c: Coverage): string {
+  if (!c.boxes) return "coverage: Cadesa laid out 0 boxes on this page, so nothing was checked. Check it in a browser.\n";
+  const pct = (n: number) => `${Math.round((n / c.boxes) * 100)}%`;
+  const perWidth = Math.round(c.boxes / Math.max(1, c.widths));
+  const out = [
+    `coverage: ${perWidth} boxes × ${c.widths} width${c.widths === 1 ? "" : "s"} · ${pct(c.exact)} exact · ${pct(c.approximate)} approximate (≈)`,
+  ];
+  if (c.reasons.length)
+    out.push(`  ≈ because: ${c.reasons.slice(0, 3).map((r) => `${r.reason} (×${r.count})`).join(" · ")}${c.reasons.length > 3 ? ` · +${c.reasons.length - 3} more causes` : ""}`);
+  if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat findings below as leads and confirm them in a browser");
   return out.join("\n") + "\n";
+}
+
+export function formatCheck(findings: Finding[], widths: number[], cov?: Coverage): string {
+  const head = cov ? formatCoverage(cov) + "\n" : "";
+  if (!findings.length) return `${head}✓ no findings at ${describeWidths(widths)}\n`;
+  // One line per issue (same check, element, severity and edit path), listing the widths it occurs at.
+  const groups = new Map<string, { first: Finding; widths: number[] }>();
+  for (const f of findings) {
+    const key = [f.check, f.id, f.severity, f.inconclusive ? 1 : 0, f.path ?? ""].join("|");
+    const g = groups.get(key) ?? { first: f, widths: [] };
+    g.widths.push(f.width);
+    groups.set(key, g);
+  }
+  const rank = (f: Finding) => (f.inconclusive ? 2 : f.severity === "error" ? 0 : 1);
+  const sorted = [...groups.values()].sort((a, b) => rank(a.first) - rank(b.first));
+  const out: string[] = [];
+  let shownInconclusiveHeader = false;
+  for (const g of sorted) {
+    const f = g.first;
+    if (f.inconclusive && !shownInconclusiveHeader) {
+      out.push("", "inconclusive (these boxes aren't predicted exactly; confirm in a browser):");
+      shownInconclusiveHeader = true;
+    }
+    const icon = f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠";
+    const msg = f.message.replace(/ \(inconclusive: this box isn't exactly predicted for the original CSS\)/, "");
+    out.push(`${icon} [${f.check}] ${msg} · at ${widthRanges(g.widths, widths)}${f.path ? `\n    edit: ${f.path}` : ""}`);
+  }
+  const conclusive = sorted.filter((g) => !g.first.inconclusive);
+  const errors = conclusive.filter((g) => g.first.severity === "error").length;
+  const warnings = conclusive.length - errors;
+  const inconclusive = sorted.length - conclusive.length;
+  out.push(
+    "",
+    `${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}${inconclusive ? `, ${inconclusive} inconclusive` : ""} (distinct issues across ${describeWidths(widths)})`,
+  );
+  return shortenPaths(head + out.join("\n").replace(/^\n/, "") + "\n");
 }
 
 export function formatImpact(impacts: WidthImpact[]): string {

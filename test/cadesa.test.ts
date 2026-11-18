@@ -290,11 +290,16 @@ describe("explain and check", () => {
   });
 
   it("flags small tap targets with the size to edit", () => {
-    const findings = check(render(modelOf(src(sourceText.replace("control: 2.75rem", "control: 2rem"))), fixture, [1280]));
+    const findings = check(render(modelOf(src(sourceText.replace("control: 2.75rem", "control: 1.25rem"))), fixture, [1280]));
     expect(findings.filter((f) => f.check === "tap-target").map((f) => [f.id, f.severity, f.path])).toEqual([
-      ["save", "warning", "styles.settings-panel.slots.primary.height"],
-      ["cancel", "warning", "styles.settings-panel.slots.secondary.height"],
+      ["save", "error", "styles.settings-panel.slots.primary.height"],
+      ["cancel", "error", "styles.settings-panel.slots.secondary.height"],
     ]);
+  });
+
+  it("doesn't warn about a wide control that is only short", () => {
+    const findings = check(render(modelOf(src(sourceText.replace("control: 2.75rem", "control: 2rem"))), fixture, [1280]));
+    expect(findings.filter((f) => f.check === "tap-target")).toEqual([]);
   });
 
   it("computes WCAG contrast ratios", () => {

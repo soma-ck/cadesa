@@ -76,7 +76,8 @@ describe("MCP server", () => {
     const e = await call("cadesa_explain", { ...page, id: "save", widths: [390] });
     expect(e.text).toContain("width       fill");
     const c = await call("cadesa_check", page);
-    expect(c.text).toBe("✓ no findings at 57 widths from 320 to 1440px\n");
+    expect(c.text).toMatch(/^coverage: 6 boxes × 57 widths · 100% exact/);
+    expect(c.text).toContain("✓ no findings at 57 widths from 320 to 1440px\n");
     const missing = await call("cadesa_explain", { ...page, id: "nope" });
     expect(missing).toEqual({ text: 'no element with data-fixture="nope" in fixtures/settings.html', isError: true });
   });
