@@ -153,7 +153,11 @@ export async function generateMetrics(opts: {
    * Measure the font installed on this machine under `family` instead of a file, as static faces
    * at these weights. The result is machine-specific.
    */
-  system?: { weights: number[] };
+  system?: {
+    weights: number[];
+    /** The whole font-family list to resolve on this machine (default: `family` alone). */
+    stack?: string;
+  };
   /** Where the file was downloaded from (recorded in the metrics file). */
   url?: string;
   /** A browser to reuse (several faces in one run). */
@@ -175,14 +179,14 @@ export async function generateMetrics(opts: {
     // A second font (the bundled Inter) tells which characters the font has no glyph for: their
     // width changes with the fallback font.
     const fb = readFileSync(FALLBACK_FONT).toString("base64");
-    const family = opts.system ? JSON.stringify(opts.family) : "__cadesa";
+    const family = opts.system ? (opts.system.stack ?? JSON.stringify(opts.family)) : "__cadesa";
     await page.setContent(
       "<style>" +
         (bytes ? `@font-face{font-family:"__cadesa";font-weight:${descriptor};src:url(data:font/${format};base64,${bytes.toString("base64")}) format("${format}")}` : "") +
         `@font-face{font-family:"__cadesa_fb";font-weight:100 900;src:url(data:font/woff2;base64,${fb}) format("woff2")}</style>`,
     );
     // Passed as a string so bundlers/transpilers can't inject helpers that don't exist in the page.
-    const result = (await page.evaluate(`(async ({ ALL, WEIGHTS, SIZE, UNITS, FAMILY }) => {
+    const result = (await page.evaluate(`(async ({ ALL, WEIGHTS, SIZE, UNITS, FAMILY, FAMS }) => {
       const ctx = document.createElement("canvas").getContext("2d");
       ctx.fontKerning = "normal";
       const W0 = WEIGHTS[0];
@@ -299,9 +303,20 @@ export async function generateMetrics(opts: {
           fine.runDeltas = runs.map((_, i) => rowsC.slice(1).map((r, k) => r[i] - rowsC[k][i]).join(","));
         }
       }
-      const loaded = FAMILY === "__cadesa" ? document.fonts.check(W0 + " 16px __cadesa") : missing.length < ALL.length;
-      return { chars: CHARS, missing: missing.join(""), scales, advances, kerning, kerningSpaced, contextual, fine, loaded };
-    })(${JSON.stringify({ ALL: CHARS, WEIGHTS: weights, SIZE, UNITS, FAMILY: family })})`)) as {
+      // An installed font: the first family of the stack this machine has (a generic family always resolves).
+      let resolved;
+      for (const f of FAMS) {
+        const generic = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-sans-serif|ui-serif|ui-monospace|ui-rounded|math)$/i.test(f);
+        const s = W0 + " " + SIZE + "px " + f;
+        if (generic || widthIn(s + ", monospace", "Hamburgefonstiv") === widthIn(s + ", __cadesa_fb", "Hamburgefonstiv")) {
+          resolved = f.replace(/^["']|["']$/g, "");
+          break;
+        }
+      }
+      const loaded = FAMILY === "__cadesa" ? document.fonts.check(W0 + " 16px __cadesa") : resolved !== undefined;
+      return { chars: CHARS, missing: missing.join(""), scales, advances, kerning, kerningSpaced, contextual, fine, loaded, resolved };
+    })(${JSON.stringify({ ALL: CHARS, WEIGHTS: weights, SIZE, UNITS, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()) })})`)) as {
+      resolved?: string;
       chars: string;
       missing: string;
       scales: boolean;
@@ -313,7 +328,12 @@ export async function generateMetrics(opts: {
       loaded: boolean;
     };
     await page.close();
-    if (!result.loaded) throw new Error(opts.system ? `no font named "${opts.family}" is installed on this machine` : `${opts.font} did not load in Chromium`);
+    if (!result.loaded)
+      throw new Error(
+        opts.system
+          ? `${opts.system.stack ? `none of "${opts.system.stack}"` : `no font named "${opts.family}"`} is installed on this machine`
+          : `${opts.font} did not load in Chromium`,
+      );
     if (!result.scales)
       throw new Error(
         `${opts.font ?? `the installed font "${opts.family}"`} changes its glyph widths with the font size (an optical-size axis); Cadesa can't measure it from one table`,
@@ -344,8 +364,12 @@ export async function generateMetrics(opts: {
       },
     ];
     if (result.missing) m.missing = result.missing;
-    if (opts.system)
-      m.machineSpecific = `measured from the font installed as "${opts.family}" on one ${process.platform} machine; another machine may have a different font, or version, under that name`;
+    if (opts.system) {
+      const as = result.resolved && result.resolved.toLowerCase() !== opts.family.toLowerCase() ? `"${result.resolved}" (the first of "${opts.system.stack}" installed)` : `"${opts.family}"`;
+      m.source = `installed font ${as}`;
+      m.files![0].file = result.resolved ?? opts.family;
+      m.machineSpecific = `machine-specific: measured from ${as} as installed on one ${process.platform} machine; another machine may have a different font, or version, there`;
+    }
     return m;
   } finally {
     if (!opts.browser) await browser.close();
