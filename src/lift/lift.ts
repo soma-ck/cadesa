@@ -219,7 +219,6 @@ interface ElementRule {
 export function liftParsed(css: ParsedCss): LiftResult {
   const unlifted: Unlifted[] = [];
   const resets = new Map<string, Set<string>>();
-  const tokens = new Tokens();
   let declarations = 0;
 
   const resolveVarRaw = (v: string): string | undefined => {
@@ -313,12 +312,10 @@ export function liftParsed(css: ParsedCss): LiftResult {
 
   // Prefix: "ca-" if every block uses it (e.g. CSS compiled by Cadesa), else none.
   const prefix = blockOrder.length && blockOrder.every((b) => b.startsWith("ca-") && b.length > 3) ? "ca-" : "";
-  const component = (block: string) => block.slice(prefix.length);
 
   // 2. Breakpoint states, widest first.
   const bpPx = [...new Set(css.rules.filter((r) => r.media?.maxPx !== undefined).map((r) => r.media!.maxPx!))].sort((a, b) => b - a);
   const bpRaw = new Map(css.rules.filter((r) => r.media?.maxPx !== undefined).map((r) => [r.media!.maxPx!, r.media!.maxRaw!]));
-  const bpName = (px: number) => `max-${bpRaw.get(px)!.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
   const states = [Infinity, ...bpPx];
 
   // 3. Effective declarations per element per state.
@@ -343,6 +340,48 @@ export function liftParsed(css: ParsedCss): LiftResult {
     }
     elements.push({ className, block: e.block, element: e.element, states: st });
   }
+
+  return liftElements({ file: css.file, vars: css.vars, notes: css.notes, prefix, elements, blockOrder, bpPx, bpRaw, layerChildren, pageBackground, unlifted, resets, declarations });
+}
+
+/**
+ * Everything lift needs once each element's effective declarations per breakpoint state are known.
+ * liftParsed computes them from a stylesheet's cascade; other front ends (Tailwind) compute their own.
+ */
+export interface LiftInput {
+  /** File named in reports (and the `# Lifted from` header). */
+  file: string;
+  /** Custom properties that `var()` values in the declarations refer to. Names become token names. */
+  vars: Map<string, Decl>;
+  /** Per component: an `intent` note. */
+  notes: Map<string, string>;
+  prefix: string;
+  /** Each element's `states` has the base state (Infinity) and every px in `bpPx`. */
+  elements: LiftedElement[];
+  blockOrder: string[];
+  /** Max-width breakpoint states narrower than the base, widest first, in px. */
+  bpPx: number[];
+  /** The breakpoint's length as written (e.g. "47.99rem"), per px. */
+  bpRaw: Map<number, string>;
+  /** Breakpoint name per px (default: max-<raw>). */
+  bpName?: (px: number) => string;
+  /** Elements whose children are all placed in one grid cell (a layer), per state px. */
+  layerChildren: Map<string, Set<number>>;
+  pageBackground?: Decl;
+  /** Records found before mapping (more are added). */
+  unlifted: Unlifted[];
+  resets: Map<string, Set<string>>;
+  /** Declarations read, for stats. */
+  declarations: number;
+}
+
+export function liftElements(input: LiftInput): LiftResult {
+  const css = { file: input.file, vars: input.vars, notes: input.notes };
+  const { prefix, elements, blockOrder, bpPx, bpRaw, layerChildren, pageBackground, unlifted, resets, declarations } = input;
+  const component = (block: string) => block.slice(prefix.length);
+  const bpName = input.bpName ?? ((px: number) => `max-${bpRaw.get(px)!.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`);
+  const states = [Infinity, ...bpPx];
+  const tokens = new Tokens();
 
   // 4. Map declarations to props, per state.
   const roles = new Map<string, { name: string; spec: Record<string, unknown> }>();
