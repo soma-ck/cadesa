@@ -10,6 +10,7 @@
   "files": [
     "lib",
     "schema",
+    "fonts",
     "LICENSE",
     "README.md"
   ],
@@ -23,7 +24,9 @@
     "build:ts": "tsc -p tsconfig.json",
     "prepublishOnly": "npm run typecheck && npm test && npm run build:ts",
     "conformance": "tsx scripts/conformance.ts",
-    "demo": "tsx src/cli.ts build settings.cascade.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cascade.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel"
+    "demo": "tsx src/cli.ts build settings.cascade.yaml --out dist/settings.css && tsx src/cli.ts whatif fixtures/settings.html --source settings.cascade.yaml --widths 390,1280 --set styles.settings-panel.when.narrow.padding=panel",
+    "conformance:sweep": "tsx scripts/conformance.ts --fixtures fixtures/settings-long.html --widths $(seq -s, 260 3 1000) --out artifacts/sweep",
+    "metrics": "tsx scripts/gen-metrics.ts"
   },
   "keywords": [
     "css",

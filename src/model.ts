@@ -51,9 +51,16 @@ export interface LayoutProp {
   gap?: Ref;
 }
 
+/** `padding: compact` sets both axes; `padding: { block, inline }` sets each (a missing axis is 0). */
+export interface PaddingProp {
+  path: string;
+  block?: Ref;
+  inline?: Ref;
+}
+
 export interface Props {
   layout?: LayoutProp;
-  padding?: Ref;
+  padding?: PaddingProp;
   background?: Ref;
   border?: Ref;
   radius?: Ref;

@@ -1,11 +1,11 @@
 # yaml-language-server: $schema=./schema/cascadio.schema.json
 version: 1
 tokens:
-  space: { section: 1.5rem, panel: 2rem, compact: 1rem, control: 0.75rem }
-  size: { panel: 40rem, control: 2.75rem, action: 9rem }
+  space: { section: 1.5rem, panel: 2rem, compact: 1rem, control: 0.75rem, control-inline: 1.25rem }
+  size: { panel: 40rem, control: 2.75rem }
   color: { surface: "#ffffff", ink: "#191b20", muted: "#555964", line: "#d6d9e0" }
   radius: { panel: 0.75rem, control: 0.5rem }
-  font: { ui: "system-ui, -apple-system, 'Segoe UI', sans-serif" }
+  font: { ui: "Inter, system-ui, sans-serif" }
 text:
   section-title: { font: ui, size: 1.5rem, weight: 650, lineHeight: 1.2, color: ink }
   body-muted: { font: ui, size: 1rem, weight: 400, lineHeight: 1.5, color: muted }
@@ -25,8 +25,8 @@ styles:
       title: { text: section-title }
       description: { text: body-muted }
       actions: { layout: { pattern: cluster, gap: control } }
-      primary: { text: label-inverse, background: ink, radius: control, width: action, height: control }
-      secondary: { text: label, border: line, radius: control, width: action, height: control }
+      primary: { text: label-inverse, background: ink, radius: control, height: control, padding: { inline: control-inline } }
+      secondary: { text: label, border: line, radius: control, height: control, padding: { inline: control-inline } }
     when:
       narrow:
         padding: compact

@@ -1,4 +1,6 @@
+import type { Finding } from "./check.js";
 import type { Box, Issue, Layout } from "./engine/layout.js";
+import type { Explanation } from "./explain.js";
 import type { WhatIf } from "./project.js";
 import { fmtPx, type Resolved } from "./resolve.js";
 
@@ -19,6 +21,7 @@ function summary(b: Box): string {
   if (p.width) parts.push(`width ${p.width.display}${via(p.width)}`);
   if (p.text) parts.push(`text ${p.text.value.role}`);
   if (b.overflowX) parts.push(`⚠ overflow ${fmtPx(b.overflowX)}px`);
+  if (b.lines && b.lines.length > 1) parts.push(`${b.lines.length} lines`);
   if (b.assumptions.length) parts.push("(1 line assumed)");
   return parts.join(" · ");
 }
@@ -32,24 +35,27 @@ function header(l: Layout) {
   return `${l.width}px${l.active.length ? ` · ${l.active.join(", ")} active` : ""}`;
 }
 
-export function formatRender(layouts: Layout[], meta: { source: string; fixture: string; ms: number }): string {
+export function formatRender(
+  layouts: Layout[],
+  meta: { source: string; fixture: string; ms: number; lines?: boolean },
+): string {
   const out = [`${meta.source} × ${meta.fixture} · computed in ${meta.ms}ms, no browser`, ""];
   for (const l of layouts) {
     out.push(header(l));
-    const rows: string[][] = [];
+    const rows: { cells: string[]; lines?: Box["lines"] }[] = [];
     const visit = (b: Box, depth: number) => {
-      rows.push([
-        `${"  ".repeat(depth + 1)}#${b.id}`,
-        b.tag,
-        `${fmtPx(b.x)},${fmtPx(b.y)}`,
-        `${fmtPx(b.w)}×${fmtPx(b.h)}`,
-        summary(b),
-      ]);
+      rows.push({
+        cells: [`${"  ".repeat(depth + 1)}#${b.id}`, b.tag, `${fmtPx(b.x)},${fmtPx(b.y)}`, `${fmtPx(b.w)}×${fmtPx(b.h)}`, summary(b)],
+        lines: meta.lines && b.lines && b.lines.length > 1 ? b.lines : undefined,
+      });
       b.children.forEach((c) => visit(c, depth + 1));
     };
     l.boxes.forEach((b) => visit(b, 0));
-    const widths = [0, 1, 2, 3].map((i) => Math.max(...rows.map((r) => r[i].length)) + 1);
-    for (const r of rows) out.push(r.map((c, i) => (i < 4 ? pad(c, widths[i]) : c)).join(" ").trimEnd());
+    const widths = [0, 1, 2, 3].map((i) => Math.max(...rows.map((r) => r.cells[i].length)) + 1);
+    for (const r of rows) {
+      out.push(r.cells.map((c, i) => (i < 4 ? pad(c, widths[i]) : c)).join(" ").trimEnd());
+      for (const line of r.lines ?? []) out.push(`${" ".repeat(widths[0] + 1)}│ ${line.text}  (${fmtPx(line.width)}px)`);
+    }
     for (const i of l.issues) out.push(issueLine(i));
     out.push("");
   }
@@ -87,4 +93,45 @@ export function formatWhatif(r: WhatIf, meta: { ms: number }): string {
     out.push("");
   }
   return out.join("\n").trimEnd() + "\n";
+}
+
+export function formatExplain(e: Explanation): string {
+  const out = [
+    `#${e.id} <${e.tag}> at ${e.width}px${e.active.length ? ` (${e.active.join(", ")} active)` : ""}`,
+    `  box ${fmtPx(e.box.x)},${fmtPx(e.box.y)} ${fmtPx(e.box.w)}×${fmtPx(e.box.h)} · style ${e.sourcePath}`,
+    "",
+  ];
+  const w = Math.max(...e.props.map((p) => p.prop.length)) + 2;
+  for (const p of e.props) {
+    out.push(`  ${pad(p.prop, w)}${p.value}`);
+    for (const s of [...p.chain].reverse()) out.push(`  ${" ".repeat(w)}  ${s.kind === "source" ? "set at" : "  from"} ${s.label}`);
+    for (const o of p.overrides)
+      out.push(`  ${" ".repeat(w)}  ${o.active ? "●" : "○"} when.${o.breakpoint} (${o.query}): ${o.value}  ${o.path}`);
+  }
+  if (e.lines) {
+    out.push("", `  ${e.lines.length} line${e.lines.length > 1 ? "s" : ""}:`);
+    for (const l of e.lines) out.push(`    │ ${l.text}  (${fmtPx(l.width)}px)`);
+  }
+  for (const a of e.assumptions) out.push(`  assumption: ${a}`);
+  for (const i of e.issues) out.push(issueLine(i));
+  return out.join("\n") + "\n";
+}
+
+export function formatCheck(findings: Finding[], widths: number[]): string {
+  if (!findings.length) return `✓ no findings at ${widths.join(", ")}px\n`;
+  const out: string[] = [];
+  for (const w of widths) {
+    const fs = findings.filter((f) => f.width === w);
+    if (!fs.length) continue;
+    out.push(`${w}px`);
+    for (const f of fs) {
+      const icon = f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠";
+      out.push(`  ${icon} [${f.check}] ${f.message}${f.path ? `\n      edit: ${f.path}` : ""}`);
+    }
+    out.push("");
+  }
+  const errors = findings.filter((f) => f.severity === "error").length;
+  const warnings = findings.length - errors;
+  out.push(`${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}`);
+  return out.join("\n") + "\n";
 }

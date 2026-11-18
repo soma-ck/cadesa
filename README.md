@@ -28,9 +28,9 @@ One proposed edit, every affected box, the YAML path that explains each value, a
 
 | 390px | 1280px |
 | --- | --- |
-| <img src="docs/settings-390.png" width="260" alt="Settings panel at 390px: stacked full-width buttons"> | <img src="docs/settings-1280.png" width="520" alt="Settings panel at 1280px: buttons side by side"> |
+| <img src="docs/settings-long-390.png" width="260" alt="Settings panel with long copy at 390px: wrapped text, stacked full-width buttons"> | <img src="docs/settings-long-1280.png" width="520" alt="Settings panel with long copy at 1280px: buttons side by side"> |
 
-<sub>Screenshots are from the Chromium conformance run, loading the exact CSS bytes `cascadio build` wrote.</sub>
+<sub>Screenshots are from the Chromium conformance run, loading the exact CSS bytes `cascadio build` wrote. The engine predicted every line break shown here, without a browser.</sub>
 
 ## Why
 
@@ -51,6 +51,47 @@ npm run cascadio -- whatif fixtures/settings.html --source settings.cascade.yaml
 ```
 
 Add `--json` to any command for machine-readable output.
+
+### Ask why a value is what it is
+
+```console
+$ cascadio explain fixtures/settings.html --source settings.cascade.yaml --id panel --widths 1280
+#panel <section> at 1280px
+  box 320,0 640×208.8 · style styles.settings-panel
+
+  padding     32px
+                set at styles.settings-panel.padding
+                  from space.panel = 2rem
+                ○ when.narrow (max-width: 36rem (576px)): compact (16px)  styles.settings-panel.when.narrow.padding
+  ...
+```
+
+`○` marks an override that isn't active at this width but would take over below 576px.
+
+### See where text wraps
+
+```console
+$ cascadio render fixtures/settings-long.html --source settings.cascade.yaml --widths 390 --lines
+    #description  p        16,97.6   358×120    text body-muted · 5 lines
+                  │ We’ll email you when someone joins, leaves, or  (354.87px)
+                  │ changes billing details — plus a weekly  (295.56px)
+                  │ summary of everything else that happened  (324.4px)
+                  │ across your organization’s projects,  (267.78px)
+                  │ integrations, and long-running deployments.  (335.12px)
+```
+
+### Check it
+
+With `muted` lightened to `#aab0bb`:
+
+```console
+$ cascadio check fixtures/settings.html --source settings.cascade.yaml --widths 1280
+1280px
+  ✖ [contrast] #description text #aab0bb on #ffffff is 2.18:1; WCAG AA needs 4.5:1 (background from styles.settings-panel.background)
+      edit: text.body-muted.color
+```
+
+`check` covers overflow (horizontal, unbreakable words, and text taller than a fixed height), tap targets (WCAG 2.5.8 and 2.5.5), text contrast against the nearest Cascadio background, and line length. When the source can't decide a check, for example because the page background sits outside Cascadio, it says *inconclusive* rather than guessing.
 
 ## The source
 
@@ -99,10 +140,10 @@ Invalid source never produces CSS. The same input always produces byte-identical
 | `layout.pattern: stack` | | `display:flex; flex-direction:column; align-items:stretch` |
 | `layout.pattern: cluster` | | `display:flex; flex-wrap:wrap; align-items:center` |
 | `layout.gap` | space token | `gap` |
-| `padding` | space token | `padding` |
+| `padding` | space token, or `{ block, inline }` | `padding` (a missing axis is 0) |
 | `background`, `border` | color token | `background`, `border: 1px solid` |
 | `radius` | radius token | `border-radius` |
-| `width` | size token, or `fill` | fixed `width; flex:none`, or stretch in a stack |
+| `width` | size token, or `fill` | fixed `width; flex:none`, or stretch in a stack. Unset: stretch in a stack, sized to its text in a cluster |
 | `height` | size token | `height` |
 | `maxWidth` (root only) | size token | `max-width; margin-inline:auto` |
 | `text` | text role | font family, size, weight, line-height, color |
@@ -115,28 +156,32 @@ Class contract: `.ca-<component>` on the root and `.ca-<component>__<slot>` on s
 
 There are two separate claims:
 
-1. **The engine is the spec.** Cascadio's box tree is defined by its reference engine ([`src/engine/layout.ts`](src/engine/layout.ts)). It is deterministic and depends only on source, fixture and width.
-2. **Chromium agrees, verified rather than assumed.** `npm run conformance` builds the CSS, serves the fixture, checks that the page loaded those exact bytes, and compares every `data-fixture` box against the engine:
+1. **The engine is the spec.** Cascadio's box tree is defined by its reference engine ([`src/engine/`](src/engine/)). It is deterministic and depends only on source, fixture and width.
+2. **Chromium agrees, verified rather than assumed.** `npm run conformance` builds the CSS, serves each fixture, checks that the page loaded those exact bytes, and compares every `data-fixture` box against the engine, including wrapped line counts:
 
 ```
-390px (narrow active)
-  ✓ #panel        0,0 390×232.8              0,0 390×232.8              0.003
-  ✓ #title        16,16 358×28.8             16,16 358×28.8             0.003  (text: 1 line assumed)
-  ✓ #description  16,68.8 358×24             16,68.8 358×24             0.003  (text: 1 line assumed)
-  ✓ #actions      16,116.8 358×100           16,116.8 358×100           0.003
-  ✓ #save         16,116.8 358×44            16,116.8 358×44            0.003
-  ✓ #cancel       16,172.8 358×44            16,172.8 358×44            0.003
+── fixtures/settings-long.html
+320px (narrow active)
+  ✓ #panel        0,0 320×410.4              0,0 320×410.39             0.009
+  ✓ #title        16,16 288×86.4             16,16 288×86.39            0.009  3 lines / chromium 3
+  ✓ #description  16,126.4 288×144           16,126.39 288×144          0.009  6 lines / chromium 6
+  ...
 1280px
-  ✓ … all 6 boxes, max Δ 0.003px
+  ✓ #save         352,209.6 253.19×44        352,209.59 253.2×44        0.010
+  ✓ #cancel       617.19,209.6 163.47×44     617.2,209.59 163.47×44     0.010
 ✓ stylesheet: the fixture loaded dist/settings.css unchanged
-✓ engine and Chromium agree on every box
+✓ engine and Chromium agree on all 48 boxes
 ```
 
-(The 0.003px is Chromium's 1/64px layout rounding.)
+`npm run conformance:sweep` runs the long-copy fixture at **every 3px from 260 to 1000px (247 widths)**, so some widths land right on a line-break boundary. All 1,482 boxes agree within 0.5px, and every line count matches.
 
-**Current limits (Stage A):** the engine does not measure text yet. A text box is assumed to be one line tall (`size × lineHeight`), and every report flags this. A box in a `cluster` needs a token width. Wrapping text and content-sized boxes arrive with Stage B: a bundled font and line-count conformance.
+### How text is measured without a browser
 
-The conformance run uses a system Chrome or Chromium when one is found (or `$CASCADIO_CHROME`), otherwise Playwright's bundled browser. A browser is never needed to build, render or `whatif`.
+Cascadio bundles [Inter](https://rsms.me/inter/) (SIL OFL 1.1) and a 136 KB metrics table: glyph advances and 13k kerning pairs, sampled at 9 weights and interpolated. `npm run metrics` regenerates the table, once, from Chromium's own text measurement. At runtime the engine reads only the JSON, with no font parser and no browser. Line breaking follows CSS `white-space: normal`: breaks after spaces, after hyphens between letters, and around dashes. Each component's reset pins the inherited text properties that could change line breaks (letter-spacing, word-spacing, text-transform, kerning and so on), so a host page can't change them behind the engine's back.
+
+**Current limits:** measured text must use Inter and the Latin character set the table covers. Any other font, or a character outside the table, falls back to a one-line assumption, and every report flags that box. In a `cluster`, a box without a width is sized to its text (max-content, shrinking to min-content), the same way flexbox does it. No hyphenation, no `text-wrap: balance`, and no bidirectional text yet.
+
+The conformance run uses a system Chrome or Chromium when one is found (or `$CASCADIO_CHROME`), otherwise Playwright's bundled browser. A browser is never needed to build, render, explain, check or `whatif`.
 
 ## Using the CSS in your app
 
@@ -164,7 +209,7 @@ React, Svelte, server templates and static HTML work the same way, because Casca
 
 ## Roadmap
 
-- **Text:** bundled font metrics, line breaking, and line-count conformance; `explain` and `check` (overflow, tap targets, contrast).
+- **Bring your own font:** `cascadio metrics <font.woff2>` to measure any font the way Inter is measured.
 - **MCP server:** `render`, `whatif` and `build` as agent tools.
 - **`lift`:** convert existing CSS into Cascadio. This starts with a round-trip test on Cascadio's own output, then moves to hand-written CSS, where uncertainty is reported per box (which boxes an unliftable rule could move) rather than as a coverage score.
 - **Benchmark:** agents fixing a mobile layout bug with Cascadio vs. plain CSS, on the same fixture with the same edit budget. It measures attempts to fix and desktop regressions.
@@ -174,11 +219,12 @@ React, Svelte, server templates and static HTML work the same way, because Casca
 ```sh
 npm test             # validation, determinism, golden CSS, engine, whatif
 npm run typecheck
-npm run conformance  # optional: engine vs. Chromium
+npm run conformance        # optional: engine vs. Chromium, 2 fixtures × 4 widths
+npm run conformance:sweep  # optional: 247 widths, line-break boundaries
 ```
 
 ## License
 
-Cascadio's own source code is [MIT](LICENSE).
+Cascadio's own source code is [MIT](LICENSE). The bundled Inter font is under the [SIL Open Font License 1.1](fonts/OFL.txt).
 
 **The CSS you generate is yours.** Running the compiler does not place your `.cascade.yaml` sources or the CSS it emits under the MIT license or any other Cascadio license. License your output however you like, including proprietary.

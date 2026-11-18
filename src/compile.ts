@@ -18,7 +18,14 @@ function decls(model: Model, p: Props): string[] {
       `gap: ${p.layout.gap ? v(p.layout.gap) : "0"}`,
     );
   }
-  if (p.padding) out.push(`padding: ${v(p.padding)}`);
+  if (p.padding) {
+    const { block, inline } = p.padding;
+    out.push(
+      block && inline && block.name === inline.name
+        ? `padding: ${v(block)}`
+        : `padding: ${block ? v(block) : "0"} ${inline ? v(inline) : "0"}`,
+    );
+  }
   if (p.background) out.push(`background: ${v(p.background)}`);
   if (p.border) out.push(`border: 1px solid ${v(p.border)}`);
   if (p.radius) out.push(`border-radius: ${v(p.radius)}`);
@@ -52,7 +59,8 @@ function usedTokens(model: Model, c: Component): string[] {
   const visit = (p: Props) => {
     const refs: (Ref | undefined)[] = [
       p.layout?.gap,
-      p.padding,
+      p.padding?.block,
+      p.padding?.inline,
       p.background,
       p.border,
       p.radius,
@@ -95,6 +103,15 @@ export function compile(model: Model): string {
         "font: inherit",
         "color: inherit",
         "background: transparent",
+        "font-kerning: normal",
+        "letter-spacing: normal",
+        "word-spacing: normal",
+        "text-indent: 0",
+        "text-transform: none",
+        "white-space: normal",
+        "overflow-wrap: normal",
+        "word-break: normal",
+        "hyphens: manual",
       ]),
     );
     const vars = usedTokens(model, c).map((k) => {

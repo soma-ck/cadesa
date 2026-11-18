@@ -8,7 +8,9 @@ import { CascadioError, formatDiagnostic } from "./diagnostics.js";
 import { parseFixture } from "./fixture.js";
 import { loadSourceFile } from "./load.js";
 import { modelOf, parseSet, render, whatif } from "./project.js";
-import { formatRender, formatWhatif } from "./report.js";
+import { check } from "./check.js";
+import { explain } from "./explain.js";
+import { formatCheck, formatExplain, formatRender, formatWhatif } from "./report.js";
 
 const HELP = `cascadio ${VERSION}: predict what a style edit will do before you make it
 
@@ -16,9 +18,12 @@ Usage:
   cascadio build  <source.cascade.yaml> --out <file.css>
   cascadio render <fixture.html> --source <source.cascade.yaml> [--widths 390,1280]
   cascadio whatif <fixture.html> --source <source.cascade.yaml> [--widths 390,1280] --set <path=value> [--set ...]
+  cascadio explain <fixture.html> --source <source.cascade.yaml> --id <fixture-id> [--widths 390]
+  cascadio check  <fixture.html> --source <source.cascade.yaml> [--widths 390,1280]
 
 Options:
   --json     machine-readable output (for agents)
+  --lines    render: print each wrapped line with its width
   -h, --help show this help
 `;
 
@@ -32,6 +37,8 @@ function main(argv: string[]) {
       widths: { type: "string", default: "390,1280" },
       set: { type: "string", multiple: true },
       json: { type: "boolean", default: false },
+      lines: { type: "boolean", default: false },
+      id: { type: "string" },
       help: { type: "boolean", short: "h", default: false },
     },
   });
@@ -70,7 +77,11 @@ function main(argv: string[]) {
       const fixtureFile = need(input, "<fixture.html>");
       const layouts = render(modelOf(loadSourceFile(sourceFile)), parseFixture(fixtureFile), widths());
       const ms = Math.round(performance.now() - t0);
-      print(formatRender(layouts, { source: sourceFile, fixture: fixtureFile, ms }), { source: sourceFile, fixture: fixtureFile, layouts });
+      print(formatRender(layouts, { source: sourceFile, fixture: fixtureFile, ms, lines: values.lines }), {
+        source: sourceFile,
+        fixture: fixtureFile,
+        layouts,
+      });
       if (layouts.some((l) => l.issues.some((i) => i.severity === "error"))) process.exitCode = 1;
       return;
     }
@@ -85,6 +96,28 @@ function main(argv: string[]) {
         changes,
       );
       print(formatWhatif(result, { ms: Math.round(performance.now() - t0) }), result);
+      return;
+    }
+    case "explain": {
+      const id = need(values.id, "--id <fixture-id>").replace(/^#/, "");
+      const model = modelOf(loadSourceFile(need(values.source, "--source <source.cascade.yaml>")));
+      const fixture = parseFixture(need(input, "<fixture.html>"));
+      const results = render(model, fixture, widths()).map((l) => explain(model, l, id));
+      if (results.some((r) => !r)) throw new UsageError(`no element with data-fixture="${id}" in ${input}`);
+      print(results.map((r) => formatExplain(r!)).join("\n"), results);
+      return;
+    }
+    case "check": {
+      const ws = widths();
+      const findings = check(
+        render(
+          modelOf(loadSourceFile(need(values.source, "--source <source.cascade.yaml>"))),
+          parseFixture(need(input, "<fixture.html>")),
+          ws,
+        ),
+      );
+      print(formatCheck(findings, ws), { findings });
+      if (findings.some((f) => f.severity === "error")) process.exitCode = 1;
       return;
     }
     default:

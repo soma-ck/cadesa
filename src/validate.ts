@@ -227,9 +227,21 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           out.layout = { path: p.join("."), pattern: l.pattern, gap };
           break;
         }
-        case "padding":
-          out.padding = ref(v, p, "space");
+        case "padding": {
+          if (isObj(v)) {
+            keys(v, p, ["block", "inline"]);
+            const block = v.block === undefined ? undefined : ref(v.block, [...p, "block"], "space");
+            const inline = v.inline === undefined ? undefined : ref(v.inline, [...p, "inline"], "space");
+            if (v.block === undefined && v.inline === undefined)
+              err(p, "empty padding", { expected: "a space token, or { block, inline } space tokens" });
+            else if ((v.block === undefined || block) && (v.inline === undefined || inline))
+              out.padding = { path: p.join("."), block, inline };
+          } else {
+            const r = ref(v, p, "space");
+            if (r) out.padding = { path: p.join("."), block: r, inline: r };
+          }
           break;
+        }
         case "background":
           out.background = ref(v, p, "color");
           break;

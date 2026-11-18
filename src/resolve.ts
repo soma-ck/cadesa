@@ -35,7 +35,7 @@ export interface ResolvedText {
 export interface ResolvedProps {
   pattern?: Resolved<Pattern>;
   gap?: Resolved<number>;
-  padding?: Resolved<number>;
+  padding?: Resolved<{ block: number; inline: number }>;
   background?: Resolved<string>;
   border?: Resolved<string>;
   radius?: Resolved<number>;
@@ -96,7 +96,19 @@ export function resolveElement(model: Model, component: Component, slot: string 
         out.gap = l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
         break;
       }
-      case "padding":
+      case "padding": {
+        const { block, inline, path } = p.padding!;
+        const b = block ? lengthOf(block) : undefined;
+        const i = inline ? lengthOf(inline) : undefined;
+        const value = { block: b?.value ?? 0, inline: i?.value ?? 0 };
+        const tokens = [b, i].filter((x) => x).map((x) => x!.steps[0]);
+        out.padding = {
+          value,
+          display: value.block === value.inline ? `${fmtPx(value.block)}px` : `${fmtPx(value.block)}px ${fmtPx(value.inline)}px`,
+          steps: [...tokens.filter((t, k) => tokens.findIndex((u) => u.path === t.path) === k), ...pre, src(path)],
+        };
+        break;
+      }
       case "radius":
       case "maxWidth":
       case "height":
