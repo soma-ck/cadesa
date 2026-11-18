@@ -8,7 +8,7 @@
 
 **Know what your layout does at every width before you open a browser.**
 
-Point Cadesa at your coding agent (MCP) or at your existing CSS, and it tells you what breaks at 320px, what an edit will move three sections away, and where the design is muddled. It answers in milliseconds, as text, from a layout engine that runs without a browser and matches Chromium box for box.
+Point Cadesa at your coding agent (MCP), your existing CSS or your Tailwind page, and it tells you what breaks at 320px, what an edit will move three sections away, and where the design is muddled. It answers in milliseconds, as text, from a layout engine that runs without a browser and matches Chromium box for box.
 
 <img src="https://raw.githubusercontent.com/soma-ck/cadesa/master/docs/demo.svg" alt="Animated terminal: cadesa whatif shows that changing the settings panel's narrow padding moves six boxes at 390px (padding 16 → 32px, traced to its YAML path) and leaves 1280px unchanged; then cadesa check finds one word overflowing a trip card by 3.14px, only at 1100px.">
 
@@ -76,6 +76,20 @@ git clone https://github.com/soma-ck/cadesa && cd cadesa && npm install
 npx cadesa whatif fixtures/settings.html --source settings.cadesa.yaml \
   --set styles.settings-panel.when.narrow.padding=panel
 ```
+
+**Using Tailwind?** Give it the page and the CSS Tailwind compiled for it:
+
+```console
+$ npx -y cadesa check page.html --tailwind compiled.css     # every 20px from 320 to 1440px
+
+$ cadesa check fixtures/tailwind/blog.html --tailwind fixtures/tailwind/compiled.css --widths 1280
+1280px
+  ⚠ [tap-target] #a is 87.1×32px; 44×44px is recommended for touch (WCAG 2.5.5) [fixtures/tailwind/blog.html:20]
+      edit: styles.div.slots.a
+  ...
+```
+
+Cadesa reads the utilities from the compiled stylesheet (your theme, arbitrary values and the real cascade order), turns `sm:`/`md:`/`lg:` into its own breakpoints, and predicts every box exactly, or marks it `≈` and names the utility it can't model (`justify-between`, `flex-1`, margins, one-sided borders, `dark:`). `render`, `whatif`, `explain` and `critique` take `--tailwind` too, and `lift --tailwind page.html --css compiled.css` writes the equivalent Cadesa source. On three Tailwind pages (a landing page, a settings card, a blog index), every one of the **16,456 boxes marked exact matched Chromium** at every 10px from 320 to 1440px.
 
 <details>
 <summary>Install notes: adding it to a project, running the latest commit</summary>
@@ -261,6 +275,7 @@ There are two separate claims:
 | `npm run conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
 | `npm run conformance:landing` | grid, layered text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `npm run conformance:field2` | every divergence found in real use, kept fixed, plus long words breaking (`wrap: anywhere`) | 2,576 of 2,576 over 161 widths |
+| `npm run conformance:tailwind` | three Tailwind pages read through `--tailwind` | 16,456 boxes marked exact, all 16,456 match, over 113 widths; 2,794 of the 3,000 boxes marked `≈` really differ |
 | `npm run conformance:lift` | lifted hand-written CSS vs. the original | 15 of 15 boxes marked exact matched; 17 of 17 marked uncertain really differed |
 
 "Agree" means x, y, width and height all within 0.5px, so a text that wrapped to a different number of lines would fail by a whole line height. The differences in the sample below are about 0.01px. Agreement is with the fixtures above. In real use, Cadesa has said "fine" where Chromium disagreed seven times so far: four layout divergences and three check gaps ([above](#what-it-found-on-a-real-site)). Each one is fixed and became a regression test.
@@ -431,7 +446,7 @@ React, Svelte, server templates and static HTML work the same way, because Cades
 
 ## Roadmap
 
-- **Tailwind:** read utility classes (`flex gap-4 p-6 md:grid-cols-3`) straight from a page's HTML, so Tailwind apps get `check`, `whatif` and `critique` without writing any Cadesa source.
+- **More of Tailwind:** `justify-*`, `flex-1`, margins and `dark:`, which are reported as `≈` today.
 - **More of CSS:** `min-width` and range breakpoints, a `row` pattern and shared flexible widths, so lift leaves less behind.
 - **A differential fuzzer** that generates random pages and compares the engine against Chromium, to find divergences before users do.
 
