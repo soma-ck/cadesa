@@ -449,5 +449,14 @@ export function layoutText(
       widestPiece = u.text;
     }
   }
-  return { lines, maxContent: w(text), minContent, widestPiece, ...(approximate && { approximate }) };
+  // Max-content: like a line, each inline item before the last rounded up to a layout unit (with
+  // its kerning to the next character, which applies across the element's edge).
+  const cuts = [0, ...edges, all.length];
+  let maxContent = 0;
+  for (let k = 0; k + 1 < cuts.length; k++) {
+    const seg = all.slice(cuts[k], cuts[k + 1]).join("");
+    const next = (all[cuts[k + 1]] ?? "").replaceAll(SHY, "");
+    maxContent += k + 2 < cuts.length ? ceil64(full(seg + next) - full(next)) : w(seg);
+  }
+  return { lines, maxContent, minContent, widestPiece, ...(approximate && { approximate }) };
 }

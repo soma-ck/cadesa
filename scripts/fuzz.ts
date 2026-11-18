@@ -373,6 +373,7 @@ function genOverrides(g: Gen) {
       // cluster leaves children without widths, which the engine flags).
       if (o.layout && style.layout && r.chance(0.6)) o.layout = { ...o.layout, pattern: style.layout.pattern, ...(style.layout.pattern === "grid" ? { min: o.layout.min ?? style.layout.min } : {}) };
       if (o.layout && o.layout.pattern !== "grid") delete o.layout.min;
+      if (o.layout?.pattern === "stack") delete o.layout.align;
       const slots: Obj = {};
       for (const s of Object.keys(style.slots)) if (r.chance(0.35)) slots[s] = genProps(g, slotKind(style, s), "stack", true);
       if (Object.keys(slots).length) o.slots = slots;

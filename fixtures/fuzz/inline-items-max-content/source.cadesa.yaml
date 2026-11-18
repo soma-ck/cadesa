@@ -1,0 +1,20 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: cluster
+    slots:
+      s7:
+        text: t1
+tokens:
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 1.125rem
+    weight: 400
+    lineHeight: 2.173
+    color: accent
