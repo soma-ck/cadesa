@@ -321,12 +321,7 @@ export interface TailwindLift {
   responsive: string[];
 }
 
-export interface TailwindOptions {
-  /** Pre-render widths used to fit `grid-cols-<n>` emulations (default: a spread across each range). */
-  sampleStep?: number;
-}
-
-export function liftTailwind(page: string, html: string, cssFile: string, cssText: string, _opts: TailwindOptions = {}): TailwindLift {
+export function liftTailwind(page: string, html: string, cssFile: string, cssText: string): TailwindLift {
   const css = parseTailwindCss(cssFile, cssText);
   return new TailwindLifter(page, html, css).run();
 }
@@ -1067,7 +1062,6 @@ class TailwindLifter {
   // ---- assembly
 
   liftOnce(gridMin: Map<string, Map<number, number>>): LiftResult {
-    const stateKeys = this.states.map((s) => s.key);
     const elements: LiftedElement[] = [];
     const seen = new Set<string>();
     const unlifted: Unlifted[] = [];
@@ -1118,7 +1112,6 @@ class TailwindLifter {
     const names = new Map(this.states.filter((s) => s.name).map((s) => [s.key, s.name!]));
     const resets = new Map<string, Set<string>>();
     if (this.css.preflight) for (const r of this.roots) if (r.block) resets.set(r.block, new Set(["margin", "padding", "border", "box-sizing", "border-width"]));
-    void stateKeys;
     return liftElements({
       file: this.page,
       vars,
@@ -1207,9 +1200,10 @@ class TailwindLifter {
       const model = modelOf(loadSource(`${this.page} (tailwind)`, lifted.yaml));
       this.states.forEach((st, si) => {
         if (!grids.some((g) => g.gridCols[si])) return;
-        const hi = Math.min(st.hi - 0.01, Math.max(st.lo, 1920) + 640);
-        const samples = new Set<number>([Math.max(st.lo, 1), hi]);
-        for (let w = Math.ceil(st.lo); w < hi; w += 8) samples.add(Math.max(w, 1));
+        // Container widths grow with the viewport, so the narrowest is at the range's start; the
+        // other samples are a cheap guard. Every rendered width is re-checked by dynamic().
+        const hi = Math.min(st.hi - 0.01, Math.max(st.lo, 1920));
+        const samples = new Set<number>([Math.max(st.lo, 1), (Math.max(st.lo, 1) + hi) / 2, hi]);
         const layouts = render(model, perState[si], [...samples]);
         for (const g of grids) {
           const spec = g.gridCols[si];
