@@ -71,3 +71,20 @@ describe("field report #2 regressions", () => {
     expect(c.find((x) => x.check === "wrap")!.message).toMatch(/^#stats wraps into 2 rows even at 1280px/);
   });
 });
+
+describe("benchmark gap: long words that must break", () => {
+  it("wrap: anywhere breaks a word only when it can't fit on a line of its own", () => {
+    const contact = box(phone, "contact");
+    expect(contact.lines!.map((l) => l.text)).toEqual(["bookings@kvitfjor", "dpaddlingselskap", "et.example"]);
+    expect(phone.issues.some((i) => i.id === "contact")).toBe(false);
+    const mail = box(phone, "mail");
+    expect(mail.lines![0].text).toBe("Write to"); // the whole word moves down before anything breaks
+  });
+
+  it("compiles to overflow-wrap: anywhere and lifts back", async () => {
+    const { lift } = await import("../src/lift/lift.js");
+    expect(compile(model)).toContain("overflow-wrap: anywhere;");
+    const r = lift("t.css", ".c__a { font: 500 16px/24px Inter; color: #111; overflow-wrap: anywhere }");
+    expect((r.data.text as Record<string, { wrap?: string }>).a.wrap).toBe("anywhere");
+  });
+});

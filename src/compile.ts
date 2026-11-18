@@ -87,6 +87,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     );
     if (role.letterSpacing !== undefined) out.push(`letter-spacing: ${role.letterSpacing}em`);
     if (role.transform) out.push(`text-transform: ${role.transform}`);
+    if (role.wrap) out.push(`overflow-wrap: ${role.wrap}`);
     if (role.decoration) out.push(`text-decoration: ${role.decoration}`);
   }
   if (p.textAlign) out.push(`text-align: ${p.textAlign.value}`);

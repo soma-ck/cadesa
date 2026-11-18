@@ -260,7 +260,7 @@ There are two separate claims:
 | `npm run conformance:sweep` | long copy at every 3px from 260 to 1000px, so widths land on line-break boundaries | 1,482 of 1,482 over 247 widths |
 | `npm run conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
 | `npm run conformance:landing` | grid, layered text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
-| `npm run conformance:field2` | every divergence found in real use, kept fixed | 1,428 of 1,428 over 102 widths |
+| `npm run conformance:field2` | every divergence found in real use, kept fixed, plus long words breaking (`wrap: anywhere`) | 2,576 of 2,576 over 161 widths |
 | `npm run conformance:lift` | lifted hand-written CSS vs. the original | 15 of 15 boxes marked exact matched; 17 of 17 marked uncertain really differed |
 
 "Agree" means x, y, width and height all within 0.5px, so a text that wrapped to a different number of lines would fail by a whole line height. The differences in the sample below are about 0.01px. Agreement is with the fixtures above. In real use, Cadesa has said "fine" where Chromium disagreed seven times so far: four layout divergences and three check gaps ([above](#what-it-found-on-a-real-site)). Each one is fixed and became a regression test.
@@ -389,7 +389,7 @@ Every read command and MCP tool also accepts `--css <file.css>` in place of `--s
 | `measure` | size token | `max-width`, left-aligned: a comfortable line length |
 | `aspect` | `"16:9"` | `aspect-ratio`: the height follows the width (images, media) |
 | `fit` | `cover`, `contain` | `object-fit`. Paint only |
-| `text` | text role | font family, size, weight, line-height, color; optional `letterSpacing` (em), `transform: uppercase`, `decoration: none \| underline`. Spacing and case are measured exactly |
+| `text` | text role | font family, size, weight, line-height, color; optional `letterSpacing` (em), `transform: uppercase`, `decoration: none \| underline`, `wrap: anywhere` (a word too long for a line breaks between letters, e.g. an e-mail address). All measured exactly |
 | `textAlign` | `start`, `center`, `end` | `text-align`. A text box with a fixed `height` also centers its lines vertically (`align-content: center`) |
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)` after base rules. Each property listed replaces its base value; unlisted properties keep their base value. `layout` and `padding` are replaced as a whole. The narrowest active breakpoint wins |
 | `intent` | sentence | a CSS comment; metadata for inspection |

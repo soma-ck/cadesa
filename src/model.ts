@@ -32,6 +32,8 @@ export interface TextRole {
   /** In em; measured exactly (added after every character, as browsers do). */
   letterSpacing?: number;
   transform?: "uppercase" | "none";
+  /** "anywhere": a word too long for a line breaks between characters (overflow-wrap: anywhere). */
+  wrap?: "anywhere" | "normal";
 }
 
 export interface Breakpoint {

@@ -33,6 +33,7 @@ export interface ResolvedText {
   /** px */
   letterSpacing: number;
   uppercase: boolean;
+  wrapAnywhere: boolean;
 }
 
 export interface ResolvedProps {
@@ -181,6 +182,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
             color: color.raw,
             letterSpacing: (role.letterSpacing ?? 0) * role.size.px,
             uppercase: role.transform === "uppercase",
+            wrapAnywhere: role.wrap === "anywhere",
           },
           display: `${role.name} (${fmtPx(role.size.px)}px/${role.lineHeight}, ${role.weight})`,
           steps: [{ kind: "text", label: `text.${role.name}`, path: role.path }, ...pre, src(r.path)],

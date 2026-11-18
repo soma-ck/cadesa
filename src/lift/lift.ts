@@ -655,6 +655,10 @@ export function liftParsed(css: ParsedCss): LiftResult {
           else if (px) letterSpacing = Math.round((parseFloat(px[1]) / sizePx) * 1e4) / 1e4;
           else note(e, s, lsD, "letter-spacing must be in em or px", "text");
         }
+        const ow = take("overflow-wrap") ?? take("word-wrap");
+        const owv = ow?.value.trim();
+        if (ow && owv !== "anywhere" && owv !== "normal")
+          note(e, s, ow, `overflow-wrap: ${owv} is not modelled (anywhere is: it also lets min-content shrink)`, "text");
         const tt = take("text-transform");
         const transform = tt?.value.trim();
         if (tt && transform !== "uppercase" && transform !== "none") note(e, s, tt, `text-transform: ${transform} is not measured`, "text");
@@ -670,6 +674,7 @@ export function liftParsed(css: ParsedCss): LiftResult {
           ...((decoration === "none" || decoration === "underline") && { decoration }),
           ...(letterSpacing !== undefined && { letterSpacing }),
           ...(transform === "uppercase" && { transform }),
+          ...(owv === "anywhere" && { wrap: "anywhere" }),
         };
         const key = JSON.stringify(spec);
         let role = roles.get(key);

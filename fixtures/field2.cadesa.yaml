@@ -10,6 +10,8 @@ text:
   display: { font: ui, size: 2.5rem, weight: 760, lineHeight: 1.05, color: white }
   stat: { font: ui, size: 1.75rem, weight: 700, lineHeight: 1.2, color: white }
   body: { font: ui, size: 1rem, weight: 400, lineHeight: 1.5, color: ink }
+  email: { font: ui, size: 1rem, weight: 500, lineHeight: 1.5, color: white, wrap: anywhere }
+  email-dark: { font: ui, size: 1rem, weight: 500, lineHeight: 1.5, color: ink, wrap: anywhere }
 page:
   background: page
 styles:
@@ -27,11 +29,13 @@ styles:
     backdrop: band
     slots:
       stat: { text: stat, width: stat }
+      mail: { text: email }
   faq:
     layout: { pattern: stack, gap: m }
     padding: l
     maxWidth: content
     slots:
       answer: { text: body }
+      contact: { text: email-dark, width: stat }
       list: { layout: { pattern: grid, min: card-min, gap: m } }
       cover: { aspect: "4:3", fit: cover }

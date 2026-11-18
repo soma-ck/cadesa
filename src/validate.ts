@@ -29,7 +29,7 @@ const IDENT_HELP = "a lowercase kebab-case name, e.g. section-title";
 const TOP_KEYS = ["version", "prefix", "tokens", "text", "breakpoints", "page", "styles"];
 const PAINT = /^(?:(?:repeating-)?(?:linear|radial|conic)-gradient|url|image-set)\(/;
 const PREFIX = /^(?:[a-z][a-z0-9]*-)?$/;
-const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration", "letterSpacing", "transform"];
+const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration", "letterSpacing", "transform", "wrap"];
 const ROOT_PROPS = PROP_ORDER as string[];
 const SLOT_PROPS = ROOT_PROPS;
 
@@ -198,6 +198,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         err([...path, "letterSpacing"], "invalid letter spacing", { expected: "a number of em between -0.2 and 1, e.g. 0.08", got: role.letterSpacing });
         ok = false;
       }
+      if (role.wrap !== undefined && role.wrap !== "anywhere" && role.wrap !== "normal") {
+        err([...path, "wrap"], "invalid wrap", { expected: "anywhere (long words may break between letters) or normal", got: role.wrap });
+        ok = false;
+      }
       if (role.transform !== undefined && role.transform !== "uppercase" && role.transform !== "none") {
         err([...path, "transform"], "invalid text transform", { expected: "uppercase or none", got: role.transform });
         ok = false;
@@ -219,6 +223,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         decoration: role.decoration as "none" | "underline" | undefined,
         letterSpacing: role.letterSpacing as number | undefined,
         transform: role.transform as "uppercase" | "none" | undefined,
+        wrap: role.wrap as "anywhere" | "normal" | undefined,
         color,
       });
     }

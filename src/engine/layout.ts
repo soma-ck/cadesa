@@ -87,7 +87,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     return (maxWidth: number) => {
-      const parts = runs.map((r) => layoutText(m!, r, t.sizePx, t.weight, maxWidth, { letterSpacing: t.letterSpacing }));
+      const parts = runs.map((r) => layoutText(m!, r, t.sizePx, t.weight, maxWidth, { letterSpacing: t.letterSpacing, wrapAnywhere: t.wrapAnywhere }));
       const widest = parts.reduce((a, b) => (b.minContent > a.minContent ? b : a));
       return {
         lines: parts.flatMap((p) => p.lines),

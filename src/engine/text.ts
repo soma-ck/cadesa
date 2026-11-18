@@ -168,7 +168,7 @@ export function layoutText(
   sizePx: number,
   weight: number,
   maxWidth: number,
-  opts: { letterSpacing?: number } = {},
+  opts: { letterSpacing?: number; wrapAnywhere?: boolean } = {},
 ): TextLayout {
   // letter-spacing is added after every character, including the last one on a line.
   const ls = opts.letterSpacing ?? 0;
@@ -178,23 +178,36 @@ export function layoutText(
   };
   const ps = pieces(text);
   const lines: Line[] = [];
+  const fits = (s: string) => w(s) <= maxWidth + 1 / 64; // Chromium compares in 1/64px layout units
   let line = "";
-  for (const p of ps) {
-    if (!line) {
-      line = p;
-      continue;
+  /** Start a new line with piece p. With overflow-wrap: anywhere, a piece too wide for a line of
+   * its own is broken between characters; the last fragment stays open for the next pieces. */
+  const start = (p: string) => {
+    if (!opts.wrapAnywhere || fits(p)) return void (line = p);
+    const trailing = p.slice(p.trimEnd().length);
+    let cur = "";
+    for (const ch of p.trimEnd()) {
+      if (cur && !fits(cur + ch)) {
+        lines.push({ text: cur, width: w(cur) });
+        cur = ch;
+      } else cur += ch;
     }
-    // Chromium compares in 1/64px layout units; allow that much slack.
-    if (w(line + p) <= maxWidth + 1 / 64) line += p;
+    line = cur + trailing;
+  };
+  for (const p of ps) {
+    if (!line) start(p);
+    else if (fits(line + p)) line += p;
     else {
       lines.push({ text: line.trimEnd(), width: w(line) });
-      line = p;
+      start(p);
     }
   }
   if (line || !lines.length) lines.push({ text: line.trimEnd(), width: w(line) });
   let widestPiece = "";
   let minContent = 0;
-  for (const p of ps) {
+  // With anywhere, any character is a soft wrap opportunity for min-content.
+  const units = opts.wrapAnywhere ? [...text].filter((c) => c !== " ") : ps;
+  for (const p of units) {
     const pw = w(p);
     if (pw > minContent) {
       minContent = pw;
