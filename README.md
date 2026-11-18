@@ -1,4 +1,4 @@
-<img src="https://raw.githubusercontent.com/soma-ck/cadesa/master/docs/logo.svg" width="56" alt="" align="left">
+<img src="https://raw.githubusercontent.com/soma-ck/cadesa/master/docs/logo.png" width="56" alt="" align="left">
 
 # Cadesa
 
