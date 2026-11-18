@@ -39,8 +39,10 @@ Tailwind pages: pass the page as fixture and the compiled Tailwind CSS as tailwi
 lifted the same way, with generated ids (cadesa_lift with tailwind shows them and the source).
 
 Language: tokens.{space,size,color,radius,font}, text roles {font,size,weight,lineHeight,color}, breakpoints
-(max-width, desktop-first), styles.<component> with layout {pattern: stack|cluster, gap}, padding (token or
-{block, inline}), background, border, radius, maxWidth (root only), width (size token | fill), height, text,
+(max-width, desktop-first), styles.<component> with layout {pattern: stack|cluster|grid|layer|flow, gap}
+(flow = block flow: vertical margins collapse), padding (token or {block, inline}), margin (space token, or
+{block, inline} / {top, right, bottom, left}), background, border, radius, maxWidth (root only),
+width (size token | fill; size tokens may be percentages like "50%" of the parent's width), height, text,
 slots.<slot> (same props), and when.<breakpoint> overrides that replace properties. Every value is a token name.
 HTML uses class="ca-<component>" on the root and "ca-<component>__<slot>" on slots; data-fixture="id" names boxes.`;
 

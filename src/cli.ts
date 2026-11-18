@@ -37,7 +37,9 @@ Usage:
   cadesa mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
 
   render, whatif, explain and check also accept --css <file.css> instead of --source:
-  the CSS is lifted on the fly, and boxes it can't predict exactly are marked ≈.
+  the page and its CSS are lifted on the fly (the whole cascade, element by element: block flow
+  with margins, percentage widths, inherited text), and boxes it can't predict exactly are marked ≈.
+  lift <file.css> --fixture <page.html> lifts the same way and shows the source.
   render, whatif, explain, check and critique also take a Tailwind page as <fixture.html> with
   --tailwind <compiled.css> (the stylesheet Tailwind built for it): utilities are lifted the same way.
 
