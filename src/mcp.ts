@@ -13,6 +13,8 @@ import {
   cssCmd,
   explainCmd,
   InputError,
+  parseWidths,
+  SWEEP,
   liftCmd,
   renderCmd,
   validateCmd,
@@ -51,6 +53,12 @@ const sourceShape = {
     .optional()
     .describe("Optional unsaved YAML to use instead of the file's contents; diagnostics still cite `source`"),
 };
+/** check and critique sweep every 20px from 320 to 1440 by default (about 4ms per width). */
+const sweepWidths = z
+  .array(z.number().positive())
+  .default(parseWidths(SWEEP))
+  .describe("Viewport widths in px (default: every 20px from 320 to 1440, 57 widths)");
+
 const pageShape = {
   ...sourceShape,
   fixture: z.string().describe("Path to the HTML fixture that uses the component classes"),
@@ -131,7 +139,7 @@ export function createServer(): McpServer {
       title: "Check design rules",
       description:
         "Check the layout at each width for overflow (horizontal, unbreakable words, text taller than a fixed height), tap targets (WCAG 2.5.8/2.5.5), text contrast (WCAG AA) and line length. Each finding names the YAML path to edit; undecidable checks are marked inconclusive.",
-      inputSchema: pageShape,
+      inputSchema: { ...pageShape, widths: sweepWidths },
       annotations: readOnly,
     },
     (a) => respond(() => checkCmd(a), a.format),
@@ -143,7 +151,7 @@ export function createServer(): McpServer {
       title: "Critique the design",
       description:
         "Measurable design signals, beyond correctness: font sizes too close to read as levels, headings that don't stand out from their body text, groups whose inner gap isn't smaller than the gap around them, too many left edges at one width, a palette with no accent (or competing accents), and common template tells. Each finding has numbers and the YAML path to edit. Suggestions, not errors.",
-      inputSchema: pageShape,
+      inputSchema: { ...pageShape, widths: sweepWidths },
       annotations: readOnly,
     },
     (a) => respond(() => critiqueCmd(a), a.format),

@@ -142,6 +142,8 @@ One proposed edit, every affected box, the source path that explains each value,
 
 ### check: find what breaks, and at which width
 
+By default `check` and `critique` sweep **every 20px from 320 to 1440px** (57 widths, a fraction of a second), so a problem that exists only between two hand-picked widths still shows up. Pass `--widths 390,1280` for specific widths, or a range like `--widths 320-1440/5`.
+
 ```console
 $ cadesa check examples/pricing/pricing.html --source examples/pricing/pricing.cadesa.yaml \
     --widths 320,390,768,1024,1280,1440

@@ -311,3 +311,15 @@ describe("breakpoint order", () => {
     expect(css.indexOf("@media (max-width: 64rem)")).toBeLessThan(css.indexOf("@media (max-width: 36rem)"));
   });
 });
+
+describe("width specs", () => {
+  it("parses lists and ranges, deduplicated and sorted", async () => {
+    const { parseWidths, SWEEP } = await import("../src/commands.js");
+    expect(parseWidths("390,1280")).toEqual([390, 1280]);
+    expect(parseWidths("1280, 320-360/20,390")).toEqual([320, 340, 360, 390, 1280]);
+    expect(parseWidths("100-130")).toEqual([100, 110, 120, 130]);
+    expect(parseWidths(SWEEP)).toHaveLength(57);
+    expect(() => parseWidths("400-300")).toThrow(/invalid width range/);
+    expect(() => parseWidths("abc")).toThrow(/invalid width/);
+  });
+});

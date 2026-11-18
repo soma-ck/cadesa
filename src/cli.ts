@@ -6,6 +6,8 @@ import {
   critiqueCmd,
   explainCmd,
   InputError,
+  parseWidths,
+  SWEEP,
   liftCmd,
   renderCmd,
   validateCmd,
@@ -36,7 +38,8 @@ Usage:
   the CSS is lifted on the fly, and boxes it can't predict exactly are marked ≈.
 
 Options:
-  --widths   viewport widths in px, comma-separated (default 390,1280)
+  --widths   viewport widths in px: "390,1280", or ranges like "320-1440/20" (every 20px)
+             default: every 20px from 320 to 1440 for check and critique; 390,1280 otherwise
   --json     machine-readable output (for agents)
   --lines    render: print each wrapped line with its width
   -h, --help show this help
@@ -51,7 +54,7 @@ async function main(argv: string[]) {
       source: { type: "string" },
       css: { type: "string" },
       fixture: { type: "string" },
-      widths: { type: "string", default: "390,1280" },
+      widths: { type: "string" },
       set: { type: "string", multiple: true },
       id: { type: "string" },
       family: { type: "string" },
@@ -86,12 +89,9 @@ async function main(argv: string[]) {
     if (!v) throw new InputError(`${cmd} needs ${what}`);
     return v;
   };
-  const widths = () =>
-    values.widths!.split(",").map((s) => {
-      const n = Number(s.trim());
-      if (!Number.isFinite(n) || n <= 0) throw new InputError(`invalid width "${s}"`);
-      return n;
-    });
+  // check and critique sweep every 20px by default; at ~4ms per width that's cheap, and it
+  // catches problems that exist only between two hand-picked widths.
+  const widths = () => parseWidths(values.widths ?? (cmd === "check" || cmd === "critique" ? SWEEP : "390,1280"));
   const page = () => ({
     source: values.css ? undefined : need(values.source, "--source <source.cadesa.yaml> or --css <file.css>"),
     css: values.css,

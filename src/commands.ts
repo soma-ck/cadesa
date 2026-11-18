@@ -23,6 +23,27 @@ export interface Result {
 
 export class InputError extends Error {}
 
+/** Every 20px from 320 to 1440: the default for check and critique, cheap at ~4ms per width. */
+export const SWEEP = "320-1440/20";
+
+/** Parse "390,1280" or ranges "320-1440/20" (step defaults to 10), in any mix. */
+export function parseWidths(spec: string): number[] {
+  const out = new Set<number>();
+  for (const part of spec.split(",").map((p) => p.trim()).filter(Boolean)) {
+    const m = /^(\d+(?:\.\d+)?)\s*-\s*(\d+(?:\.\d+)?)(?:\s*\/\s*(\d+(?:\.\d+)?))?$/.exec(part);
+    if (m) {
+      const [a, b, step] = [Number(m[1]), Number(m[2]), Number(m[3] ?? 10)];
+      if (!(a > 0) || !(b >= a) || !(step > 0) || (b - a) / step > 5000) throw new InputError(`invalid width range "${part}"`);
+      for (let w = a; w <= b + 1e-9; w += step) out.add(Math.round(w * 100) / 100);
+      continue;
+    }
+    const n = Number(part);
+    if (!Number.isFinite(n) || n <= 0) throw new InputError(`invalid width "${part}"`);
+    out.add(n);
+  }
+  return [...out].sort((x, y) => x - y);
+}
+
 const ms = (t0: number) => Math.round(performance.now() - t0);
 
 export interface SourceInput {

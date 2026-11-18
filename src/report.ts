@@ -128,7 +128,7 @@ export function formatExplain(e: Explanation): string {
 }
 
 export function formatCheck(findings: Finding[], widths: number[]): string {
-  if (!findings.length) return `✓ no findings at ${widths.join(", ")}px\n`;
+  if (!findings.length) return `✓ no findings at ${describeWidths(widths)}\n`;
   const out: string[] = [];
   for (const w of widths) {
     const fs = findings.filter((f) => f.width === w);
@@ -176,4 +176,9 @@ export function formatLift(r: LiftResult, meta: { out?: string; impacts?: WidthI
   }
   if (meta.impacts) out.push("", formatImpact(meta.impacts).trimEnd());
   return out.join("\n") + "\n";
+}
+
+/** "390, 1280px", or "58 widths from 320 to 1440px" for a sweep. */
+export function describeWidths(widths: number[]): string {
+  return widths.length > 6 ? `${widths.length} widths from ${widths[0]} to ${widths[widths.length - 1]}px` : `${widths.join(", ")}px`;
 }
