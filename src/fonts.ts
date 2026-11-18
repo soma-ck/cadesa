@@ -319,6 +319,8 @@ export function fontReport(uses: FontUse[], sources: PageFontSources): FontRepor
       if (!r.remeasure && m.info.kind === "variable" && declared.length && declared.every((w) => !w.includes(" ")) && u.weights.some((w) => !declared.includes(String(w))))
         r.remeasure = `the page declares only weights ${declared.join(", ")} (text at ${u.weights.filter((w) => !declared.includes(String(w))).join(", ")} uses the nearest of them), but the table is variable`;
       if (r.remeasure) r.note = `${r.remeasure}: --measure measures what the page loads`;
+      else if (m.info.bundled && !faces.length && !google)
+        r.note = "the page doesn't load this font (no @font-face or Google Fonts link in the files given): the browser uses it only where it is installed, and the bundled metrics fit the Google Fonts files";
       if (m.info.machineSpecific) r.note = m.info.machineSpecific;
       return r;
     }
@@ -383,7 +385,11 @@ export function formatFonts(page: string, report: FontReport[], hint?: string): 
     const boxes = new Set(missing.flatMap((r) => r.boxes)).size;
     if (boxes) out.push("", `${plural(boxes, "text box")} can't be measured: ${boxes === 1 ? "it is" : "they are"} assumed to be one line, and flagged.`);
     if (hint) out.push(hint);
-  } else out.push("", "✓ every font the text uses has metrics");
+  } else {
+    const machine = report.filter((r) => r.metrics?.machineSpecific).length;
+    out.push("", `✓ every font the text uses has metrics${machine ? ` (${machine} measured from this machine's installed fonts: valid on this machine only)` : ""}`);
+    if (hint && report.some((r) => r.remeasure)) out.push(hint);
+  }
   return out.join("\n") + "\n";
 }
 
