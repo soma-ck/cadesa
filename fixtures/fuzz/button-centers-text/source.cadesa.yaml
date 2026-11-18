@@ -1,0 +1,28 @@
+version: 1
+styles:
+  c1:
+    width: z3
+    slots:
+      s1:
+        text: t2
+    when:
+      bp1:
+        layout:
+          pattern: stack
+tokens:
+  size:
+    z3: 78px
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t2:
+    font: inter
+    size: 1rem
+    weight: 646
+    lineHeight: 1.075
+    color: accent
+    transform: uppercase
+breakpoints:
+  bp1: 74.25rem

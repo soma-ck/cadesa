@@ -147,12 +147,14 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     });
     let ambiguous = false;
     let anywhereFlagged = false;
+    // A <button> centers its text unless the role says otherwise (the reset leaves text-align alone).
+    const align = props.textAlign?.value ?? (n.tag === "button" ? "center" : "start");
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     return (maxWidth: number) => {
       const parts = runs.map((r, i) => {
         const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, items: items[i] };
         // Centered or end-aligned lines measure their hanging space's kerning out too.
-        const plain = t.underline || (!!painted && !meta[i].inBlock) || (props.textAlign !== undefined && props.textAlign.value !== "start");
+        const plain = t.underline || (!!painted && !meta[i].inBlock) || align !== "start";
         const a = layoutText(m!, r, t.sizePx, t.weight, maxWidth, { ...opts, hangKern: !plain });
         if (a.approximate && !anywhereFlagged) {
           anywhereFlagged = true;

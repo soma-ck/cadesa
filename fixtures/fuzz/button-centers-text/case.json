@@ -1,0 +1,7 @@
+{
+  "note": "A <button> centers its text by default, so its lines leave out a hanging space kerning",
+  "seed": 5000092,
+  "widths": [
+    329
+  ]
+}
