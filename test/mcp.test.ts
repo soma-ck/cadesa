@@ -85,7 +85,7 @@ describe("MCP server", () => {
     const r = await call("cadesa_fonts", { source: "fixtures/fonts/fonts.cadesa.yaml", fixture: "fixtures/fonts/fonts.html" });
     expect(r.isError).toBe(false);
     expect(r.text).toContain("Roboto · 300, 400, 450, 500, 600, 650, 700 · 12 text boxes");
-    expect(r.text).toContain("✓ metrics: bundled with Cadesa, measured from KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2");
+    expect(r.text).toContain("✓ metrics: bundled with Cadesa, measured from Google Fonts Roboto (latin subset, wght axis), SIL OFL 1.1");
     expect(r.text).toContain("✓ every font the text uses has metrics");
   });
 

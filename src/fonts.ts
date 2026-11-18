@@ -357,7 +357,8 @@ const rel = (p: string) => {
 export function describeMetrics(m: MetricsInfo & { file: string }): string {
   const files = m.files?.map((f) => f.file) ?? [];
   const what = m.bundled ? "bundled with Cadesa" : rel(m.file);
-  return `${what}, measured from ${files.length ? [...new Set(files)].join(", ") : m.source}${m.machineSpecific ? " (this machine's installed font)" : ""}`;
+  const unique = [...new Set(files)];
+  return `${what}, measured from ${m.bundled || !unique.length || unique.length > 3 ? m.source : unique.join(", ")}${m.machineSpecific ? " (this machine's installed font)" : ""}`;
 }
 
 export function formatFonts(page: string, report: FontReport[], hint?: string): string {
