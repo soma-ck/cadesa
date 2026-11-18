@@ -2,3 +2,4 @@ node_modules/
 lib/
 artifacts/
 Cascadio_Claude_Brief.md
+.claude/
