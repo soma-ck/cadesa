@@ -35,7 +35,6 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   credentials are written.
 - The conformance script's serving and measuring code moved to `src/browser.ts`, shared with
   `--verify`.
-
 - `check` and `render` start with a coverage line: how many boxes at how many widths were
   predicted exactly, how many approximately, and the most common reasons. When most of a
   page is approximate, the line says so before any finding.
