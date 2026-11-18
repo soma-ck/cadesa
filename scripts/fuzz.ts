@@ -9,9 +9,12 @@
  *   npm run fuzz -- --minutes 60
  *   npm run fuzz -- --replay fuzz/failures          (re-check saved reproductions)
  *   npm run fuzz -- --seeds 17,42 --no-shrink       (re-run particular seeds)
+ *   npm run fuzz -- --replay fixtures/fuzz --record (re-check and re-record Chromium's boxes)
  *
  * A mismatch is shrunk (delta debugging over widths, fixture nodes, text, props, overrides and
- * tokens) and saved to fuzz/failures/<hash>/{source.cadesa.yaml,fixture.html,style.css,report.txt,case.json}.
+ * tokens) and saved to fuzz/failures/<hash>/{source.cadesa.yaml,fixture.html,style.css,report.txt,case.json,
+ * chromium.json}. Moved to fixtures/fuzz/<name>/, a reproduction becomes a regression test
+ * (test/fuzz-regressions.test.ts checks the engine against the recorded chromium.json).
  */
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
@@ -38,6 +41,7 @@ const { values: args } = parseArgs({
     seeds: { type: "string" },
     replay: { type: "string" },
     "no-shrink": { type: "boolean", default: false },
+    record: { type: "boolean", default: false },
     "max-shrinks": { type: "string", default: "40" },
     quiet: { type: "boolean", default: false },
   },
@@ -196,6 +200,7 @@ function genTokens(g: Gen) {
     if (r.chance(0.25)) role.letterSpacing = r.float(-0.05, 0.2, 3);
     if (r.chance(0.15)) role.transform = r.pick(["uppercase", "none"]);
     if (r.chance(0.1)) role.decoration = r.pick(["underline", "none"]);
+    if (r.chance(0.2)) role.wrap = r.pick(["anywhere", "anywhere", "normal"]);
     text[`t${i}`] = role;
   }
   g.doc.text = text;
@@ -465,6 +470,8 @@ interface WidthResult {
 }
 interface CaseResult {
   valid: boolean;
+  /** sha256 of the compiled stylesheet Chromium laid out with. */
+  cssSha256?: string;
   invalid?: string;
   widths: WidthResult[];
   compared: number;
@@ -521,7 +528,7 @@ async function runCase(page: Page, yaml: string, html: string, widths: number[])
   const eng = engineSide(yaml, html, widths);
   if (!("css" in eng)) return { valid: false, invalid: eng.invalid, widths: [], compared: 0, excluded: 0, mismatches: 0 };
   const rects = await chromeSide(page, html, eng.css!, widths);
-  const res: CaseResult = { valid: true, widths: [], compared: 0, excluded: 0, mismatches: 0 };
+  const res: CaseResult = { valid: true, cssSha256: cssHash(eng.css!), widths: [], compared: 0, excluded: 0, mismatches: 0 };
   eng.layouts!.forEach((l, i) => {
     const wr: WidthResult = { width: l.width, active: l.active, boxes: [], issues: l.issues.map((x) => `${x.severity} #${x.id}: ${x.message}`) };
     for (const b of walk(l.boxes)) {
@@ -651,7 +658,7 @@ function* candidates(c: Case): Generator<Case> {
   }
   // text role details
   for (const [name, role] of Object.entries((c.doc.text ?? {}) as Obj))
-    for (const key of ["letterSpacing", "transform", "decoration"])
+    for (const key of ["letterSpacing", "transform", "decoration", "wrap"])
       if (key in role) {
         const k = clone(c);
         delete k.doc.text[name][key];
@@ -851,6 +858,17 @@ function signature(c: Case, r: CaseResult): string {
   return `[${[...tags].sort().join(" ")}] {${[...props].sort().join(" ")}} Δ${[...axes].join("")}`;
 }
 
+/** The stylesheet's hash, without its header comment (which names the source file). */
+export const cssHash = (css: string) => createHash("sha256").update(css.replace(/^\/\*.*?\*\/\n/, "")).digest("hex");
+
+/** Chromium's boxes per width, as recorded for regression tests. */
+function chromiumJson(r: CaseResult): string {
+  // The boxes hold for this stylesheet only: when the compiler's output changes, re-record.
+  const out: Record<string, unknown> = { cssSha256: r.cssSha256 };
+  for (const w of r.widths) out[w.width] = Object.fromEntries(w.boxes.filter((b) => b.chrome).map((b) => [b.id, b.chrome!]));
+  return JSON.stringify(out, null, 1) + "\n";
+}
+
 function save(c: Case, r: CaseResult, outDir: string, note: string): string {
   const yaml = caseYaml(c);
   const html = caseHtml(c);
@@ -863,6 +881,7 @@ function save(c: Case, r: CaseResult, outDir: string, note: string): string {
   if ("css" in eng) writeFileSync(join(dir, "style.css"), eng.css!);
   writeFileSync(join(dir, "report.txt"), reportText(c, r, note));
   writeFileSync(join(dir, "case.json"), JSON.stringify({ seed: c.seed, widths: c.widths }, null, 2) + "\n");
+  writeFileSync(join(dir, "chromium.json"), chromiumJson(r));
   return hash;
 }
 
@@ -896,12 +915,21 @@ async function replay(browser: Browser, base: string, dirs: string[]) {
   for (const dir of dirs) {
     const yaml = readFileSync(join(dir, "source.cadesa.yaml"), "utf8");
     const html = readFileSync(join(dir, "fixture.html"), "utf8");
-    const { widths, seed } = JSON.parse(readFileSync(join(dir, "case.json"), "utf8"));
+    const { widths, seed, flagged = [] } = JSON.parse(readFileSync(join(dir, "case.json"), "utf8")) as { widths: number[]; seed?: number; flagged?: string[] };
     const r = await runCase(page, yaml, html, widths);
-    const status = !r.valid ? `invalid (${r.invalid})` : r.mismatches ? `✖ ${r.mismatches} mismatch(es)` : `✓ ${r.compared} compared, ${r.excluded} excluded`;
-    if (!r.valid || r.mismatches) bad++;
+    // Boxes a case expects the engine to flag must be flagged at every width.
+    const unflagged = flagged.filter((id) => r.widths.some((w) => w.boxes.some((b) => b.id === id && !b.excluded)));
+    const status = !r.valid
+      ? `invalid (${r.invalid})`
+      : r.mismatches
+        ? `✖ ${r.mismatches} mismatch(es)`
+        : unflagged.length
+          ? `✖ expected flagged: ${unflagged.join(", ")}`
+          : `✓ ${r.compared} compared, ${r.excluded} excluded`;
+    if (!r.valid || r.mismatches || unflagged.length) bad++;
+    else if (args.record) writeFileSync(join(dir, "chromium.json"), chromiumJson(r));
     console.log(`${dir}: ${status}`);
-    if (!args.quiet && r.mismatches) console.log(reportText({ seed, doc: {}, body: [], widths }, r, ""));
+    if (!args.quiet && r.mismatches) console.log(reportText({ seed: seed ?? 0, doc: {}, body: [], widths }, r, ""));
   }
   console.log(`\n${dirs.length - bad}/${dirs.length} reproductions agree with Chromium`);
   process.exitCode = bad ? 1 : 0;

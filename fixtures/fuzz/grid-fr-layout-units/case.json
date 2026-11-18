@@ -1,0 +1,7 @@
+{
+  "note": "1fr grid columns share the space in layout units: some are 1/64 px wider",
+  "seed": 312793,
+  "widths": [
+    1592
+  ]
+}

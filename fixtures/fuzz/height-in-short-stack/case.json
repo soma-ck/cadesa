@@ -1,0 +1,6 @@
+{
+  "note": "A fixed height doesn't shrink in a column flexbox shorter than its content",
+  "widths": [
+    600
+  ]
+}

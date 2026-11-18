@@ -1,0 +1,6 @@
+{
+  "note": "Advances at an integer weight of a variable font are exact, not interpolated between sampled weights",
+  "widths": [
+    1200
+  ]
+}

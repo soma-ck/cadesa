@@ -1,0 +1,6 @@
+{
+  "note": "A unitless line height times the font size is rounded down to a layout unit, on every line",
+  "widths": [
+    300
+  ]
+}

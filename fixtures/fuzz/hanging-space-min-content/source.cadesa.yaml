@@ -1,0 +1,36 @@
+version: 1
+styles:
+  c1:
+    maxWidth: z2
+    when:
+      bp1:
+        layout:
+          pattern: layer
+        padding:
+          inline: s1
+  c2:
+    layout:
+      pattern: cluster
+    slots:
+      s2:
+        text: t4
+        background: paper
+tokens:
+  space:
+    s1: 2.772rem
+  size:
+    z2: 15rem
+  color:
+    ink: "#1e1b4b"
+    paper: "#ffffff"
+  font:
+    inter: Inter, sans-serif
+text:
+  t4:
+    font: inter
+    size: 55px
+    weight: 700
+    lineHeight: 1
+    color: ink
+breakpoints:
+  bp1: 692px

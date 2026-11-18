@@ -1,0 +1,25 @@
+version: 1
+styles:
+  c3:
+    layout:
+      pattern: cluster
+    slots:
+      s1:
+        text: t1
+        border: paper
+        width: z5
+tokens:
+  size:
+    z5: 80px
+  color:
+    paper: "#ffffff"
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 1.125rem
+    weight: 200
+    lineHeight: 1.75
+    color: accent

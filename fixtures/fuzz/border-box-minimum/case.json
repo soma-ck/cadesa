@@ -1,0 +1,6 @@
+{
+  "note": "border-box never makes a box narrower or shorter than its padding",
+  "widths": [
+    600
+  ]
+}

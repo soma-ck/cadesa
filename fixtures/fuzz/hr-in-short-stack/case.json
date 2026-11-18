@@ -1,0 +1,10 @@
+{
+  "note": "An <hr> clips its overflow, so it shrinks in a stack shorter than its content: flagged",
+  "seed": 309682,
+  "widths": [
+    1459
+  ],
+  "flagged": [
+    "n3"
+  ]
+}

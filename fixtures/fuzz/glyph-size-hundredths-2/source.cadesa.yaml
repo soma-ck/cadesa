@@ -1,0 +1,20 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: cluster
+    slots:
+      s2:
+        text: t2
+tokens:
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t2:
+    font: inter
+    size: 16.46px
+    weight: 312
+    lineHeight: 1.1
+    color: ink

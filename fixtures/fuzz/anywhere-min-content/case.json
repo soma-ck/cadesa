@@ -1,0 +1,7 @@
+{
+  "note": "wrap: anywhere: min-content counts each character with its kerning to the next",
+  "seed": 201000,
+  "widths": [
+    519
+  ]
+}

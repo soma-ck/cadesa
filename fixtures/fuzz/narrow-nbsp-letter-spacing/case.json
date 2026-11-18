@@ -1,0 +1,6 @@
+{
+  "note": "Chromium drops letter-spacing from text with a U+202F and no letter, except on its plain spaces",
+  "widths": [
+    800
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "note": "min-content keeps a hanging space's kerning even in a painted box",
+  "seed": 202881,
+  "widths": [
+    692
+  ]
+}

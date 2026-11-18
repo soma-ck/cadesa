@@ -1,0 +1,6 @@
+{
+  "note": "A component root without a layout is a block, whatever its tag",
+  "widths": [
+    600
+  ]
+}

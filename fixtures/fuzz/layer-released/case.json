@@ -1,0 +1,6 @@
+{
+  "note": "An override that turns a layer into a grid releases its children from the shared cell",
+  "widths": [
+    600
+  ]
+}

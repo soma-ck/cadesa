@@ -1,0 +1,13 @@
+# A line broken at a soft hyphen ends in a hyphen with no kerning and no letter-spacing
+version: 1
+tokens:
+  space: { s: 0.5rem, m: 1rem, l: 2rem, odd: 0.2441rem }
+  size: { w: 175px, w1: 93.5px, w2: 95.5px, a: 10rem, b: 20rem, c: 30rem, tiny: 10px, row: 3rem, short: 2rem, odd: 0.2441rem }
+  color: { ink: "#1e1b4b", paper: "#ffffff" }
+  font: { ui: "Inter, sans-serif" }
+text:
+  t: { font: ui, size: 40px, weight: 200, lineHeight: 1.2, color: ink, letterSpacing: 0.106 }
+styles:
+  c:
+    width: w
+    text: t

@@ -1,0 +1,42 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: grid
+      min: z7
+    padding: s1
+    slots:
+      s2:
+        layout:
+          pattern: grid
+          min: z6
+          gap: s3
+      s8:
+        text: t1
+        padding: s1
+  c3:
+    text: t3
+tokens:
+  space:
+    s1: 1rem
+    s3: 10px
+  size:
+    z6: 63.86px
+    z7: 51.978rem
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 1.125rem
+    weight: 300
+    lineHeight: 1.798
+    color: accent
+  t3:
+    font: inter
+    size: 3rem
+    weight: 175
+    lineHeight: 1.4
+    color: accent

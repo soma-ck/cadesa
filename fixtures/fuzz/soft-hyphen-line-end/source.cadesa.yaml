@@ -1,0 +1,18 @@
+version: 1
+styles:
+  c2:
+    text: t1
+tokens:
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 2.5rem
+    weight: 200
+    lineHeight: 1.969
+    color: accent
+    letterSpacing: 0.106
+    transform: uppercase

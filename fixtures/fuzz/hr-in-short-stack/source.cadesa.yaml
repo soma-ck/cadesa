@@ -1,0 +1,13 @@
+version: 1
+styles:
+  c2:
+    layout:
+      pattern: stack
+    height: z3
+    slots:
+      s1:
+        aspect: 4:3
+tokens:
+  size:
+    z3: 28rem
+text: {}

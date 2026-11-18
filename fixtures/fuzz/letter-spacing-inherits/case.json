@@ -1,0 +1,6 @@
+{
+  "note": "A role's letter-spacing and transform reach <p> children (not reset to normal)",
+  "widths": [
+    500
+  ]
+}

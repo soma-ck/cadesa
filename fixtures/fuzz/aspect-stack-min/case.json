@@ -1,0 +1,6 @@
+{
+  "note": "In a stack, an aspect box's content minimum is capped by its max-width through the ratio",
+  "widths": [
+    900
+  ]
+}

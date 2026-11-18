@@ -1,0 +1,10 @@
+{
+  "note": "wrap: anywhere: a fragment within reach of the line width is approximate: flagged",
+  "seed": 202522,
+  "widths": [
+    304
+  ],
+  "flagged": [
+    "n3"
+  ]
+}

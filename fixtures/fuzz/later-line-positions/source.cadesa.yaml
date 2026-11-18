@@ -1,0 +1,26 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: grid
+      min: z2
+  c3:
+    layout:
+      pattern: cluster
+    slots:
+      s3:
+        text: t4
+tokens:
+  size:
+    z2: 29px
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t4:
+    font: inter
+    size: 10.35px
+    weight: 183
+    lineHeight: 1.75
+    color: ink

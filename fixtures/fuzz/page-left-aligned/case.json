@@ -1,0 +1,6 @@
+{
+  "note": "Only maxWidth (auto margins) centers a page-level box; a width token leaves it at the left",
+  "widths": [
+    900
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "note": "aspect compiles to width: 100%, so in a cluster the box takes the line's width",
+  "widths": [
+    700
+  ]
+}

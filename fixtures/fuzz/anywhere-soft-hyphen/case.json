@@ -1,0 +1,10 @@
+{
+  "note": "wrap: anywhere breaking a word with a soft hyphen is approximate: flagged",
+  "seed": 200748,
+  "widths": [
+    844
+  ],
+  "flagged": [
+    "n10"
+  ]
+}

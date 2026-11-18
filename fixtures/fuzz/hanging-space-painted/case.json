@@ -1,0 +1,6 @@
+{
+  "note": "A hanging space keeps its kerning in a plain block but not in one with a border or background",
+  "widths": [
+    600
+  ]
+}

@@ -1,0 +1,10 @@
+{
+  "note": "Loose text next to child elements isn't laid out by the engine: an error, and every box it can move is flagged",
+  "widths": [
+    600
+  ],
+  "flagged": [
+    "c",
+    "a"
+  ]
+}

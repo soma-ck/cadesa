@@ -1,0 +1,33 @@
+version: 1
+styles:
+  c2:
+    layout:
+      pattern: cluster
+    slots:
+      s1:
+        text: t1
+        padding: s3
+    when:
+      bp1:
+        slots:
+          s1:
+            measure: z1
+tokens:
+  space:
+    s3: 1.0625rem
+  size:
+    z1: 68px
+  color:
+    accent: "#3730a3"
+  font:
+    inter: Inter, sans-serif
+text:
+  t1:
+    font: inter
+    size: 28px
+    weight: 300
+    lineHeight: 1.2
+    color: accent
+    wrap: anywhere
+breakpoints:
+  bp1: 465px

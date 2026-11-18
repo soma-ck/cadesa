@@ -1,0 +1,15 @@
+# A hanging space keeps its kerning in a plain block but not in one with a border or background
+version: 1
+tokens:
+  space: { s: 0.5rem, m: 1rem, l: 2rem, odd: 0.2441rem }
+  size: { w: 175px, w1: 93.5px, w2: 95.5px, a: 10rem, b: 20rem, c: 30rem, tiny: 10px, row: 3rem, short: 2rem, odd: 0.2441rem }
+  color: { ink: "#1e1b4b", paper: "#ffffff" }
+  font: { ui: "Inter, sans-serif" }
+text:
+  t: { font: ui, size: 1.125rem, weight: 900, lineHeight: 1.5, color: ink }
+styles:
+  c:
+    layout: { pattern: stack }
+    slots:
+      plain: { text: t, width: w1 }
+      boxed: { text: t, width: w2, border: ink }

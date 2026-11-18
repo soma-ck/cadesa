@@ -1,0 +1,17 @@
+# maxWidth and measure both apply: the smaller wins
+version: 1
+tokens:
+  space: { s: 0.5rem, m: 1rem, l: 2rem, odd: 0.2441rem }
+  size: { w: 175px, w1: 93.5px, w2: 95.5px, a: 10rem, b: 20rem, c: 30rem, tiny: 10px, row: 3rem, short: 2rem, odd: 0.2441rem }
+  color: { ink: "#1e1b4b", paper: "#ffffff" }
+  font: { ui: "Inter, sans-serif" }
+breakpoints: { wide: 100rem }
+text:
+  t: { font: ui, size: 1rem, weight: 400, lineHeight: 1.5, color: ink }
+styles:
+  c:
+    maxWidth: a
+    when:
+      wide:
+        measure: b
+    text: t

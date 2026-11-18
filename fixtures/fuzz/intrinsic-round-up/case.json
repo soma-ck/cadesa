@@ -1,0 +1,6 @@
+{
+  "note": "A cluster item's max-content width is rounded up to a layout unit",
+  "widths": [
+    1200
+  ]
+}

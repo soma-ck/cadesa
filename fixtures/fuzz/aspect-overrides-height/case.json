@@ -1,0 +1,6 @@
+{
+  "note": "aspect in an override replaces a base height (the more specific layer wins)",
+  "widths": [
+    600
+  ]
+}

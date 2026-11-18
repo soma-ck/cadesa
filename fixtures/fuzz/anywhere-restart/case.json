@@ -1,0 +1,7 @@
+{
+  "note": "wrap: anywhere: after a break between characters, break opportunities restart (a leading \"-\" doesn't break before a digit)",
+  "seed": 200312,
+  "widths": [
+    1182
+  ]
+}

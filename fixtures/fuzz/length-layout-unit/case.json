@@ -1,0 +1,6 @@
+{
+  "note": "Box lengths are truncated to layout units (0.3rem = 4.8px lays out as 4.796875px)",
+  "widths": [
+    600
+  ]
+}

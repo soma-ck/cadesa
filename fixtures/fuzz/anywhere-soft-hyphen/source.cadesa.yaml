@@ -1,0 +1,35 @@
+version: 1
+styles:
+  c2:
+    maxWidth: z3
+    slots:
+      s2:
+        padding: s4
+    when:
+      bp1:
+        layout:
+          pattern: grid
+          min: z7
+        slots:
+          s2:
+            text: t2
+tokens:
+  space:
+    s4: 0.75rem
+  size:
+    z3: 3.5469rem
+    z7: 73px
+  color:
+    ink: "#1e1b4b"
+  font:
+    inter: Inter, sans-serif
+text:
+  t2:
+    font: inter
+    size: 41px
+    weight: 663
+    lineHeight: 1.328
+    color: ink
+    wrap: anywhere
+breakpoints:
+  bp1: 1142px

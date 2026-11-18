@@ -1,0 +1,6 @@
+{
+  "note": "A grid taller than its rows shares the extra height between them (auto tracks stretch)",
+  "widths": [
+    600
+  ]
+}

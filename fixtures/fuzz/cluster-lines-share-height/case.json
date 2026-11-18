@@ -1,0 +1,6 @@
+{
+  "note": "Wrapped cluster lines share a fixed height's extra space (align-content: normal)",
+  "widths": [
+    500
+  ]
+}

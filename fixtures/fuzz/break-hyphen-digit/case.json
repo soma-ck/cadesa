@@ -1,0 +1,6 @@
+{
+  "note": "Chromium breaks after the hyphen in \"10-20\" (a hyphen after a digit, before a digit)",
+  "widths": [
+    400
+  ]
+}
