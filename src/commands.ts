@@ -35,6 +35,10 @@ import {
 import { generateMetrics, launchChromium, writeMetrics } from "./metrics.js";
 import { pointFindings, Pointers } from "./pointers.js";
 import { verifyFindings, type VerifyReport } from "./verify.js";
+import { capture, formatCapture } from "./capture.js";
+import { existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export interface Result {
   text: string;
@@ -450,4 +454,16 @@ function liftTailwindCmd(s: { css: string; page: string; out?: string; widths: n
     data: { source: tw.yaml, fixture: tw.html, unlifted: tw.lifted.unlifted, stats: tw.lifted.stats, impact: impacts, states: tw.states, responsive: tw.responsive },
     ok: true,
   };
+}
+
+/**
+ * `cadesa capture <url>`: save the page as Chromium rendered it (DOM, stylesheets, fonts) for
+ * check. A local file path is loaded as a file:// URL.
+ */
+export async function captureCmd(s: { url: string; out?: string; loginScript?: string; wait?: string; width?: number }): Promise<Result> {
+  const url = /^[a-z][\w+.-]*:/i.test(s.url) ? s.url : existsSync(s.url) ? pathToFileURL(resolvePath(s.url)).href : undefined;
+  if (!url) throw new InputError(`capture needs a URL (https://...) or an existing file; got "${s.url}"`);
+  if (s.loginScript && !existsSync(s.loginScript)) throw new InputError(`no login script at ${s.loginScript}`);
+  const r = await capture({ url, out: s.out ?? "capture", loginScript: s.loginScript, wait: s.wait, width: s.width });
+  return { text: formatCapture(r), data: r, ok: true };
 }

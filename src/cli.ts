@@ -2,6 +2,7 @@
 import { parseArgs } from "node:util";
 import {
   buildCmd,
+  captureCmd,
   checkCmd,
   checkVerifyCmd,
   critiqueCmd,
@@ -84,6 +85,9 @@ async function main(argv: string[]) {
       google: { type: "string" },
       measure: { type: "boolean", default: false },
       verify: { type: "boolean", default: false },
+      "login-script": { type: "string" },
+      wait: { type: "string" },
+      width: { type: "string" },
       auto: { type: "boolean", default: false },
       system: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
@@ -112,6 +116,12 @@ async function main(argv: string[]) {
     system: values.system,
     out: values.out,
   });
+  if (cmd === "capture") {
+    if (!input) throw new InputError("capture needs <url>");
+    const width = values.width ? Number(values.width) : undefined;
+    if (width !== undefined && !(width > 0)) throw new InputError(`invalid --width "${values.width}"`);
+    return asyncResult(captureCmd({ url: input, out: values.out, loginScript: values["login-script"], wait: values.wait, width }));
+  }
   if (cmd === "fonts") {
     if (!input) throw new InputError("fonts needs <page.html>");
     if (!values.source && !values.css && !values.tailwind) throw new InputError("fonts needs --css <file.css>, --tailwind <compiled.css> or --source <source.cadesa.yaml>");

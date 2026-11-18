@@ -239,7 +239,7 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
         "",
         r === 2
           ? `inconclusive (these boxes aren't predicted exactly; ${verify ? "Chromium couldn't decide them either" : "confirm in a browser, or run check with --verify"}):`
-          : "not reproduced in Chromium (the engine's prediction differs from the browser here):",
+          : "not reproduced in Chromium (no problem there at the widths it loaded):",
       );
     section = r;
     const icon = notReproduced(f) ? "○" : f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠";
