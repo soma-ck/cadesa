@@ -1,0 +1,72 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 976 562" width="976" height="562" role="img" aria-labelledby="title desc">
+<title id="title">Cadesa in a terminal</title>
+<desc id="desc">An animated terminal session generated from real Cadesa CLI output. First, cadesa whatif previews changing the settings panel's narrow padding: at 390px the panel padding goes from 16 to 32px and six boxes move, each value traced to its YAML path; at 1280px nothing moves. Second, cadesa check runs the landing page's trip cards at six widths and finds one problem: the word "Overnattingskajakkturene" can't wrap and overflows its card by 3.14px, only at 1100px.</desc>
+<style>
+text{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,"DejaVu Sans Mono","Liberation Mono",monospace;font-size:14px;fill:#d8dee9;white-space:pre}
+.cmd{fill:#ffffff}.p{fill:#7fd1b9}.w{fill:#ffffff;font-weight:700}.d{fill:#8a93a3}.ok{fill:#7fd1b9}.warn{fill:#f4b41a;font-weight:700}.path{fill:#9ecbff}
+@keyframes l0{0%,3.710%{opacity:0}3.772%,97%{opacity:1}100%{opacity:0}}#l0{animation:l0 16.17s linear infinite}
+@keyframes cl0{0%,3.710%{width:0;animation-timing-function:steps(68,end)}11.355%,100%{width:577.2px}}#cl0 rect{animation:cl0 16.17s linear infinite}
+@keyframes l1{0%,12.282%{opacity:0}12.344%,97%{opacity:1}100%{opacity:0}}#l1{animation:l1 16.17s linear infinite}
+@keyframes cl1{0%,12.282%{width:0;animation-timing-function:steps(57,end)}18.690%,100%{width:484.5px}}#cl1 rect{animation:cl1 16.17s linear infinite}
+@keyframes l2{0%,22.709%{opacity:0}22.771%,97%{opacity:1}100%{opacity:0}}#l2{animation:l2 16.17s linear infinite}
+@keyframes l3{0%,22.988%{opacity:0}23.049%,97%{opacity:1}100%{opacity:0}}#l3{animation:l3 16.17s linear infinite}
+@keyframes l4{0%,23.266%{opacity:0}23.328%,97%{opacity:1}100%{opacity:0}}#l4{animation:l4 16.17s linear infinite}
+@keyframes l5{0%,23.544%{opacity:0}23.606%,97%{opacity:1}100%{opacity:0}}#l5{animation:l5 16.17s linear infinite}
+@keyframes l6{0%,23.822%{opacity:0}23.884%,97%{opacity:1}100%{opacity:0}}#l6{animation:l6 16.17s linear infinite}
+@keyframes l7{0%,24.101%{opacity:0}24.162%,97%{opacity:1}100%{opacity:0}}#l7{animation:l7 16.17s linear infinite}
+@keyframes l8{0%,24.379%{opacity:0}24.441%,97%{opacity:1}100%{opacity:0}}#l8{animation:l8 16.17s linear infinite}
+@keyframes l9{0%,24.657%{opacity:0}24.719%,97%{opacity:1}100%{opacity:0}}#l9{animation:l9 16.17s linear infinite}
+@keyframes l10{0%,24.935%{opacity:0}24.997%,97%{opacity:1}100%{opacity:0}}#l10{animation:l10 16.17s linear infinite}
+@keyframes l11{0%,25.214%{opacity:0}25.275%,97%{opacity:1}100%{opacity:0}}#l11{animation:l11 16.17s linear infinite}
+@keyframes l12{0%,25.492%{opacity:0}25.554%,97%{opacity:1}100%{opacity:0}}#l12{animation:l12 16.17s linear infinite}
+@keyframes l13{0%,25.770%{opacity:0}25.832%,97%{opacity:1}100%{opacity:0}}#l13{animation:l13 16.17s linear infinite}
+@keyframes l14{0%,26.048%{opacity:0}26.110%,97%{opacity:1}100%{opacity:0}}#l14{animation:l14 16.17s linear infinite}
+@keyframes l15{0%,26.327%{opacity:0}26.388%,97%{opacity:1}100%{opacity:0}}#l15{animation:l15 16.17s linear infinite}
+@keyframes l16{0%,26.605%{opacity:0}26.667%,97%{opacity:1}100%{opacity:0}}#l16{animation:l16 16.17s linear infinite}
+@keyframes l17{0%,26.883%{opacity:0}26.945%,97%{opacity:1}100%{opacity:0}}#l17{animation:l17 16.17s linear infinite}
+@keyframes l18{0%,42.960%{opacity:0}43.021%,97%{opacity:1}100%{opacity:0}}#l18{animation:l18 16.17s linear infinite}
+@keyframes cl18{0%,42.960%{width:0;animation-timing-function:steps(81,end)}52.066%,100%{width:686.8px}}#cl18 rect{animation:cl18 16.17s linear infinite}
+@keyframes l19{0%,52.993%{opacity:0}53.055%,97%{opacity:1}100%{opacity:0}}#l19{animation:l19 16.17s linear infinite}
+@keyframes cl19{0%,52.993%{width:0;animation-timing-function:steps(40,end)}57.490%,100%{width:341.2px}}#cl19 rect{animation:cl19 16.17s linear infinite}
+@keyframes l20{0%,61.509%{opacity:0}61.571%,97%{opacity:1}100%{opacity:0}}#l20{animation:l20 16.17s linear infinite}
+@keyframes l21{0%,61.788%{opacity:0}61.849%,97%{opacity:1}100%{opacity:0}}#l21{animation:l21 16.17s linear infinite}
+@keyframes l22{0%,62.066%{opacity:0}62.128%,97%{opacity:1}100%{opacity:0}}#l22{animation:l22 16.17s linear infinite}
+@keyframes l23{0%,62.344%{opacity:0}62.406%,97%{opacity:1}100%{opacity:0}}#l23{animation:l23 16.17s linear infinite}
+@keyframes l24{0%,62.622%{opacity:0}62.684%,97%{opacity:1}100%{opacity:0}}#l24{animation:l24 16.17s linear infinite}
+@media (prefers-reduced-motion: reduce){g[id],text[id]{animation:none!important;opacity:1!important}clipPath rect{animation:none!important;width:976px!important}}
+</style>
+<rect width="976" height="562" rx="10" fill="#14181f"/>
+<circle cx="20" cy="18" r="5.5" fill="#ff5f57"/><circle cx="38" cy="18" r="5.5" fill="#febc2e"/><circle cx="56" cy="18" r="5.5" fill="#28c840"/>
+<text x="488" y="22" text-anchor="middle" style="fill:#8a93a3;font-size:12px">cadesa · no browser</text>
+<g xml:space="preserve">
+<clipPath id="cl0"><rect x="36.9" y="44" height="20" width="0"/></clipPath>
+<g id="l0"><text x="20" y="58"><tspan class="p">$</tspan> </text><text x="36.9" y="58" class="cmd" clip-path="url(#cl0)">cadesa whatif fixtures/settings.html --source settings.cadesa.yaml \</text></g>
+<clipPath id="cl1"><rect x="36.9" y="64" height="20" width="0"/></clipPath>
+<g id="l1"><text x="20" y="78">  </text><text x="36.9" y="78" class="cmd" clip-path="url(#cl1)">    --set styles.settings-panel.when.narrow.padding=panel</text></g>
+<text id="l2" x="20" y="98">whatif styles.settings-panel.when.narrow.padding: compact → panel</text>
+<text id="l3" x="20" y="118"><tspan class="d">(in memory, nothing written · computed in 26ms, no browser)</tspan></text>
+<text id="l4" x="20" y="138"></text>
+<text id="l5" x="20" y="158"><tspan class="w">390px</tspan><tspan class="d"> · narrow active</tspan></text>
+<text id="l6" x="20" y="178">  #panel       padding 16px → 32px</text>
+<text id="l7" x="20" y="198">                 <tspan class="d">← space.panel = 2rem ← when.narrow (390px ≤ 576px) ← styles.settings-panel.when.narrow.padding</tspan></text>
+<text id="l8" x="20" y="218">               h 232.8 → 264.8</text>
+<text id="l9" x="20" y="238">  #title       x 16 → 32  y 16 → 32  w 358 → 326</text>
+<text id="l10" x="20" y="258">  #description x 16 → 32  y 68.8 → 84.8  w 358 → 326</text>
+<text id="l11" x="20" y="278">  #actions     x 16 → 32  y 116.8 → 132.8  w 358 → 326</text>
+<text id="l12" x="20" y="298">  #save        x 16 → 32  y 116.8 → 132.8  w 358 → 326</text>
+<text id="l13" x="20" y="318">  #cancel      x 16 → 32  y 172.8 → 188.8  w 358 → 326</text>
+<text id="l14" x="20" y="338"></text>
+<text id="l15" x="20" y="358"><tspan class="w">1280px</tspan></text>
+<text id="l16" x="20" y="378">  <tspan class="ok">✓ unchanged: no box moved, no property changed</tspan></text>
+<text id="l17" x="20" y="398"></text>
+<clipPath id="cl18"><rect x="36.9" y="404" height="20" width="0"/></clipPath>
+<g id="l18"><text x="20" y="418"><tspan class="p">$</tspan> </text><text x="36.9" y="418" class="cmd" clip-path="url(#cl18)">cadesa check docs/demo/trips.html --source examples/landing/landing.cadesa.yaml \</text></g>
+<clipPath id="cl19"><rect x="36.9" y="424" height="20" width="0"/></clipPath>
+<g id="l19"><text x="20" y="438">  </text><text x="36.9" y="438" class="cmd" clip-path="url(#cl19)">    --widths 390,768,1024,1100,1280,1440</text></g>
+<text id="l20" x="20" y="458"><tspan class="w">1100px</tspan></text>
+<text id="l21" x="20" y="478">  <tspan class="warn">⚠ [layout]</tspan> "Overnattingskajakkturene" in #island-name can't wrap and overflows by 3.14px at 1100px</text>
+<text id="l22" x="20" y="498">      <tspan class="d">edit:</tspan><tspan class="path"> styles.trip-card.slots.name.text</tspan></text>
+<text id="l23" x="20" y="518"></text>
+<text id="l24" x="20" y="538"><tspan class="d">0 errors, 1 warning</tspan></text>
+</g>
+</svg>
