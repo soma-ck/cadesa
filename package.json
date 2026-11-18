@@ -79,8 +79,10 @@
     }
   },
   "devDependencies": {
+    "@tailwindcss/cli": "4.3.4",
     "@types/node": "26.6.6",
     "playwright": "1.65.0",
+    "tailwindcss": "4.3.4",
     "tsx": "4.23.15",
     "typescript": "7.0.2",
     "vitest": "5.1.0"
