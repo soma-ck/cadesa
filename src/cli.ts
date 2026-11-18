@@ -31,6 +31,17 @@ Usage:
   cadesa whatif   <fixture.html> --source <source.cadesa.yaml> --set <path=value> [--set ...]
   cadesa explain  <fixture.html> --source <source.cadesa.yaml> --id <fixture-id>
   cadesa check    <fixture.html> --source <source.cadesa.yaml>
+  cadesa check    <page.html> --css <a.css,b.css> [--verify]
+                    on a page with its CSS, each finding names the element (page file:line, tag,
+                    classes, text) and the CSS rules behind it (stylesheet file:line, selector).
+                    --verify then loads the page in Chromium at the widths with findings (and a
+                    few others) and marks each finding confirmed or not reproduced; inconclusive
+                    findings are decided by what Chromium shows (Playwright + Chrome)
+  cadesa capture  <url> [--out capture] [--login-script login.mjs] [--wait <selector>] [--width 1280]
+                    load a page in Chromium and save what it rendered: page.html (scripts
+                    removed), its stylesheets in cascade order (including CSS-in-JS) and the fonts
+                    it loaded; prints the check command to run. --login-script runs a module's
+                    default export, async (page) => {}, first; no cookies or credentials are saved
   cadesa critique <fixture.html> --source <source.cadesa.yaml>   design signals: scale, hierarchy, grouping, alignment, palette, tells
   cadesa lift     <file.css> [--out <file.cadesa.yaml>] [--fixture <fixture.html>]
   cadesa lift     --tailwind <page.html> --css <compiled.css> [--out <file.cadesa.yaml>]
@@ -63,6 +74,7 @@ Options:
   --json     machine-readable output (for agents)
   --lines    render: print each wrapped line with its width
   --svg f    render: also draw the predicted boxes as an SVG wireframe (f-<width>.svg per width)
+  --verify   check: confirm each finding in Chromium (with --css or --tailwind)
   -h, --help show this help
 `;
 

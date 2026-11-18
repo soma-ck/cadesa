@@ -8,7 +8,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 import {
   buildCmd,
+  captureCmd,
   checkCmd,
+  checkVerifyCmd,
   critiqueCmd,
   cssCmd,
   explainCmd,
@@ -39,6 +41,8 @@ Existing CSS: cadesa_lift converts it (or pass css instead of source to any read
 exactly predicted for the original CSS; the report says which declaration or browser default is responsible.
 Tailwind pages: pass the page as fixture and the compiled Tailwind CSS as tailwind to any read tool; utilities are
 lifted the same way, with generated ids (cadesa_lift with tailwind shows them and the source).
+A page rendered by JavaScript (Angular, React, CSS-in-JS): cadesa_capture saves its rendered DOM and stylesheets,
+then cadesa_check them. cadesa_check with verify=true confirms each finding in Chromium.
 Fonts: text is measured from per-font metrics (Inter is bundled). If a report says a font "has no Cadesa metrics"
 (text assumed to be one line), call cadesa_fonts on the page: it says where each font comes from, and with
 measure=true measures them (once; needs Playwright + Chrome) so every box can be predicted.
@@ -162,11 +166,33 @@ export function createServer(): McpServer {
     {
       title: "Check design rules",
       description:
-        "Check the layout at each width for overflow (horizontal, unbreakable words, text taller than a fixed height), tap targets (WCAG 2.5.8/2.5.5), text contrast (WCAG AA) and line length. Each finding names the YAML path to edit; undecidable checks are marked inconclusive.",
-      inputSchema: { ...pageShape, widths: sweepWidths },
+        "Check the layout at each width for overflow (horizontal, unbreakable words, text taller than a fixed height), tap targets (WCAG 2.5.8/2.5.5) and text contrast (WCAG AA). With a Cadesa source, each finding names the YAML path to edit. With css or tailwind, each names the element in the page (file:line, tag, classes, text) and the CSS rules that set the property behind it (stylesheet file:line and selector, following var() to where the variable is set); the generated Cadesa path stays in `path` in json. Findings on boxes Cadesa can't predict exactly are marked inconclusive. With verify=true (css or tailwind only; needs Playwright and Chrome/Chromium), the page is then loaded in Chromium at the widths with findings and a few others, and each finding is marked confirmed, not reproduced, or left as predicted; inconclusive findings are decided by what Chromium shows.",
+      inputSchema: {
+        ...pageShape,
+        widths: sweepWidths,
+        verify: z.boolean().default(false).describe("Measure the findings in Chromium and mark each confirmed or not reproduced (css or tailwind pages)"),
+      },
       annotations: readOnly,
     },
-    (a) => respond(() => checkCmd(a), a.format),
+    (a) => (a.verify ? respondAsync(() => checkVerifyCmd(a), a.format) : respond(() => checkCmd(a), a.format)),
+  );
+
+  server.registerTool(
+    "cadesa_capture",
+    {
+      title: "Capture a page from a browser",
+      description:
+        "Load a URL (or a local HTML file) in Chromium, wait for it to render, and save what it rendered for cadesa_check: page.html (the rendered DOM, scripts removed), every stylesheet in cascade order as files (linked, @import-ed, <style> blocks, and CSS-in-JS rules read back from the CSSOM) and the font files the page loaded. Cookies, storage and password or hidden form values are not saved. Returns the exact check command (pass its page as fixture and its stylesheets as css). Needs Playwright and Chrome/Chromium. Pages behind a login: use the CLI, `cadesa capture <url> --login-script login.mjs`.",
+      inputSchema: {
+        url: z.string().describe("The page: an http(s) URL (e.g. a local dev server) or a path to an HTML file"),
+        out: z.string().default("capture").describe("Directory to write page.html, css/ and fonts/ into"),
+        wait: z.string().optional().describe("CSS selector to wait for before saving (the app has rendered)"),
+        width: z.number().positive().optional().describe("Viewport width to load the page at (default 1280)"),
+        format: pageShape.format,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: true },
+    },
+    (a) => respondAsync(() => captureCmd(a), a.format),
   );
 
   server.registerTool(
