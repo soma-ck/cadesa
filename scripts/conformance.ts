@@ -77,6 +77,8 @@ const report: unknown[] = [];
 console.log(`browser: ${browser.version()}${executablePath ? ` (${executablePath})` : " (playwright bundled)"}`);
 console.log(`tolerance: ±${tolerance}px\n`);
 
+// Font families the source sets text in; each must load in the fixture or the comparison is meaningless.
+const families = [...new Set([...model.text.values()].filter((r) => r.font).map((r) => model.tokens.get(`font.${r.font!.name}`)!.raw.split(",")[0].trim().replace(/^["']|["']$/g, "")))];
 let checked = 0;
 const flaggedSame: string[] = [];
 const flaggedDiff: string[] = [];
@@ -91,7 +93,10 @@ for (const layout of layouts) {
   const page = await browser.newPage({ viewport: { width: layout.width, height: 900 } });
   await page.goto(`http://127.0.0.1:${port}/${fixtureFile}`);
   await page.evaluate("document.fonts.ready");
-  if (!(await page.evaluate("document.fonts.check('16px Inter')"))) throw new Error("Inter did not load in the fixture");
+  for (const family of families) {
+    const ok = await page.evaluate(`document.fonts.check(${JSON.stringify(`16px "${family}"`)}) && ![...document.fonts].some((f) => f.status === "error")`);
+    if (!ok) throw new Error(`font "${family}" did not load in ${fixtureFile}`);
+  }
   const rects: Record<string, { x: number; y: number; w: number; h: number }> = await page.evaluate(() =>
     Object.fromEntries(
       [...document.querySelectorAll<HTMLElement>("[data-fixture]")].map((el) => {

@@ -25,6 +25,9 @@ Usage:
   cascadio explain  <fixture.html> --source <source.cascade.yaml> --id <fixture-id>
   cascadio check    <fixture.html> --source <source.cascade.yaml>
   cascadio lift     <file.css> [--out <file.cascade.yaml>] [--fixture <fixture.html>]
+  cascadio metrics  <font-file> --family <name> [--weight <n>] [--out .cascadio/metrics]
+                    measure a font once in Chromium so the engine can measure text set in it
+                    (omit --weight for a variable font; repeat per face for static fonts)
   cascadio mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
 
   render, whatif, explain and check also accept --css <file.css> instead of --source:
@@ -49,6 +52,8 @@ async function main(argv: string[]) {
       widths: { type: "string", default: "390,1280" },
       set: { type: "string", multiple: true },
       id: { type: "string" },
+      family: { type: "string" },
+      weight: { type: "string" },
       json: { type: "boolean", default: false },
       lines: { type: "boolean", default: false },
       help: { type: "boolean", short: "h", default: false },
@@ -59,6 +64,20 @@ async function main(argv: string[]) {
   if (cmd === "mcp") {
     const { serve } = await import("./mcp.js");
     return serve();
+  }
+  if (cmd === "metrics") {
+    const { generateMetrics, writeMetrics } = await import("./metrics.js");
+    if (!input) throw new InputError("metrics needs <font-file>");
+    if (!values.family) throw new InputError("metrics needs --family <name> (the font-family name your CSS uses)");
+    const weight = values.weight ? Number(values.weight) : undefined;
+    if (weight !== undefined && !(weight >= 1 && weight <= 1000)) throw new InputError(`invalid --weight "${values.weight}"`);
+    const m = await generateMetrics({ font: input, family: values.family, weight });
+    const file = writeMetrics(m, values.out ?? ".cascadio/metrics");
+    const pairs = Object.values(m.kerning).reduce((n, k) => n + Object.keys(k).length, 0);
+    process.stdout.write(
+      `wrote ${file}: ${m.family} (${m.kind}${weight ? ` ${weight}` : ", 100–900"}), ${m.chars.length} glyphs, ${pairs} kerning pairs\n`,
+    );
+    return;
   }
 
   const need = (v: string | undefined, what: string) => {

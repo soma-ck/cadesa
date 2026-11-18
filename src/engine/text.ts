@@ -6,34 +6,49 @@
  * `overflow-wrap: normal`: break opportunities after spaces, after hyphens between letters,
  * and around dashes. Scope: Latin text in the measured character set.
  */
-import { readFileSync } from "node:fs";
-
-interface MetricsFile {
-  family: string;
-  units: number;
-  weights: number[];
-  chars: string;
-  advances: Record<string, number[]>;
-  kerning: Record<string, Record<string, number>>;
-}
+import { existsSync, readFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { metricsFileName, type MetricsFile } from "../metrics.js";
 
 export interface FontMetrics {
   family: string;
+  file: string;
   /** Width in px, or undefined if the text has a character outside the measured set. */
   measure(text: string, sizePx: number, weight: number): number | undefined;
   unsupported(text: string): string[];
+  /** Why this weight can't be measured exactly (e.g. a synthesized bold), if so. */
+  weightIssue(weight: number): string | undefined;
 }
 
-const registry = new Map<string, FontMetrics>();
+const registry = new Map<string, FontMetrics | undefined>();
+
+/** CSS Fonts 4 §5.2 weight matching for a family made of static faces. */
+export function matchWeight(available: number[], desired: number): number {
+  const asc = [...available].sort((a, b) => a - b);
+  const desc = [...asc].reverse();
+  if (asc.includes(desired)) return desired;
+  if (desired >= 400 && desired <= 500)
+    return (
+      asc.find((w) => w > desired && w <= 500) ?? desc.find((w) => w < desired) ?? asc.find((w) => w > 500)!
+    );
+  if (desired < 400) return desc.find((w) => w < desired) ?? asc.find((w) => w > desired)!;
+  return asc.find((w) => w > desired) ?? desc.find((w) => w < desired)!;
+}
 
 function load(file: string): FontMetrics {
-  const m = JSON.parse(readFileSync(new URL(`../../fonts/${file}`, import.meta.url), "utf8")) as MetricsFile;
+  const m = JSON.parse(readFileSync(file, "utf8")) as MetricsFile;
+  const kind = m.kind ?? "variable";
   const index = new Map([...m.chars].map((c, i) => [c, i]));
   const kernBase = (c: string) => (c.length === 1 && c.charCodeAt(0) > 0xff ? c : c.normalize("NFD")[0]);
 
-  // Interpolate between the two sampled weights around `weight`.
+  // Variable: interpolate between the sampled weights around `weight`. Static: the matched face.
   const bracket = (weight: number): [number, number, number] => {
     const ws = m.weights;
+    if (kind === "static") {
+      const w = matchWeight(ws, weight);
+      return [w, w, 0];
+    }
     if (weight <= ws[0]) return [ws[0], ws[0], 0];
     if (weight >= ws[ws.length - 1]) return [ws[ws.length - 1], ws[ws.length - 1], 0];
     const hi = ws.findIndex((w) => w >= weight);
@@ -44,7 +59,15 @@ function load(file: string): FontMetrics {
 
   return {
     family: m.family,
+    file,
     unsupported: (text) => [...new Set([...text].filter((c) => !index.has(c)))],
+    weightIssue(weight) {
+      if (kind !== "static") return undefined;
+      const face = matchWeight(m.weights, weight);
+      // Browsers synthesize bold when asking for ≥600 and the closest face is ≤500.
+      if (weight >= 600 && face <= 500) return `weight ${weight} would be synthesized from the ${face} face; measure a bold face too`;
+      return undefined;
+    },
     measure(text, sizePx, weight) {
       const [wa, wb, t] = bracket(weight);
       const advA = m.advances[wa];
@@ -70,13 +93,32 @@ function load(file: string): FontMetrics {
   };
 }
 
-/** Metrics for the first family in a font-family list, if Cascadio has measured it. */
+/**
+ * Where metrics tables are found, in priority order: $CASCADIO_METRICS (path list),
+ * ./.cascadio/metrics (written by `cascadio metrics`), then the fonts bundled with Cascadio.
+ */
+export function metricsDirs(): string[] {
+  return [
+    ...(process.env.CASCADIO_METRICS?.split(delimiter).filter(Boolean) ?? []),
+    join(process.cwd(), ".cascadio", "metrics"),
+    fileURLToPath(new URL("../../fonts/", import.meta.url)),
+  ];
+}
+
+/** Metrics for the first family in a font-family list, if it has been measured. */
 export function metricsFor(fontFamily: string | undefined): FontMetrics | undefined {
   if (!fontFamily) return undefined;
-  const first = fontFamily.split(",")[0].trim().replace(/^["']|["']$/g, "").toLowerCase();
-  if (first !== "inter") return undefined;
-  if (!registry.has(first)) registry.set(first, load("inter.metrics.json"));
-  return registry.get(first);
+  const first = fontFamily.split(",")[0].trim().replace(/^["']|["']$/g, "");
+  const name = metricsFileName(first);
+  const file = metricsDirs()
+    .map((d) => join(d, name))
+    .find(existsSync);
+  const key = file ?? `missing:${name}`;
+  if (!registry.has(key)) {
+    const m = file ? load(file) : undefined;
+    registry.set(key, m && m.family.toLowerCase() === first.toLowerCase() ? m : undefined);
+  }
+  return registry.get(key);
 }
 
 export interface Line {

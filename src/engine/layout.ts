@@ -72,10 +72,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const t = props.text!.value;
     const m = metricsFor(t.font);
     const why = !m
-      ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cascadio metrics`
+      ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cascadio metrics; run cascadio metrics <font-file>`
       : m.unsupported(n.text).length
         ? `characters outside the measured set: ${m.unsupported(n.text).join(" ")}`
-        : undefined;
+        : m.weightIssue(t.weight);
     if (why) {
       assumptions.push(`text height assumes a single line (${why})`);
       return undefined;

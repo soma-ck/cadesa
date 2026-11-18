@@ -231,7 +231,18 @@ There are two separate claims:
 
 Cascadio bundles [Inter](https://rsms.me/inter/) (SIL OFL 1.1) and a 136 KB metrics table: glyph advances and 13k kerning pairs, sampled at 9 weights and interpolated. `npm run metrics` regenerates the table, once, from Chromium's own text measurement. At runtime the engine reads only the JSON, with no font parser and no browser. Line breaking follows CSS `white-space: normal`: breaks after spaces, after hyphens between letters, and around dashes. Each component's reset pins the inherited text properties that could change line breaks (letter-spacing, word-spacing, text-transform, kerning and so on), so a host page can't change them behind the engine's back.
 
-**Current limits:** measured text must use Inter and the Latin character set the table covers. Any other font, or a character outside the table, falls back to a one-line assumption, and every report flags that box. In a `cluster`, a box without a width is sized to its text (max-content, shrinking to min-content), the same way flexbox does it. No hyphenation, no `text-wrap: balance`, and no bidirectional text yet.
+### Your own fonts
+
+```sh
+npm i -D playwright                     # only needed for this one-time step
+cascadio metrics fonts/BrandSans.woff2 --family "Brand Sans"                 # variable font
+cascadio metrics fonts/Brand-Regular.ttf --family "Brand Sans" --weight 400  # or one static face at a time
+cascadio metrics fonts/Brand-Bold.ttf    --family "Brand Sans" --weight 700
+```
+
+This measures the font once in Chromium and writes `.cascadio/metrics/brand-sans.metrics.json`. Commit that file, and the engine measures text set in `"Brand Sans"` from then on, with no browser. Static faces are matched by CSS weight rules: a 650 role uses the 700 face. A weight the browser would synthesize, such as bold from a regular-only family, is flagged rather than guessed. Verified with Liberation Sans, using two static faces: all 1,482 boxes across the 247-width sweep agree with Chromium.
+
+**Current limits:** a font without metrics, or a character outside the measured Latin set, falls back to a one-line assumption, and every report flags that box. In a `cluster`, a box without a width is sized to its text (max-content, shrinking to min-content), the same way flexbox does it. No hyphenation, no `text-wrap: balance`, and no bidirectional text yet.
 
 The conformance run uses a system Chrome or Chromium when one is found (or `$CASCADIO_CHROME`), otherwise Playwright's bundled browser. A browser is never needed to build, render, explain, check or `whatif`.
 
@@ -261,7 +272,6 @@ React, Svelte, server templates and static HTML work the same way, because Casca
 
 ## Roadmap
 
-- **Bring your own font:** `cascadio metrics <font.woff2>` to measure any font the way Inter is measured.
 - **More of CSS:** grid, `min-width` breakpoints, and a `row` pattern, so lift leaves less behind.
 - **Benchmark:** agents fixing a mobile layout bug with Cascadio vs. plain CSS, on the same fixture with the same edit budget. It measures attempts to fix and desktop regressions.
 
