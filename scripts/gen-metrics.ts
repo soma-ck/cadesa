@@ -1,5 +1,5 @@
 /**
- * Regenerate fonts/inter.metrics.json for the bundled Inter variable font.
+ * Regenerate fonts/inter.metrics.json.gz for the bundled Inter variable font.
  *
  *   npm run metrics
  *
@@ -9,6 +9,6 @@ import { generateMetrics, writeMetrics } from "../src/metrics.js";
 
 const m = await generateMetrics({ font: "fonts/InterVariable-latin.woff2", family: "Inter" });
 m.source = "InterVariable-latin.woff2 (Inter 4, SIL OFL 1.1, latin subset, wght axis)";
-const file = writeMetrics(m, "fonts");
+const file = writeMetrics(m, "fonts", { gzip: true });
 const pairs = Object.values(m.kerning).reduce((n, k) => n + Object.keys(k).length, 0);
 console.log(`wrote ${file}: ${m.chars.length} glyphs × ${m.weights.length} weights, ${pairs} kerning pairs`);
