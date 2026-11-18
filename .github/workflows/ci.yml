@@ -50,6 +50,10 @@ jobs:
         run: npm run conformance:field2
       - name: "Tailwind pages (113 widths)"
         run: npm run conformance:tailwind
+      - name: "Plain CSS pages (113 widths)"
+        run: npm run conformance:css
+      - name: "Fonts: Roboto and Lato (161 widths)"
+        run: npm run conformance:fonts
       - uses: actions/upload-artifact@v4
         if: always()
         with:

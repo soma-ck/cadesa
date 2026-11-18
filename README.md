@@ -63,7 +63,7 @@ $ cadesa check fixtures/tailwind/blog.html --tailwind fixtures/tailwind/compiled
   ...
 ```
 
-`check` sweeps every 20px from 320 to 1440px by default. Anything Cadesa can't model in your CSS (on Tailwind: `justify-between`, `flex-1`, margins, `dark:`) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
+`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. Anything it can't model (one-sided padding or borders, `justify-content`, `flex-grow`, `dark:`) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
 
 **Or try the examples:**
 
@@ -160,23 +160,26 @@ The engine ([`src/engine/`](src/engine/)) is the spec: its box tree depends only
 | Suite | What it covers | Result |
 | --- | --- | --- |
 | `npm run fuzz` | **differential fuzzer**: random pages covering the whole language | 39,597 pages at 148,328 widths: **688,902 boxes, 0 disagreements** (0 again on fresh seeds) |
-| `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 16,456 boxes marked exact match; 2,794 of the 3,000 marked `≈` really differ |
+| `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 16,569 boxes marked exact match; 2,794 of the 2,887 marked `≈` really differ |
+| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard | all 7,282 boxes marked exact match, every 10px from 320 to 1440px |
+| `conformance:fonts` | Roboto (variable, from Google Fonts) and Lato (two static faces via `@font-face`) | 5,474 of 5,474, and the line count of all 4,347 text boxes, over 161 widths |
 | `conformance:landing` | grid, text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
 | `conformance:field2` | every divergence found in real use, kept fixed | 2,576 of 2,576 over 161 widths |
 | `conformance:sweep` | long copy every 3px, to land on line-break boundaries | 1,482 of 1,482 over 247 widths |
-| `conformance:lift` | lifted hand-written CSS vs the original | 15 of 15 marked exact match; 17 of 17 marked uncertain really differ |
+| `conformance:lift` | a hand-written BEM stylesheet vs the original | all 28 boxes match, none left uncertain |
 
 Real use has caught Cadesa wrong before: the site rebuild above found seven cases where it said "fine" and Chromium disagreed. Each was fixed and kept as a regression test, and the fuzzer then found and fixed the next ones, mostly in exactly how Chromium rounds text widths and picks line breaks (59 regression cases in [`fixtures/fuzz`](fixtures/fuzz)). Where Chromium's choice hinges on a fraction of a pixel, the box is flagged rather than guessed.
 
-**Text without a browser.** Cadesa bundles [Inter](https://rsms.me/inter/) (SIL OFL 1.1) and a metrics table of its glyph advances and kerning, measured once from Chromium. For your own font, measure it once and commit the result:
+**Fonts.** Text is measured from per-font tables of glyph widths and kerning, measured once in Chromium. Cadesa bundles them for **Inter, Roboto, Open Sans, Montserrat, Lato, Poppins, Source Sans 3, Nunito and Raleway**, so those work with no setup. For any other font:
 
 ```sh
-npm i -D playwright
-cadesa metrics fonts/BrandSans.woff2 --family "Brand Sans"   # writes .cadesa/metrics/brand-sans.metrics.json
+cadesa fonts page.html --css styles.css            # which fonts the text uses, and where each comes from
+cadesa fonts page.html --css styles.css --measure  # measure them all (needs Playwright + Chrome/Chromium)
+cadesa metrics --google "Work Sans"                # or a Google font by name
 ```
 
-Text in a font without metrics, or with characters outside the measured Latin set, falls back to a one-line assumption, and every report flags that box. No hyphenation, `text-wrap: balance` or bidirectional text yet.
+`cadesa fonts` finds each family's `@font-face` file or Google Fonts link, measures the exact files the page loads, and writes `.cadesa/metrics/<family>.metrics.json`; commit it. Agents can do the same with the `cadesa_fonts` MCP tool. System fonts (Arial, Segoe UI, `system-ui`) differ by machine: reports say so, and `--system` measures this machine's, marked machine-specific. Text in a font without metrics, or with characters outside the measured Latin set, falls back to a one-line assumption, and every report flags that box. No hyphenation, `text-wrap: balance` or bidirectional text yet.
 
 ## Why a language
 
@@ -216,10 +219,12 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `layout.pattern: cluster` | | `display:flex; flex-wrap:wrap; align-items:center` |
 | `layout.pattern: grid` + `min` | size token | `grid-template-columns: repeat(auto-fill, minmax(min(<min>, 100%), 1fr))` |
 | `layout.pattern: layer` | | one grid cell holding every child: text over a photo, a badge over a card |
+| `layout.pattern: flow` | | ordinary block flow (`display: block`): children stack, vertical margins collapse as in the browser |
 | `layout.gap` | space token | `gap` |
 | `layout.align` | `start`, `center`, `end`, `stretch` | `align-items` (cluster defaults to `center`, grid and layer to `stretch`; not for stack) |
 | `padding` | space token, or `{ block, inline }` | `padding` (a missing axis is 0) |
-| `width` | size token, or `fill` | fixed width, or stretch in a stack. Unset: stretch in a stack, sized to its text in a cluster |
+| `margin` | space token, `{ block, inline }` or `{ top, right, bottom, left }` | `margin`; collapses between blocks in `flow`, adds to the outer size in stacks, rows and grids |
+| `width` | size token (px, rem or `"50%"`), or `fill` | fixed width, or stretch in a stack. Unset: stretch in a stack, sized to its text in a cluster |
 | `height` | size token | `height` |
 | `maxWidth` | size token | a centered column (`max-width` + `margin-inline: auto`), e.g. content inside a full-bleed band |
 | `measure` | size token | a left-aligned `max-width`: a comfortable line length |
@@ -235,14 +240,14 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 
 ## Roadmap
 
-- **More of Tailwind:** `justify-*`, `flex-1`, margins and `dark:`, which are reported as `≈` today.
-- **More of CSS:** `min-width` and range breakpoints, a `row` pattern and shared flexible widths.
+- **More of CSS:** one-sided padding and borders, `justify-content`, `flex-grow`/`flex-1`, explicit grid templates and percentage padding, which are reported as `≈` today; following `@import` and several stylesheets per page.
+- **More of Tailwind:** `dark:` and container queries.
 
 ## Development
 
 ```sh
 npm test && npm run typecheck   # unit tests, including the fuzzer's regression corpus
-npm run conformance:landing     # any conformance suite above (needs Chrome or Chromium)
+npm run conformance:css         # any conformance suite above (needs Chrome or Chromium)
 npm run fuzz -- --cases 2000    # differential fuzzer against Chromium
 npm run speed                   # engine vs Playwright
 npm run bench                   # agent benchmark (uses the claude CLI and model usage)
