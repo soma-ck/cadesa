@@ -116,6 +116,37 @@ export function googleFamilies(url: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * The weights a Google Fonts URL asks for one family: "400", "700", or a range "100 900" (css2
+ * "Name:wght@400;700", "Name:ital,wght@0,400;1,700" or "Name:wght@100..900"; css "Name:400,700").
+ * Empty when it names no weights (the API then serves 400).
+ */
+export function googleWeights(url: string, family: string): string[] {
+  const u = new URL(url.startsWith("//") ? `https:${url}` : url);
+  for (const f of u.searchParams.getAll("family").flatMap((x) => x.split("|"))) {
+    const [name, spec] = f.split(":");
+    if (name.trim().toLowerCase() !== family.toLowerCase()) continue;
+    if (!spec) return ["400"];
+    const at = spec.indexOf("@");
+    if (at < 0) return [...new Set(spec.split(",").map((w) => (w.match(/\d+/) ?? ["400"])[0]))];
+    const axes = spec.slice(0, at).split(",");
+    const wi = axes.indexOf("wght");
+    if (wi < 0) return ["400"];
+    const ii = axes.indexOf("ital");
+    return [
+      ...new Set(
+        spec
+          .slice(at + 1)
+          .split(";")
+          .map((t) => t.split(","))
+          .filter((t) => ii < 0 || t[ii] === "0")
+          .map((t) => t[wi].replace("..", " ")),
+      ),
+    ];
+  }
+  return [];
+}
+
 const unquote = (s: string) => s.trim().replace(/^["']|["']$/g, "");
 
 /** A CSS font-weight descriptor as Cadesa writes it: "400", or "100 900" for a range. */
@@ -255,6 +286,8 @@ export interface FontReport extends FontUse {
   metrics?: MetricsInfo & { file: string };
   /** For a measured font the page also declares: whether the page's files are the ones measured. */
   sameFiles?: boolean;
+  /** For a measured font: why its table may not fit what the page loads (--measure measures that). */
+  remeasure?: string;
   faces: FontFaceRule[];
   google?: GoogleLink;
   note?: string;
@@ -279,7 +312,13 @@ export function fontReport(uses: FontUse[], sources: PageFontSources): FontRepor
       const local = faces.flatMap((f) => f.src.filter((s) => s.exists).map((s) => sha256(readFileSync(s.path!))));
       const measured = new Set((m.info.files ?? []).map((f) => f.sha256).filter(Boolean));
       if (local.length && measured.size) r.sameFiles = local.some((h) => measured.has(h));
-      if (r.sameFiles === false) r.note = "the page's font files differ from the ones measured: --measure measures the page's own";
+      if (r.sameFiles === false) r.remeasure = "the page's font files differ from the ones measured";
+      // A variable table, while the page declares single weights: the browser uses the nearest
+      // declared weight, not the one asked for.
+      const declared = faces.length ? faces.filter((f) => f.style === "normal").map((f) => f.weight) : google ? googleWeights(google.url, u.family) : [];
+      if (!r.remeasure && m.info.kind === "variable" && declared.length && declared.every((w) => !w.includes(" ")) && u.weights.some((w) => !declared.includes(String(w))))
+        r.remeasure = `the page declares only weights ${declared.join(", ")} (text at ${u.weights.filter((w) => !declared.includes(String(w))).join(", ")} uses the nearest of them), but the table is variable`;
+      if (r.remeasure) r.note = `${r.remeasure}: --measure measures what the page loads`;
       if (m.info.machineSpecific) r.note = m.info.machineSpecific;
       return r;
     }
@@ -515,16 +554,27 @@ export async function measureReport(report: FontReport[], opts: MeasureOptions =
   const out = opts.out ?? join(".cadesa", "metrics");
   const cacheDir = join(dirname(resolve(out)), "fonts");
   const todo = report.filter(
-    (r) => r.status === "file" || r.status === "google" || (r.status === "measured" && r.sameFiles === false) || ((r.status === "system" || r.status === "unknown") && opts.system && !!r.stack),
+    (r) => r.status === "file" || r.status === "google" || (r.status === "measured" && !!r.remeasure) || ((r.status === "system" || r.status === "unknown") && opts.system && !!r.stack),
   );
   const done: Measured[] = [];
+  // A measured font the page loads from Google Fonts: measured again when the page's link now
+  // serves other files than those measured (Google updates fonts; bundled tables age).
+  for (const r of report.filter((r) => r.status === "measured" && r.google && !r.faces.length && !r.remeasure && !r.metrics?.machineSpecific)) {
+    try {
+      const urls = facesToMeasure(await googleFaces(r.google!.url), r.family).flatMap((f) => f.src.map((s) => s.url));
+      const measured = new Set((r.metrics!.files ?? []).map((f) => f.url));
+      if (urls.length && !urls.every((u) => measured.has(u))) todo.push({ ...r, status: "google" });
+    } catch (e) {
+      done.push({ family: r.family, via: "google", faces: [], error: (e as Error).message.split("\n")[0] });
+    }
+  }
   if (!todo.length) return done;
   const browser = opts.browser ?? (await launchChromium());
   try {
     for (const r of todo) {
       try {
-        if (r.status === "file" || r.status === "measured") done.push(await measureFaces(r.family, r.faces, { out, cacheDir, browser, via: "file" }));
-        else if (r.status === "google") done.push(await measureFaces(r.family, await googleFaces(r.google!.url), { out, cacheDir, browser, via: "google" }));
+        if (r.status === "file" || (r.status === "measured" && r.faces.length)) done.push(await measureFaces(r.family, r.faces, { out, cacheDir, browser, via: "file" }));
+        else if (r.status === "google" || (r.status === "measured" && r.google)) done.push(await measureFaces(r.family, await googleFaces(r.google!.url), { out, cacheDir, browser, via: "google" }));
         else done.push(await measureSystem(r.family, [...new Set([400, 700, ...r.weights])].sort((a, b) => a - b), { out, browser, stack: r.stack }));
       } catch (e) {
         done.push({ family: r.family, via: r.status === "system" || r.status === "unknown" ? "system" : r.status === "google" ? "google" : "file", faces: [], error: (e as Error).message.split("\n")[0] });

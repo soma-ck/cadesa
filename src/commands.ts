@@ -292,7 +292,7 @@ export async function fontsCmd(
     text += formatMeasured(measured) + (measured.length ? "\n" : "");
     report = fontsOf(s, renderPage(model, p, s.widths));
   }
-  const measurable = report.some((f) => f.status === "file" || f.status === "google" || f.sameFiles === false);
+  const measurable = report.some((f) => f.status === "file" || f.status === "google" || !!f.remeasure);
   const system = report.some((f) => (f.status === "system" || f.status === "unknown") && !!f.stack);
   const how = (extra: string) => (s.via === "mcp" ? `call cadesa_fonts again with measure: true${extra ? ", system: true" : ""}` : `cadesa fonts ${flags(s)} --measure${extra}`);
   const hint = s.measure
