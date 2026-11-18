@@ -1,6 +1,6 @@
 {
   "name": "cadesa",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Predict what a style edit will do before you make it. Cadesa computes layout without a browser and ships plain CSS.",
   "keywords": [
     "css",
