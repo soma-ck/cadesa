@@ -8,9 +8,40 @@
 
 **Know what your layout does at every width before you open a browser.**
 
-Point Cadesa at your coding agent (MCP), your existing CSS or your Tailwind page, and it tells you what breaks at 320px, what an edit will move three sections away, and where the design is muddled. It answers in milliseconds, as text, from a layout engine that runs without a browser and matches Chromium box for box.
+Point Cadesa at your coding agent (MCP), your existing CSS or your Tailwind page, and it tells you what breaks at 320px, what an edit will move three sections away, and where the design is muddled. It answers in milliseconds, as text, from a layout engine that runs without a browser.
+
+What "matches Chromium" means here: every box Cadesa marks as exact matches Chromium within 0.5px in [the conformance suites and a differential fuzzer](#how-exact-is-exact) that run in CI. Boxes it can't model exactly are marked `≈`, and every report starts by saying how much of your page that is.
 
 <img src="https://raw.githubusercontent.com/soma-ck/cadesa/master/docs/demo.svg" alt="Animated terminal: cadesa whatif shows that changing the settings panel's narrow padding moves six boxes at 390px (padding 16 → 32px, traced to its source line) and leaves 1280px unchanged; then cadesa check finds one word overflowing a trip card by 3.14px, only at 1100px.">
+
+## What a report looks like
+
+```console
+$ cadesa check fixtures/verify/page.html --css fixtures/verify/page.css --widths 400,800
+coverage: 7 boxes × 2 widths · 86% exact · 14% approximate (≈)
+  ≈ because: .zoomed → transform: scale(3): transform is not modelled (×2)
+
+✖ [contrast] <p.note> text #999999 on #ffffff is 2.85:1; WCAG AA needs 4.5:1 · at 400, 800px
+    element: fixtures/verify/page.html:11 <p class="note"> "Muted text, too light to read."
+    color: fixtures/verify/page.css:43 .note { color: #999 }
+    background: fixtures/verify/page.css:7 body { background-color: #fff }
+⚠ [layout] <div.wide> overflows <div.box> by 100px at 400px · at 400, 800px
+    element: fixtures/verify/page.html:12 <div class="box"> "A box wider than its parent"
+    set on <div.wide>: fixtures/verify/page.css:52 .wide { width: 400px }
+
+inconclusive (these boxes aren't predicted exactly; confirm in a browser, or run check with --verify):
+? [tap-target] <button.zoomed> is 20×20px; WCAG 2.5.8 needs at least 24×24px · at 400, 800px
+    element: fixtures/verify/page.html:10 <button class="zoomed"> "+"
+    size: fixtures/verify/page.css:33 .zoomed { width: 20px; height: 20px }
+...
+```
+
+How to read it:
+
+- **The coverage line comes first.** It says how much of the page Cadesa predicted exactly, and why the rest is `≈`. When most of a page is `≈`, it says so, and you should treat the report as leads.
+- **`✖` and `⚠` are definite.** Act on them: each names the element, the widths and the rule to change. Contrast, text that runs together and other checks that don't depend on exact positions stay definite even on a mostly `≈` page.
+- **`?` is inconclusive.** The finding depends on a box Cadesa can't predict exactly. Here `.zoomed` is drawn at `scale(3)`, so it is really 60×60px. Confirm it in a browser, or add `--verify` and Chromium decides.
+- **`whatif` follows the same rule.** It only says "unchanged" for boxes predicted exactly.
 
 ## What Cadesa sees
 
@@ -138,7 +169,7 @@ An agent rebuilt a 20-component French-language WordPress site in Cadesa, checki
 
 | Command / MCP tool | Question it answers |
 | --- | --- |
-| `whatif` · `cadesa_whatif` | If I make this edit, what moves at each width, and does anything regress? Runs in memory, writes nothing. |
+| `whatif` · `cadesa_whatif` | If I make this edit (to a Cadesa source, or rules added to your CSS), what moves at each width, and does anything regress? Runs in memory, writes nothing. |
 | `check` · `cadesa_check` | Is anything overflowing, too small to tap or low contrast, at any width? `--verify` confirms each finding in Chromium. |
 | `critique` · `cadesa_critique` | Does it read as designed: type scale, hierarchy, grouping, alignment, palette? |
 | `explain` · `cadesa_explain` | Why is this value what it is, and which line do I edit? |
@@ -149,17 +180,36 @@ An agent rebuilt a 20-component French-language WordPress site in Cadesa, checki
 
 Add `--json` to any command for machine-readable output.
 
-**`whatif`:** one proposed edit, every box it moves, the line that explains each new value, and proof that other widths didn't move:
+**`whatif`:** one proposed edit, every box it moves, the line that explains each new value, and the widths that didn't move. By default it checks the same widths as `check`, plus both sides of every breakpoint, and groups widths where the edit does the same thing:
 
 ```console
 $ cadesa whatif fixtures/settings.html --source settings.cadesa.yaml --set styles.settings-panel.when.narrow.padding=panel
-390px · narrow active
-  #panel       padding 16px → 32px
-                 ← space.panel = 2rem ← when.narrow (390px ≤ 576px) ← styles.settings-panel.when.narrow.padding
-  #title       x 16 → 32  y 16 → 32  w 358 → 326
-  ...
-1280px
-  ✓ unchanged: no box moved, no property changed
+coverage: 6 boxes × 59 widths · 100% exact · 0% approximate (≈)
+
+at 320–576px
+   #panel        padding 16px → 32px
+                   ← space.panel = 2rem ← when.narrow (≤ 576px) ← styles.settings-panel.when.narrow.padding
+                 h +32
+   #title        x +16  y +16  w −32
+   ...
+✓ unchanged at 577–1440px: no box moved, no property changed
+```
+
+On plain CSS, preview rules before adding them (`--add-css`), or compare an edited copy of a stylesheet (`--after`, one file per `--css` file):
+
+```console
+$ cadesa whatif fixtures/css/panel.html --css fixtures/css/panel.css --add-css ".icon-button { width: 44px; height: 44px }"
+coverage: 28 boxes × 58 widths · 88% exact · 12% approximate (≈)
+  ≈ because: .detail-row (row-gap: 4px): the row wraps and its row gap differs from its column gap (×189)
+
+at all 58 widths
+  ≈#panel   h +12
+   #header  h +12
+   #title   y +6
+   #close   width 32px → 44px
+            height 32px → 44px
+            x −12  w +12  h +12
+  ≈24 boxes below move y +12: #item, #item-name, #item-desc, #details-label +20 more (20 approximate)
 ```
 
 **`check`** covers overflow (horizontal, unbreakable words, text taller than a fixed height), text cut off by `overflow: hidden` or an ellipsis, text that runs together (`<span>Total</span><span>42</span>`), tap targets (WCAG 2.5.8 and 2.5.5), and contrast against the nearest painted background (every stop of a gradient, translucent colors blended, inline `<span>`s and badges in their own color). Content scrolling inside a scroll container (`.table-responsive`) isn't an overflow, and elements hidden at a width (`d-none`, a collapsed navbar menu) aren't laid out or reported there. Text over an image, or a background Cadesa can't see, comes back *inconclusive*, not passed; so does a size-dependent finding on a box whose size isn't exactly predicted (a box that only moves keeps its findings).
