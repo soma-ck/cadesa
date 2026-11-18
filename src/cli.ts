@@ -3,6 +3,7 @@ import { parseArgs } from "node:util";
 import {
   buildCmd,
   checkCmd,
+  checkVerifyCmd,
   critiqueCmd,
   explainCmd,
   fontsCmd,
@@ -82,6 +83,7 @@ async function main(argv: string[]) {
       weights: { type: "string" },
       google: { type: "string" },
       measure: { type: "boolean", default: false },
+      verify: { type: "boolean", default: false },
       auto: { type: "boolean", default: false },
       system: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
@@ -161,6 +163,7 @@ async function main(argv: string[]) {
       r = explainCmd({ ...page(), id: need(values.id, "--id <fixture-id>") });
       break;
     case "check":
+      if (values.verify) return asyncResult(checkVerifyCmd(page()));
       r = checkCmd(page());
       break;
     case "critique":

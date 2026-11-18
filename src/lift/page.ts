@@ -361,6 +361,8 @@ export interface PageLift {
   states: State[];
   /** Data-fixture ids of elements hidden at some widths but not others. */
   responsive: string[];
+  /** The cascade per element (for pointing findings at the rule that set a property). */
+  elements: { els: El[]; html?: El; body?: El };
 }
 
 /**
@@ -1619,6 +1621,7 @@ export abstract class PageLifter {
       dynamic,
       states: this.states,
       responsive,
+      elements: { els: this.els, html: this.htmlEl, body: this.bodyEl },
     };
   }
 
