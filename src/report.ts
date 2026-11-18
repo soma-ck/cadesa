@@ -1,4 +1,6 @@
 import type { Finding } from "./check.js";
+import { describeElement, describeRules } from "./pointers.js";
+import type { VerifyReport } from "./verify.js";
 import { walk, type Box, type Issue, type Layout } from "./engine/layout.js";
 import type { Explanation } from "./explain.js";
 import type { WidthImpact } from "./lift/impact.js";
@@ -265,40 +267,86 @@ export function formatCoverage(c: Coverage): string {
   return out.join("\n") + "\n";
 }
 
-export function formatCheck(findings: Finding[], widths: number[], cov?: Coverage): string {
+export function formatCheck(findings: Finding[], widths: number[], cov?: Coverage, verify?: VerifyReport): string {
   const head = cov ? formatCoverage(cov) + "\n" : "";
-  if (!findings.length) return `${head}✓ no findings at ${describeWidths(widths)}\n`;
+  if (!findings.length) return shortenPaths(`${head}✓ no findings at ${describeWidths(widths)}\n${verify ? "\n" + formatVerify(verify) : ""}`);
   // One line per issue (same check, element, severity and edit path), listing the widths it occurs at.
-  const groups = new Map<string, { first: Finding; widths: number[] }>();
+  const groups = new Map<string, { first: Finding; all: Finding[]; widths: number[] }>();
   for (const f of findings) {
-    const key = [f.check, f.id, f.severity, f.inconclusive ? 1 : 0, f.path ?? ""].join("|");
-    const g = groups.get(key) ?? { first: f, widths: [] };
+    const state = f.verified?.status === "not reproduced" ? "not reproduced" : [f.severity, f.inconclusive ? 1 : 0].join("|");
+    const key = [f.check, f.id, state, f.path ?? ""].join("|");
+    const g = groups.get(key) ?? { first: f, all: [], widths: [] };
     g.widths.push(f.width);
+    g.all.push(f);
     groups.set(key, g);
   }
-  const rank = (f: Finding) => (f.inconclusive ? 2 : f.severity === "error" ? 0 : 1);
+  const notReproduced = (f: Finding) => f.verified?.status === "not reproduced";
+  const rank = (f: Finding) => (notReproduced(f) ? 3 : f.inconclusive ? 2 : f.severity === "error" ? 0 : 1);
   const sorted = [...groups.values()].sort((a, b) => rank(a.first) - rank(b.first));
   const out: string[] = [];
-  let shownInconclusiveHeader = false;
+  let section = -1;
   for (const g of sorted) {
     const f = g.first;
-    if (f.inconclusive && !shownInconclusiveHeader) {
-      out.push("", "inconclusive (these boxes aren't predicted exactly; confirm in a browser):");
-      shownInconclusiveHeader = true;
-    }
-    const icon = f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠";
+    const r = rank(f);
+    if (r !== section && r >= 2)
+      out.push(
+        "",
+        r === 2
+          ? `inconclusive (these boxes aren't predicted exactly; ${verify ? "Chromium couldn't decide them either" : "confirm in a browser, or run check with --verify"}):`
+          : "not reproduced in Chromium (no problem there at the widths it loaded):",
+      );
+    section = r;
+    const icon = notReproduced(f) ? "○" : f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠";
     const msg = f.message.replace(/ \(inconclusive: this box isn't exactly predicted for the original CSS\)/, "");
-    out.push(`${icon} [${f.check}] ${msg} · at ${widthRanges(g.widths, widths)}${f.path ? `\n    edit: ${f.path}` : ""}`);
+    out.push(`${icon} [${f.check}] ${msg} · at ${widthRanges(g.widths, widths)}`);
+    if (f.element) out.push(`    element: ${describeElement(f.element)}`);
+    for (const s of f.source ?? []) {
+      const [first, ...rest] = describeRules(s.rules);
+      out.push(`    ${s.what}: ${first}`, ...rest.map((x) => `    ${" ".repeat(s.what.length + 2)}${x}`));
+    }
+    if (!f.element && f.path) out.push(`    edit: ${f.path}`);
+    if (verify) out.push(`    chromium: ${verifiedLine(g.all, widths)}`);
   }
-  const conclusive = sorted.filter((g) => !g.first.inconclusive);
+  const shown = sorted.filter((g) => !notReproduced(g.first));
+  const conclusive = shown.filter((g) => !g.first.inconclusive);
   const errors = conclusive.filter((g) => g.first.severity === "error").length;
   const warnings = conclusive.length - errors;
-  const inconclusive = sorted.length - conclusive.length;
+  const inconclusive = shown.length - conclusive.length;
+  const gone = sorted.length - shown.length;
   out.push(
     "",
-    `${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}${inconclusive ? `, ${inconclusive} inconclusive` : ""} (distinct issues across ${describeWidths(widths)})`,
+    `${errors} error${errors === 1 ? "" : "s"}, ${warnings} warning${warnings === 1 ? "" : "s"}${inconclusive ? `, ${inconclusive} inconclusive` : ""}${gone ? `, ${gone} not reproduced in Chromium` : ""} (distinct issues across ${describeWidths(widths)})`,
   );
+  if (verify) out.push(formatVerify(verify).trimEnd());
   return shortenPaths(head + out.join("\n").replace(/^\n/, "") + "\n");
+}
+
+/** "confirmed at 320–560px (40×40px)" for one group of findings. */
+function verifiedLine(fs: Finding[], all: number[]): string {
+  const by = new Map<string, Finding[]>();
+  for (const f of fs) if (f.verified) by.set(f.verified.status, [...(by.get(f.verified.status) ?? []), f]);
+  const parts: string[] = [];
+  for (const status of ["confirmed", "not reproduced", "predicted"]) {
+    const g = by.get(status);
+    if (!g) continue;
+    const detail = g[0].verified!.detail;
+    const at = g.length === fs.length && status !== "predicted" && fs.length === 1 ? "" : ` at ${widthRanges(g.map((f) => f.width), all)}`;
+    parts.push(`${status === "predicted" ? "not checked" : status}${at}${detail ? ` (${detail})` : ""}`);
+  }
+  const also = fs[0].verified?.alsoAt;
+  if (also?.length) parts.push(`Chromium also shows it at ${also.join(", ")}px`);
+  return parts.join(" · ") || "not checked";
+}
+
+export function formatVerify(v: VerifyReport): string {
+  const b = v.boxes;
+  const out = [
+    `verified in ${v.browser} at ${v.widths.length} width${v.widths.length === 1 ? "" : "s"} (${v.widths.length - v.sampled.length} with findings, ${v.sampled.length} without)`,
+    `  ${[b.exact && `boxes marked exact: ${b.exact - b.exactDiffer} of ${b.exact} match Chromium within 0.5px`, b.approximate && `boxes marked ≈: ${b.approximate - b.approximateDiffer} of ${b.approximate} match`].filter(Boolean).join(" · ") || "no boxes to compare"}`,
+    ...b.examples.map((e) => `    differs: ${e}`),
+    ...v.notes.map((n) => `  ${n}`),
+  ];
+  return out.join("\n") + "\n";
 }
 
 export function formatImpact(impacts: WidthImpact[]): string {

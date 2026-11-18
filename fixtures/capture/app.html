@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="csrf-token" content="secret-token-123" />
+    <title>Cadesa fixture: a page built by script, for cadesa capture</title>
+    <link rel="stylesheet" href="base.css" />
+    <style>
+      .card { padding: 16px; border: 1px solid #d0d4da; }
+    </style>
+  </head>
+  <body>
+    <div id="root">Loading…</div>
+    <script>
+      // Render the page, then style it the way CSS-in-JS libraries do: rules inserted through the
+      // CSSOM into an empty <style> element, so the element has no text.
+      const root = document.getElementById("root");
+      root.innerHTML = `
+        <main class="page">
+          <h1 class="title">Orders</h1>
+          <section class="card">
+            <p class="muted">Three orders are waiting for review.</p>
+            <button class="icon-btn" aria-label="Close">×</button>
+          </section>
+          <form class="login"><input type="password" value="hunter2" /><input type="hidden" name="token" value="abc" /></form>
+        </main>`;
+      const style = document.createElement("style");
+      document.head.appendChild(style);
+      style.sheet.insertRule(".title { font-size: 28px; margin: 0 0 12px; }");
+      style.sheet.insertRule(".icon-btn { width: 20px; height: 20px; padding: 0; border: 0; font: inherit; line-height: 1; }");
+      style.sheet.insertRule(".muted { color: #9aa0a6; margin: 0 0 8px; }");
+    </script>
+  </body>
+</html>

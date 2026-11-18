@@ -9,12 +9,11 @@
  * Browser: $CADESA_CHROME, else a system Chrome/Chromium, else Playwright's bundled Chromium
  * (`npx playwright install chromium`).
  */
-import { createHash } from "node:crypto";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { createServer } from "node:http";
-import { extname, join, resolve } from "node:path";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { chromium } from "playwright";
+import { measureBoxes, measureLineCounts, rectDelta, serveFiles, settle, sha256 as sha } from "../src/browser.js";
+import { findChrome, launchChromium } from "../src/metrics.js";
 import { compile } from "../src/compile.js";
 import { walk, type Layout } from "../src/engine/layout.js";
 import { parseFixture } from "../src/fixture.js";
@@ -58,7 +57,6 @@ const tolerance = Number(values.tolerance);
 const widths = parseWidths(values.widths!);
 /** A page lift: Tailwind's compiled CSS, or plain CSS (--lift). */
 const tw = values.tailwind ?? values.lift;
-const sha = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
 
 // 1. Build, so we know exactly which bytes the browser must receive. With --lift, the original CSS
 //    is served untouched and the engine works from its lift.
@@ -75,24 +73,13 @@ if (!tw) {
 const builtSha = sha(css);
 
 // 2. Serve the repo and record every stylesheet byte stream the page actually loads.
-const served = new Map<string, string>();
 /** Pages served with different bytes (Tailwind: generated classes and ids added). */
 const overrides = new Map<string, string>();
-const types: Record<string, string> = { ".html": "text/html", ".css": "text/css", ".svg": "image/svg+xml", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".webp": "image/webp", ".woff2": "font/woff2", ".ttf": "font/ttf" };
-const server = createServer((req, res) => {
-  const path = resolve(root, "." + decodeURIComponent(new URL(req.url!, "http://x").pathname));
-  if (!path.startsWith(root) || !existsSync(path)) return void res.writeHead(404).end();
-  const body = overrides.has(path) ? Buffer.from(overrides.get(path)!) : readFileSync(path);
-  if (path.endsWith(".css")) served.set(path, sha(body));
-  res.writeHead(200, { "content-type": types[extname(path)] ?? "application/octet-stream" }).end(body);
-});
-await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
-const port = (server.address() as { port: number }).port;
+const server = await serveFiles(root, overrides);
+const served = server.css;
 
-const executablePath =
-  process.env.CADESA_CHROME ??
-  ["/usr/bin/chromium", "/usr/bin/google-chrome-stable", "/usr/bin/google-chrome", "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"].find(existsSync);
-const browser = await chromium.launch({ executablePath });
+const executablePath = findChrome();
+const browser = await launchChromium();
 
 mkdirSync(values.out!, { recursive: true });
 let failures = 0;
@@ -131,35 +118,14 @@ for (const layout of layouts) {
   // A text box the engine couldn't measure (no font metrics) is flagged in every report: uncertain.
   if (tw) for (const b of walk(layout.boxes)) if (b.assumptions.length) (uncertain.add(b.id), assumed++);
   const page = await browser.newPage({ viewport: { width: layout.width, height: 900 } });
-  await page.goto(`http://127.0.0.1:${port}/${fixtureFile}`);
-  await page.evaluate("document.fonts.ready");
-  await page.evaluate("Promise.all([...document.images].map((i) => i.decode().catch(() => {})))");
+  await page.goto(server.url(fixtureFile));
+  await settle(page);
   for (const family of families) {
     const ok = await page.evaluate(`document.fonts.check(${JSON.stringify(`16px "${family}"`)}) && ![...document.fonts].some((f) => f.status === "error")`);
     if (!ok) throw new Error(`font "${family}" did not load in ${fixtureFile}`);
   }
-  const rects: Record<string, { x: number; y: number; w: number; h: number }> = await page.evaluate(() =>
-    Object.fromEntries(
-      [...document.querySelectorAll<HTMLElement>("[data-fixture]")].map((el) => {
-        const r = el.getBoundingClientRect();
-        return [el.dataset.fixture!, { x: r.x, y: r.y, w: r.width, h: r.height }];
-      }),
-    ),
-  );
-  // Lines of text in each element: its text's line boxes, by distinct top edge.
-  const lineCounts: Record<string, number> = strict
-    ? await page.evaluate(`Object.fromEntries([...document.querySelectorAll("[data-fixture]")].map((el) => {
-        const tops = new Set();
-        const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
-        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
-          if (!n.textContent.trim()) continue;
-          const r = document.createRange();
-          r.selectNodeContents(n);
-          for (const q of r.getClientRects()) if (q.width > 0) tops.add(Math.round(q.top * 4));
-        }
-        return [el.dataset.fixture, tops.size];
-      }))`)
-    : {};
+  const rects = await measureBoxes(page);
+  const lineCounts = strict ? await measureLineCounts(page) : {};
   const bottom = Math.max(...Object.values(rects).map((r) => r.y + r.h));
   if (!tw || [400, 760, 1280].includes(layout.width)) await page.screenshot({
     path: join(values.out!, `${name}-${layout.width}.png`),
@@ -175,7 +141,7 @@ for (const layout of layouts) {
     const c = rects[b.id];
     const fmt = (r: { x: number; y: number; w: number; h: number }) =>
       `${+r.x.toFixed(2)},${+r.y.toFixed(2)} ${+r.w.toFixed(2)}×${+r.h.toFixed(2)}`;
-    const delta = c ? Math.max(...(["x", "y", "w", "h"] as const).map((k) => Math.abs(b[k] - c[k]))) : Infinity;
+    const delta = c ? rectDelta(b, c) : Infinity;
     const linesOk = !strict || !b.lines || b.lines.length === lineCounts[b.id];
     const ok = delta <= tolerance && linesOk;
     const flagged = uncertain.has(b.id) || (strict && b.assumptions.length > 0);

@@ -33,6 +33,12 @@ import {
   type Measured,
 } from "./fonts.js";
 import { generateMetrics, launchChromium, writeMetrics } from "./metrics.js";
+import { pointFindings, Pointers } from "./pointers.js";
+import { verifyFindings, type VerifyReport } from "./verify.js";
+import { capture, formatCapture } from "./capture.js";
+import { existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
+import { pathToFileURL } from "node:url";
 
 export interface Result {
   text: string;
@@ -266,25 +272,44 @@ export function explainCmd(s: SourceInput & { fixture: string; widths: number[];
   return { text: results.map((r) => formatExplain(r!)).join("\n"), data: results, ok: true };
 }
 
-export function checkCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
+/** The engine's sweep for check: findings, coverage and what verify and the pointers need. */
+function runCheck(s: SourceInput & { fixture: string; widths: number[] }) {
   const p = pageOf(s);
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
   const findings = check(layouts, imp?.impacts);
   const cov = coverage(layouts, imp?.impacts);
-  if (p.tw || s.css) {
-    // Tailwind: also name the element in the page, where the utilities are edited.
-    const lines = new Map<string, number>();
-    const visit = (ns: Fixture["body"]) => ns.forEach((n) => (n.fixtureId && n.line && lines.set(n.fixtureId, n.line), visit(n.children)));
-    visit(p.fixture.body);
-    for (const f of findings) if (lines.has(f.id)) f.message += ` [${s.fixture}:${lines.get(f.id)}]`;
-  }
+  return { p, layouts, impacts: imp?.impacts, findings, cov };
+}
+
+function finishCheck(s: SourceInput & { fixture: string; widths: number[] }, run: ReturnType<typeof runCheck>, verified?: VerifyReport): Result {
+  const { p, layouts, findings, cov } = run;
+  // On a lifted page, name the element in the page and the CSS rules behind each finding.
+  if (p.tw) pointFindings(findings, p.tw);
   const fonts = fontsOf(s, layouts);
   return {
-    text: formatCheck(findings, s.widths, cov) + fontsNote(fonts, s, false),
-    data: { coverage: cov, findings, fonts: fontsData(fonts) },
-    ok: !findings.some((f) => f.severity === "error"),
+    text: formatCheck(findings, s.widths, cov, verified) + fontsNote(fonts, s, false),
+    data: { coverage: cov, findings, fonts: fontsData(fonts), ...(verified && { verify: verified }) },
+    ok: !findings.some((f) => f.severity === "error" && !f.inconclusive && f.verified?.status !== "not reproduced"),
   };
+}
+
+export function checkCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
+  return finishCheck(s, runCheck(s));
+}
+
+/** `check --verify`: the sweep, then each finding measured in Chromium (Playwright). */
+export async function checkVerifyCmd(s: SourceInput & { fixture: string; widths: number[] }): Promise<Result> {
+  const run = runCheck(s);
+  if (!run.p.tw) throw new InputError("--verify needs a page with its CSS: --css <file.css> or --tailwind <compiled.css>");
+  const cssFiles = (s.tailwind ?? s.css!).split(",").map((f) => f.trim()).filter(Boolean);
+  const names = new Pointers(run.p.tw);
+  const describe = (id: string) => {
+    const e = names.element(id);
+    return `${names.short(id) ?? `#${id}`}${e?.line ? ` (${basename(e.file)}:${e.line})` : ""}`;
+  };
+  const report = await verifyFindings({ page: s.fixture, html: run.p.tw.html, cssFiles, findings: run.findings, layouts: run.layouts, impacts: run.impacts, describe });
+  return finishCheck(s, run, report);
 }
 
 // ------------------------------------------------------------------ fonts
@@ -461,4 +486,16 @@ function liftTailwindCmd(s: { css: string; page: string; out?: string; widths: n
     data: { source: tw.yaml, fixture: tw.html, unlifted: tw.lifted.unlifted, stats: tw.lifted.stats, impact: impacts, states: tw.states, responsive: tw.responsive },
     ok: true,
   };
+}
+
+/**
+ * `cadesa capture <url>`: save the page as Chromium rendered it (DOM, stylesheets, fonts) for
+ * check. A local file path is loaded as a file:// URL.
+ */
+export async function captureCmd(s: { url: string; out?: string; loginScript?: string; wait?: string; width?: number }): Promise<Result> {
+  const url = /^[a-z][\w+.-]*:/i.test(s.url) ? s.url : existsSync(s.url) ? pathToFileURL(resolvePath(s.url)).href : undefined;
+  if (!url) throw new InputError(`capture needs a URL (https://...) or an existing file; got "${s.url}"`);
+  if (s.loginScript && !existsSync(s.loginScript)) throw new InputError(`no login script at ${s.loginScript}`);
+  const r = await capture({ url, out: s.out ?? "capture", loginScript: s.loginScript, wait: s.wait, width: s.width });
+  return { text: formatCapture(r), data: r, ok: true };
 }
