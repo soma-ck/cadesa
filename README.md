@@ -52,6 +52,7 @@ Cursor and other MCP clients: `{"mcpServers": {"cadesa": {"command": "npx", "arg
 
 ```sh
 npx -y cadesa check page.html --css styles.css
+npx -y cadesa check page.html --css bootstrap.css,app.css   # a framework plus your own CSS
 npx -y cadesa check page.html --tailwind compiled.css
 ```
 
@@ -63,7 +64,7 @@ $ cadesa check fixtures/tailwind/blog.html --tailwind fixtures/tailwind/compiled
   ...
 ```
 
-`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. Anything it can't model (one-sided padding or borders, `justify-content`, `flex-grow`, `dark:`) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
+`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. It also understands what Bootstrap 5 and Angular pages are built from: the grid (negative gutters, `.col` growth, `col-*` and `row-cols-*` widths), `.container` max-widths that disappear on phones, `d-flex` rows with `justify-content` and auto margins, per-side padding and borders, form controls, and Angular's component elements. Anything it can't model (tables' heights, floats, and buttons aligned to a line of text, which need font vertical metrics) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
 
 **Or try the examples:**
 
@@ -160,8 +161,9 @@ The engine ([`src/engine/`](src/engine/)) is the spec: its box tree depends only
 | Suite | What it covers | Result |
 | --- | --- | --- |
 | `npm run fuzz` | **differential fuzzer**: random pages covering the whole language | 39,597 pages at 148,328 widths: **688,902 boxes, 0 disagreements** (0 again on fresh seeds) |
-| `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 16,569 boxes marked exact match; 2,794 of the 2,887 marked `≈` really differ |
-| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard | all 7,282 boxes marked exact match, every 10px from 320 to 1440px |
+| `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 19,056 boxes marked exact match (400 left `≈`) |
+| `conformance:bootstrap` | four Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` | all 10,845 boxes marked exact match; one page fully exact, the rest held back mostly by font vertical metrics |
+| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard | all 8,118 boxes marked exact match, every 10px from 320 to 1440px |
 | `conformance:fonts` | Roboto (variable, from Google Fonts) and Lato (two static faces via `@font-face`) | 5,474 of 5,474, and the line count of all 4,347 text boxes, over 161 widths |
 | `conformance:landing` | grid, text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
@@ -169,7 +171,7 @@ The engine ([`src/engine/`](src/engine/)) is the spec: its box tree depends only
 | `conformance:sweep` | long copy every 3px, to land on line-break boundaries | 1,482 of 1,482 over 247 widths |
 | `conformance:lift` | a hand-written BEM stylesheet vs the original | all 28 boxes match, none left uncertain |
 
-Real use has caught Cadesa wrong before: the site rebuild above found seven cases where it said "fine" and Chromium disagreed. Each was fixed and kept as a regression test, and the fuzzer then found and fixed the next ones, mostly in exactly how Chromium rounds text widths and picks line breaks (59 regression cases in [`fixtures/fuzz`](fixtures/fuzz)). Where Chromium's choice hinges on a fraction of a pixel, the box is flagged rather than guessed.
+Real use has caught Cadesa wrong before: the site rebuild above found seven cases where it said "fine" and Chromium disagreed. Each was fixed and kept as a regression test, and the fuzzer then found and fixed the next ones, mostly in exactly how Chromium rounds text widths and picks line breaks (59 regression cases in [`fixtures/fuzz`](fixtures/fuzz)). Where Chromium's choice hinges on a fraction of a pixel, the box is flagged rather than guessed. Testing on Bootstrap pages also caught one released bug: 0.1.6 predicted an empty Angular `<router-outlet>` as full width instead of 0×0, and every box after it was off. 0.1.7 fixes it, and the Bootstrap suite keeps it fixed.
 
 **Fonts.** Text is measured from per-font tables of glyph widths and kerning, measured once in Chromium. Cadesa bundles them for **Inter, Roboto, Open Sans, Montserrat, Lato, Poppins, Source Sans 3, Nunito and Raleway**, so those work with no setup. For any other font:
 
@@ -222,25 +224,30 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `layout.pattern: flow` | | ordinary block flow (`display: block`): children stack, vertical margins collapse as in the browser |
 | `layout.gap` | space token | `gap` |
 | `layout.align` | `start`, `center`, `end`, `stretch` | `align-items` (cluster defaults to `center`, grid and layer to `stretch`; not for stack) |
+| `layout.justify` | `start`, `end`, `center`, `between`, `around`, `evenly` | `justify-content` in a cluster, distributed as Chromium does |
+| `layout.wrap` | `false` | a one-line row (`flex-wrap: nowrap`) whose items shrink to fit |
+| `grow` | `{ factor, basis: zero \| auto }` | `flex: <factor> …`: items share a row's free space (Bootstrap's `.col`, Tailwind's `flex-1`) |
 | `padding` | space token, or `{ block, inline }` | `padding` (a missing axis is 0) |
-| `margin` | space token, `{ block, inline }` or `{ top, right, bottom, left }` | `margin`; collapses between blocks in `flow`, adds to the outer size in stacks, rows and grids |
-| `width` | size token (px, rem or `"50%"`), or `fill` | fixed width, or stretch in a stack. Unset: stretch in a stack, sized to its text in a cluster |
+| `margin` | space token (negative allowed), `auto`, `{ block, inline }` or `{ top, right, bottom, left }` | `margin`; collapses between blocks in `flow`, adds to the outer size in stacks, rows and grids |
+| `width` | size token (px, rem or `"50%"`), `fill` or `fit` | fixed width, stretch in a stack, or `fit-content`. Unset: stretch in a stack, sized to its content in a cluster |
 | `height` | size token | `height` |
 | `maxWidth` | size token | a centered column (`max-width` + `margin-inline: auto`), e.g. content inside a full-bleed band |
 | `measure` | size token | a left-aligned `max-width`: a comfortable line length |
 | `aspect` | `"16:9"` | `aspect-ratio`: the height follows the width |
 | `text` | text role | font family, size, weight, line height, color; optional `letterSpacing` (em), `transform: uppercase`, `decoration`, `wrap: anywhere` (long words break) |
 | `textAlign` | `start`, `center`, `end` | `text-align` (fixed-height text is also centered vertically) |
-| `border` | color token | `border: 1px solid` (the 1px counts in layout, so it's structure) |
+| `border` | color token, or `{ color, width, top, right, bottom, left }` | `border` with per-side widths (they count in layout, so it's structure) |
 | `background`, `radius`, `backdrop`, `shadow`, `fit` | tokens | polish: `background-color`, `border-radius`, `background-image`, `box-shadow`, `object-fit` |
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)`; each listed property replaces its base value, and the narrowest active breakpoint wins |
+| `none` in `when` | e.g. `maxWidth: none` | removes a base value at a breakpoint (`.container` below 576px) |
 | `page.background` | color token | `:root { background-color }`, so contrast checks are conclusive |
 
 **Components nest:** put a `.ca-plan-card` inside `.ca-pricing__plans` and the card lays out its own slots and breakpoints inside the parent's layout ([`examples/pricing`](examples/pricing)). Classes are `.ca-<component>` and `.ca-<component>__<slot>` (`prefix: ""` drops the `ca-`). The compiled CSS is plain, framework-free and has no runtime, so it works in React, Vue, Svelte or static HTML ([`examples/vue`](examples/vue)).
 
 ## Roadmap
 
-- **More of CSS:** one-sided padding and borders, `justify-content`, `flex-grow`/`flex-1`, explicit grid templates and percentage padding, which are reported as `≈` today; following `@import` and several stylesheets per page.
+- **Font vertical metrics** (ascent, descent, x-height), so inline-blocks centred on a line of text (most lone buttons) and inline spans become exact. This is the biggest remaining cause of `≈` on Bootstrap pages.
+- **Tables, floats,** explicit grid templates and percentage padding, which are reported as `≈` today.
 - **More of Tailwind:** `dark:` and container queries.
 
 ## Development

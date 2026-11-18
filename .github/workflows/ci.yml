@@ -54,6 +54,8 @@ jobs:
         run: npm run conformance:css
       - name: "Fonts: Roboto and Lato (161 widths)"
         run: npm run conformance:fonts
+      - name: "Angular + Bootstrap pages (113 widths)"
+        run: npm run conformance:bootstrap
       - uses: actions/upload-artifact@v4
         if: always()
         with:
