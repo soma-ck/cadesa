@@ -68,7 +68,8 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     else out.push(`width: ${v(p.width)}`, "align-self: auto", "flex: none");
   }
   if (p.height) out.push(`height: ${v(p.height)}`);
-  if (p.aspect) out.push(`aspect-ratio: ${p.aspect.raw}`, "height: auto");
+  // width: 100% + height: auto beat <img width/height> attributes, so the slot sizes the image.
+  if (p.aspect) out.push(...(p.width || p.maxWidth ? [] : ["width: 100%"]), `aspect-ratio: ${p.aspect.raw}`, "height: auto");
   if (p.fit) out.push(`object-fit: ${p.fit.value}`);
   // A fixed-height text box centers its lines vertically. align-content on a block container keeps
   // inline formatting intact (display: flex would split <strong> etc. into separate items).

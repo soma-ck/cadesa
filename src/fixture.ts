@@ -9,6 +9,11 @@ export interface FixtureNode {
   line?: number;
   /** Collapsed text of this element's own text nodes and descendants. */
   text: string;
+  /**
+   * The text split into runs that each start on a new line: block-level descendants (<p>, <li>,
+   * <div>...) and <br> separate runs. Most elements have one run.
+   */
+  runs: string[];
   children: FixtureNode[];
 }
 
@@ -30,9 +35,41 @@ interface P5Node {
 
 const attr = (n: P5Node, name: string) => n.attrs?.find((a) => a.name === name)?.value;
 
+// CSS white-space: normal collapses only ASCII whitespace. No-break spaces (U+00A0, U+202F) are
+// text: they must survive collapsing, and lines never break at them.
+const collapse = (s: string) => s.replace(/[ \t\n\r\f]+/g, " ").trim();
+
+const BLOCK = new Set([
+  "address", "article", "aside", "blockquote", "dd", "details", "div", "dl", "dt", "fieldset", "figcaption",
+  "figure", "footer", "form", "h1", "h2", "h3", "h4", "h5", "h6", "header", "hr", "li", "main", "nav", "ol",
+  "p", "pre", "section", "summary", "table", "tr", "ul",
+]);
+
 function textOf(n: P5Node): string {
   if (n.nodeName === "#text") return n.value ?? "";
   return (n.childNodes ?? []).map(textOf).join("");
+}
+
+function runsOf(n: P5Node): string[] {
+  const runs: string[] = [];
+  let cur = "";
+  const flush = () => {
+    const t = collapse(cur);
+    if (t) runs.push(t);
+    cur = "";
+  };
+  const walk = (k: P5Node) => {
+    if (k.nodeName === "#text") cur += k.value ?? "";
+    else if (k.tagName === "br") flush();
+    else if (k.tagName && BLOCK.has(k.tagName)) {
+      flush();
+      (k.childNodes ?? []).forEach(walk);
+      flush();
+    } else (k.childNodes ?? []).forEach(walk);
+  };
+  (n.childNodes ?? []).forEach(walk);
+  flush();
+  return runs;
 }
 
 function convert(n: P5Node): FixtureNode {
@@ -42,7 +79,8 @@ function convert(n: P5Node): FixtureNode {
     attrs: Object.fromEntries((n.attrs ?? []).map((a) => [a.name, a.value])),
     fixtureId: attr(n, "data-fixture"),
     line: n.sourceCodeLocation?.startLine,
-    text: textOf(n).replace(/\s+/g, " ").trim(),
+    text: collapse(textOf(n)),
+    runs: runsOf(n),
     children: (n.childNodes ?? []).filter((c) => c.tagName).map(convert),
   };
 }

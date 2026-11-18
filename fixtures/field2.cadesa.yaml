@@ -1,0 +1,37 @@
+# Regression fixture for field report #2: each divergence the engine had against Chromium.
+version: 1
+tokens:
+  space: { s: 0.5rem, m: 1rem, l: 2rem }
+  size: { content: 60rem, card-min: 14rem, stat: 9rem }
+  color: { page: "#f5f3ff", ink: "#1e1b4b", indigo: "#3730a3", white: "#ffffff" }
+  font: { ui: "Inter, sans-serif" }
+  paint: { band: "linear-gradient(90deg, #3730a3, #0f766e)" }
+text:
+  display: { font: ui, size: 2.5rem, weight: 760, lineHeight: 1.05, color: white }
+  stat: { font: ui, size: 1.75rem, weight: 700, lineHeight: 1.2, color: white }
+  body: { font: ui, size: 1rem, weight: 400, lineHeight: 1.5, color: ink }
+page:
+  background: page
+styles:
+  hero:
+    layout: { pattern: layer }
+    slots:
+      art: { aspect: "16:9", fit: cover }
+      copy: { layout: { pattern: layer, align: center }, padding: { inline: m } }
+      frame: { layout: { pattern: stack, gap: m } }
+      title: { text: display }
+  stats:
+    layout: { pattern: cluster, gap: m, align: start }
+    padding: l
+    background: indigo
+    backdrop: band
+    slots:
+      stat: { text: stat, width: stat }
+  faq:
+    layout: { pattern: stack, gap: m }
+    padding: l
+    maxWidth: content
+    slots:
+      answer: { text: body }
+      list: { layout: { pattern: grid, min: card-min, gap: m } }
+      cover: { aspect: "4:3", fit: cover }

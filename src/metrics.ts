@@ -24,7 +24,7 @@ export interface MetricsFile {
 const UNITS = 10000;
 const SIZE = 1000;
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => String.fromCodePoint(a + i));
-const EXTRA = ["\u2018", "\u2019", "\u201C", "\u201D", "\u2013", "\u2014", "\u2026", "\u2022", "\u20AC", "\u2122"];
+const EXTRA = ["\u2018", "\u2019", "\u201C", "\u201D", "\u2013", "\u2014", "\u2026", "\u2022", "\u20AC", "\u2122", "\u202F", "\u2009", "\u2007"];
 export const CHARS = [...range(0x20, 0x7e), ...range(0xa0, 0xff), ...EXTRA].join("");
 const KERN_CHARS = [...range(0x20, 0x7e), ...EXTRA].join("");
 

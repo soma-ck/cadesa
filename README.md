@@ -348,6 +348,7 @@ npm run conformance        # optional: engine vs. Chromium, 2 fixtures × 4 widt
 npm run conformance:sweep  # optional: 247 widths, line-break boundaries
 npm run conformance:lift   # optional: lifted hand-written CSS vs. the original in Chromium
 npm run conformance:pricing # optional: nested components, 143 widths
+npm run conformance:field2  # optional: every engine divergence found in real use, kept fixed
 npm run bench              # optional: agent benchmark (uses the claude CLI and model usage)
 ```
 

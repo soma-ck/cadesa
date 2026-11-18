@@ -12,6 +12,7 @@ export interface Finding extends Issue {
   inconclusive?: boolean;
 }
 
+const MEDIA = new Set(["img", "video", "picture", "svg", "canvas", "iframe", "object", "embed"]);
 const INTERACTIVE = new Set(["button", "a", "input", "select", "textarea", "summary"]);
 
 function luminance(hex: string): number {
@@ -20,6 +21,35 @@ function luminance(hex: string): number {
   const [r, g, b] = [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
   const lin = (c: number) => (c <= 0.04045 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
   return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** [r, g, b] in 0–255 and alpha in 0–1. */
+function rgba(hex: string): [number, number, number, number] {
+  let h = hex.slice(1);
+  if (h.length <= 4) h = [...h].map((c) => c + c).join("");
+  const n = (i: number) => parseInt(h.slice(i, i + 2), 16);
+  return [n(0), n(2), n(4), h.length === 8 ? n(6) / 255 : 1];
+}
+
+const toHex = (r: number, g: number, b: number) => `#${[r, g, b].map((v) => Math.round(v).toString(16).padStart(2, "0")).join("")}`;
+
+/** `top` painted over an opaque `base`. */
+export function composite(top: string, base: string): string {
+  const [r, g, b, a] = rgba(top);
+  const [R, G, B] = rgba(base);
+  return toHex(r * a + R * (1 - a), g * a + G * (1 - a), b * a + B * (1 - a));
+}
+
+/** What sits behind a box's text, as far as the source knows. */
+interface Behind {
+  /** The solid color underneath (opaque), if any. */
+  color?: string;
+  path?: string;
+  /** Gradient stops (hex, may be translucent) painted over `color`. */
+  stops?: string[];
+  stopsPath?: string;
+  /** A backdrop with url(), or an image in a layer below this box. */
+  image?: string;
 }
 
 export function contrast(a: string, b: string): number {
@@ -36,8 +66,22 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
     const paintUnknown = new Set([...(imp?.uncertain ?? []), ...(imp?.paintOnly ?? [])].filter((u) => u.effects.includes("paint")).map((u) => u.id));
     const start = out.length;
     for (const i of l.issues) out.push({ ...i, check: "layout", width: l.width });
-    const visit = (b: Box, bg?: { color: string; path: string }) => {
-      const here = b.props.background ? { color: b.props.background.value, path: b.props.background.steps.at(-1)!.path } : bg;
+    const visit = (b: Box, bg: Behind) => {
+      let here: Behind = bg;
+      if (b.props.background) {
+        const c = b.props.background.value;
+        const opaque = rgba(c)[3] >= 0.999;
+        here = opaque
+          ? { color: c, path: b.props.background.steps.at(-1)!.path }
+          : { ...bg, stops: [...(bg.stops ?? []), c], stopsPath: b.props.background.steps.at(-1)!.path };
+      }
+      if (b.props.backdrop) {
+        const raw = b.props.backdrop.value;
+        const stops = raw.match(/#[0-9a-fA-F]{3,8}\b/g) ?? [];
+        here = /url\(/.test(raw)
+          ? { ...here, image: `the backdrop image of #${b.id}` }
+          : { ...here, stops: [...(here.stops ?? []), ...stops], stopsPath: b.props.backdrop.steps.at(-1)!.path };
+      }
 
       if (INTERACTIVE.has(b.tag)) {
         const small = Math.min(b.w, b.h);
@@ -64,27 +108,31 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
       if (b.text && b.props.text) {
         const t = b.props.text.value;
         const colorPath = `${b.props.text.steps[0].path}.color`;
-        if (!here) {
-          out.push({
-            check: "contrast",
-            width: l.width,
-            severity: "warning",
-            inconclusive: true,
-            id: b.id,
-            message: `contrast of #${b.id} is inconclusive: no background behind it in the source; set page.background or a background on an ancestor`,
-          });
-        } else {
-          const ratio = contrast(t.color, here.color);
-          const large = t.sizePx >= 24 || (t.sizePx >= 18.66 && t.weight >= 700);
-          const min = large ? 3 : 4.5;
-          if (ratio < min)
+        const large = t.sizePx >= 24 || (t.sizePx >= 18.66 && t.weight >= 700);
+        const min = large ? 3 : 4.5;
+        const inconclusive = (why: string) =>
+          out.push({ check: "contrast", width: l.width, severity: "warning", inconclusive: true, id: b.id, path: colorPath, message: `contrast of #${b.id} is inconclusive: ${why}` });
+        // Translucent stops over an image can't be resolved; nearly opaque ones can.
+        const stopsOpaque = (here.stops ?? []).length > 0 && here.stops!.every((s) => rgba(s)[3] >= 0.9);
+        if (here.image && !stopsOpaque) inconclusive(`the text sits over ${here.image}; check it by eye, or put an opaque background or scrim behind it`);
+        else if (!here.color && !stopsOpaque)
+          inconclusive("no background behind it in the source; set page.background or a background on an ancestor");
+        else {
+          // The solid color, and every gradient stop composited over it: report the worst.
+          const base = here.color ?? "#ffffff";
+          const candidates = [
+            ...(here.color && !stopsOpaque ? [{ c: here.color, from: here.path! }] : []),
+            ...(here.stops ?? []).map((s) => ({ c: rgba(s)[3] >= 0.999 ? s.slice(0, 7) : composite(s, base), from: `gradient stop ${s} in ${here.stopsPath}` })),
+          ];
+          const worst = candidates.map((x) => ({ ...x, ratio: contrast(t.color, x.c) })).sort((a, b) => a.ratio - b.ratio)[0];
+          if (worst && worst.ratio < min)
             out.push({
               check: "contrast",
               width: l.width,
               severity: "error",
               id: b.id,
               path: colorPath,
-              message: `#${b.id} text ${t.color} on ${here.color} is ${ratio.toFixed(2)}:1; WCAG AA needs ${min}:1 (background from ${here.path})`,
+              message: `#${b.id} text ${t.color} on ${worst.c} is ${worst.ratio.toFixed(2)}:1; WCAG AA needs ${min}:1 (background: ${worst.from})`,
             });
         }
         if (b.lines && b.lines.length > 1 && !b.props.height) {
@@ -100,9 +148,14 @@ export function check(layouts: Layout[], impacts?: WidthImpact[]): Finding[] {
             });
         }
       }
-      for (const k of b.children) visit(k, here);
+      // In a layer, children after an image sit on top of it.
+      let behind = here;
+      for (const k of b.children) {
+        visit(k, behind);
+        if (b.props.pattern?.value === "layer" && MEDIA.has(k.tag)) behind = { ...here, image: `the image #${k.id}` };
+      }
     };
-    const pageBg = l.page ? { color: l.page.background, path: l.page.path } : undefined;
+    const pageBg: Behind = l.page ? { color: l.page.background, path: l.page.path } : {};
     for (const b of l.boxes) visit(b, pageBg);
     for (const f of out.slice(start)) {
       const unknown = f.check === "contrast" ? paintUnknown.has(f.id) || geometryUnknown.has(f.id) : geometryUnknown.has(f.id);

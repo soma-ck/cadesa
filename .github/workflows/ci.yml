@@ -46,6 +46,8 @@ jobs:
         run: npm run conformance:pricing
       - name: Landing page: grid, layer, aspect, paint (123 widths)
         run: npm run conformance:landing
+      - name: Field report regressions (102 widths)
+        run: npm run conformance:field2
       - uses: actions/upload-artifact@v4
         if: always()
         with:

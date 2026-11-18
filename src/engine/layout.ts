@@ -74,17 +74,28 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   function text(n: FixtureNode, props: ResolvedProps, id: string, assumptions: string[]) {
     const t = props.text!.value;
     const m = metricsFor(t.font);
-    const shown = t.uppercase ? n.text.toUpperCase() : n.text;
+    const runs = (n.runs.length ? n.runs : [n.text]).map((r) => (t.uppercase ? r.toUpperCase() : r));
+    const shown = runs.join(" ");
     const why = !m
       ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; run cadesa metrics <font-file>`
       : m.unsupported(shown).length
-        ? `characters outside the measured set: ${m.unsupported(shown).join(" ")}`
+        ? `characters outside the measured set: ${m.unsupported(shown).map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`
         : m.weightIssue(t.weight);
     if (why) {
       assumptions.push(`text height assumes a single line (${why})`);
       return undefined;
     }
-    return (maxWidth: number) => layoutText(m!, shown, t.sizePx, t.weight, maxWidth, { letterSpacing: t.letterSpacing });
+    // Each run (paragraph, list item, line after <br>) starts on a new line.
+    return (maxWidth: number) => {
+      const parts = runs.map((r) => layoutText(m!, r, t.sizePx, t.weight, maxWidth, { letterSpacing: t.letterSpacing }));
+      const widest = parts.reduce((a, b) => (b.minContent > a.minContent ? b : a));
+      return {
+        lines: parts.flatMap((p) => p.lines),
+        maxContent: Math.max(...parts.map((p) => p.maxContent)),
+        minContent: widest.minContent,
+        widestPiece: widest.widestPiece,
+      };
+    };
   }
 
   function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind): Box {
@@ -175,7 +186,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const centered = (b: Box, cell: number) => (b.props.maxWidth && b.w < cell ? (cell - b.w) / 2 : 0);
     /** Cross-axis alignment within a row of height `rowH` (grid rows, the layer cell). */
     const alignIn = (b: Box, rowH: number, align: string) => {
-      if (align === "stretch" && !b.props.height && !b.props.aspect) b.h = rowH;
+      if (align === "stretch" && !b.props.height && !b.props.aspect) grow(b, rowH);
       return align === "center" ? (rowH - b.h) / 2 : align === "end" ? rowH - b.h : 0;
     };
 
@@ -229,8 +240,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         const lh = Math.max(...line.map((b) => b.h));
         let x = 0;
         for (const b of line) {
-          // align-items. stretch only grows items without a fixed height; their content stays top-aligned.
-          if (align === "stretch" && !b.props.height) b.h = lh;
+          // align-items. stretch only grows items without a fixed height.
+          if (align === "stretch" && !b.props.height) grow(b, lh);
           b.x = x;
           b.y = y + (align === "start" || align === "stretch" ? 0 : align === "end" ? lh - b.h : (lh - b.h) / 2);
           x += b.w + gap;
@@ -280,7 +291,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         severity: "warning",
         id,
         path: sourcePath,
-        message: `<${n.tag}> #${id} has no aspect or height, so its height depends on the file and can't be predicted; add aspect: "16:9" (or height)`,
+        message: `<${n.tag}> #${id} has no aspect or height, so its size depends on ${n.attrs.width || n.attrs.height ? "its width/height attributes and the file" : "the file"} and can't be predicted; add aspect: "16:9" (or height)`,
       });
     const box: Box = {
       id,
@@ -321,6 +332,23 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       });
     }
     return box;
+  }
+
+  /**
+   * A box stretched taller after its own layout. Stack, cluster and grid content stays top-aligned;
+   * a layer re-aligns its children in the taller cell (center and end move, stretch grows).
+   */
+  function grow(b: Box, newH: number) {
+    const delta = newH - b.h;
+    if (delta <= 0) return;
+    b.h = newH;
+    if (b.props.pattern?.value !== "layer") return;
+    const align = b.props.align?.value ?? "stretch";
+    for (const c of b.children) {
+      if (align === "stretch" && !c.props.height && !c.props.aspect) grow(c, c.h + delta);
+      else if (align === "center") c.y += delta / 2;
+      else if (align === "end") c.y += delta;
+    }
   }
 
   /**

@@ -121,6 +121,7 @@
 }
 
 .ca-hero .ca-hero__art {
+  width: 100%;
   aspect-ratio: 16 / 7;
   height: auto;
   object-fit: cover;
@@ -215,6 +216,7 @@
 
 @media (max-width: 64rem) {
   .ca-hero .ca-hero__art {
+    width: 100%;
     aspect-ratio: 4 / 3;
     height: auto;
   }
@@ -228,6 +230,7 @@
 
 @media (max-width: 40rem) {
   .ca-hero .ca-hero__art {
+    width: 100%;
     aspect-ratio: 3 / 4;
     height: auto;
   }
@@ -364,6 +367,7 @@
 
 .ca-trip-card .ca-trip-card__photo {
   border-radius: var(--ca-radius-image);
+  width: 100%;
   aspect-ratio: 4 / 3;
   height: auto;
   object-fit: cover;

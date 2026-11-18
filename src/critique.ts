@@ -9,6 +9,7 @@
  *   alignment    too many distinct left edges for content at one width
  *   palette      no accent at all (only greys), or several accents competing on actions
  *   tells        tracked uppercase labels, " · " meta strings, "→" appended to actions
+ *   wrap         a cluster that still wraps at the widest width checked (rarely intended)
  */
 import { walk, type Box, type Layout } from "./engine/layout.js";
 import type { Fixture, FixtureNode } from "./fixture.js";
@@ -16,7 +17,7 @@ import { tokenKey, type Model } from "./model.js";
 import { fmtPx } from "./resolve.js";
 
 export interface Critique {
-  check: "type-scale" | "hierarchy" | "grouping" | "alignment" | "palette" | "tells";
+  check: "type-scale" | "hierarchy" | "grouping" | "alignment" | "palette" | "tells" | "wrap";
   message: string;
   /** YAML path to edit, when there is one. */
   path?: string;
@@ -168,6 +169,24 @@ export function critique(model: Model, fixture: Fixture, layouts: Layout[]): Cri
         message: `text starts at ${edges.size} different left edges at ${l.width}px (${xs.map(list).join("; ")}); a shared content column reads as designed`,
       });
   }
+
+  // ---- clusters that wrap even at the widest width
+  const widest = layouts.reduce((a, b) => (b.width > a.width ? b : a), layouts[0]);
+  if (widest)
+    for (const b of walk(widest.boxes)) {
+      if (b.props.pattern?.value !== "cluster" || b.children.length < 2) continue;
+      const rowCount = b.children.reduce((n, c, i) => (i > 0 && c.x <= b.children[i - 1].x ? n + 1 : n), 1);
+      if (rowCount > 1) {
+        const need = b.children.reduce((w, c) => w + c.w, 0) + (b.props.gap?.value ?? 0) * (b.children.length - 1);
+        out.push({
+          check: "wrap",
+          width: widest.width,
+          id: b.id,
+          message: `#${b.id} wraps into ${rowCount} rows even at ${widest.width}px (its items need ${fmtPx(need)}px in one row, it has ${fmtPx(b.w)}px). If one row was intended, give it room or narrow an item`,
+          path: b.sourcePath,
+        });
+      }
+    }
 
   // ---- template tells (source + fixture copy)
   for (const r of model.text.values())
