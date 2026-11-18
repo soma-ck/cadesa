@@ -34,6 +34,7 @@ export interface ResolvedText {
   letterSpacing: number;
   uppercase: boolean;
   wrapAnywhere: boolean;
+  underline: boolean;
 }
 
 export interface ResolvedProps {
@@ -56,6 +57,12 @@ export interface ResolvedProps {
   height?: Resolved<number>;
   text?: Resolved<ResolvedText>;
 }
+
+/**
+ * A length as Chromium lays it out: in layout units of 1/64 px, truncated (19.968px is 19.953125px).
+ * Box lengths (padding, gap, widths, heights) all go through this; font sizes don't.
+ */
+export const layoutUnit = (px: number) => Math.floor(px * 64 + 1e-6) / 64;
 
 export const fmtPx = (n: number) => `${Math.round(n * 100) / 100}`;
 
@@ -80,7 +87,12 @@ export function resolveElement(model: Model, component: Component, slot: string 
   }
 
   const out: ResolvedProps = {};
+  // aspect and height both set the height: the one from the more specific layer replaces the other.
+  const last = (key: keyof Props) => layers.findLastIndex((l) => l.props[key] !== undefined);
+  const dropped: keyof Props | undefined =
+    last("aspect") >= 0 && last("height") >= 0 ? (last("aspect") > last("height") ? "height" : "aspect") : undefined;
   for (const key of PROP_ORDER) {
+    if (key === dropped) continue;
     let layer: (typeof layers)[number] | undefined;
     for (const l of layers) if (l.props[key] !== undefined) layer = l;
     if (!layer) continue;
@@ -93,7 +105,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
     };
     const lengthOf = (r: Ref): Resolved<number> => {
       const t = model.tokens.get(tokenKey(r.kind, r.name))!;
-      return { value: t.px!, display: `${fmtPx(t.px!)}px`, steps: [tokenStep(r), ...pre, src(r.path)] };
+      return { value: layoutUnit(t.px!), display: `${fmtPx(t.px!)}px`, steps: [tokenStep(r), ...pre, src(r.path)] };
     };
     const colorOf = (r: Ref): Resolved<string> => {
       const t = model.tokens.get(tokenKey(r.kind, r.name))!;
@@ -183,6 +195,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
             letterSpacing: (role.letterSpacing ?? 0) * role.size.px,
             uppercase: role.transform === "uppercase",
             wrapAnywhere: role.wrap === "anywhere",
+            underline: role.decoration === "underline",
           },
           display: `${role.name} (${fmtPx(role.size.px)}px/${role.lineHeight}, ${role.weight})`,
           steps: [{ kind: "text", label: `text.${role.name}`, path: role.path }, ...pre, src(r.path)],

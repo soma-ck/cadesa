@@ -9,11 +9,19 @@ export interface FixtureNode {
   line?: number;
   /** Collapsed text of this element's own text nodes and descendants. */
   text: string;
+  /** Collapsed text of this element's own text nodes only (not its descendants'). */
+  ownText: string;
   /**
    * The text split into runs that each start on a new line: block-level descendants (<p>, <li>,
    * <div>...) and <br> separate runs. Most elements have one run.
    */
   runs: string[];
+  /**
+   * Per run: whether it sits in a block-level descendant (its own block container) rather than
+   * directly in this element, and whether any of it is inside an underlined inline element
+   * (<a href>, <u>, <ins>, <s>, <del>, <strike>).
+   */
+  runMeta: { inBlock: boolean; underlined: boolean }[];
   children: FixtureNode[];
 }
 
@@ -50,27 +58,43 @@ function textOf(n: P5Node, skip?: (n: P5Node) => boolean): string {
   return (n.childNodes ?? []).filter((c) => !skip?.(c)).map((c) => textOf(c, skip)).join("");
 }
 
-function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): string[] {
+const UNDERLINED = new Set(["u", "ins", "s", "del", "strike"]);
+
+function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): { runs: string[]; runMeta: FixtureNode["runMeta"] } {
   const runs: string[] = [];
+  const runMeta: FixtureNode["runMeta"] = [];
   let cur = "";
+  let underlined = false;
+  let depth = 0;
   const flush = () => {
     const t = collapse(cur);
-    if (t) runs.push(t);
+    if (t) {
+      runs.push(t);
+      runMeta.push({ inBlock: depth > 0, underlined });
+    }
     cur = "";
+    underlined = false;
   };
-  const walk = (k: P5Node) => {
+  const walk = (k: P5Node, u: boolean) => {
     if (skip?.(k)) return;
-    if (k.nodeName === "#text") cur += k.value ?? "";
-    else if (k.tagName === "br") flush();
+    if (k.nodeName === "#text") {
+      cur += k.value ?? "";
+      if (u && /\S/.test(k.value ?? "")) underlined = true;
+    } else if (k.tagName === "br") flush();
     else if (k.tagName && BLOCK.has(k.tagName)) {
       flush();
-      (k.childNodes ?? []).forEach(walk);
+      depth++;
+      (k.childNodes ?? []).forEach((c) => walk(c, u));
       flush();
-    } else (k.childNodes ?? []).forEach(walk);
+      depth--;
+    } else {
+      const ul = u || UNDERLINED.has(k.tagName ?? "") || (k.tagName === "a" && attr(k, "href") !== undefined);
+      (k.childNodes ?? []).forEach((c) => walk(c, ul));
+    }
   };
-  (n.childNodes ?? []).forEach(walk);
+  (n.childNodes ?? []).forEach((c) => walk(c, false));
   flush();
-  return runs;
+  return { runs, runMeta };
 }
 
 /**
@@ -78,7 +102,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): string[] {
  * are never displayed). Same rules as the fixture parser.
  */
 export function textAndRuns(n: P5Node, skip?: (n: P5Node) => boolean): { text: string; runs: string[] } {
-  return { text: collapse(textOf(n, skip)), runs: runsOf(n, skip) };
+  return { text: collapse(textOf(n, skip)), runs: runsOf(n, skip).runs };
 }
 
 function convert(n: P5Node): FixtureNode {
@@ -89,7 +113,8 @@ function convert(n: P5Node): FixtureNode {
     fixtureId: attr(n, "data-fixture"),
     line: n.sourceCodeLocation?.startLine,
     text: collapse(textOf(n)),
-    runs: runsOf(n),
+    ownText: collapse((n.childNodes ?? []).filter((c) => c.nodeName === "#text").map((c) => c.value ?? "").join("")),
+    ...runsOf(n),
     children: (n.childNodes ?? []).filter((c) => c.tagName).map(convert),
   };
 }

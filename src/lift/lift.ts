@@ -367,8 +367,11 @@ export interface LiftInput {
   bpRaw: Map<number, string>;
   /** Breakpoint name per px (default: max-<raw>). */
   bpName?: (px: number) => string;
-  /** Elements whose children are all placed in one grid cell (a layer), per state px. */
-  layerChildren: Map<string, Set<number>>;
+  /**
+   * Per class: the states (max-width px, Infinity = base) whose "> *" rule puts children in one
+   * grid cell (true, a layer) or releases them (false).
+   */
+  layerChildren: Map<string, Map<number, boolean>>;
   pageBackground?: Decl;
   /** Records found before mapping (more are added). */
   unlifted: Unlifted[];
