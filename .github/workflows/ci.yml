@@ -20,7 +20,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run build:ts
-      - name: CLI smoke test (no browser)
+      - name: "CLI smoke test (no browser)"
         run: |
           node lib/cli.js build settings.cadesa.yaml --out dist/settings.css
           git diff --exit-code dist/settings.css
@@ -36,17 +36,17 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - name: Engine vs. Chromium (2 fixtures × 4 widths)
+      - name: "Engine vs. Chromium (2 fixtures × 4 widths)"
         run: npm run conformance
-      - name: Line-break sweep (247 widths)
+      - name: "Line-break sweep (247 widths)"
         run: npm run conformance:sweep
-      - name: Lifted hand-written CSS vs. the original
+      - name: "Lifted hand-written CSS vs. the original"
         run: npm run conformance:lift
-      - name: Nested components (143 widths)
+      - name: "Nested components (143 widths)"
         run: npm run conformance:pricing
-      - name: Landing page: grid, layer, aspect, paint (123 widths)
+      - name: "Landing page: grid, layer, aspect, paint (123 widths)"
         run: npm run conformance:landing
-      - name: Field report regressions (102 widths)
+      - name: "Field report regressions (102 widths)"
         run: npm run conformance:field2
       - uses: actions/upload-artifact@v4
         if: always()
