@@ -899,7 +899,7 @@ export abstract class PageLifter {
       content.set(
         el,
         this.states.map((_, si) => {
-          if (this.ownDisplay(el, si) !== "inline" || INLINE.has(el.tag) || el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || !bare(el, si)) return false;
+          if (this.ownDisplay(el, si) !== "inline" || el.tag === "br" || el.tag === "wbr" || el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || !bare(el, si)) return false;
           const kids = el.children.filter((k) => shown(k, si));
           return kids.every((k) => content.get(k)![si] || blockish(k, si) || (k.tag === "br" ? false : false));
         }),
@@ -1245,6 +1245,7 @@ export abstract class PageLifter {
         if ((p === "box-shadow" && v === "none") || (p === "background-image" && v === "none")) continue;
         decl(p, v, o.utility);
       }
+      this.aspectWithHeight(el, si, out, decl, parentDisplay, parentRole);
 
       // Without a reset, boxes are content-box: lengths in px take the padding and border in, so the
       // source can stay border-box. Anything else is left content-box (lift notes it).
@@ -1294,6 +1295,47 @@ export abstract class PageLifter {
         this.inlineContent(el, si);
       }
     });
+  }
+
+  /**
+   * aspect-ratio with a height and no width: the width follows the height through the ratio (in
+   * block flow, a flex row, a grid cell). Stretched across a column flexbox it is as wide as the
+   * column instead. Either way it's a width, not an aspect ratio, and the source stays valid.
+   */
+  aspectWithHeight(el: El, si: number, out: Map<string, Decl>, decl: (p: string, v: string, u: string) => void, parentDisplay: string, parentRole: Role | "page") {
+    const ar = out.get("aspect-ratio");
+    const h = out.get("height");
+    if (!ar || !h || /^auto$/.test(h.value.trim())) return;
+    const w = out.get("width");
+    const own = el.own[si];
+    const res = (p: string) => {
+      const o = own.get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    const m = /^([\d.]+)\s*(?:\/\s*([\d.]+))?$/.exec(ar.value.trim());
+    const ratio = m ? parseFloat(m[1]) / (m[2] ? parseFloat(m[2]) : 1) : NaN;
+    if (w && !/^auto$/.test(w.value.trim())) {
+      // Both sizes set: the ratio does nothing.
+      out.delete("aspect-ratio");
+      return;
+    }
+    const hv = own.get("height") ? this.resolveBox(el, si, own.get("height")!.value) : undefined;
+    const px = hv === undefined ? undefined : lengthPx(hv, this.textOf(el, si).size);
+    if (!(ratio > 0) || !isFinite(ratio) || px === undefined || px < 0) return;
+    out.delete("aspect-ratio");
+    const parent = el.parent;
+    const column = parentRole === "container" && /flex/.test(parentDisplay) && !!parent && this.isColumn(parent, si);
+    const align = parent ? this.resolve(parent, si, parent.own[si].get("align-items")?.value ?? "normal") : "normal";
+    const self = res("align-self") ?? "auto";
+    const stretched = column && /^(normal|stretch)$/.test(align ?? "normal") && /^(auto|normal|stretch)$/.test(self);
+    if (stretched) return;
+    const utility = `${own.get("aspect-ratio")?.utility ?? "aspect-ratio"} (aspect-ratio ${ar.value} with height ${fmtNum(px)}px)`;
+    decl("width", `${fmtNum((Math.floor(px * 64 + 1e-6) / 64) * ratio)}px`, utility);
+    // In a flex row it may still shrink (flex-shrink: 1), which a Cadesa width never does.
+    if (parentRole === "container" && /flex/.test(parentDisplay) && parent && !column) {
+      const sh = res("flex-shrink") ?? (res("flex") ? String(parseFlex(res("flex")!)?.shrink ?? 1) : "1");
+      if (parseFloat(sh) !== 0) el.noShrink[si] = `${utility} (a width from its aspect ratio, and flex-shrink: ${sh})`;
+    }
   }
 
   colorValue(hex: string, hint?: string) {
@@ -1602,7 +1644,7 @@ export abstract class PageLifter {
     let lifted = this.liftOnce(gridMin);
     const grids = this.els.filter((e) => e.className && e.gridCols.some(Boolean));
     if (grids.length) {
-      const model = modelOf(loadSource(`${this.page} (tailwind)`, lifted.yaml));
+      const model = modelOf(loadSource(`${this.page} (${this.uaInCascade ? "lifted" : "tailwind"})`, lifted.yaml));
       this.states.forEach((st, si) => {
         if (!grids.some((g) => g.gridCols[si])) return;
         // Container widths grow with the viewport, so the narrowest is at the range's start; the

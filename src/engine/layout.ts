@@ -811,7 +811,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         contentH = lines.length * lineH;
         contentW = Math.max(...lines.map((l) => l.width));
         // Text in a box that clips or scrolls it (overflow-x other than visible) doesn't spill out: check reports it as clipped.
-        if (tl.minContent > innerW + 0.5 && !t.nowrap && (!ov || ov.x === "visible")) {
+        if (tl.minContent > innerW + 0.5 && !t.nowrap && !t.wrapAnywhere && (!ov || ov.x === "visible")) {
           issues.push({
             severity: "warning",
             id,

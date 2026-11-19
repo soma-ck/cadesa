@@ -11,6 +11,7 @@
 import { Document, isMap, isScalar, visit } from "yaml";
 import { parseCss, specificity, splitSelectors, type CssRule, type Decl, type ParsedCss } from "./css.js";
 import { classify } from "./selectors.js";
+import { validate } from "../validate.js";
 
 /**
  * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
@@ -1004,6 +1005,7 @@ export function liftElements(input: LiftInput): LiftResult {
   if (bps.length) data.breakpoints = Object.fromEntries(bps.map((p) => [bpName(p), bpRaw.get(p)!]));
   if (pageData) data.page = pageData;
   data.styles = styles;
+  repair(data, css.file, prefix, unlifted);
 
   return {
     file: css.file,
@@ -1022,6 +1024,47 @@ export function liftElements(input: LiftInput): LiftResult {
       breakpoints: bps.length,
     },
   };
+}
+
+/**
+ * A lift always produces a valid source: a prop the validator rejects (a combination Cadesa can't
+ * express, like aspect and height together) is dropped, and the element is recorded as not lifted
+ * there, so its box is approximate instead of the whole run failing.
+ */
+function repair(data: Record<string, unknown>, file: string, prefix: string, unlifted: Unlifted[]) {
+  const source = () => ({ file, text: "", data, locate: () => undefined, parseErrors: [] });
+  for (let round = 0; round < 32; round++) {
+    const { model, diagnostics } = validate(source());
+    if (model) return;
+    let fixed = false;
+    for (const d of diagnostics) {
+      if (d.severity !== "error") continue;
+      const segs = d.path.split(".");
+      if (segs[0] !== "styles" || segs.length < 3) continue;
+      let i = 2;
+      let when: string | undefined;
+      if (segs[i] === "when") {
+        when = segs[i + 1];
+        i += 2;
+      }
+      let slot: string | undefined;
+      if (segs[i] === "slots") {
+        slot = segs[i + 1];
+        i += 2;
+      }
+      const prop = segs[i];
+      let at: unknown = data;
+      for (const s of segs.slice(0, i)) at = at && typeof at === "object" ? (at as Record<string, unknown>)[s] : undefined;
+      if (!prop || !at || typeof at !== "object" || !(prop in at)) continue;
+      delete (at as Record<string, unknown>)[prop];
+      fixed = true;
+      const block = `${prefix}${segs[1]}`;
+      const className = slot ? `${block}__${slot}` : block;
+      const kind: ImpactKind = /^(background|backdrop|shadow|radius|fit)$/.test(prop) ? "paint" : prop === "text" ? "text" : "geometry";
+      unlifted.push({ file, line: 0, selector: `.${className}`, decl: prop, reason: `this combination has no exact Cadesa equivalent (${d.message}); the box is approximate${when ? ` (${when})` : ""}`, kind, className });
+    }
+    if (!fixed) return;
+  }
 }
 
 export function emitYaml(data: Record<string, unknown>, file: string, unlifted: Unlifted[]): string {
