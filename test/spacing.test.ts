@@ -64,6 +64,17 @@ describe("percentages and auto margins", () => {
   });
 });
 
+describe("a collapsed table sized to its content", () => {
+  it("counts its collapsed border once (it isn't percentage padding)", () => {
+    const r = run(
+      `<table data-fixture="t" class="t"><tr><th width="133" nowrap>in yard order</th></tr><tr><td>12 supply</td></tr></table>`,
+      `.t { border-collapse: collapse; min-width: 577px; border-bottom: 1px solid #555 } .t td, .t th { padding: 2px 3px; border-bottom: 2px solid #ccc }`,
+    );
+    // Chromium: 577px, its min-width (the collapsed border is inside it).
+    expect(r.box("t").w).toBe(577);
+  });
+});
+
 describe("the spacing fixture", () => {
   const html = readFileSync("fixtures/css/spacing.html", "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, "");
   const r = run(html, readFileSync("fixtures/css/spacing.css", "utf8"), [360, 1200], { bare: true });
