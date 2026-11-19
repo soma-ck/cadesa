@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: a Bootstrap admin page at a smaller root font size</title>
+    <link rel="stylesheet" href="bootstrap.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      html {
+        font-size: 87.5%;
+      }
+      @media (min-width: 1200px) {
+        html {
+          font-size: 10pt;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container py-3">
+      <h1 class="page-title mb-3">Depot schedule <small class="text-body-secondary">this week</small></h1>
+      <div class="row g-3">
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">Morning run</h5>
+              <p class="card-text">Six vans leave the north depot at seven. <span class="badge text-bg-secondary">6 vans</span> Loading starts at half past five.</p>
+              <a href="#" class="btn btn-primary btn-sm">Open route</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card">
+            <div class="card-body">
+              <h5 class="card-title">Afternoon run</h5>
+              <p class="card-text">Two bikes and four vans cover the harbour and the old town.</p>
+              <a href="#" class="btn btn-outline-secondary btn-sm">Open route</a>
+            </div>
+          </div>
+        </div>
+        <div class="col-md-6"><label for="driver" class="form-label">Driver</label><input type="text" class="form-control" id="driver" placeholder="Name" /></div>
+        <div class="col-md-6">
+          <label class="form-label" for="shift">Shift</label>
+          <select class="form-select" id="shift"><option>Early</option><option>Late</option></select>
+        </div>
+        <div class="col-12"><div class="input-group"><span class="input-group-text">Van</span><input type="text" class="form-control" placeholder="Registration" /></div></div>
+      </div>
+    </div>
+  </body>
+</html>
