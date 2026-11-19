@@ -11,7 +11,7 @@
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import { scrolls, type Component, type Model, type Pattern } from "../model.js";
-import { activeBreakpoints, fmtPx, insets, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides } from "../resolve.js";
+import { activeBreakpoints, fmtPx, insets, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
 const EPS = 0.001;
@@ -650,6 +650,81 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     });
   }
 
+  /**
+   * repeat(auto-fill, minmax(min, 1fr)): as many columns as fit at `min` (Chromium counts a track
+   * under 1px as 1px, so a 0 minimum gives one column per px rather than infinitely many), the 1fr
+   * columns sharing the space in layout units: column i ends at floor((i + 1) × share).
+   */
+  function autoFill(min: number, innerW: number, gap: number): { colW: number[]; colX: number[] } {
+    const cols = Math.min(10000, Math.max(1, Math.floor((innerW + gap + EPS) / (Math.max(min, 1) + gap))));
+    const share = Math.round((innerW - gap * (cols - 1)) * 64) / cols;
+    const edge = (i: number) => Math.floor(i * share + 1e-6);
+    const colW = Array.from({ length: cols }, (_, i) => (cols === 1 ? innerW : (edge(i + 1) - edge(i)) / 64));
+    const colX = colW.map((_, i) => (cols === 1 ? 0 : edge(i) / 64 + i * gap));
+    return { colW, colX };
+  }
+
+  /**
+   * Explicit column tracks (grid-template-columns), items auto-placed one per cell, row by row. Fixed
+   * tracks take their size; flexible ones share what is left (CSS Grid §12.7 "find the size of an
+   * fr"): a `<n>fr` track (auto minimum) never goes below its items' min-content width, and one
+   * that would is sized to it while the rest share again. The shares are cut in layout units, each
+   * flexible track ending at floor(its cumulative fraction × the space).
+   */
+  function tracks(ts: Track[], kids: { node: FixtureNode; comp: Component; slot: string | undefined }[], innerW: number, gap: number, notes: string[]): { colW: number[]; colX: number[] } {
+    const n = ts.length;
+    const base = ts.map(() => 0);
+    ts.forEach((t, i) => {
+      if (!("fr" in t) || !t.auto) return;
+      for (let j = i; j < kids.length; j += n) {
+        const k = kids[j];
+        const kp = resolveElement(model, k.comp, k.slot, width);
+        // A scroll container's automatic minimum is 0.
+        if (scrolls(kp.overflow?.value)) continue;
+        const it = intrinsic(k.node, k.comp, k.slot);
+        if (it.why) {
+          notes.push(`a ${t.fr}fr column is at least as wide as its items' min-content width, which can't be measured here (${it.why})`);
+          continue;
+        }
+        const km = marginOf(kp);
+        base[i] = Math.max(base[i], it.min + km.left + km.right);
+      }
+    });
+    const size: number[] = ts.map((t) => ("size" in t ? U(sizeAt(t.size, innerW)) : 0));
+    const space = U(innerW) - U(gap) * (n - 1);
+    const flexible = new Set(ts.flatMap((t, i) => ("fr" in t ? [i] : [])));
+    let leftover = 0;
+    let sumFr = 0;
+    for (;;) {
+      leftover = space - size.reduce((s, x, i) => s + (flexible.has(i) ? 0 : x), 0);
+      sumFr = [...flexible].reduce((s, i) => s + (ts[i] as { fr: number }).fr, 0);
+      const fr = leftover / Math.max(1, sumFr);
+      const frozen = [...flexible].filter((i) => U(base[i]) > fr * (ts[i] as { fr: number }).fr + 1e-6);
+      if (!frozen.length) break;
+      for (const i of frozen) {
+        flexible.delete(i);
+        size[i] = U(base[i]);
+      }
+    }
+    let acc = 0;
+    let prev = 0;
+    for (const i of [...flexible].sort((a, b) => a - b)) {
+      const f = (ts[i] as { fr: number }).fr;
+      acc += f;
+      const edge = sumFr >= 1 ? Math.floor((acc / sumFr) * Math.max(0, leftover) + 1e-6) : Math.floor(acc * Math.max(0, leftover) + 1e-6);
+      size[i] = Math.max(U(base[i]), edge - prev);
+      prev = edge;
+    }
+    const colW = size.map(PX);
+    const colX: number[] = [];
+    let x = 0;
+    for (const w of colW) {
+      colX.push(x);
+      x += w + gap;
+    }
+    return { colW, colX };
+  }
+
   function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind, forcedW?: number): Box {
     const id = idOf(n);
     const props = resolveElement(model, c, slot, width);
@@ -716,6 +791,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let lines: Line[] | undefined;
     const pattern = props.pattern?.value;
     const gap = props.gap?.value ?? 0;
+    // Between the rows of a grid or the lines of a cluster (row-gap), when it differs from the column gap.
+    const rowGap = props.rowGap?.value ?? gap;
     const allKids = isText ? [] : n.children.map((k) => ({ node: k, ...childOf(k, c) }));
     const kids = allKids.filter((k) => k.comp !== null) as { node: FixtureNode; comp: Component; slot: string | undefined }[];
     const skipped = allKids.filter((k) => k.comp === null).map((k) => k.node);
@@ -761,19 +838,32 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let grows: StackGrow | undefined;
 
     if (kids.length && pattern === "grid") {
-      const min = props.min!.value;
-      const cols = Math.max(1, Math.floor((innerW + gap + EPS) / (min + gap)));
-      // The 1fr columns share the space in layout units (1/64 px): column i ends at
-      // floor((i + 1) × share), so some columns are one unit wider than others.
-      const share = (Math.round((innerW - gap * (cols - 1)) * 64) / cols);
-      const edge = (i: number) => Math.floor(i * share + 1e-6);
-      const colW = Array.from({ length: cols }, (_, i) => (cols === 1 ? innerW : (edge(i + 1) - edge(i)) / 64));
-      const colX = colW.map((_, i) => (cols === 1 ? 0 : edge(i) / 64 + i * gap));
-      const measured = kids.map((k, j) => measure(k.node, k.comp, k.slot, colW[j % cols], "grid"));
+      const { colW, colX } = props.columns ? tracks(props.columns.value, kids, innerW, gap, assumptions) : autoFill(props.min!.value, innerW, gap);
+      const cols = colW.length;
+      const justify = props.justifyItems?.value ?? "stretch";
+      const measured = kids.map((k, j) => {
+        const cw = colW[j % cols];
+        if (justify === "stretch") return measure(k.node, k.comp, k.slot, cw, "grid");
+        // Not stretched: as wide as its content (fit-content in its column), unless it sets a width.
+        const kp = resolveElement(model, k.comp, k.slot, width);
+        const km = marginOf(kp);
+        if (kp.width?.value !== undefined && kp.width.value !== "fit") return measure(k.node, k.comp, k.slot, cw, "grid");
+        const it = intrinsic(k.node, k.comp, k.slot);
+        if (it.why) {
+          const b = measure(k.node, k.comp, k.slot, cw, "grid");
+          b.assumptions.push(`justify-items: ${justify} sizes it to its content, which can't be measured (${it.why})`);
+          return b;
+        }
+        return measure(k.node, k.comp, k.slot, cw, "grid", Math.max(0, Math.min(it.max, Math.max(it.min, cw - km.left - km.right))));
+      });
       rows = [];
       for (let r = 0; r < measured.length; r += cols) {
         const row = measured.slice(r, r + cols);
-        row.forEach((b, i) => (b.x = colX[i] + offsetX(b, colW[i])));
+        row.forEach((b, i) => {
+          const m = marginOf(b.props);
+          const free = U(colW[i]) - U(b.w) - U(m.left) - U(m.right);
+          b.x = colX[i] + (justify === "stretch" ? offsetX(b, colW[i]) : m.left + (justify === "center" ? PX(Math.trunc(free / 2)) : justify === "end" ? PX(free) : 0));
+        });
         rows.push(row);
       }
     } else if (kids.length && pattern === "layer") {
@@ -823,7 +913,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     if (rows) {
       children.push(...rows.flat());
-      contentH = rows.reduce((s, r) => s + Math.max(0, ...r.map(outerH)), 0) + gap * (rows.length - 1);
+      contentH = rows.reduce((s, r) => s + Math.max(0, ...r.map(outerH)), 0) + rowGap * (rows.length - 1);
     }
 
     // aspect: the height follows the width. Media elements take exactly that; other boxes grow if
@@ -842,7 +932,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // A box shorter than its content shrinks the items that may shrink: an <hr> clips its overflow
     // (overflow: hidden), so its automatic minimum height is 0 and a stack, grid or layer that is
     // too short squeezes it. The engine doesn't model that.
-    const tallKids = rows ? rows.reduce((s, r) => s + Math.max(0, ...r.map(outerH)), 0) + gap * (rows.length - 1) : contentH;
+    const tallKids = rows ? rows.reduce((s, r) => s + Math.max(0, ...r.map(outerH)), 0) + rowGap * (rows.length - 1) : contentH;
     // Nor how a box whose height is set (height, aspect) sizes around one.
     if (tallKids + insY > h + EPS || props.height || props.aspect)
       for (const k of rows ? rows.flat() : children)
@@ -912,7 +1002,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       arrangement.set(box, {
         rows,
         heights: rows.map((r) => Math.max(0, ...r.map(outerH))),
-        gap,
+        gap: rowGap,
         align: props.align?.value ?? (pattern === "cluster" ? "center" : "stretch"),
         insetTop: ins.top,
         insetY: insY,

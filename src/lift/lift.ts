@@ -514,6 +514,42 @@ export function liftElements(input: LiftInput): LiftResult {
       return r.varName ? tokens.named("size", r.varName, r.raw) : tokens.literal("size", r.raw);
     return lengthToken("size", value);
   };
+  /** grid-template-columns as Cadesa tracks: size tokens, "<n>fr" and "minmax(0, <n>fr)" (undefined when another kind of track is used). */
+  const gridTracks = (v: string): string[] | undefined => {
+    const parts: string[] = [];
+    let depth = 0;
+    let cur = "";
+    for (const ch of v.trim()) {
+      if (ch === "(") depth++;
+      if (ch === ")") depth--;
+      if (/\s/.test(ch) && depth === 0) {
+        if (cur) parts.push(cur);
+        cur = "";
+      } else cur += ch;
+    }
+    if (cur) parts.push(cur);
+    const out: string[] = [];
+    for (const p of parts) {
+      const rep = /^repeat\(\s*(\d+)\s*,\s*(.+)\)$/s.exec(p);
+      if (rep) {
+        const inner = gridTracks(rep[2]);
+        const n = parseInt(rep[1]);
+        if (!inner || !(n >= 1 && n <= 1000)) return undefined;
+        for (let i = 0; i < n; i++) out.push(...inner);
+        continue;
+      }
+      const fr = /^(\d*\.?\d+)fr$/.exec(p);
+      const mm = /^minmax\(\s*0(?:px|%)?\s*,\s*(\d*\.?\d+)fr\s*\)$/.exec(p);
+      if (fr && parseFloat(fr[1]) > 0) out.push(`${parseFloat(fr[1])}fr`);
+      else if (mm && parseFloat(mm[1]) > 0) out.push(`minmax(0, ${parseFloat(mm[1])}fr)`);
+      else {
+        const t = sizeToken(p);
+        if (!t) return undefined;
+        out.push(t);
+      }
+    }
+    return out.length ? out : undefined;
+  };
   const colorToken = (value: string): string | undefined => {
     const r = resolveVar(value);
     const hex = r && toHex(r.raw);
@@ -555,17 +591,21 @@ export function liftElements(input: LiftInput): LiftResult {
       if (justify && column && !["flex-start", "start", "normal", "left"].includes(jv!) && m.has("height"))
         note(e, s, justify, `justify-content: ${jv} in a column has no Cadesa equivalent`, "geometry");
       else if (justify && !column && !clusterJustify) note(e, s, justify, `justify-content: ${jv} has no Cadesa equivalent`, "geometry");
-      const gapDecl = column ? rowGap : colGap ?? rowGap;
-      let gap: string | undefined;
-      if (gapDecl && !isZero(resolveVar(gapDecl.value)?.raw ?? "x")) {
-        gap = lengthToken("space", gapDecl.value);
-        if (!gap) note(e, s, gapDecl, "gap must be a px or rem length", "geometry");
-      }
-      if (!column && rowGap && colGap && rowGap.value.trim() !== colGap.value.trim())
-        note(e, s, rowGap, "a cluster has one gap for rows and columns", "geometry");
+      // A stack's gap is its row gap; a cluster's its column gap, with the gap between its lines (row-gap) when that differs.
+      const gapDecl = column ? rowGap : colGap;
+      const tokenOf = (d: Decl | undefined) => {
+        if (!d || isZero(resolveVar(d.value)?.raw ?? "x")) return undefined;
+        const t = lengthToken("space", d.value);
+        if (!t) note(e, s, d, "gap must be a px or rem length", "geometry");
+        return t;
+      };
+      const gap = tokenOf(gapDecl);
+      const valueOf = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? resolveVar(d.value)?.raw : "0px");
+      const lineGap = !column && valueOf(rowGap) !== valueOf(colGap) ? (rowGap && !isZero(resolveVar(rowGap.value)?.raw ?? "x") ? tokenOf(rowGap) : lengthToken("space", "0px")) : undefined;
       out.layout = {
         pattern,
         ...(gap && { gap }),
+        ...(lineGap && { rowGap: lineGap }),
         ...(!column && clusterAlign && clusterAlign !== "center" && { align: clusterAlign }),
         ...(clusterJustify && clusterJustify !== "start" && { justify: clusterJustify }),
         ...(!column && wrap === "nowrap" && { wrap: false }),
@@ -587,18 +627,36 @@ export function liftElements(input: LiftInput): LiftResult {
       const GA: Record<string, string> = { start: "start", "flex-start": "start", center: "center", end: "end", "flex-end": "end", stretch: "stretch", normal: "stretch" };
       const a = align ? GA[align.value.trim()] : "stretch";
       if (align && !a) note(e, s, align, `align-items: ${align.value.trim()} has no Cadesa equivalent`, "geometry");
-      if (justify && !["stretch", "normal"].includes(justify.value.trim())) note(e, s, justify, "grid items always stretch across their column", "geometry");
+      const JI: Record<string, string> = { start: "start", "flex-start": "start", left: "start", "self-start": "start", center: "center", end: "end", "flex-end": "end", right: "end", "self-end": "end", stretch: "stretch", normal: "stretch", legacy: "stretch" };
+      const j = justify ? JI[justify.value.trim()] : "stretch";
+      // The column gap, and the row gap when it differs.
+      const gapOf = (): Record<string, string> => {
+        const tok = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? lengthToken("space", d.value) : undefined);
+        const val = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? resolveVar(d.value)?.raw : "0px");
+        for (const d of [rowGap, colGap]) if (d && !isZero(resolveVar(d.value)?.raw ?? "x") && !tok(d)) note(e, s, d, "gap must be a px or rem length", "geometry");
+        const g = tok(colGap);
+        const rg = val(rowGap) !== val(colGap) ? (tok(rowGap) ?? lengthToken("space", "0px")) : undefined;
+        return { ...(g && { gap: g }), ...(rg && { rowGap: rg }) };
+      };
       if (auto) {
         const min = lengthToken("size", auto[1] ?? auto[2]);
         if (!min) note(e, s, cols!, "the grid's minimum column width must be a px or rem length", "geometry");
         else {
-          if (rowGap && colGap && rowGap.value.trim() !== colGap.value.trim()) note(e, s, rowGap, "a grid has one gap for rows and columns", "geometry");
-          const g = rowGap && !isZero(rowGap.value) ? lengthToken("space", rowGap.value) : undefined;
-          out.layout = { pattern: "grid", min, ...(g && { gap: g }), ...(a && a !== "stretch" && { align: a }) };
+          if (justify && !j) note(e, s, justify, `justify-items: ${justify.value.trim()} has no Cadesa equivalent`, "geometry");
+          out.layout = { pattern: "grid", min, ...gapOf(), ...(a && a !== "stretch" && { align: a }), ...(j && j !== "stretch" && { justify: j }) };
         }
       } else if (layered && (!cols || /^(?:minmax\(\s*0(?:px)?\s*,\s*1fr\s*\)|1fr)$/.test(cv))) {
+        if (justify && j !== "stretch") note(e, s, justify, "a layer's children always stretch across it", "geometry");
         out.layout = { pattern: "layer", ...(a && a !== "stretch" && { align: a }) };
-      } else note(e, s, cols ?? display, cols ? `grid-template-columns: ${cv} has no Cadesa pattern (grid needs repeat(auto-fill, minmax(<min>, 1fr)))` : "a grid without columns or layered children has no Cadesa pattern", "geometry");
+      } else {
+        const tracks = cols ? gridTracks(cv) : undefined;
+        if (!tracks) note(e, s, cols ?? display, cols ? `grid-template-columns: ${cv} has no Cadesa pattern (fixed lengths, percentages, <n>fr and minmax(0, <n>fr) tracks, or repeat(auto-fill, minmax(<min>, 1fr)))` : "a grid without columns or layered children has no Cadesa pattern", "geometry");
+        else {
+          if (justify && !j) note(e, s, justify, `justify-items: ${justify.value.trim()} has no Cadesa equivalent`, "geometry");
+          const all = tracks.every((t) => t === "minmax(0, 1fr)");
+          out.layout = { pattern: "grid", columns: all ? tracks.length : tracks, ...gapOf(), ...(a && a !== "stretch" && { align: a }), ...(j && j !== "stretch" && { justify: j }) };
+        }
+      }
     } else if (display && !["block", "flow-root"].includes(display.value.trim())) {
       note(e, s, display, `display: ${display.value.trim()} has no Cadesa pattern`, "geometry");
     }

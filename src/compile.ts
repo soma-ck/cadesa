@@ -38,6 +38,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.layout) {
     const l = p.layout;
     const gap = `gap: ${l.gap ? v(l.gap) : "0"}`;
+    const rowGap = l.rowGap ? [`row-gap: ${v(l.rowGap)}`] : [];
     // Block flow: children stack in normal flow and their vertical margins collapse.
     if (l.pattern === "flow") out.push("display: block");
     else if (l.pattern === "stack" || l.pattern === "cluster") {
@@ -48,20 +49,27 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
         `flex-wrap: ${stack || l.wrap === false ? "nowrap" : "wrap"}`,
         `align-items: ${stack ? "stretch" : FLEX_ALIGN[l.align ?? "center"]}`,
         gap,
+        ...rowGap,
       );
       // A stack restates flex-start when another state of the element is a justified cluster.
       if (l.justify || ctx.justify) out.push(`justify-content: ${stack ? "flex-start" : JUSTIFY[l.justify ?? "start"]}`);
     } else {
       // grid: columns auto-fill the row, each at least `min` (never wider than the row) and sharing
       // what's left equally. layer: one cell; every child is placed in it (see the child rule).
+      // Explicit columns: each track as CSS writes it, runs of the same track as repeat().
+      const tracks = (l.columns ?? []).map((t) => ("size" in t ? v(t.size) : t.auto ? `${t.fr}fr` : `minmax(0, ${t.fr}fr)`));
+      const template = tracks.length > 1 && tracks.every((t) => t === tracks[0]) ? `repeat(${tracks.length}, ${tracks[0]})` : tracks.join(" ");
       out.push(
         "display: grid",
         l.pattern === "grid"
-          ? `grid-template-columns: repeat(auto-fill, minmax(min(${v(l.min!)}, 100%), 1fr))`
+          ? l.columns
+            ? `grid-template-columns: ${template}`
+            : `grid-template-columns: repeat(auto-fill, minmax(min(${v(l.min!)}, 100%), 1fr))`
           : "grid-template-columns: minmax(0, 1fr)",
         `align-items: ${GRID_ALIGN[l.align ?? "stretch"]}`,
-        "justify-items: stretch",
+        `justify-items: ${GRID_ALIGN[l.justifyItems ?? "stretch"]}`,
         l.pattern === "grid" ? gap : "gap: 0",
+        ...rowGap,
       );
     }
   }
@@ -193,7 +201,9 @@ function usedTokens(model: Model, c: Component): string[] {
   const visit = (p: Props) => {
     const refs: (Ref | undefined)[] = [
       p.layout?.gap,
+      p.layout?.rowGap,
       p.layout?.min,
+      ...(p.layout?.columns ?? []).map((t) => ("size" in t ? t.size : undefined)),
       p.padding?.top,
       p.padding?.right,
       p.padding?.bottom,

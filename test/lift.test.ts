@@ -210,8 +210,10 @@ describe("lift of expressive CSS", () => {
     expect(one(`body { margin: 0; background: #e9f0f1 } .c { padding: 8px }`).data.page).toEqual({ background: "hex-e9f0f1" });
   });
 
-  it("still reports grids it can't express", () => {
-    const r = one(`.c { display: grid; grid-template-columns: 1fr 2fr }`);
-    expect(r.unlifted[0].reason).toMatch(/grid-template-columns: 1fr 2fr has no Cadesa pattern/);
+  it("lifts explicit grid columns, and still reports grids it can't express", () => {
+    expect((one(`.c { display: grid; grid-template-columns: 1fr 2fr }`).data.styles as Record<string, { layout: unknown }>).c.layout).toEqual({ pattern: "grid", columns: ["1fr", "2fr"] });
+    expect((one(`.c { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px }`).data.styles as Record<string, { layout: unknown }>).c.layout).toMatchObject({ pattern: "grid", columns: 3 });
+    const r = one(`.c { display: grid; grid-template-columns: minmax(200px, 1fr) auto }`);
+    expect(r.unlifted[0].reason).toMatch(/grid-template-columns: minmax\(200px, 1fr\) auto has no Cadesa pattern/);
   });
 });

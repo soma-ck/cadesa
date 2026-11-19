@@ -14,8 +14,7 @@
  *      effective declarations to props.
  *   4. Everything not modelled is an Unlifted record against the element, so impact.ts marks the
  *      boxes it can move as ≈. A few things can only be decided after layout (a non-wrapping flex
- *      row that would wrap; a `grid-cols-<n>` grid whose emulation gives a different column
- *      count); `dynamic()` reports those per width.
+ *      row that would wrap); `dynamic()` reports those per width.
  */
 import { parse } from "parse5";
 import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
@@ -122,7 +121,6 @@ export interface El {
   rowGap: (string | undefined)[];
   /** A flex-row item without a width that may not shrink (flex-shrink: 0), with the declaration. */
   noShrink: (string | undefined)[];
-  gridCols: ({ n: number; gap: number } | undefined)[];
   /**
    * An inline element laid out as a block (per state): "block" wraps only block-level boxes, alone
    * between blocks (block-in-inline: Chromium lays its children out as if it were a block with no
@@ -493,7 +491,6 @@ export abstract class PageLifter {
       nowrap: [],
       rowGap: [],
       noShrink: [],
-      gridCols: [],
       asBlock: [],
       alone: [],
     });
@@ -844,7 +841,6 @@ export abstract class PageLifter {
               nowrap: [],
               rowGap: [],
               noShrink: [],
-              gridCols: [],
               asBlock: [],
               alone: [],
               anonymous: text,
@@ -1090,12 +1086,6 @@ export abstract class PageLifter {
               handled.add(gapProp);
             } else this.note(el, si, { decl: space.utility, reason: "space-* margins on top of a gap (or across the flex axis) are not modelled", kind: "geometry" });
           }
-          // A wrapping row whose gaps differ: the column gap is the cluster's; the row gap only
-          // matters once the row wraps, which dynamic() decides per width.
-          if (dir === "row" && rowGap && colGap && !handled.has("row-gap") && !handled.has("column-gap") && this.resolve(el, si, rowGap.value) !== this.resolve(el, si, colGap.value)) {
-            el.rowGap[si] = `${rowGap.utility} (row-gap: ${rowGap.value})`;
-            rowGap = undefined;
-          }
           for (const [p, o] of [["row-gap", rowGap], ["column-gap", colGap]] as const)
             if (o && !handled.has(p)) {
               decl(p, this.len(el, si, o) ?? o.value, o.utility);
@@ -1128,25 +1118,25 @@ export abstract class PageLifter {
           const colGap = own.has("column-gap") ? this.len(el, si, own.get("column-gap")!) : undefined;
           const n = cols ? /^repeat\(\s*(\d+)\s*,\s*minmax\(\s*0(?:px)?\s*,\s*1fr\s*\)\s*\)$/.exec(cols) : null;
           handled.add("grid-template-columns").add("row-gap").add("column-gap").add("align-items").add("justify-items");
-          if (!cols || cols === "none" || (n && n[1] === "1")) {
+          const ji = res("justify-items");
+          const ai = res("align-items");
+          const plainItems = (!ji || /^(stretch|normal|legacy)$/.test(ji)) && (!ai || /^(stretch|normal)$/.test(ai));
+          // A set height or min-height stretches a grid's rows (a stack's items don't).
+          const sized = ["height", "min-height"].some((p) => own.has(p) && !/^(auto|0(px)?)$/.test(res(p) ?? "auto"));
+          const single = !cols || cols === "none" || (n && n[1] === "1");
+          if (single && plainItems && !sized) {
             // One column: a stack with the row gap.
             decl("display", "flex", own.get("display")!.utility);
             decl("flex-direction", "column", own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
             if (rowGap && lengthPx(res("row-gap")!, 16) !== 0) decl("row-gap", rowGap, gapOrigin!.utility);
             if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins in a grid are not modelled", kind: "geometry" });
-            const ji = res("justify-items");
-            if (ji && !/^(stretch|normal|legacy)$/.test(ji)) this.note(el, si, { decl: `${own.get("justify-items")!.utility} (justify-items: ${ji})`, reason: "grid items always stretch across their column", kind: "geometry" });
           } else {
             decl("display", "grid", own.get("display")!.utility);
             for (const p of ["align-items", "justify-items"]) if (own.has(p)) decl(p, res(p)!, own.get(p)!.utility);
             if (rowGap) decl("row-gap", rowGap, gapOrigin!.utility);
             if (colGap) decl("column-gap", colGap, own.get("column-gap")!.utility);
-            if (n) {
-              const gap = lengthPx(res("column-gap") ?? "0", 16) ?? 0;
-              el.gridCols[si] = { n: parseInt(n[1]), gap };
-              const name = `--grid-cols-${n[1]}`;
-              decl("grid-template-columns", `repeat(auto-fill, minmax(var(${name}), 1fr))`, own.get("grid-template-columns")!.utility);
-            } else decl("grid-template-columns", cols, own.get("grid-template-columns")!.utility);
+            // No template: one implicit auto column, stretched across the grid (like 1fr: never narrower than its items).
+            decl("grid-template-columns", !cols || cols === "none" ? "1fr" : cols, own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
             if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins in a grid are not modelled", kind: "geometry" });
           }
         } else if (/^(block|flow-root|list-item|inline-block)$/.test(display)) {
@@ -1462,7 +1452,6 @@ export abstract class PageLifter {
             k.decls.map((m) => (m ? [...m.values()].map((d) => `${d.prop}:${d.value}`) : [])),
             [...k.notes.values()].map((n) => [n.note.reason, n.note.kind, n.note.decl, [...n.states]]),
             k.nowrap,
-            k.gridCols,
             k.tag,
             k.classes.join(" "),
           ]);
@@ -1488,7 +1477,7 @@ export abstract class PageLifter {
 
   // ---- assembly
 
-  liftOnce(gridMin: Map<string, Map<number, number>>): LiftResult {
+  liftOnce(): LiftResult {
     const elements: LiftedElement[] = [];
     const seen = new Set<string>();
     const unlifted: Unlifted[] = [];
@@ -1503,15 +1492,6 @@ export abstract class PageLifter {
       this.states.forEach((st, si) => {
         const src = visibleIdx.includes(si) ? si : (visibleIdx.filter((i) => i < si).at(-1) ?? visibleIdx[0]);
         const m = new Map(el.decls[src]);
-        const g = el.gridCols[src];
-        if (g) {
-          const name = `--grid-cols-${g.n}`;
-          const px = gridMin.get(el.className!)?.get(src) ?? 1;
-          const tokenName = `${name}-${this.states[src].name ?? "base"}`;
-          vars.set(tokenName, { prop: tokenName, value: `${fmtNum(px)}px`, important: false, line: 0 });
-          const d = m.get("grid-template-columns")!;
-          m.set("grid-template-columns", { ...d, value: `repeat(auto-fill, minmax(var(${tokenName}), 1fr))` });
-        }
         states.set(st.key, m);
       });
       elements.push({ className: el.className!, block: el.block!, element: el.slot, states });
@@ -1639,35 +1619,7 @@ export abstract class PageLifter {
     const perState = this.states.map((_, si) => fixtureFor(si));
     const fixtureAt = (w: number) => perState[this.states.indexOf(stateAt(this.states, w))];
 
-    // Fit grid-cols-<n> emulations: the largest minimum that still fits n columns across each range.
-    const gridMin = new Map<string, Map<number, number>>();
-    let lifted = this.liftOnce(gridMin);
-    const grids = this.els.filter((e) => e.className && e.gridCols.some(Boolean));
-    if (grids.length) {
-      const model = modelOf(loadSource(`${this.page} (${this.uaInCascade ? "lifted" : "tailwind"})`, lifted.yaml));
-      this.states.forEach((st, si) => {
-        if (!grids.some((g) => g.gridCols[si])) return;
-        // Container widths grow with the viewport, so the narrowest is at the range's start; the
-        // other samples are a cheap guard. Every rendered width is re-checked by dynamic().
-        const hi = Math.min(st.hi - 0.01, Math.max(st.lo, 1920));
-        const samples = new Set<number>([Math.max(st.lo, 1), (Math.max(st.lo, 1) + hi) / 2, hi]);
-        const layouts = render(model, perState[si], [...samples]);
-        for (const g of grids) {
-          const spec = g.gridCols[si];
-          if (!spec) continue;
-          let min = Infinity;
-          for (const l of layouts)
-            for (const b of walk(l.boxes))
-              if (b.id === g.id) min = Math.min(min, innerWidth(b));
-          if (min === Infinity) continue;
-          const m = Math.floor(((min + spec.gap) / spec.n - spec.gap) * 100) / 100;
-          const per = gridMin.get(g.className!) ?? new Map<number, number>();
-          per.set(si, Math.min(per.get(si) ?? Infinity, Math.max(m, 0.01)));
-          gridMin.set(g.className!, per);
-        }
-      });
-      lifted = this.liftOnce(gridMin);
-    }
+    const lifted = this.liftOnce();
     this.relabel(lifted);
 
     const responsive = this.els.filter((e) => e.id && e.roles.some((r) => r === "hidden" || r === "out") && e.roles.some((r) => r !== "hidden" && r !== "out")).map((e) => e.id!);
@@ -1693,16 +1645,9 @@ export abstract class PageLifter {
           if (this.lineCount(b) > 1)
             out.push({ file: this.page, line: el.line, selector: sel, decl: "flex (flex-wrap: nowrap)", reason: `the row doesn't fit at ${layout.width}px; Tailwind's flex row shrinks its items instead of wrapping`, kind: "geometry" });
         }
-        const g = el.gridCols[si];
-        if (g && b.props.min && b.children.length) {
-          const inner = innerWidth(b);
-          const cols = Math.max(1, Math.floor((inner + (b.props.gap?.value ?? 0) + 0.001) / (b.props.min.value + (b.props.gap?.value ?? 0))));
-          if (cols !== g.n)
-            out.push({ file: this.page, line: el.line, selector: sel, decl: `grid-cols-${g.n}`, reason: `grid-cols-${g.n} is emulated with a minimum column width that gives ${cols} columns at ${layout.width}px`, kind: "geometry" });
-        }
         // repeat(auto-fill, minmax(X, 1fr)): one column never narrower than X, so it overflows a
         // narrower container; the engine's column fills it instead.
-        if (!g && b.props.min && b.props.pattern?.value === "grid" && innerWidth(b) < b.props.min.value - 0.001)
+        if (b.props.min && b.props.pattern?.value === "grid" && innerWidth(b) < b.props.min.value - 0.001)
           out.push({ file: this.page, line: el.line, selector: sel, decl: `grid-template-columns (min ${b.props.min.display})`, reason: `the container is narrower than the minimum column at ${layout.width}px; the column overflows it (use minmax(min(X, 100%), 1fr) to keep it inside)`, kind: "geometry" });
         if ((b.tag === "img" || b.tag === "video") && typeof b.props.width?.value === "number") {
           const p = parentOf.get(b);

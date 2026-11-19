@@ -56,6 +56,8 @@ export interface Ref {
   path: string;
 }
 
+export type GridTrack = { size: Ref } | { fr: number; auto: boolean };
+
 /** flow: block flow (display: block); vertical margins collapse between siblings and through the box. */
 export type Pattern = "stack" | "cluster" | "grid" | "layer" | "flow";
 
@@ -68,10 +70,20 @@ export interface LayoutProp {
   path: string;
   pattern: Pattern;
   gap?: Ref;
+  /** Grid and cluster: the gap between rows (lines) when it differs from the gap between columns. */
+  rowGap?: Ref;
   /** Cross-axis alignment: cluster (default center), grid and layer (default stretch). Not for stack. */
   align?: Align;
   /** Grid only: minimum column width; columns auto-fill the row. */
   min?: Ref;
+  /**
+   * Grid only, instead of min: the column tracks (grid-template-columns). A size token is a fixed
+   * column; `{ fr }` shares what is left in proportion (minmax(0, <n>fr)); `{ fr, auto: true }` is
+   * CSS's plain `<n>fr`, never narrower than its items' min-content width.
+   */
+  columns?: GridTrack[];
+  /** Grid only: where items sit across their column (justify-items; default stretch). */
+  justifyItems?: "start" | "center" | "end" | "stretch";
   /** Cluster only: where each line's free space goes (default start). */
   justify?: Justify;
   /** Cluster only: false keeps every item on one line, shrinking them to fit (flex-wrap: nowrap). */

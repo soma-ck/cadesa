@@ -75,9 +75,16 @@ export interface Margins extends Sides {
   autoRight?: boolean;
 }
 
+/** A grid column track: a fixed size (px or a percentage of the grid's width) or a flexible share. */
+export type Track = { size: number | Pct } | { fr: number; auto: boolean };
+
 export interface ResolvedProps {
   pattern?: Resolved<Pattern>;
   min?: Resolved<number>;
+  /** A grid's explicit column tracks (instead of min). */
+  columns?: Resolved<Track[]>;
+  /** A grid: where items sit across their column. */
+  justifyItems?: Resolved<"start" | "center" | "end" | "stretch">;
   justify?: Resolved<Justify>;
   /** A cluster's lines: false keeps every item on one line. */
   wrap?: Resolved<boolean>;
@@ -90,6 +97,8 @@ export interface ResolvedProps {
   align?: Resolved<"start" | "center" | "end" | "stretch">;
   textAlign?: Resolved<"start" | "center" | "end">;
   gap?: Resolved<number>;
+  /** A grid's or cluster's gap between rows, when it differs from `gap`. */
+  rowGap?: Resolved<number>;
   padding?: Resolved<Sides>;
   background?: Resolved<string>;
   /** The color, and each side's width as Chromium draws it. */
@@ -197,12 +206,25 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const l = p.layout!;
         out.pattern = { value: l.pattern, display: l.pattern, steps: [...pre, src(`${l.path}.pattern`)] };
         out.gap = l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
+        if (l.rowGap) out.rowGap = lengthOf(l.rowGap);
         if (l.pattern !== "stack" && l.pattern !== "flow") {
           const def = l.pattern === "cluster" ? "center" : "stretch";
           const a = l.align ?? def;
           out.align = { value: a, display: l.align ? a : `${def} (default)`, steps: [...pre, src(l.align ? `${l.path}.align` : l.path)] };
         }
         if (l.min) out.min = lengthOf(l.min);
+        if (l.columns) {
+          const tracks = l.columns.map((t): Track => ("size" in t ? { size: sizeOf(t.size).value } : { fr: t.fr, auto: t.auto }));
+          const show = (t: (typeof l.columns)[number]) => ("size" in t ? t.size.name : t.auto ? `${t.fr}fr` : `minmax(0, ${t.fr}fr)`);
+          const shown = l.columns.map(show);
+          const display = shown.every((s) => s === shown[0]) && shown.length > 1 ? `repeat(${shown.length}, ${shown[0]})` : shown.join(" ");
+          const tokens = l.columns.filter((t) => "size" in t).map((t) => tokenStep((t as { size: Ref }).size));
+          out.columns = { value: tracks, display, steps: [...tokens.filter((t, k) => tokens.findIndex((u) => u.path === t.path) === k), ...pre, src(`${l.path}.columns`)] };
+        }
+        if (l.pattern === "grid") {
+          const j = l.justifyItems ?? "stretch";
+          out.justifyItems = { value: j, display: l.justifyItems ? j : "stretch (default)", steps: [...pre, src(l.justifyItems ? `${l.path}.justify` : l.path)] };
+        }
         if (l.pattern === "cluster") {
           const j = l.justify ?? "start";
           out.justify = { value: j, display: l.justify ? j : "start (default)", steps: [...pre, src(l.justify ? `${l.path}.justify` : l.path)] };

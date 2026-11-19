@@ -23,6 +23,7 @@ import {
   type Override,
   type Props,
   type Ref,
+  type GridTrack,
   type Slot,
   type TextRole,
   type Token,
@@ -230,6 +231,48 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
     return r;
   };
 
+  /**
+   * Grid column tracks: a count (3: three equal columns, minmax(0, 1fr) each) or a list of a size
+   * token (a fixed column), "<n>fr" (CSS's <n>fr: at least its items' min-content width) or
+   * "minmax(0, <n>fr)" (a share of what's left, however narrow); "repeat(<n>, <track>)" repeats one.
+   */
+  const gridTracks = (v: unknown, path: PathSeg[]): GridTrack[] | undefined => {
+    const expected = 'a column count (3), or a list of size tokens and "1fr" / "minmax(0, 1fr)" tracks, e.g. [sidebar, "minmax(0, 1fr)"]';
+    if (typeof v === "number") {
+      if (Number.isInteger(v) && v >= 1 && v <= 1000) return Array.from({ length: v }, () => ({ fr: 1, auto: false }));
+      err(path, "invalid column count", { expected, got: v });
+      return undefined;
+    }
+    if (!Array.isArray(v) || !v.length) {
+      err(path, "invalid columns", { expected, got: v });
+      return undefined;
+    }
+    const out: GridTrack[] = [];
+    for (const [i, item] of v.entries()) {
+      const q = [...path, i];
+      const one = (x: unknown): GridTrack | undefined => {
+        if (typeof x === "string") {
+          const fr = /^(\d*\.?\d+)fr$/.exec(x.trim());
+          if (fr && parseFloat(fr[1]) > 0) return { fr: parseFloat(fr[1]), auto: true };
+          const mm = /^minmax\(\s*0(?:px)?\s*,\s*(\d*\.?\d+)fr\s*\)$/.exec(x.trim());
+          if (mm && parseFloat(mm[1]) > 0) return { fr: parseFloat(mm[1]), auto: false };
+        }
+        const r = ref(x, q, "size");
+        return r ? { size: r } : undefined;
+      };
+      const rep = typeof item === "string" ? /^repeat\(\s*(\d+)\s*,\s*(.+)\)$/.exec(item.trim()) : null;
+      const n = rep ? parseInt(rep[1]) : 1;
+      const t = one(rep ? rep[2] : item);
+      if (!t) return undefined;
+      if (!(n >= 1 && n <= 1000)) {
+        err(q, "invalid repeat count", { expected, got: item });
+        return undefined;
+      }
+      for (let k = 0; k < n; k++) out.push(t);
+    }
+    return out;
+  };
+
   // ---- text roles
   const textObj = top.text === undefined ? {} : obj(top.text, ["text"], "text roles");
   if (textObj) {
@@ -365,7 +408,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "layout": {
           const l = obj(v, p, "a layout");
           if (!l) break;
-          keys(l, p, ["pattern", "gap", "align", "min", "justify", "wrap"]);
+          keys(l, p, ["pattern", "gap", "align", "min", "columns", "justify", "wrap", "rowGap"]);
           const PATTERNS = ["stack", "cluster", "grid", "layer", "flow"];
           if (!PATTERNS.includes(l.pattern as string)) {
             err([...p, "pattern"], l.pattern === undefined ? 'missing required key "pattern"' : "unsupported layout pattern", {
@@ -376,15 +419,24 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             break;
           }
           let min: Ref | undefined;
+          let columns: GridTrack[] | undefined;
           if (l.pattern === "grid") {
-            if (l.min === undefined) {
-              err(p, 'a grid needs "min": the minimum column width (a size token)', { expected: "layout: { pattern: grid, min: <size token>, gap: <space token> }" });
+            if ((l.min === undefined) === (l.columns === undefined)) {
+              err(p, l.min === undefined ? 'a grid needs "min" (the minimum column width, a size token) or "columns" (its column tracks)' : 'a grid takes "min" or "columns", not both', {
+                expected: "layout: { pattern: grid, min: <size token>, gap: <space token> }, or layout: { pattern: grid, columns: 3 } (or [<size token>, 1fr, ...])",
+              });
               break;
             }
-            min = fixedRef(l.min, [...p, "min"], "the grid's minimum column width");
-            if (!min) break;
-          } else if (l.min !== undefined) {
-            err([...p, "min"], "min only applies to a grid", { expected: "remove min, or use pattern: grid" });
+            if (l.min !== undefined) {
+              min = fixedRef(l.min, [...p, "min"], "the grid's minimum column width");
+              if (!min) break;
+            } else {
+              columns = gridTracks(l.columns, [...p, "columns"]);
+              if (!columns) break;
+            }
+          } else if (l.min !== undefined || l.columns !== undefined) {
+            const k = l.min !== undefined ? "min" : "columns";
+            err([...p, k], `${k} only applies to a grid`, { expected: `remove ${k}, or use pattern: grid` });
             break;
           }
           if (l.pattern === "flow" && l.gap !== undefined) {
@@ -393,6 +445,12 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           }
           const gap = l.gap === undefined ? undefined : spaceRef(l.gap, [...p, "gap"], "a gap");
           if (l.gap !== undefined && !gap) break;
+          if (l.rowGap !== undefined && l.pattern !== "grid" && l.pattern !== "cluster") {
+            err([...p, "rowGap"], "rowGap only applies to a grid or a cluster (the gap between its rows)", { expected: "remove rowGap, or use gap" });
+            break;
+          }
+          const rowGap = l.rowGap === undefined ? undefined : spaceRef(l.rowGap, [...p, "rowGap"], "a gap");
+          if (l.rowGap !== undefined && !rowGap) break;
           if (l.align !== undefined && (l.pattern === "stack" || l.pattern === "flow" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
             err([...p, "align"], l.pattern === "stack" || l.pattern === "flow" ? `align doesn't apply to a ${l.pattern} (its children always stretch)` : "invalid align", {
               expected: "start, center, end or stretch",
@@ -401,8 +459,12 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             break;
           }
           const JUSTIFY = ["start", "end", "center", "between", "around", "evenly"];
-          if (l.justify !== undefined && (l.pattern !== "cluster" || !JUSTIFY.includes(l.justify as string))) {
-            err([...p, "justify"], l.pattern !== "cluster" ? "justify only applies to a cluster (where each line's free space goes)" : "invalid justify", {
+          if (l.justify !== undefined && l.pattern === "grid" && !["start", "center", "end", "stretch"].includes(l.justify as string)) {
+            err([...p, "justify"], "invalid justify for a grid (where each item sits across its column)", { expected: "start, center, end or stretch", got: l.justify });
+            break;
+          }
+          if (l.justify !== undefined && l.pattern !== "grid" && (l.pattern !== "cluster" || !JUSTIFY.includes(l.justify as string))) {
+            err([...p, "justify"], l.pattern !== "cluster" ? "justify only applies to a cluster (where each line's free space goes) or a grid (where items sit in their column)" : "invalid justify", {
               expected: "start, end, center, between, around or evenly",
               got: l.justify,
               suggestion: typeof l.justify === "string" ? closest(l.justify.replace(/^space-/, ""), JUSTIFY) : undefined,
@@ -418,8 +480,11 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             pattern: l.pattern as LayoutProp["pattern"],
             gap,
             align: l.align as LayoutProp["align"],
+            ...(rowGap && { rowGap }),
             min,
-            ...(l.justify !== undefined && { justify: l.justify as LayoutProp["justify"] }),
+            ...(columns && { columns }),
+            ...(l.justify !== undefined && l.pattern === "grid" && { justifyItems: l.justify as LayoutProp["justifyItems"] }),
+            ...(l.justify !== undefined && l.pattern !== "grid" && { justify: l.justify as LayoutProp["justify"] }),
             ...(l.wrap === false && { wrap: false }),
           };
           break;
