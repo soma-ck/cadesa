@@ -18,6 +18,65 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- Percentage padding and margins are laid out: of the containing block's width on every side, also
+  inside `calc()`, `min()`, `max()` and `clamp()` (`padding: 4% 7% 6%`, `margin: 0 auto 5%`). In
+  intrinsic sizes they count as 0, as in Chromium; a flex item or an absolutely positioned box adds
+  its resolved padding to its content. In a source: padding and margin sides may name a percentage
+  size token.
+- Auto top and bottom margins take free space: in a column flexbox (a footer pushed down, a body
+  centered, before `justify-content`), across a flex row and in a grid area (centering or pushing an
+  item, which is then not stretched). In block flow they are 0. In a source: `margin: { top: auto }`.
+- A column flexbox aligned `start`, `center` or `end` sizes its items to fit-content (wrapping text
+  too) and places them; `align-self` on a flex item is its own alignment in a column or across a
+  row. In a source: a stack's `align`, and an item's `place: { align }`.
+- Grids are placed and sized by CSS Grid's own algorithm: track lists with `auto`, `min-content`,
+  `max-content`, `fit-content()`, `minmax()`, `<n>fr`, percentages, `repeat()` (with `auto-fill` and
+  `auto-fit`) and line names; `grid-template-rows`, `grid-template-areas`, `grid-auto-rows` and
+  `-columns`, dense packing, `justify-content` and `align-content`; items placed by line numbers
+  (negative too), spans, line names and areas (`grid-area: 1 / 1` layers, `grid-column: 1 / -1`),
+  auto-placed around them, aligned in their areas by `justify-self`, `align-self` or auto margins.
+  Tracks are sized from the items spanning them (span 1 first, then wider spans; flexible tracks
+  last), in layout units. A grid's own min-content and max-content widths are measured the same way.
+  In a source: a grid's `template` and an item's `place`.
+- An input, select, textarea or replaced element with a percentage width or max-width is
+  compressible: its min-content width is its padding and border, so a `1fr` column holding a form
+  is exact.
+- A grid's percentage row gap where its height is stretched or held up by a min-height is decided
+  per layout: exact while the grid has one row.
+- 2D transforms are drawn where Chromium draws them: `transform` (translate, scale, rotate, skew,
+  matrix), the `translate`, `rotate` and `scale` properties and `transform-origin` map the box and
+  everything inside it, and its rectangle is the bounding box of its mapped corners, as
+  `getBoundingClientRect()` reports. Nothing else moves. 3D transforms and perspective stay `≈`. In
+  a source: `transform: "rotate(3deg)"` or `{ value, origin }`.
+- Icons and other atomic inlines in text: an inline-block or replaced element of known size inside a
+  text box (an icon `<svg>` sized in em with an aspect ratio, a status dot, a small image, an
+  inline-block holding one icon glyph such as Font Awesome's `<i class="fa">` or a Bootstrap Icons
+  `::before`) is one unbreakable object on its line, with break opportunities around it, when its
+  margin box stays within the line's strut. With a font size that follows the viewport its width
+  follows it too.
+- `cadesa fonts --measure` also measures the characters the page's text uses beyond the standard
+  set, such as the Private Use Area codepoints of icon fonts' `content:` values, and measures the
+  faces it can when another face of the family can't be fetched. A table that lacks characters the
+  page uses is measured again.
+- `<svg>`, `<img>`, `<video>` and `<canvas>` take their `width` and `height` attributes as
+  presentational hints; an inline `<svg>`'s `viewBox` gives its
+  aspect ratio. An `<svg>`'s contents are drawn, not laid out, so an svg of definite size is exact.
+- `width: max-content` and `min-content` are laid out; so is `justify-self` on a block in block flow.
+- Text in a font size of 0 (an icon button hiding its label) has no width and one line of its line
+  height, and `letter-spacing` in em of a font size that follows the viewport is exact.
+- A property at its initial value (`font-variant: normal`, `text-transform: none`, `float: none`,
+  `filter: none`...) never makes a box `≈`.
+- `<input type="hidden">` lays out no box, as in Chromium's stylesheet.
+- Fewer boxes marked exact that weren't: an animation of a transform, position or size (its
+  `@keyframes`) makes its box and subtree `≈`; so does a transformed box that is `≈`; a box its parent
+  centers or end-aligns by its size moves with everything inside it when it is resized; a page-level
+  box at its static position moves with the page's content; and a box the engine reports an error on
+  counts as `≈` in every report (`check --verify` too).
+- The differential fuzzer generates the new constructs too. Three grid cases it found are kept in
+  `fixtures/fuzz`. `conformance:css` checks four new pages: spacing, transforms, grid and icons.
+
 ## 0.1.14 (2026-11-19)
 
 - `contain` is laid out. `layout` and `paint` (and `content`, `strict`) make the box an independent
