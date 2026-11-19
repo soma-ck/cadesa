@@ -54,6 +54,8 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   overflow: "overflow",
   contain: "contain",
   position: "position",
+  table: "layout",
+  part: "part",
 };
 
 function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: string; path: string } | undefined {
@@ -84,6 +86,10 @@ function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: s
       return { value: p.overflow!.raw, path: p.overflow!.path };
     case "contain":
       return { value: p.contain!.raw, path: p.contain!.path };
+    case "part":
+      return { value: p.part!.raw, path: p.part!.path };
+    case "table":
+      return p.layout!.pattern === "table" ? { value: [p.layout!.collapse ? "collapse" : "separate", ...(p.layout!.fixed ? ["fixed"] : [])].join(", "), path: p.layout!.path } : undefined;
     case "textAlign":
       return { value: p.textAlign!.value, path: p.textAlign!.path };
     case "padding": {

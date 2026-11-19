@@ -281,9 +281,18 @@
                 "cluster",
                 "grid",
                 "layer",
-                "flow"
+                "flow",
+                "table"
               ],
-              "description": "flow: block flow; children stack and their vertical margins collapse (no gap or align)"
+              "description": "flow: block flow; children stack and their vertical margins collapse (no gap or align). table: a table whose children are table parts (part); gap and rowGap are its border spacing"
+            },
+            "collapse": {
+              "type": "boolean",
+              "description": "table only: collapsed borders (border-collapse: collapse); default false"
+            },
+            "fixed": {
+              "type": "boolean",
+              "description": "table only: column widths from the column elements and the first row (table-layout: fixed); default false"
             },
             "align": {
               "enum": [
@@ -518,6 +527,11 @@
           "type": "string",
           "pattern": "^\\s*(none|content|strict|((size|inline-size|layout|style|paint)(\\s+|$))+)\\s*$",
           "description": "CSS containment: layout or paint makes the box an independent formatting context (margins don't collapse through it) and the containing block of its absolute and fixed descendants (paint also clips); size sizes it as if empty (inline-size: its widths only); style changes nothing. content is layout paint style, strict adds size; none: in a breakpoint override, no containment"
+        },
+        "part": {
+          "type": "string",
+          "pattern": "^\\s*(caption(\\s+(top|bottom))?|column|column-group|header|body|footer|row|cell(\\s+(baseline|top|middle|bottom))?)\\s*$",
+          "description": "a part of a table: caption (top or bottom), column, column-group, header, body, footer (row groups), row, or cell with where its content sits in its row (baseline, the default; top, middle, bottom). Cells span the columns and rows of their colspan and rowspan attributes"
         },
         "backdrop": {
           "$ref": "#/$defs/ref",

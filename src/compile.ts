@@ -42,6 +42,13 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     const rowGap = l.rowGap ? [`row-gap: ${v(l.rowGap)}`] : l.gap?.kind === "size" ? ["row-gap: 0"] : [];
     // Block flow: children stack in normal flow and their vertical margins collapse.
     if (l.pattern === "flow") out.push("display: block");
+    else if (l.pattern === "table")
+      out.push(
+        "display: table",
+        `border-collapse: ${l.collapse ? "collapse" : "separate"}`,
+        `border-spacing: ${l.gap ? v(l.gap) : "0"} ${l.rowGap ? v(l.rowGap) : l.gap ? v(l.gap) : "0"}`,
+        `table-layout: ${l.fixed ? "fixed" : "auto"}`,
+      );
     else if (l.pattern === "stack" || l.pattern === "cluster") {
       const stack = l.pattern === "stack";
       out.push(
@@ -158,6 +165,12 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.fit) out.push(`object-fit: ${p.fit.value}`);
   if (p.overflow) out.push(`overflow-x: ${p.overflow.x}`, `overflow-y: ${p.overflow.y}`);
   if (p.contain) out.push(`contain: ${p.contain.raw}`);
+  if (p.part) {
+    const DISPLAY = { caption: "table-caption", column: "table-column", "column-group": "table-column-group", header: "table-header-group", body: "table-row-group", footer: "table-footer-group", row: "table-row", cell: "table-cell" } as const;
+    out.push(`display: ${DISPLAY[p.part.value]}`);
+    if (p.part.value === "cell") out.push(`vertical-align: ${p.part.align ?? "baseline"}`);
+    if (p.part.value === "caption") out.push(`caption-side: ${p.part.side ?? "top"}`);
+  }
   if (p.position) {
     const ps = p.position;
     out.push(`position: ${ps.type}`, ...(["top", "right", "bottom", "left"] as const).map((k) => `${k}: ${ps[k] ? v(ps[k]!) : "auto"}`), ...(ps.height ? [`height: ${v(ps.height)}`] : []));

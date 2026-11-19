@@ -3,7 +3,9 @@ import {
   PROP_ORDER,
   tokenKey,
   type Breakpoint,
+  type CellAlign,
   type Component,
+  type TablePart,
   type Contain,
   type Justify,
   type MarginSide,
@@ -101,6 +103,10 @@ export interface ResolvedProps {
   overflow?: Resolved<{ x: Overflow; y: Overflow }>;
   /** Containment (see Props.contain). */
   contain?: Resolved<Contain>;
+  /** A table: collapsed borders, fixed layout (its border spacing is gap and rowGap). */
+  table?: Resolved<{ collapse: boolean; fixed: boolean }>;
+  /** A table part (see Props.part). */
+  part?: Resolved<{ part: TablePart; align?: CellAlign; side?: "top" | "bottom"; contentBox?: boolean }>;
   /** Positioning and its offsets (px, or a percentage of the containing block). */
   position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct; height?: number | Pct }>;
   fit?: Resolved<"cover" | "contain">;
@@ -232,7 +238,8 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const rowPct = l.rowGap?.kind === "size" ? model.tokens.get(tokenKey("size", l.rowGap.name))!.pct : undefined;
         // A percentage of the grid's height: 0 while its rows are sized, then of its final content height.
         if (l.rowGap) out.rowGap = rowPct !== undefined ? { ...sizeOf(l.rowGap), value: 0, pct: rowPct, display: `${rowPct}% of the content height (0 while the rows are sized)` } : lengthOf(l.rowGap);
-        if (l.pattern !== "stack" && l.pattern !== "flow") {
+        if (l.pattern === "table") out.table = { value: { collapse: !!l.collapse, fixed: !!l.fixed }, display: [l.collapse ? "collapse" : "separate", ...(l.fixed ? ["fixed"] : [])].join(", "), steps: [...pre, src(l.path)] };
+        if (l.pattern !== "stack" && l.pattern !== "flow" && l.pattern !== "table") {
           const def = l.pattern === "cluster" ? "center" : "stretch";
           const a = l.align ?? def;
           out.align = { value: a, display: l.align ? a : `${def} (default)`, steps: [...pre, src(l.align ? `${l.path}.align` : l.path)] };
@@ -278,6 +285,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "contain": {
         const c = p.contain!;
         if (c.layout || c.paint || c.size) out.contain = { value: { layout: c.layout, paint: c.paint, ...(c.size && { size: c.size }) }, display: c.raw, steps: [...pre, src(c.path)] };
+        break;
+      }
+      case "part": {
+        const t = p.part!;
+        out.part = { value: { part: t.value, ...(t.align && { align: t.align }), ...(t.side && { side: t.side }), ...(t.contentBox && { contentBox: true }) }, display: t.raw, steps: [...pre, src(t.path)] };
         break;
       }
       case "textAlign": {
