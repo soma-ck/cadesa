@@ -38,7 +38,7 @@ inconclusive (Cadesa can't decide these without a browser: confirm in one, or ru
 
 How to read it:
 
-- **The coverage line comes first.** It says how much of the page Cadesa predicted exactly, and why the rest is `≈`. When most of a page is `≈`, it says so, and you should treat the report as leads. Elements a browser shows that Cadesa doesn't lay out at all (the rows of a table, which is one box; anything absolutely positioned or floated) are counted under it, `! 31 of 77 elements not laid out: inside a table, laid out as one box (×31)`: nothing is checked there.
+- **The coverage line comes first.** It says how much of the page Cadesa predicted exactly, and why the rest is `≈`. When most of a page is `≈`, it says so, and you should treat the report as leads. Elements a browser shows that Cadesa doesn't lay out at all (anything floated; the rows of a table it keeps as one box, when something in it would get an anonymous cell) are counted under it, `! 31 of 77 elements not laid out: inside a table, laid out as one box (×31)`: nothing is checked there.
 - **`✖` and `⚠` are definite.** Act on them: each names the element, the widths and the rule to change. Contrast, text that runs together and other checks that don't depend on exact positions stay definite even on a mostly `≈` page.
 - **`?` is inconclusive.** The finding depends on a box Cadesa can't predict exactly. Here `.zoomed` is drawn at `scale(3)`, so it is really 60×60px. Confirm it in a browser, or add `--verify` and Chromium decides.
 - **`whatif` follows the same rule.** It only says "unchanged" for boxes predicted exactly.
@@ -100,7 +100,7 @@ $ cadesa check fixtures/bootstrap/dashboard.html --css fixtures/bootstrap/bootst
 
 Each finding names the element (its line in the page, tag, classes and the start of its text) and the rules in your stylesheets that set the property behind it, following `var()` to where the variable is set. `--json` has the same, plus the path in the generated Cadesa source (`path`).
 
-`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. It also understands what Bootstrap 5 and Angular pages are built from: the grid (negative gutters, `.col` growth, `col-*` and `row-cols-*` widths), `.container` max-widths that disappear on phones, `d-flex` rows with `justify-content` and auto margins, per-side padding and borders, form controls, and Angular's component elements. Anything it can't model (tables' heights, floats, and buttons aligned to a line of text in a font without vertical metrics) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
+`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. It also understands what Bootstrap 5 and Angular pages are built from: the grid (negative gutters, `.col` growth, `col-*` and `row-cols-*` widths), `.container` max-widths that disappear on phones, `d-flex` rows with `justify-content` and auto margins, per-side padding and borders, form controls, tables (`.table` and its variants, `.table-responsive`, plain `<table>`s with colspans, rowspans, captions and `<col>` widths, `table-layout: fixed`), and Angular's component elements. Anything it can't model (floats, and buttons aligned to a line of text in a font without vertical metrics) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
 
 ### Pages rendered by JavaScript: `capture`
 
@@ -265,14 +265,15 @@ The engine ([`src/engine/`](src/engine/)) is the spec: its box tree depends only
 | --- | --- | --- |
 | `npm run fuzz` | **differential fuzzer**: random pages covering the whole language | 39,597 pages at 148,328 widths: **688,902 boxes, 0 disagreements** (0 again on fresh seeds) |
 | `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 19,056 boxes marked exact match (400 left `≈`) |
-| `conformance:bootstrap` | six Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` (navbar collapse, grid, cards, tables, `d-*` utilities) | all 31,341 of 38,913 boxes are marked exact, and all match; what's left is mostly table contents and percentage margins. Where a box is `≈` but `check` treats its size as known, the size matches too |
-| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms, generated content and runs in another weight, line boxes and text fields, containment, percentages in `min()` and grid row gaps, static positions and inline-blocks sharing lines | all 42,449 boxes marked exact match, every 10px from 320 to 1440px |
+| `conformance:bootstrap` | seven Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` (navbar collapse, grid, cards, `.table` and its variants, `d-*` utilities) | all 52,327 of 62,304 boxes are marked exact, and all match; what's left is mostly tables scrolling in `.table-responsive` (a scrollbar that takes space where it isn't overlaid) and percentage margins. Where a box is `≈` but `check` treats its size as known, the size matches too |
+| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms, generated content and runs in another weight, line boxes and text fields, containment, percentages in `min()` and grid row gaps, static positions and inline-blocks sharing lines, tables | all 42,449 boxes marked exact match, every 10px from 320 to 1440px |
 | `conformance:fonts` | Roboto (variable, from Google Fonts) and Lato (two static faces via `@font-face`) | 5,474 of 5,474, and the line count of all 4,347 text boxes, over 161 widths |
 | `conformance:landing` | grid, text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
 | `conformance:field2` | every divergence found in real use, kept fixed | 2,576 of 2,576 over 161 widths |
 | `conformance:sweep` | long copy every 3px, to land on line-break boundaries | 1,482 of 1,482 over 247 widths |
 | `conformance:lift` | a hand-written BEM stylesheet vs the original | all 32 boxes match, none left uncertain |
+| `npm run fuzz:tables` | **differential fuzzer for tables**: random tables (auto and fixed layout, separated and collapsed borders, spans, captions, columns, alignment, attributes, `<div>` tables, flex and grid parents) lifted from their CSS | TABLEFUZZ |
 
 Real use has caught Cadesa wrong before: the site rebuild above found seven cases where it said "fine" and Chromium disagreed. Each was fixed and kept as a regression test, and the fuzzer then found and fixed the next ones, mostly in exactly how Chromium rounds text widths and picks line breaks (59 regression cases in [`fixtures/fuzz`](fixtures/fuzz)). Where Chromium's choice hinges on a fraction of a pixel, the box is flagged rather than guessed. Testing on Bootstrap pages also caught one released bug: 0.1.6 predicted an empty Angular `<router-outlet>` as full width instead of 0×0, and every box after it was off. 0.1.7 fixes it, and the Bootstrap suite keeps it fixed.
 
@@ -325,6 +326,8 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `layout.pattern: grid` + `min` | size token | `grid-template-columns: repeat(auto-fill, minmax(min(<min>, 100%), 1fr))` |
 | `layout.pattern: layer` | | one grid cell holding every child: text over a photo, a badge over a card |
 | `layout.pattern: flow` | | ordinary block flow (`display: block`): children stack, vertical margins collapse as in the browser |
+| `layout.pattern: table` + `collapse`, `fixed`, `min` | | `display: table` (`border-collapse: collapse`, `table-layout: fixed`, `min-width`); `gap` and `rowGap` are its `border-spacing`. Columns and rows are sized as Chromium sizes them |
+| `part` | `caption` (`top`, `bottom`), `column`, `column-group`, `header`, `body`, `footer`, `row`, `cell` (`baseline`, `top`, `middle`, `bottom`; `content-box`) | a table's children: `display: table-cell` with `vertical-align`, and so on; cells span the columns and rows of their `colspan` and `rowspan` |
 | `layout.gap` | space token (cluster, grid: or a percentage size token, between columns) | `gap` |
 | `layout.align` | `start`, `center`, `end`, `stretch` | `align-items` (cluster defaults to `center`, grid and layer to `stretch`; not for stack) |
 | `layout.justify` | `start`, `end`, `center`, `between`, `around`, `evenly` | `justify-content` in a cluster, distributed as Chromium does |
@@ -352,7 +355,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 ## Roadmap
 
 - **Inline layout beyond one box per line:** inline-blocks of different heights sharing a line, text beside inline-blocks, and the rectangle of an inline span (its lines are exact; its own content-area box is `≈`).
-- **Tables, floats,** explicit grid templates and percentage padding, which are reported as `≈` today.
+- **Floats,** explicit grid templates and percentage padding, which are reported as `≈` today.
 - **More of Tailwind:** `dark:` and container queries.
 
 ## Development

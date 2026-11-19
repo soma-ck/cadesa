@@ -1147,7 +1147,6 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
   tableW = Math.max(tableW, capMin);
   const spacingX = loc.length ? g.spacingX : 0;
   const spacingY = loc.length ? g.spacingY : 0;
-  const gridInner = tableW - bpX;
 
   // Captions, at the table's width.
   const capBoxes = g.captions.map((cap) => {
