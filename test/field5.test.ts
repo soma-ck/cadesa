@@ -14,8 +14,8 @@ import { modelOf, render } from "../src/project.js";
 const FONT = `body { margin: 0; font: 16px/1.5 Inter, sans-serif; color: #111111; background: #ffffff }`;
 
 /** Lift `body` with `css` (after a zero-margin Inter body unless `bare`), lay it out and check it. */
-export function run(body: string, css: string, widths = [400], opts: { bare?: boolean; head?: string } = {}) {
-  const t = liftCssPage("t.html", `<!doctype html><html><head>${opts.head ?? ""}<link rel="stylesheet" href="t.css"></head><body>${body}</body></html>`, [{ file: "t.css", text: opts.bare ? css : `${FONT}\n${css}` }]);
+export function run(body: string, css: string, widths = [400], opts: { bare?: boolean; head?: string; height?: number } = {}) {
+  const t = liftCssPage("t.html", `<!doctype html><html><head>${opts.head ?? ""}<link rel="stylesheet" href="t.css"></head><body>${body}</body></html>`, [{ file: "t.css", text: opts.bare ? css : `${FONT}\n${css}` }], undefined, { height: opts.height });
   const m = modelOf(loadSource("t.html (lifted)", t.yaml));
   const layouts = widths.map((w) => render(m, t.fixtureAt(w), [w])[0]);
   const impacts = tailwindImpact(t, layouts);
@@ -156,12 +156,17 @@ describe("units", () => {
     expect(r.exact(400) && r.exact(1440)).toBe(true);
   });
 
-  it("vh is computed for an 800px tall viewport and marked ≈", () => {
-    const r = run(`<div class="shell"><div class="card"><p class="cp">Sign in</p></div></div><p class="after">Below</p>`, `p { margin: 0 } .shell { display: grid; place-items: center; min-height: 100dvh; padding: 16px; box-sizing: border-box } .card { width: 280px; padding: 24px; border: 1px solid #ddd }`, [400]);
+  it("vh is computed exactly for the window height (800px by default, or --height)", () => {
+    const body = `<div class="shell"><div class="card"><p class="cp">Sign in</p></div></div><p class="after">Below</p>`;
+    const css = `p { margin: 0 } .shell { display: grid; place-items: center; min-height: 100dvh; padding: 16px; box-sizing: border-box } .card { width: 280px; padding: 24px; border: 1px solid #ddd }`;
+    const r = run(body, css, [400]);
     expect(geo(r.box("card"))).toEqual([35, 363, 330, 74]);
     expect(geo(r.box("after"))).toEqual([0, 800, 400, 24]);
-    expect(r.approx("shell")).toMatch(/800px tall viewport/);
-    expect(r.approx("card")).toMatch(/800px tall viewport/);
+    expect(r.exact()).toBe(true);
+    expect(r.t.usesViewportHeight).toBe(true);
+    const s = run(body, css, [400], { height: 600 });
+    expect(geo(s.box("card"))).toEqual([35, 263, 330, 74]);
+    expect(geo(s.box("after"))).toEqual([0, 600, 400, 24]);
   });
 });
 

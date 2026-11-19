@@ -82,6 +82,7 @@ const pageShape = {
     .describe("Path to the compiled Tailwind CSS for a Tailwind page; fixture is then that page, lifted on the fly (boxes it can't predict exactly are marked ≈)"),
   fixture: z.string().describe("Path to the HTML fixture that uses the component classes (or the Tailwind page, with tailwind)"),
   widths: z.array(z.number().positive()).default([390, 1280]).describe("Viewport widths in px"),
+  height: z.number().positive().optional().describe("Window height in px for a css or tailwind page: vh units and other heights of the viewport (default 800)"),
   format: z.enum(["text", "json"]).default("text").describe("text is compact and readable; json has every field"),
 };
 

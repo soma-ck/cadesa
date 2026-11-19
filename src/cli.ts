@@ -77,6 +77,7 @@ Options:
   --widths   viewport widths in px: "390,1280", or ranges like "320-1440/20" (every 20px)
              default: every 20px from 320 to 1440 for check and critique, and for whatif
              also both sides of every breakpoint; 390,1280 otherwise
+  --height   window height in px for vh units and other heights of the viewport (default 800)
   --json     machine-readable output (for agents)
   --lines    render: print each wrapped line with its width
   --svg f    render: also draw the predicted boxes as an SVG wireframe (f-<width>.svg per width)
@@ -102,6 +103,7 @@ async function main(argv: string[]) {
       tailwind: { type: "string" },
       fixture: { type: "string" },
       widths: { type: "string" },
+      height: { type: "string" },
       set: { type: "string", multiple: true },
       after: { type: "string" },
       "add-css": { type: "string" },
@@ -174,12 +176,20 @@ async function main(argv: string[]) {
   // check and critique sweep every 20px by default; at ~4ms per width that's cheap, and it
   // catches problems that exist only between two hand-picked widths.
   const widths = () => parseWidths(values.widths ?? (cmd === "check" || cmd === "critique" ? SWEEP : "390,1280"));
+  // The window height (vh units on a --css or --tailwind page): one value, like a width.
+  const height = () => {
+    if (values.height === undefined) return undefined;
+    const h = Number(values.height);
+    if (!(h > 0) || !isFinite(h)) throw new InputError(`invalid height "${values.height}"`);
+    return h;
+  };
   const page = () => ({
     source: values.css || values.tailwind ? undefined : need(values.source, "--source <source.cadesa.yaml>, --css <file.css> or --tailwind <compiled.css>"),
     css: values.tailwind ? undefined : values.css,
     tailwind: values.tailwind,
     fixture: need(input, "<fixture.html>"),
     widths: widths(),
+    height: height(),
   });
 
   let r: Result;

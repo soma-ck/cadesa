@@ -16,7 +16,7 @@
  *      classes (BEM .block__element gives slot "element").
  */
 import postcss, { type AtRule, type ChildNode, type Container, type Rule } from "postcss";
-import { parseMediaQuery, type MediaInfo } from "../tailwind/css.js";
+import { heightsHold, parseMediaQuery, type MediaInfo } from "../tailwind/css.js";
 import { cssValue } from "./css.js";
 import { kindOf, worst, type ImpactKind } from "./lift.js";
 import { attr, PageLifter, round, type El, type Origin, type PageLift, type State } from "./page.js";
@@ -450,9 +450,11 @@ export interface SheetFile {
   text: string;
 }
 
-export function liftCssPage(page: string, html: string, cssFile: string | SheetFile[], cssText?: string): PageLift {
+export function liftCssPage(page: string, html: string, cssFile: string | SheetFile[], cssText?: string, opts: { height?: number } = {}): PageLift {
   const sheets = typeof cssFile === "string" ? [{ file: cssFile, text: cssText ?? "" }] : cssFile;
-  return new CssLifter(page, html, sheets).run();
+  const l = new CssLifter(page, html, sheets);
+  if (opts.height) l.viewportHeight = opts.height;
+  return l.run();
 }
 
 class CssLifter extends PageLifter {
@@ -623,7 +625,7 @@ class CssLifter extends PageLifter {
         const where = `${rule.file}:${rule.line}`;
         let skip = false;
         for (const q of rule.media) {
-          if (!q.widths.every((c) => (c.op === "ge" ? st.lo >= c.px : st.lo < c.px))) skip = true;
+          if (!q.widths.every((c) => (c.op === "ge" ? st.lo >= c.px : st.lo < c.px)) || !heightsHold(q, this.viewportHeight)) skip = true;
           else if (q.dark || q.env === false) skip = true;
           else if (q.env !== true) {
             this.note(el, si, { decl: `${where} ${declText}`, reason: `${q.env.unknown} is not modelled`, kind: k });

@@ -77,8 +77,8 @@ export interface Origin {
 }
 
 /**
- * The viewport height that vh, dvh, svh and lvh are computed for. Cadesa predicts layouts per
- * width; the height of the window isn't known, so boxes sized by it are marked approximate.
+ * The default height of the window the page is laid out in (`--height`): vh, dvh, svh and lvh,
+ * and percentage heights of the root, are computed exactly for it, as widths are for each width.
  */
 export const VIEWPORT_HEIGHT = 800;
 
@@ -370,6 +370,10 @@ export interface PageLift {
   responsive: string[];
   /** Things the reader should know about how the page was read (e.g. a stylesheet used under another name). */
   notes: string[];
+  /** The window height (px) the page was laid out for: vh units and the root's percentage heights. */
+  viewportHeight: number;
+  /** Some box depends on the window's height (vh units, a percentage height of the root). */
+  usesViewportHeight: boolean;
   /** The cascade per element (for pointing findings at the rule that set a property). */
   elements: { els: El[]; html?: El; body?: El };
   /**
@@ -421,6 +425,10 @@ export abstract class PageLifter {
   uaInCascade = false;
   /** How a block container with block children is lifted: a stack (no margins) or block flow. */
   blockFlow: "stack" | "flow" = "stack";
+  /** The window's height in px: vh units and the root's percentage heights are computed for it. */
+  viewportHeight = VIEWPORT_HEIGHT;
+  /** Some length depends on the window's height (vh, or a percentage height of the root). */
+  usesViewportHeight = false;
   /** For the source header: what the page was lifted with. */
   abstract readonly label: string;
 
@@ -659,11 +667,11 @@ export abstract class PageLifter {
       } else if (parent.fluid && MATHY.test(fs) && /\d(em|%)/.test(fs)) {
         this.note(el, si, { decl, reason: "a font size relative to one that follows the viewport width is not modelled", kind: "text" });
       } else {
-        const f = MATHY.test(fs) ? lengthExpr(fs, { em: parent.size, vh: VIEWPORT_HEIGHT }) : undefined;
+        const f = MATHY.test(fs) ? lengthExpr(fs, { em: parent.size, vh: this.viewportHeight }) : undefined;
+        if (f && /\d[dsl]?v(?:h|min|max)\b/i.test(fs)) this.usesViewportHeight = true;
         if (f) {
           t.size = f.at(1280);
           t.fluid = f.fluid ? f.css : undefined;
-          if (/\d[dsl]?v(?:h|min|max)\b/i.test(fs)) this.note(el, si, { decl, reason: `viewport-height units are computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`, kind: "text" });
         } else this.note(el, si, { decl, reason: "font-size must be a length, or calc()/clamp()/min()/max() of px, rem, em and vw", kind: "text" });
       }
     }
@@ -1267,7 +1275,6 @@ export abstract class PageLifter {
             this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: `a percentage ${p} of a parent whose height may be stretched (a flex or grid item) is not decided`, kind: "height" });
             continue;
           }
-          if (of.viewport) this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: `a percentage of the viewport's height is computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`, kind: "height" });
           v = `${fmtNum((parseFloat(v) / 100) * of.px)}px`;
         }
         if (p === "background-color" || p === "outline-color" || p === "text-decoration-color") {
@@ -1424,15 +1431,9 @@ export abstract class PageLifter {
       this.note(el, si, { decl: `${utility} (${prop}: ${v})`, reason: "an em length under a font size that follows the viewport width is not modelled", kind: "geometry" });
       return v;
     }
-    const f = lengthExpr(v, { em: t.size, vh: VIEWPORT_HEIGHT });
-    if (!f) return v;
-    if (/\d[dsl]?v(?:h|min|max)\b/i.test(v))
-      this.note(el, si, {
-        decl: `${utility} (${prop}: ${v})`,
-        reason: `viewport-height units are computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`,
-        kind: /height$/.test(prop) ? "height" : "geometry",
-      });
-    return f.css;
+    const f = lengthExpr(v, { em: t.size, vh: this.viewportHeight });
+    if (f && /\d[dsl]?v(?:h|min|max)\b/i.test(v)) this.usesViewportHeight = true;
+    return f ? f.css : v;
   }
 
   /**
@@ -1473,7 +1474,10 @@ export abstract class PageLifter {
    * the percentage behaves as auto, "unknown" when it depends on stretching (a flex or grid item).
    */
   definiteHeight(el: El | undefined, si: number, depth = 0): "auto" | "unknown" | { px: number; viewport: boolean } {
-    if (!el) return { px: VIEWPORT_HEIGHT, viewport: true };
+    if (!el) {
+      this.usesViewportHeight = true;
+      return { px: this.viewportHeight, viewport: true };
+    }
     if (depth > 64) return "unknown";
     const own = el.own[si];
     const o = own?.get("height");
@@ -1491,7 +1495,7 @@ export abstract class PageLifter {
       px = (parseFloat(pct[1]) / 100) * of.px;
       viewport = of.viewport;
     } else {
-      const f = lengthExpr(v, { em: size, vh: VIEWPORT_HEIGHT });
+      const f = lengthExpr(v, { em: size, vh: this.viewportHeight });
       if (!f || f.fluid) return "unknown";
       px = f.at(0);
       viewport = /\d[dsl]?v(?:h|min|max)\b/i.test(v);
@@ -1902,6 +1906,8 @@ export abstract class PageLifter {
       states: this.states,
       responsive,
       notes: this.readerNotes,
+      viewportHeight: this.viewportHeight,
+      usesViewportHeight: this.usesViewportHeight,
       spacing: (w: number) => {
         const si = this.states.indexOf(stateAt(this.states, w));
         return (spacingAt[si] ??= this.runTogether(si));

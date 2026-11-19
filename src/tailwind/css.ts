@@ -25,7 +25,12 @@ export interface MediaInfo {
   env: true | false | { unknown: string };
   /** The query is `prefers-color-scheme: dark` (the `dark:` variant). */
   dark?: boolean;
+  /** Height conditions, decided against the window height the page is laid out for. */
+  heights?: WidthCond[];
 }
+
+/** Do the height conditions hold for a window `h` px tall? */
+export const heightsHold = (m: MediaInfo, h: number) => (m.heights ?? []).every((c) => (c.op === "ge" ? h >= c.px : h < c.px));
 
 export interface TwRule {
   selector: string;
@@ -110,6 +115,19 @@ export function parseMediaQuery(raw: string): MediaInfo {
     if (m && toPx(m[2]) !== undefined) {
       const px = toPx(m[2])!;
       out.widths.push(m[1] === "min" ? { op: "ge", px, raw: m[2].trim() } : { op: "lt", px: px + 0.01, raw: `${m[2].trim()}+` });
+      continue;
+    }
+    m = /^\(\s*(min|max)-height\s*:\s*([^)]+?)\s*\)$/.exec(p);
+    if (m && toPx(m[2]) !== undefined) {
+      const px = toPx(m[2])!;
+      (out.heights ??= []).push(m[1] === "min" ? { op: "ge", px, raw: m[2].trim() } : { op: "lt", px: px + 0.01, raw: `${m[2].trim()}+` });
+      continue;
+    }
+    m = /^\(\s*height\s*(>=|>|<=|<)\s*([^)]+?)\s*\)$/.exec(p);
+    if (m && toPx(m[2]) !== undefined) {
+      const px = toPx(m[2])!;
+      const raw = m[2].trim();
+      (out.heights ??= []).push(m[1] === ">=" ? { op: "ge", px, raw } : m[1] === "<" ? { op: "lt", px, raw } : m[1] === ">" ? { op: "ge", px: px + 0.01, raw } : { op: "lt", px: px + 0.01, raw });
       continue;
     }
     m = /^\(\s*([a-z-]+)\s*:\s*([a-z-]+)\s*\)$/i.exec(p);

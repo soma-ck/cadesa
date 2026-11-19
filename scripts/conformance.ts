@@ -31,6 +31,8 @@ const { values } = parseArgs({
     css: { type: "string", default: "dist/settings.css" },
     widths: { type: "string", default: "320,390,768,1280" },
     tolerance: { type: "string", default: "0.5" },
+    /** The window height (px): vh units on a lifted page are computed for it, and Chromium opens at it. */
+    height: { type: "string", default: "800" },
     out: { type: "string", default: "artifacts" },
     /**
      * Verify a lift instead: the fixture links this hand-written CSS, which the engine sees only
@@ -55,6 +57,7 @@ const strict = values.strict!;
 
 const root = process.cwd();
 const tolerance = Number(values.tolerance);
+const viewportHeight = Number(values.height);
 const widths = parseWidths(values.widths!);
 /** A page lift: Tailwind's compiled CSS, or plain CSS (--lift). */
 const tw = values.tailwind ?? values.lift;
@@ -106,7 +109,7 @@ let layouts: Layout[];
 let impacts: WidthImpact[] | undefined;
 let families: string[];
 if (tw) {
-  const t = lifted ? cssPageFile(fixtureFile, tw) : tailwindFile(fixtureFile, tw);
+  const t = lifted ? cssPageFile(fixtureFile, tw, viewportHeight) : tailwindFile(fixtureFile, tw, viewportHeight);
   overrides.set(resolve(root, fixtureFile), t.html);
   const m = modelOf(loadSource(`${fixtureFile} (${lifted ? "lifted" : "tailwind"})`, t.yaml));
   layouts = widths.map((w) => render(m, t.fixtureAt(w), [w])[0]);
@@ -123,7 +126,7 @@ for (const layout of layouts) {
   const { width: widthUnsure, size: sizeUnsure } = sizeUncertainty(layout, impacts?.find((i) => i.width === layout.width));
   // A text box the engine couldn't measure (no font metrics) is flagged in every report: uncertain.
   if (tw) for (const b of walk(layout.boxes)) if (b.assumptions.length) (uncertain.add(b.id), assumed++);
-  const page = await browser.newPage({ viewport: { width: layout.width, height: 900 } });
+  const page = await browser.newPage({ viewport: { width: layout.width, height: viewportHeight } });
   await page.goto(server.url(fixtureFile));
   await settle(page);
   for (const family of families) {
