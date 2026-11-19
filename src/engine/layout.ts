@@ -948,7 +948,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         severity: "error",
         id,
         path: sourcePath,
-        message: say(`#${id} contains text but has no text role; add text: <role> so it can be measured`, `the text of #${id} can't be measured: its font-size, line-height (a number or a length, not normal), font-weight or color isn't one Cadesa reads`),
+        message: say(`#${id} contains text but has no text role; add text: <role> so it can be measured`, `the text of #${id} can't be measured: its font-size, line-height (a number or a length, or normal in a font with vertical metrics), font-weight or color isn't one Cadesa reads`),
       });
     }
 

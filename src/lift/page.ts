@@ -22,6 +22,7 @@ import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type Generat
 import { ABSOLUTE, lengthExpr, MATHY } from "../fluid.js";
 import { borderPx, insets } from "../resolve.js";
 import { lineHeightPx } from "../engine/layout.js";
+import { metricsFor } from "../engine/text.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
 import { firstFamily } from "../fonts.js";
 import type { Decl } from "./css.js";
@@ -138,6 +139,12 @@ export interface El {
   asBlock: ("block" | "empty" | undefined)[];
   /** An inline-block alone on its line whose line box is exactly its margin box: lifted as a block of its content's width. */
   alone: boolean[];
+  /** A lone inline-block placed for one line of its text (per state): see dynamic(). */
+  oneLine?: boolean[];
+  /** A lone inline-block's line is centered or end-aligned (per state). */
+  lineAlign?: ("center" | "end" | undefined)[];
+  /** Padding the line box of a lone inline-block adds above and below it (its strut, its margins), per state: see aloneOnLine. */
+  linePad?: ({ top: number; bottom: number } | undefined)[];
   /** A flex row aligns baselines: px its item is pushed down to put its first baseline on the line's (per state). */
   baselineShift: (number | undefined)[];
   /** A run of text among element children (added after the cascade): its anonymous box. */
@@ -490,6 +497,7 @@ export abstract class PageLifter {
     this.anonymousText();
     this.inlineBlocks();
     for (const el of this.els) this.classify(el);
+    this.lineBoxes();
     for (const el of this.els) this.synthesize(el);
     this.name();
     return this.assemble();
@@ -765,30 +773,156 @@ export abstract class PageLifter {
     return BLOCK_TAGS.has(el.tag) || el === this.bodyEl || el === this.htmlEl ? "block" : "inline";
   }
 
+  /** line-height: normal in px: the font's ascent, descent and line gap as Chromium rounds them (undefined without vertical metrics, or for a font size that follows the viewport). */
+  normalLine(t: TextCtx): number | undefined {
+    if (t.fluid) return undefined;
+    const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
+    return v && v.ascent + v.descent + v.lineGap;
+  }
+
+  /**
+   * The strut of an element's lines, from its font's vertical metrics as Chromium rounds them: how
+   * far its line extends above (`sa`) and below (`sd`) the baseline, with the leading split as
+   * Chromium splits it (floor(leading / 2) above), and half its x-height in layout units (`xh2`,
+   * for vertical-align: middle). undefined without vertical metrics.
+   */
+  strutOf(el: El, si: number): { sa: number; sd: number; xh2: number; lh: number } | undefined {
+    const t = this.textOf(el, si);
+    if (t.fluid) return undefined;
+    const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
+    if (!v) return undefined;
+    const lu = (x: number) => Math.floor(x * 64 + 1e-6) / 64;
+    const lh = t.lineHeight === "normal" ? v.ascent + v.descent + v.lineGap : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : lu(t.lineHeight.px);
+    const leading = Math.round((lh - v.ascent - v.descent) * 64);
+    const above = Math.floor(Math.trunc(leading / 2) / 64);
+    return { sa: v.ascent + above, sd: v.descent + leading / 64 - above, xh2: Math.round((v.xHeight / 2) * 64) / 64, lh };
+  }
+
+  /**
+   * An inline-block alone on its line in block flow, as its parent's strut and its vertical-align
+   * place it: how far the line box reaches above and below its margin box (0 when the box contains
+   * the strut), from the font's vertical metrics. A box with text is checked with one line (more
+   * lines only make it taller around the same baseline or middle); undefined when it can't be told.
+   */
+  lineReach(el: El, si: number): { top: number; bottom: number } | undefined {
+    const parent = el.parent!;
+    const res = (k: El, p: string) => {
+      const o = k.own[si].get(p);
+      return o ? this.resolve(k, si, o.value) : undefined;
+    };
+    const t = this.textOf(el, si);
+    const px = (p: string) => {
+      const o = el.own[si].get(p);
+      const v = o ? this.resolveBox(el, si, o.value) : "0";
+      return v === undefined ? NaN : (lengthPx(v, t.size) ?? NaN);
+    };
+    const bdr = (side: string) => (/^(none|hidden)$/.test(res(el, `border-${side}-style`) ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+    const strut = this.strutOf(parent, si);
+    if (!strut) return undefined;
+    const [mt, mb, pt, pb, bt, bb] = [px("margin-top"), px("margin-bottom"), px("padding-top"), px("padding-bottom"), bdr("top"), bdr("bottom")];
+    if ([mt, mb, pt, pb].some((x) => !isFinite(x) || x < 0)) return undefined;
+    if (["min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(el, p) ?? ""))) return undefined;
+    let hm: number;
+    let a: number;
+    if (el.tag === "input" && !el.own[si].has("height")) {
+      // A text field: one line of its text (never shorter than line-height: normal), its baseline
+      // that line's (exactly so when its line height is at least normal: the line fills the field).
+      const h = this.controlHeight(el, si);
+      const own = this.strutOf(el, si);
+      const normal = this.normalLine(t);
+      if (h === undefined || !own || normal === undefined || own.lh < normal || !/^(text|email|password|search|tel|url|number)$/.test((attr(el.node, "type") ?? "text").toLowerCase())) return undefined;
+      hm = mt + h + mb;
+      a = mt + bt + pt + own.sa;
+    } else if (el.roles[si] === "leaf") {
+      // No line boxes: as tall as its height says, its baseline at its bottom margin edge.
+      const h = px("height");
+      if (!el.own[si].has("height") || !(h >= 0) || el.children.length) return undefined;
+      const border = res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb;
+      hm = mt + border + mb;
+      a = hm;
+    } else {
+      const own = this.strutOf(el, si);
+      if (!own) return undefined;
+      hm = mt + bt + pt + own.lh + pb + bb + mb;
+      // A set height (one line of text in it, at its top; a <button> centers its content instead).
+      if (el.own[si].has("height") && !/^auto$/.test(res(el, "height") ?? "auto")) {
+        const h = px("height");
+        if (el.tag === "button" || !(h >= 0)) return undefined;
+        hm = mt + (res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb) + mb;
+      }
+      const clips = !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "");
+      a = clips ? hm : mt + bt + pt + own.sa;
+    }
+    const va = res(el, "vertical-align") ?? "baseline";
+    if (va === "middle") {
+      // Its midpoint on the parent's baseline plus half its x-height (in layout units, as Chromium shifts it).
+      const u = (x: number) => Math.round(x * 64);
+      a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
+    } else if (va !== "baseline") return undefined;
+    const eps = 1e-6;
+    return { top: Math.max(0, strut.sa - a > eps ? strut.sa - a : 0), bottom: Math.max(0, strut.sd - (hm - a) > eps ? strut.sd - (hm - a) : 0) };
+  }
+
   /**
    * An inline-block alone on its line in block flow, laid out as a block of its content's width: its
-   * line box is exactly its margin box when its text sits on the baseline in the same font, size
-   * and line height as the line's own (the strut), and its vertical margins can't collapse anyway
-   * (whatever they'd meet is zero).
+   * line box is exactly its margin box when it contains the line's strut (known from the font's
+   * vertical metrics, or when its text sits on the baseline in the same font, size and line height),
+   * and its vertical margins can't collapse anyway (whatever they'd meet is zero). Alone in its
+   * parent, a box of known height that the strut sticks out of (an icon) works too: the parent's
+   * padding takes up what the line box adds around it (`linePad`).
    */
   aloneOnLine(el: El, si: number): boolean {
     const parent = el.parent;
-    if (!parent || el.roles[si] !== "text") return false;
-    if (parent !== this.bodyEl && !/^(block|flow-root|list-item)$/.test(this.displayOf(parent, si))) return false;
-    if (parent.ownText) return false;
-    const shown = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
-    const sibs = parent.children.filter((k) => k !== el && shown(k));
-    if (sibs.some((k) => this.isInlineLevel(k, si) || k.tag === "br")) return false;
+    if (!parent || (el.roles[si] !== "text" && el.roles[si] !== "leaf") || el.pseudo) return false;
+    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|inline-block)$/.test(this.displayOf(parent, si))) return false;
+    if (parent.ownText || (parent.children.some((k) => k.pseudo && !this.outOfFlow(k, si) && this.displayOf(k, si) !== "none"))) return false;
+    const shown0 = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
+    const sibs0 = parent.children.filter((k) => k !== el && shown0(k));
+    if (sibs0.some((k) => this.isInlineLevel(k, si) || k.tag === "br" || k.anonymous !== undefined)) return false;
+    const pt0 = this.textOf(parent, si);
+    // Centered or end-aligned, it sits where auto inline margins put a block (with no margins of its own).
+    const ta = pt0.inherited.get("text-align")?.value ?? "";
+    const align = /^(start|left|unset|initial|-webkit-auto)?$/.test(ta) ? undefined : /^(center|-webkit-center)$/.test(ta) ? "center" : /^(right|end|-webkit-right)$/.test(ta) ? "end" : "other";
+    if (align === "other") return false;
+    if (align && ["margin-left", "margin-right"].some((p) => !/^(0|0px|auto)?$/.test(this.resolve(el, si, el.own[si].get(p)?.value ?? "") ?? "x"))) return false;
+    (el.lineAlign ??= [])[si] = align;
+    if (pt0.inherited.get("direction")?.value === "rtl") return false;
+    if (!/^(normal|nowrap)?$/.test(pt0.inherited.get("white-space")?.value ?? "") || !/^(0|0px)?$/.test(pt0.inherited.get("text-indent")?.value ?? "")) return false;
+    const reach = this.lineReach(el, si);
+    if (reach) {
+      const res0 = (k: El, p: string) => {
+        const o = k.own[si].get(p);
+        return o ? this.resolve(k, si, o.value) : undefined;
+      };
+      const px0 = (k: El, p: string) => lengthPx(res0(k, p) ?? "0", this.textOf(k, si).size) ?? NaN;
+      // Alone in its parent: the parent's padding takes the line box's extent and the box's margins.
+      const fixed = ["height", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res0(parent, p) ?? ""));
+      // (Text whose line count isn't known yet only when it contains the strut: more lines don't change that.)
+      const reaches = reach.top > 0 || reach.bottom > 0;
+      // Text placed for one line (the strut reaches past it, or its height is set): exact while its
+      // text takes one line, which dynamic() checks at each width.
+      const sized = el.own[si].has("height") && !/^auto$/.test(res0(el, "height") ?? "auto");
+      if (el.roles[si] === "text" && (reaches || sized) && !/^(nowrap|pre)$/.test(this.textOf(el, si).inherited.get("white-space")?.value ?? "")) (el.oneLine ??= [])[si] = true;
+      if (!sibs0.length && parent !== this.bodyEl && !fixed && isFinite(px0(parent, "padding-top")) && isFinite(px0(parent, "padding-bottom"))) {
+        const top = reach.top + px0(el, "margin-top");
+        const bottom = reach.bottom + px0(el, "margin-bottom");
+        if (top || bottom) (parent.linePad ??= [])[si] = { top, bottom };
+        return true;
+      }
+      if (reach.top || reach.bottom) return false;
+    } else if (el.roles[si] !== "text") return false;
+    if (reach) return this.marginsMeetNothing(el, si);
+    // Without vertical metrics: text on the baseline in the same font, size and line height as the line's.
     const res = (k: El, p: string) => {
       const o = k.own[si].get(p);
       return o ? this.resolve(k, si, o.value) : undefined;
     };
     if (!/^(baseline)?$/.test(res(el, "vertical-align") ?? "") || !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "")) return false;
+    if (parent !== this.bodyEl && !/^(block|flow-root|list-item)$/.test(this.displayOf(parent, si))) return false;
     const t = this.textOf(el, si);
     const pt = this.textOf(parent, si);
     const lh = (x: TextCtx) => (x.lineHeight === "normal" ? NaN : "num" in x.lineHeight ? lineHeightPx(x.size, x.lineHeight.num) : x.lineHeight.px);
     if (t.size !== pt.size || t.family.value !== pt.family.value || !(lh(t) === lh(pt))) return false;
-    if (!/^(start|left|unset|initial|-webkit-auto)?$/.test(pt.inherited.get("text-align")?.value ?? "")) return false;
     if (t.inherited.get("direction")?.value === "rtl") return false;
     const px = (k: El, p: string) => lengthPx(res(k, p) ?? "0", this.textOf(k, si).size) ?? NaN;
     // A set height shorter than its line of text (a 20px button on a 24px line): the parent's
@@ -802,6 +936,23 @@ export abstract class PageLifter {
       const ins = res(el, "box-sizing") === "border-box" ? px(el, "padding-top") + px(el, "padding-bottom") + bdr("top") + bdr("bottom") : 0;
       if (set === undefined || !(set + 1e-6 >= lh(t) + ins)) return false;
     }
+    return this.marginsMeetNothing(el, si);
+  }
+
+  /**
+   * The vertical margins of an inline-block laid out as a block (alone on its line) meet nothing:
+   * each is 0, or the neighbour's own margin is 0 and nothing collapses through it, or the parent's
+   * padding, border or own formatting context keeps it in.
+   */
+  marginsMeetNothing(el: El, si: number): boolean {
+    const parent = el.parent!;
+    const res = (k: El, p: string) => {
+      const o = k.own[si].get(p);
+      return o ? this.resolve(k, si, o.value) : undefined;
+    };
+    const px = (k: El, p: string) => lengthPx(res(k, p) ?? "0", this.textOf(k, si).size) ?? NaN;
+    const shown = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
+    const sibs = parent.children.filter((k) => k !== el && shown(k));
     const edge = (k: El, side: "top" | "bottom") => px(k, `padding-${side}`) > 0 || (px(k, `border-${side}-width`) > 0 && !/^(none|hidden)$/.test(res(k, `border-${side}-style`) ?? "none"));
     // A margin that would meet nothing: the neighbour's own margin is 0 and nothing collapses through it.
     const tight = (k: El, side: "top" | "bottom") =>
@@ -810,7 +961,8 @@ export abstract class PageLifter {
     const prev = (i < 0 ? sibs : sibs.slice(0, i)).at(-1);
     const next = i < 0 ? undefined : sibs[i];
     const parentDisplay = parent.parent ? this.displayOf(parent.parent, si) : "block";
-    const contained = (side: "top" | "bottom") => parent !== this.bodyEl && (edge(parent, side) || /flex|grid/.test(parentDisplay));
+    const ownContext = /^(inline-block|flow-root)$/.test(this.displayOf(parent, si)) || !/^(visible|clip)?$/.test(res(parent, "overflow-x") ?? "");
+    const contained = (side: "top" | "bottom") => parent !== this.bodyEl && (edge(parent, side) || ownContext || /flex|grid/.test(parentDisplay));
     for (const side of ["top", "bottom"] as const) {
       const m = px(el, `margin-${side}`);
       if (!(m >= 0)) return false;
@@ -821,11 +973,25 @@ export abstract class PageLifter {
     return true;
   }
 
+  /** Inline-blocks alone on their line, laid out as blocks (before any element is synthesized: a parent may take padding from one). */
+  lineBoxes() {
+    for (const el of this.els) {
+      if (!el.parent || el.anonymous !== undefined) continue;
+      this.states.forEach((_, si) => {
+        const role = el.roles[si];
+        if (!role || role === "hidden" || role === "out" || this.positioned(el, si)) return;
+        const parentRole = el.parent !== this.bodyEl ? el.parent!.roles[si] : "page";
+        const parentDisplay = el.parent !== this.bodyEl ? this.displayOf(el.parent!, si) : "block";
+        if (/flex|grid/.test(parentDisplay) && parentRole === "container") return;
+        if (this.ownDisplay(el, si) === "inline-block" && this.aloneOnLine(el, si)) el.alone[si] = true;
+      });
+    }
+  }
+
   /** min-height no taller than one line of the element's text plus its padding and border (border-box). */
   minHeightMet(el: El, si: number): boolean {
     const t = this.textOf(el, si);
-    if (t.lineHeight === "normal") return false;
-    const line = "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
+    const line = t.lineHeight === "normal" ? (this.normalLine(t) ?? NaN) : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
     const v = (p: string) => {
       const d = el.own[si].get(p);
       const r = d ? this.resolveBox(el, si, d.value) : "0";
@@ -846,13 +1012,18 @@ export abstract class PageLifter {
       const o = el.own[si].get(p);
       return o ? this.resolve(el, si, o.value) : undefined;
     };
-    if ((res("appearance") ?? res("-webkit-appearance")) !== "none") return undefined;
     const type = (attr(el.node, "type") ?? "text").toLowerCase();
-    if (el.tag === "input" && !/^(text|email|password|search|tel|url)$/.test(type)) return undefined;
-    if (el.tag === "select" && (attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1)) return undefined;
     const t = this.textOf(el, si);
-    if (t.lineHeight === "normal") return undefined;
-    const line = "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
+    // A text field's line, with or without native appearance, is never shorter than line-height:
+    // normal (its font's ascent, descent and line gap). Otherwise only without native appearance.
+    const field = el.tag === "input" && /^(text|email|password|search|tel|url|number)$/.test(type);
+    const normal = this.normalLine(t);
+    if (!(field && normal !== undefined) && (res("appearance") ?? res("-webkit-appearance")) !== "none") return undefined;
+    if (el.tag === "input" && !/^(text|email|password|search|tel|url)$/.test(type) && !(field && normal !== undefined)) return undefined;
+    if (el.tag === "select" && (attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1)) return undefined;
+    const set = t.lineHeight === "normal" ? normal : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
+    const line = field && normal !== undefined && set !== undefined ? Math.max(set, normal) : set;
+    if (line === undefined) return undefined;
     const rows = el.tag === "textarea" ? Number(attr(el.node, "rows") ?? "2") : 1;
     if (!(rows >= 1) || !Number.isInteger(rows)) return undefined;
     const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
@@ -1248,7 +1419,11 @@ export abstract class PageLifter {
     // Children of a flex or grid container are blockified: never inline content.
     const formatsChildren = this.states.some((_, si) => /^(inline-)?(flex|grid)$/.test(this.displayOf(el, si)));
     const allInline = el.children.length > 0 && !formatsChildren && el.children.every((c) => this.inlineChild(c));
-    const hasText = el.ownText || (allInline && this.visibleText(el));
+    // Its only content an inline-block (a badge alone in a div): a box of its own on the line (see aloneOnLine).
+    const shownKids = el.children.filter((c) => !this.ignorable(c));
+    const loneBlock =
+      !el.ownText && shownKids.length === 1 && !shownKids[0].pseudo && shownKids[0].anonymous === undefined && this.states.every((_, si) => this.displayOf(shownKids[0], si) === "none" || this.ownDisplay(shownKids[0], si) === "inline-block");
+    const hasText = !loneBlock && (el.ownText || (allInline && this.visibleText(el)));
     this.states.forEach((_, si) => {
       const d = this.displayOf(el, si);
       let role: Role;
@@ -1287,11 +1462,17 @@ export abstract class PageLifter {
 
       // Inline-level boxes in block flow sit on line boxes, which Cadesa doesn't model, except an
       // inline-block alone on its line whose line box is exactly its margin box.
-      if (!inFlexOrGrid && this.ownDisplay(el, si) === "inline-block" && this.aloneOnLine(el, si)) el.alone[si] = true;
       if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && el.anonymous === undefined)
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
       // An empty inline (zero size where the next block starts) or a lone inline-block: as wide as its content.
       if (((el.asBlock[si] === "empty" && !inFlexOrGrid) || el.alone[si]) && !own.has("width")) decl("width", "fit-content", el.alone[si] ? "inline-block (alone on its line)" : "empty inline element");
+      const lineAlign = el.alone[si] ? el.lineAlign?.[si] : undefined;
+      if (lineAlign) {
+        const why = `text-align: ${this.textOf(el.parent, si).inherited.get("text-align")?.value} on its line`;
+        if (lineAlign === "center") decl("margin-left", "auto", why);
+        decl("margin-right", lineAlign === "center" ? "auto" : "0px", why);
+        if (lineAlign === "end") decl("margin-left", "auto", why);
+      }
 
       // Sticky: in flow; it only moves once the page scrolls.
       const pos = res("position");
@@ -1305,8 +1486,13 @@ export abstract class PageLifter {
         (pos === "sticky" && /^(top|right|bottom|left)$/.test(p)) || p === "z-index" ||
         // Offsets do nothing on a box that isn't positioned.
         (/^(top|right|bottom|left)$/.test(p) && !/^(relative|absolute|fixed|sticky)$/.test(pos ?? "static")) || p === "box-sizing" ||
-        // vertical-align moves only inline-level boxes on a line (noted above) and table cells.
-        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline")) ||
+        // vertical-align moves only inline-level boxes on a line (noted above, or alone on it) and table cells.
+        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline" || el.alone[si])) ||
+        // Alone on a centered or end-aligned line, auto margins place it.
+        (/^margin-(left|right)$/.test(p) && !!el.alone[si] && !!el.lineAlign?.[si]) ||
+        // Alone in its parent on a line, its vertical margins are in the parent's padding.
+        (/^margin-(top|bottom)$/.test(p) && !!el.parent?.linePad?.[si]) ||
+        (/^padding-(top|bottom)$/.test(p) && !!el.linePad?.[si]) ||
         // A flex or grid item doesn't float; clear does nothing where nothing floats.
         (p === "float" && inFlexOrGrid) ||
         (p === "clear" && (inFlexOrGrid || abs || !this.floats(si))) ||
@@ -1485,6 +1671,14 @@ export abstract class PageLifter {
       }
       for (const s of SIDES) handled.add(`border-${s}-width`).add(`border-${s}-style`).add(`border-${s}-color`);
 
+      // A lone inline-block's line box reaches past it: the parent's padding takes the difference.
+      const lp = el.linePad?.[si];
+      if (lp)
+        for (const side of ["top", "bottom"] as const) {
+          const o = own.get(`padding-${side}`);
+          const base = o ? (lengthPx(this.resolveBox(el, si, o.value) ?? "0", this.textOf(el, si).size) ?? 0) : 0;
+          decl(`padding-${side}`, `${fmtNum(base + lp[side])}px`, `${o ? `${o.utility} and ` : ""}the line box around its inline-block`);
+        }
       // Everything else the element sets on itself.
       for (const [p, o] of own) {
         if (handled.has(p) || skipProp(p)) continue;
@@ -1583,6 +1777,8 @@ export abstract class PageLifter {
             const d = out.get(p);
             const e = sumOf(extra);
             if (!d || (e && !e.fluid && e.at(0) === 0) || /^(auto|none)$/.test(d.value.trim())) continue;
+            // A form control's height from its line is a border-box height already.
+            if (p === "height" && controlH !== undefined) continue;
             // The length plus the padding and border, in px when both are (an expression in px and vw when either follows the viewport).
             const total = e && expr(p) ? sumOf([expr(p), e.css]) : undefined;
             if (total && (total.fluid || /^[\d.]+px$/.test(d.value.trim()) || /^var\(/.test(d.value.trim()))) decl(p, total.css, `${(d as Decl & { utility?: string }).utility ?? p} (content-box)`);
@@ -1598,7 +1794,9 @@ export abstract class PageLifter {
         decl("font-weight", String(text.weight), "inherited font weight");
         const lh = text.lineHeight;
         if (text.fluid && lh !== "normal" && "px" in lh) this.note(el, si, { decl: "line-height", reason: "a fixed line height with a font size that follows the viewport width is not modelled (its ratio changes with the width)", kind: "text" });
-        decl("line-height", lh === "normal" ? "normal" : "num" in lh ? fmtNum(lh.num) : fmtNum(lh.px / text.size), "inherited line height");
+        // normal: the font's ascent, descent and line gap, when its vertical metrics are known.
+        const normal = lh === "normal" ? this.normalLine(text) : undefined;
+        decl("line-height", normal !== undefined ? fmtNum(normal / text.size) : lh === "normal" ? "normal" : "num" in lh ? fmtNum(lh.num) : fmtNum(lh.px / text.size), normal !== undefined ? `line-height: normal (${normal}px: the font's ascent, descent and line gap)` : "inherited line height");
         decl("color", this.colorValue(text.color.hex, text.color.hint), "inherited color");
         if (text.letterSpacing) decl("letter-spacing", `${fmtNum(text.letterSpacing / text.size)}em`, "inherited tracking");
         if (text.fluid && text.letterSpacing) this.note(el, si, { decl: "letter-spacing", reason: "letter spacing with a font size that follows the viewport width is not modelled", kind: "text" });
@@ -2188,6 +2386,8 @@ export abstract class PageLifter {
         const el = byId.get(b.id);
         if (!el) continue;
         const sel = `[data-fixture="${b.id}"]`;
+        if (el.oneLine?.[si] && el.alone[si] && b.lines && b.lines.length > 1)
+          out.push({ file: this.page, line: el.line, selector: sel, decl: "display: inline-block", reason: `its text takes ${b.lines.length} lines at ${layout.width}px; its line box is modelled for one line`, kind: "geometry" });
         if (el.rowGap[si] && this.lineCount(b) > 1)
           out.push({ file: this.page, line: el.line, selector: sel, decl: el.rowGap[si], reason: `the row wraps at ${layout.width}px and its row gap differs from its column gap; a cluster has one gap`, kind: "geometry" });
         // Shrinking differs from the browser's (flex-shrink 0 without a width; a width with

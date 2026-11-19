@@ -44,6 +44,11 @@ export interface FontMetrics {
    * letter-spacing turns ligatures off, or a longer run), if any: Chromium never breaks inside one.
    */
   ligatureIn(text: string): string | undefined;
+  /**
+   * The font's ascent, descent and line gap at a size, as Chromium rounds them (whole px), and its
+   * x-height (px); undefined for a table measured before vertical metrics were recorded.
+   */
+  vertical(sizePx: number, weight: number): { ascent: number; descent: number; lineGap: number; xHeight: number } | undefined;
 }
 
 const registry = new Map<string, FontMetrics | undefined>();
@@ -188,6 +193,18 @@ function load(file: string): FontMetrics {
     ligatureIn(text) {
       if (!ligRuns.length) return undefined;
       return ligRuns.find((r) => text.includes(r));
+    },
+    vertical(sizePx, weight) {
+      const v = m.vertical;
+      if (!v) return undefined;
+      const ws = Object.keys(v.byWeight).map(Number);
+      const face = v.byWeight[kind === "static" ? matchWeight(ws, weight) : ws[0]];
+      if (!face) return undefined;
+      // Skia scales them in single precision; Chromium rounds each to whole px (SkScalarRoundToScalar).
+      const f = Math.fround;
+      const px = (u: number) => f(f(u / v.size) * f(sizePx));
+      const round = (x: number) => Math.floor(x + 0.5);
+      return { ascent: round(px(face.ascent)), descent: round(px(face.descent)), lineGap: round(px(face.lineGap)), xHeight: px(face.xHeight) };
     },
     weightIssue(weight) {
       if (kind !== "static") return undefined;

@@ -54,6 +54,23 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   card in a `.col`): the only in-flow child of a block or column-flex item, border-box or without
   vertical padding and border. In a source, `height` may name a percentage size token: of the
   parent's content height once that is definite (stretched, or set), auto until then.
+- Font vertical metrics: metrics tables record each face's ascent, descent, line gap and
+  x-height as Chromium measures them (`cadesa metrics` and `cadesa fonts --measure` add them;
+  `npm run metrics:vertical` added them to the bundled tables and the font fixtures from the same
+  files, nothing else changed). Older tables still load; without vertical metrics the cases
+  below stay `≈` as before. With them:
+  - An inline-block alone on its line in block flow (a lone button, a badge, an icon in a
+    button) is exact for `vertical-align: baseline` and `middle` in any font and size: its line
+    box is the union of the line's strut (ascent and descent rounded per size, the leading split
+    as Chromium splits it) and its margin box. Where the strut reaches past it, its parent's
+    padding takes the difference (text that may wrap is checked at each width). `text-align:
+    center` and `right` place it as Chromium does. Its only content an inline-block, a box is
+    no longer a text box.
+  - `line-height: normal` is the font's ascent, descent and line gap.
+  - A text field (`text`, `email`, `search`, `password`, `tel`, `url`, `number`), with or
+    without native appearance, is one line of its line height, never shorter than normal, plus
+    padding and border; alone on its line it is placed like any inline-block. A `<select>`
+    keeps its native height (`≈`) unless `appearance: none`.
 - More selectors are decided from the page: `:lang()`, `:dir()`, `:open`, `:placeholder-shown`,
   `:read-only` / `:read-write`, `:valid` / `:invalid` for required controls, `:in-range`,
   `:nth-child(An+B of S)`, `:scope`, `:host`; vendor pseudo-classes Chromium rejects match

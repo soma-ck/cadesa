@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: inline-blocks alone on their line, fields, line-height normal</title>
+    <link rel="stylesheet" href="lines.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <header class="masthead">
+      <button class="menu" type="button" aria-label="Menu"><span class="menu-icon"></span></button>
+      <a class="site" href="#">Field notes</a>
+    </header>
+    <main class="sheet">
+      <p class="intro">Line boxes hold what sits on them: the strut of the line's font and every inline-block, each placed by its vertical-align.</p>
+      <div class="actions"><button class="action" type="button">Save draft</button></div>
+      <div class="actions"><button class="action small" type="button">Preview</button></div>
+      <div class="actions centered"><button class="action large" type="button">Publish now</button></div>
+      <div class="actions ended"><a class="action link" href="#">Cancel</a></div>
+      <div class="status"><span class="pill">3 new</span></div>
+      <div class="status tall"><span class="marker"></span></div>
+      <label class="field-label" for="title">Title</label>
+      <div class="field"><input class="input" id="title" type="text" value="Spring sowing" /></div>
+      <div class="field"><input class="input compact" type="search" placeholder="Search the notes" /></div>
+      <div class="field"><input class="input plain" type="email" placeholder="you@example.org" /></div>
+      <p class="normal">Line-height normal is the font's own: its ascent, descent and line gap at each size, rounded as the browser rounds them.</p>
+      <p class="normal small-print">The same at a smaller size, where the rounding lands elsewhere.</p>
+    </main>
+  </body>
+</html>

@@ -933,7 +933,7 @@ export function liftElements(input: LiftInput): LiftResult {
       const missing = [!sizeOk && "font-size (px or rem)", lineHeight === undefined && "line-height", !colorTok && "color", isNaN(weight) && "font-weight"].filter(Boolean);
       if (missing.length) {
         for (const d of [fs, lh, ff, fw, color].filter(Boolean) as Decl[])
-          note(e, s, d, `a text role needs ${missing.join(", ")}${lhRaw === "normal" ? " (line-height: normal depends on the font)" : ""}`, d.prop === "color" ? "paint" : "text");
+          note(e, s, d, `a text role needs ${missing.join(", ")}${lhRaw === "normal" ? " (line-height: normal depends on the font, whose metrics table has no vertical metrics)" : ""}`, d.prop === "color" ? "paint" : "text");
       } else {
         if (!fw) {
           /* weight defaults to 400; impact.ts flags tags whose UA weight differs */
