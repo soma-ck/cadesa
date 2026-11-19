@@ -21,7 +21,7 @@ import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
 import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type Generated, type InlineInfo, type P5Node, type RunStyle } from "../fixture.js";
 import { ABSOLUTE, lengthExpr, MATHY } from "../fluid.js";
 import { borderPx, insets } from "../resolve.js";
-import { lineHeightPx } from "../engine/layout.js";
+import { lineHeightPx, lineHeightRatio } from "../engine/layout.js";
 import { metricsFor } from "../engine/text.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
 import { containsLayout, parseContain, type Contain } from "../model.js";
@@ -392,6 +392,11 @@ export function lengthPx(v: string, em: number, pct?: number): number | undefine
 }
 
 const fmtNum = (n: number) => String(Math.round(n * 1e6) / 1e6);
+/**
+ * A line height of `px` as a ratio of the font size, as the engine multiplies it (by the size in
+ * 1/64 px), so that the line comes out at `px` for any font size (16.8px too).
+ */
+const lhRatio = (px: number, size: number) => String(lineHeightRatio(px, size));
 
 /** The theme variable a value is a plain reference to (following `var(--a)` → `var(--b)` chains). */
 export function hintOf(raw: string, theme: Map<string, string>): string | undefined {
@@ -553,6 +558,7 @@ export abstract class PageLifter {
     this.computeStates();
     this.computeRootText();
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.evaluate(el);
+    this.resolveRem();
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.expandDeferred(el);
     this.presentationalHints();
     this.pseudoElements();
@@ -563,6 +569,50 @@ export abstract class PageLifter {
     for (const el of this.els) this.synthesize(el);
     this.name();
     return this.assemble();
+  }
+
+  /**
+   * The root element's font size per width range, in px, and its CSS when it follows the viewport
+   * width (clamp(), vw): what 1rem is there. The root's own font size is relative to the initial
+   * 16px (rem and em in it too).
+   */
+  rootFont: { px: number; fluid?: string }[] = [];
+
+  /**
+   * Rem lengths become px of the page's root font size, in every declaration (lengths, calc(),
+   * clamp(), custom properties, font sizes), per width range: a media query that changes the
+   * root's size changes them there. A root size that follows the viewport width makes them
+   * follow it too. The root's own font-size is left as it is (it's relative to the initial size).
+   */
+  resolveRem() {
+    const html = this.htmlEl;
+    this.rootFont = this.states.map((_, si) => {
+      const t = html ? this.textOf(html, si) : this.rootText;
+      return { px: t.size, fluid: t.fluid };
+    });
+    const remRe = /(^|[^\w.#-])(-?(?:\d+\.?\d*|\.\d+)(?:e-?\d+)?)rem\b/gi;
+    const rewrite = (v: string, si: number) => {
+      if (!/\drem\b/i.test(v) || /url\(|["']/.test(v)) return v;
+      const r = this.rootFont[si];
+      if (r.px === 16 && !r.fluid) return v.replace(remRe, (_, pre, n) => `${pre}${fmtNum(parseFloat(n) * 16)}px`);
+      return v.replace(remRe, (_, pre, n) => (r.fluid ? `${pre}calc(${r.fluid} * ${fmtNum(parseFloat(n))})` : `${pre}${fmtNum(parseFloat(n) * r.px)}px`));
+    };
+    const fix = (own: Map<string, Origin> | undefined, si: number, root: boolean) => {
+      if (!own) return;
+      for (const [p, o] of own) {
+        if (root && (p === "font-size" || p === "font")) continue;
+        const v = rewrite(o.value, si);
+        if (v !== o.value) own.set(p, { ...o, value: v });
+      }
+    };
+    for (const el of [this.htmlEl, this.bodyEl, ...this.els]) {
+      if (!el) continue;
+      this.states.forEach((_, si) => {
+        fix(el.own[si], si, el === html);
+        fix(el.pseudoOwn?.[si]?.before, si, false);
+        fix(el.pseudoOwn?.[si]?.after, si, false);
+      });
+    }
   }
 
   // ---- tree
@@ -2868,9 +2918,9 @@ export abstract class PageLifter {
         if (text.fluid && lh !== "normal" && "px" in lh) this.note(el, si, { decl: "line-height", reason: "a fixed line height with a font size that follows the viewport width is not modelled (its ratio changes with the width)", kind: "text" });
         // normal: the font's ascent, descent and line gap, when its vertical metrics are known.
         const normal = lh === "normal" ? this.normalLine(text) : undefined;
-        decl("line-height", normal !== undefined ? fmtNum(normal / text.size) : lh === "normal" ? "normal" : "num" in lh ? fmtNum(lh.num) : fmtNum(lh.px / text.size), normal !== undefined ? `line-height: normal (${normal}px: the font's ascent, descent and line gap)` : "inherited line height");
+        decl("line-height", normal !== undefined ? lhRatio(normal, text.size) : lh === "normal" ? "normal" : "num" in lh ? fmtNum(lh.num) : lhRatio(lh.px, text.size), normal !== undefined ? `line-height: normal (${normal}px: the font's ascent, descent and line gap)` : "inherited line height");
         const unionLine = el.inlineLine?.[si];
-        if (unionLine !== undefined && !(parentRole === "container" && /flex|grid/.test(parentDisplay))) decl("line-height", fmtNum(unionLine / text.size), `its lines (${fmtNum(unionLine)}px: the parent's strut and its own, on one baseline)`);
+        if (unionLine !== undefined && !(parentRole === "container" && /flex|grid/.test(parentDisplay))) decl("line-height", lhRatio(unionLine, text.size), `its lines (${fmtNum(unionLine)}px: the parent's strut and its own, on one baseline)`);
         decl("color", this.colorValue(text.color.hex, text.color.hint), "inherited color");
         if (text.letterSpacing) decl("letter-spacing", `${fmtNum(text.letterSpacing / text.size)}em`, "inherited tracking");
         if (text.fluid && text.letterSpacing && text.lsFluid !== text.fluid) this.note(el, si, { decl: "letter-spacing", reason: "letter spacing with a font size that follows the viewport width is not modelled", kind: "text" });

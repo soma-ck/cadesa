@@ -57,6 +57,13 @@ export function genCssCase(seed: number): CssCase {
     `body { margin: 8px; font-family: Inter; font-size: ${r.pick(["16px", "16px", "14px", "15px", "18px"])}; line-height: ${r.pick(["1.5", "1.5", "1.25", "1.4", "24px", "normal", "1"])}; color: #222; }`,
     `p { margin: 0 0 ${r.int(0, 12)}px }`,
   ];
+  // A root font size other than 16px (maybe changed by a media query): rem lengths resolve against it.
+  const remRoot = r.chance(0.3);
+  if (remRoot) {
+    css.push(`html { font-size: ${r.pick(["62.5%", "10pt", "14px", "18px", "112.5%", "0.875rem", "20px"])} }`);
+    if (r.chance(0.5)) css.push(`@media (min-width: ${r.int(400, 1000)}px) { html { font-size: ${r.pick(["16px", "75%", "12pt", "1.25em"])} } }`);
+    css.push(`body { font-size: ${r.pick(["1rem", "1.4rem", "1.6rem", "0.875rem"])} }`, `p { margin-bottom: ${r.pick(["0.5rem", "1rem", "calc(0.25rem + 2px)"])} }`);
+  }
   let n = 0;
   const cls = (decls: string[]) => {
     if (!decls.length) return "";
@@ -65,7 +72,7 @@ export function genCssCase(seed: number): CssCase {
     return c;
   };
   const attr = (c: string) => (c ? ` class="${c}"` : "");
-  const size = () => r.pick(["10px", "12px", "13px", "14px", "18px", "20px", "24px", "28px", "0.875em", "0.75em", "1.25em", "80%", "smaller", "larger", "11.5px", "13.6px"]);
+  const size = () => r.pick(["10px", "12px", "13px", "14px", "18px", "20px", "24px", "28px", "0.875em", "0.75em", "1.25em", "80%", "smaller", "larger", "11.5px", "13.6px", ...(remRoot ? ["0.75rem", "1.2rem", "clamp(1rem, 0.5rem + 1vw, 1.5rem)"] : [])]);
   const lineHeight = () => r.pick(["1", "1.2", "1.5", "2", "normal", "0", "16px", "30px", "1.75em"]);
   const valign = () => r.pick(["baseline", "sub", "super", "middle", "text-top", "text-bottom", "-0.125em", "2px", "-3px", "0.3em", "20%", "-50%"]);
   /** An inline run: a tag with text, maybe styled, maybe nested. */
@@ -154,8 +161,8 @@ export function genCssCase(seed: number): CssCase {
     const decls: string[] = [];
     if (r.chance(0.3)) decls.push(`font-size: ${r.pick(["14px", "16px", "20px", "13px"])}`);
     if (r.chance(0.3)) decls.push(`line-height: ${r.pick(["1", "1.2", "1.5", "normal", "20px", "28px"])}`);
-    if (r.chance(0.2)) decls.push(`width: ${r.int(120, 600)}px`);
-    if (r.chance(0.15)) decls.push(`padding: ${r.int(0, 12)}px`);
+    if (r.chance(0.2)) decls.push(`width: ${remRoot && r.chance(0.5) ? `${r.int(8, 40)}rem` : `${r.int(120, 600)}px`}`);
+    if (r.chance(0.15)) decls.push(`padding: ${remRoot && r.chance(0.5) ? `${r.int(0, 12) / 8}rem` : `${r.int(0, 12)}px`}`);
     if (r.chance(0.1)) decls.push(`font-family: Roboto`);
     const parts: string[] = [];
     const k = r.int(1, 5);

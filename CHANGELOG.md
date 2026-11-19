@@ -20,8 +20,12 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
 ## Unreleased
 
-- Fewer boxes marked exact that weren't: a page whose root font size isn't 16px (`html { font-size:
-  10pt }`) is `≈`, as rem lengths are lifted as 16px each.
+- Rem lengths resolve against the page's root font size (`html { font-size: 62.5% | 10pt | 14px }`),
+  in lengths, `calc()`, `clamp()`, custom properties and font sizes, per width range when a media
+  query changes the root's size, and following the viewport width when the root's size does. Such
+  pages were `≈` throughout; they are laid out exactly.
+- A line height in px with a font size that isn't a whole number of 1/64 px (`40px` at `16.8px`) is
+  exactly that many px (it came out 1/64 px short).
 - A table given its width by a grid track or a stretching flex container is never narrower than its
   caption: its columns fill the caption's width (it laid them out in the track's).
 - Inline runs in another size, font, line height or vertical-align are measured: `<small>`,

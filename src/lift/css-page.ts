@@ -775,16 +775,10 @@ class CssLifter extends PageLifter {
 
   extraUnlifted() {
     // At-rules, nested rules and other stylesheets apply to the page as a whole: every root.
-    // So does a root font size other than 16px: rem lengths are lifted as 16px each.
-    const html = this.htmlEl;
-    const rootSize = html ? this.states.map((_, si) => ({ si, t: this.textOf(html, si) })).find(({ t }) => t.size !== 16 || t.fluid) : undefined;
-    const rem = rootSize && html
-      ? [{ file: this.page, line: html.line, text: `${html.own[rootSize.si].get("font-size")?.utility ?? "html"} (font-size: ${fmtRoot(rootSize.t.size)}px)`, reason: "rem lengths are relative to the root font size, which Cadesa takes as 16px" }]
-      : [];
     return this.roots
       .filter((r) => r.className)
       .flatMap((r) =>
-        [...this.skipped, ...rem].map((s) => ({ file: s.file, line: s.line, selector: `.${r.className}`, decl: s.text, reason: s.reason, kind: (/^@(font-face|keyframes)/.test(s.text) ? "none" : "geometry") as ImpactKind, className: r.className })),
+        this.skipped.map((s) => ({ file: s.file, line: s.line, selector: `.${r.className}`, decl: s.text, reason: s.reason, kind: (/^@(font-face|keyframes)/.test(s.text) ? "none" : "geometry") as ImpactKind, className: r.className })),
       );
   }
 
@@ -914,5 +908,3 @@ function lineAt(text: string, offset: number) {
   for (let i = 0; i < offset; i++) if (text.charCodeAt(i) === 10) n++;
   return n;
 }
-
-const fmtRoot = (n: number) => String(Math.round(n * 1000) / 1000);

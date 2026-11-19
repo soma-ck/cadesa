@@ -63,13 +63,6 @@ input[type=submit], input[type=button], input[type=reset] { line-height: normal 
   });
 });
 
-describe("a root font size other than 16px", () => {
-  it("leaves the page approximate: rem lengths are lifted as 16px", () => {
-    const r = run(`<p data-fixture="p">Text</p>`, `html { font-size: 10pt } p { margin: 0; padding: 1rem }`, [400], { bare: false });
-    expect(r.approx("p")).toMatch(/root font size/);
-  });
-});
-
 describe("a button with a set height", () => {
   it("centers its text, never above its content box", () => {
     const r = run(

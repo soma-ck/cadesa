@@ -16,6 +16,7 @@ import { lengthExpr } from "../fluid.js";
 import { parseContain } from "../model.js";
 import { originOf, transformList } from "../engine/transform.js";
 import { parseAreas, parseLinePair, parseTrackList } from "../engine/grid.js";
+import { lineHeightRatio } from "../engine/layout.js";
 
 /**
  * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
@@ -1040,7 +1041,8 @@ export function liftElements(input: LiftInput): LiftResult {
       const lhRaw = lh ? resolveVar(lh.value)?.raw : undefined;
       if (lhRaw !== undefined) {
         if (/^[\d.]+$/.test(lhRaw)) lineHeight = parseFloat(lhRaw);
-        else if (LENGTH.test(lhRaw) && sizeOk) lineHeight = Math.round((pxOf(lhRaw) / sizePx) * 1e6) / 1e6;
+        // A ratio of the font size as the engine takes it (in 1/64 px), so that the line is the px given.
+        else if (LENGTH.test(lhRaw) && sizeOk) lineHeight = lineHeightRatio(pxOf(lhRaw), sizePx);
         else if (/^[\d.]+%$/.test(lhRaw)) lineHeight = parseFloat(lhRaw) / 100;
       }
       const weightRaw = fw?.value.trim() ?? "400";

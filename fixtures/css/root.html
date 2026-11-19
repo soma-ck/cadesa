@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: a root font size other than 16px</title>
+    <link rel="stylesheet" href="root.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <h1 class="top__title">Allotment society</h1>
+      <nav class="top__nav"><a class="top__link" href="#plots">Plots</a><a class="top__link" href="#rota">Watering rota</a><a class="top__link" href="#seeds">Seed swap</a></nav>
+    </header>
+    <main class="page">
+      <section class="intro">
+        <h2 class="intro__heading">Spring opening</h2>
+        <p class="intro__text">The gates open at seven on Saturday. Bring gloves, a trowel and something to share at the long table by the shed; the kettle will be on from half past.</p>
+        <p class="intro__note">Plot holders who haven't paid this year's rent can do so at the hut.</p>
+      </section>
+      <section class="grid">
+        <article class="card">
+          <h3 class="card__title">North beds</h3>
+          <p class="card__body">Twelve plots of heavy clay, best for brassicas and potatoes. Two are free.</p>
+          <span class="card__tag">2 free</span>
+        </article>
+        <article class="card">
+          <h3 class="card__title">Orchard</h3>
+          <p class="card__body">Apples, two pears and a quince that fruits every other year.</p>
+          <span class="card__tag">shared</span>
+        </article>
+        <article class="card">
+          <h3 class="card__title">Greenhouse</h3>
+          <p class="card__body">Tomatoes and chillies on the staging; seedlings on the lower shelves until May.</p>
+          <span class="card__tag">book a bench</span>
+        </article>
+      </section>
+      <section class="rota">
+        <div class="rota__row"><span class="rota__day">Monday</span><span class="rota__who">Beds one to six</span></div>
+        <div class="rota__row"><span class="rota__day">Wednesday</span><span class="rota__who">Beds seven to twelve and the orchard</span></div>
+        <div class="rota__row"><span class="rota__day">Friday</span><span class="rota__who">Greenhouse and the herb border</span></div>
+      </section>
+    </main>
+    <footer class="foot"><p class="foot__text">Minutes of the last meeting are pinned inside the hut door.</p></footer>
+  </body>
+</html>

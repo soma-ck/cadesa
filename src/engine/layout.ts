@@ -191,6 +191,19 @@ interface FlowResult {
  * stores px line heights as 6-digit ratios.)
  */
 export const lineHeightPx = (sizePx: number, lineHeight: number) => Math.floor((Math.round(sizePx * 64) / 64) * lineHeight * 64 + 1e-3) / 64;
+/**
+ * The line-height ratio that makes lineHeightPx give `px` (in layout units) at `sizePx`:
+ * the shortest of a few roundings (from 6 digits) that does: 16px at 12px stays 1.333333, and 40px at 16.8px works.
+ */
+export function lineHeightRatio(px: number, sizePx: number): number {
+  const want = Math.floor(px * 64 + 1e-3) / 64;
+  const exact = px / (Math.round(sizePx * 64) / 64 || sizePx);
+  for (const d of [6, 9, 12]) {
+    const r = Math.round(exact * 10 ** d) / 10 ** d;
+    if (lineHeightPx(sizePx, r) === want) return r;
+  }
+  return Math.round(exact * 1e12) / 1e12;
+}
 
 /** A color that paints nothing (a background in it doesn't count as painted). */
 function transparent(color: string): boolean {
