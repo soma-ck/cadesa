@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.12 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.12 mcp
+npx -y cadesa@0.1.13 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.13 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
