@@ -398,7 +398,7 @@ export function formatCoverage(c: Coverage): string {
   const pct = (n: number) => `${Math.round((n / c.boxes) * 100)}%`;
   const perWidth = Math.round(c.boxes / Math.max(1, c.widths));
   const out = [
-    `coverage: ${perWidth} boxes × ${c.widths} width${c.widths === 1 ? "" : "s"}${c.height ? ` for a ${c.height}px tall window` : ""} · ${pct(c.exact)} exact · ${pct(c.approximate)} approximate (≈)`,
+    `coverage: ${perWidth} boxes × ${c.widths} width${c.widths === 1 ? "" : "s"}${c.height ? ` for ${/^(8|1[18](\d\d)?$)/.test(String(c.height)) ? "an" : "a"} ${c.height}px tall window` : ""} · ${pct(c.exact)} exact · ${pct(c.approximate)} approximate (≈)`,
   ];
   if (c.reasons.length)
     out.push(`  ≈ because: ${c.reasons.slice(0, 3).map((r) => `${r.reason} (×${r.count})`).join(" · ")}${c.reasons.length > 3 ? ` · +${c.reasons.length - 3} more causes` : ""}`);

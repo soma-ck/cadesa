@@ -338,3 +338,19 @@ describe("positioned boxes", () => {
     expect(r.approx("badge")).toBeUndefined();
   });
 });
+
+describe("--height", () => {
+  it("lays the page out for that window, and the coverage line says so", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { checkCmd } = await import("../src/commands.js");
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-height-"));
+    writeFileSync(join(dir, "p.html"), `<!doctype html><html><body><div class="shell"><p class="t">Hi</p></div></body></html>`);
+    writeFileSync(join(dir, "p.css"), `body { margin: 0; font: 16px/1.5 Inter } p { margin: 0 } .shell { min-height: 100vh }`);
+    const a = checkCmd({ fixture: join(dir, "p.html"), css: join(dir, "p.css"), widths: [400] });
+    expect(a.text).toMatch(/^coverage: 2 boxes × 1 width for an 800px tall window · 100% exact/);
+    const b = checkCmd({ fixture: join(dir, "p.html"), css: join(dir, "p.css"), widths: [400], height: 600 });
+    expect(b.text).toMatch(/^coverage: 2 boxes × 1 width for a 600px tall window · 100% exact/);
+  });
+});
