@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.10 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.10 mcp
+npx -y cadesa@0.1.11 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.11 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -18,7 +18,11 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## 0.1.10 (2026-11-19)
+## 0.1.11 (2026-11-19)
+
+0.1.10 was tagged but never published (a test depended on the fonts installed on the release machine); 0.1.11 is the same code.
+
+## 0.1.10 (2026-11-19, not published)
 
 Report, `whatif`, `capture` and `--verify` fixes from running 0.1.9 on two real apps:
 
