@@ -133,7 +133,7 @@ class Tokens {
     const known = this.byValue.get(`${cat}:${raw}`);
     if (known) return known;
     if ((cat === "space" || cat === "size" || cat === "radius") && /[(]|vw\b/.test(raw)) return this.add(cat, `${cat}-fluid-${(this.cats.get(cat)?.size ?? 0) + 1}`, raw);
-    if (raw.startsWith("-")) return this.add(cat, `px-n${String(Math.round(-pxOf(raw) * 100) / 100).replace(".", "-")}`, raw);
+    if (raw.startsWith("-")) return this.add(cat, `${raw.endsWith("%") ? "pct" : "px"}-n${String(Math.round(-pxOf(raw) * 100) / 100).replace(".", "-")}`, raw);
     const name =
       cat === "paint" || cat === "shadow"
         ? `${cat}-${(this.cats.get(cat)?.size ?? 0) + 1}`
@@ -532,6 +532,19 @@ export function liftElements(input: LiftInput): LiftResult {
     const f = r ? lengthExpr(r.raw, { pct: true }) : undefined;
     return lengthToken("size", value) ?? (f?.pct ? tokens.literal("size", f.css) : undefined);
   };
+  /** Padding or a margin with a percentage of the containing block's width in it ("7%", "calc(5% - 8px)"): a size token. */
+  const sidePctToken = (value: string, signed: boolean): string | undefined => {
+    const r = resolveVar(value);
+    if (!r) return undefined;
+    const m = /^(-?(?:\d+(?:\.\d+)?|\.\d+))%$/.exec(r.raw);
+    if (m) {
+      const n = parseFloat(m[1]);
+      if (!isFinite(n) || (!signed && n < 0) || Math.abs(n) > 10000) return undefined;
+      return r.varName && n > 0 ? tokens.named("size", r.varName, `${n}%`) : tokens.literal("size", `${n}%`);
+    }
+    const f = lengthExpr(r.raw, { pct: true });
+    return f?.pct ? tokens.literal("size", f.css) : undefined;
+  };
   /** grid-template-columns as Cadesa tracks: size tokens, "<n>fr" and "minmax(0, <n>fr)" (undefined when another kind of track is used). */
   const gridTracks = (v: string): string[] | undefined => {
     const parts: string[] = [];
@@ -599,8 +612,11 @@ export function liftElements(input: LiftInput): LiftResult {
       if (dir !== "row" && dir !== "column") note(e, s, display, `flex-direction: ${dir} has no Cadesa pattern`, "geometry");
       const pattern = column ? "stack" : "cluster";
       const av = align?.value.trim();
-      if (align && column && !["stretch", "normal"].includes(av!)) note(e, s, align, "stack children always stretch", "geometry");
       const CLUSTER_ALIGN: Record<string, string> = { center: "center", "flex-start": "start", start: "start", "flex-end": "end", end: "end", stretch: "stretch", normal: "stretch" };
+      // Across a column: stretched, or as wide as their content at the start, center or end (baseline is start there).
+      const STACK_ALIGN: Record<string, string> = { ...CLUSTER_ALIGN, "self-start": "start", "self-end": "end", left: "start", right: "end", baseline: "start", "first baseline": "start" };
+      const stackAlign = column && av !== undefined ? STACK_ALIGN[av] : undefined;
+      if (align && column && !stackAlign) note(e, s, align, `align-items: ${av} has no Cadesa equivalent`, "geometry");
       const clusterAlign = av === undefined ? "stretch" : CLUSTER_ALIGN[av];
       if (!column && !clusterAlign) note(e, s, align!, `align-items: ${av} has no Cadesa equivalent`, "geometry");
       const jv = justify?.value.trim();
@@ -626,6 +642,7 @@ export function liftElements(input: LiftInput): LiftResult {
         ...(gap && { gap }),
         ...(lineGap && { rowGap: lineGap }),
         ...(!column && clusterAlign && clusterAlign !== "center" && { align: clusterAlign }),
+        ...(stackAlign && stackAlign !== "stretch" && { align: stackAlign }),
         ...(clusterJustify && clusterJustify !== "start" && { justify: clusterJustify }),
         ...(!column && wrap === "nowrap" && { wrap: false }),
       };
@@ -691,9 +708,10 @@ export function liftElements(input: LiftInput): LiftResult {
     const pad = ["top", "right", "bottom", "left"].map((k) => take(`padding-${k}`));
     if (pad.some(Boolean)) {
       const v = pad.map((d) => (d ? d.value.trim() : "0"));
-      const t = v.map((x) => (isZero(x) ? undefined : lengthToken("space", x)));
+      // A percentage (in calc(), min()... too): of the containing block's width, on every side.
+      const t = v.map((x) => (isZero(x) ? undefined : (lengthToken("space", x) ?? sidePctToken(x, false))));
       const bad = v.findIndex((x, i) => !isZero(x) && !t[i]);
-      if (bad >= 0) note(e, s, pad[bad]!, "padding must be a px or rem length", "geometry");
+      if (bad >= 0) note(e, s, pad[bad]!, "padding must be a length or a percentage", "geometry");
       else if (t.some(Boolean)) out.padding = sidesValue(t);
     }
 
@@ -769,11 +787,12 @@ export function liftElements(input: LiftInput): LiftResult {
       if (!d || isZero(d.value)) return;
       const v = d.value.trim();
       if (v === "auto" && (i === 1 || i === 3) && out.maxWidth) return;
-      const t = v === "auto" ? (i === 1 || i === 3 ? "auto" : undefined) : lengthToken("space", v, true);
+      // auto (top and bottom: the page front end keeps them only where a flex or grid container has free space to give them).
+      const t = v === "auto" ? "auto" : (lengthToken("space", v, true) ?? sidePctToken(v, true));
       if (t) sideTokens[i] = t;
       else {
         marginOk = false;
-        note(e, s, d, v === "auto" ? "a top or bottom auto margin is not modelled" : "a margin must be a px or rem length", "geometry");
+        note(e, s, d, "a margin must be a length, a percentage or auto", "geometry");
       }
     });
     if (marginOk && sideTokens.some(Boolean)) out.margin = sidesValue(sideTokens);

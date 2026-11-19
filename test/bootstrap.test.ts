@@ -28,7 +28,8 @@ describe("language: what Bootstrap's CSS needs", () => {
     expect(errors(base + "styles: { a: { maxWidth: none } }")[0]).toMatch(/maxWidth: none only applies in a breakpoint override/);
     expect(errors(base + "styles: { a: { margin: { inline: n, top: s } } }")).toEqual([]);
     expect(errors(base + "styles: { a: { padding: { left: n } } }")[0]).toMatch(/"n" is negative; padding can't be/);
-    expect(errors(base + "styles: { a: { margin: { top: auto } } }")[0]).toMatch(/only left and right margins can be auto/);
+    // Top and bottom margins may be auto too (free space in a stack, cluster or grid; 0 in block flow).
+    expect(errors(base + "styles: { a: { margin: { top: auto } } }")).toEqual([]);
     expect(errors(base + "styles: { a: { layout: { pattern: cluster, justify: between, wrap: false } } }")).toEqual([]);
     expect(errors(base + "styles: { a: { layout: { pattern: stack, justify: between } } }")[0]).toMatch(/justify only applies to a cluster/);
     expect(errors(base + "styles: { a: { grow: { factor: 1, basis: zero }, width: fit } }")).toEqual([]);

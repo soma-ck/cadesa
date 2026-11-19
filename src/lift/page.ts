@@ -1708,7 +1708,17 @@ export abstract class PageLifter {
             for (const c of kids) this.note(c, si, { decl: `${own.get("justify-content")!.utility} on the parent (justify-content: ${jc})`, reason: "moves the item down its column; Cadesa stacks items at the start", kind: "visual" });
           } else if (jc && dir === "column") handled.add("justify-content");
           const ai = res("align-items");
-          if (dir === "column" && ai && !/^(normal|stretch)$/.test(ai)) {
+          // Across a column: start, center or end make each item as wide as its content (fit-content), placed there.
+          if (dir === "column" && ai && /^(center|start|end|flex-start|flex-end|self-start|self-end|left|right|baseline|first baseline)$/.test(ai)) {
+            decl("align-items", ai, own.get("align-items")!.utility);
+            handled.add("align-items");
+            for (const c of kids) {
+              const self = c.own[si].get("align-self");
+              const sv = self ? this.resolve(c, si, self.value) : undefined;
+              if (sv && !/^(auto|normal)$/.test(sv) && sv !== ai)
+                this.note(c, si, { decl: `${self!.utility} (align-self: ${sv})`, reason: `align-self in a column whose items are aligned ${ai} isn't modelled`, kind: "geometry" });
+            }
+          } else if (dir === "column" && ai && !/^(normal|stretch)$/.test(ai)) {
             handled.add("align-items");
             for (const c of kids) {
               const fixed = c.own[si].has("width");
@@ -1828,7 +1838,8 @@ export abstract class PageLifter {
       else if (CONTROL.has(el.tag) && !own.has("height"))
         this.note(el, si, { decl: `<${el.tag}>`, reason: `a form control's height comes from its font and the browser's internals; give it a height${this.uaInCascade ? "" : " (h-*)"} to predict it`, kind: "geometry" });
       // Replaced elements and controls have an intrinsic width (the file, 300×150 for svg, ~20ch for inputs).
-      const stretched = parentRole === "container" && /flex/.test(parentDisplay) && el.parent && this.isColumn(el.parent, si) && !own.has("align-self");
+      const parentAlign = el.parent && el.parent !== this.bodyEl ? this.resolve(el.parent, si, el.parent.own[si].get("align-items")?.value ?? "normal") ?? "normal" : "normal";
+      const stretched = parentRole === "container" && /flex/.test(parentDisplay) && el.parent && this.isColumn(el.parent, si) && !own.has("align-self") && /^(normal|stretch)$/.test(parentAlign);
       if ((CONTROL.has(el.tag) || REPLACED_BLOCK.has(el.tag)) && !own.has("width") && !stretched)
         this.note(el, si, { decl: `<${el.tag}>`, reason: `<${el.tag}> without a width${this.uaInCascade ? "" : " (w-*)"} takes its intrinsic width, which Cadesa doesn't know`, kind: "geometry" });
 
@@ -2097,7 +2108,7 @@ export abstract class PageLifter {
       return v;
     }
     // (A width or max-width may hold percentages of the containing block: lift keeps them for the engine.)
-    const f = lengthExpr(v, { em: t.size, vh: this.viewportHeight, pct: prop === "width" || prop === "max-width" });
+    const f = lengthExpr(v, { em: t.size, vh: this.viewportHeight, pct: prop === "width" || prop === "max-width" || /^(padding|margin)-(top|right|bottom|left)$/.test(prop) });
     if (f && /\d[dsl]?v(?:h|min|max)\b/i.test(v)) this.usesViewportHeight = true;
     return f ? f.css : v;
   }

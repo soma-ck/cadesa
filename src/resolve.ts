@@ -77,11 +77,37 @@ export function sizeAt(v: number | Pct, base: number): number {
   return Math.trunc(f(f(f(base) * f(v.pct)) / 100) * 64) / 64;
 }
 
-/** A margin: px per side, and which inline sides are auto (their px is 0 until layout). */
+/** A margin: px per side, and which sides are auto (their px is 0 until layout). */
 export interface Margins extends Sides {
   autoLeft?: boolean;
   autoRight?: boolean;
+  /** Top and bottom: in a stack, cluster or grid they take free space (in block flow they are 0). */
+  autoTop?: boolean;
+  autoBottom?: boolean;
 }
+
+/** Sides given as a percentage of the containing block's width (padding, margins): px only once that width is known. */
+export type PctSides = Partial<Record<keyof Sides, Pct>>;
+
+/**
+ * Props with percentage padding and margins resolved against `base`, the containing block's width
+ * (on every side, as CSS says). Until then those sides count as 0 (as in intrinsic sizes).
+ */
+export function atBase(p: ResolvedProps, base: number): ResolvedProps {
+  if (!p.padding?.pct && !p.margin?.pct) return p;
+  const out = { ...p };
+  const fill = <T extends Sides>(v: T, pct: PctSides): T => {
+    const r = { ...v };
+    for (const [k, x] of Object.entries(pct) as [keyof Sides, Pct][]) r[k] = sizeAt(x, base);
+    return r;
+  };
+  if (p.padding?.pct) out.padding = { ...p.padding, value: fill(p.padding.value, p.padding.pct), pct: undefined };
+  if (p.margin?.pct) out.margin = { ...p.margin, value: fill(p.margin.value, p.margin.pct), pct: undefined };
+  return out;
+}
+
+/** Whether a box has padding or margins that are a percentage of its containing block's width. */
+export const hasPctSides = (p: ResolvedProps) => !!(p.padding?.pct || p.margin?.pct);
 
 /** A grid column track: a fixed size (px or a percentage of the grid's width) or a flexible share. */
 export type Track = { size: number | Pct } | { fr: number; auto: boolean };
@@ -112,12 +138,12 @@ export interface ResolvedProps {
   gap?: Resolved<number> & { pct?: number };
   /** A grid's or cluster's gap between rows, when it differs from `gap`. */
   rowGap?: Resolved<number> & { pct?: number };
-  padding?: Resolved<Sides>;
+  padding?: Resolved<Sides> & { pct?: PctSides };
   background?: Resolved<string>;
   /** The color, and each side's width as Chromium draws it. */
   border?: Resolved<{ color: string; widths: Sides }>;
   radius?: Resolved<number>;
-  margin?: Resolved<Margins>;
+  margin?: Resolved<Margins> & { pct?: PctSides };
   maxWidth?: Resolved<number | Pct>;
   measure?: Resolved<number | Pct>;
   width?: Resolved<number | "fill" | "fit" | Pct>;
@@ -157,7 +183,8 @@ function strSides([t, r, b, l]: string[]): string {
 }
 
 /** "8px", "8px 16px" or "1px 2px 3px 4px" (CSS order). */
-export function sidesDisplay(v: Sides, unit = (n: number) => `${fmtPx(n)}px`): string {
+export function sidesDisplay(v: Sides, unit = (n: number) => `${fmtPx(n)}px`, shown?: (string | undefined)[]): string {
+  if (shown?.some((s) => s && !s.endsWith("px"))) return strSides([v.top, v.right, v.bottom, v.left].map((n, i) => shown[i] ?? unit(n)));
   if (v.top === v.bottom && v.left === v.right) return v.top === v.left ? unit(v.top) : `${unit(v.top)} ${unit(v.left)}`;
   return `${unit(v.top)} ${unit(v.right)} ${unit(v.bottom)} ${unit(v.left)}`;
 }
@@ -217,6 +244,20 @@ export function resolveElement(model: Model, component: Component, slot: string 
       if (t.pct === undefined) return lengthOf(r);
       return { value: { pct: t.pct }, display: `${t.pct}% of the parent's width`, steps: [tokenStep(r), ...pre, src(r.path)] };
     };
+    /** A padding or margin side: a length, or (a size token) a percentage of the containing block's width. */
+    const sideOf = (r: Ref): Resolved<number | Pct> => {
+      if (r.kind !== "size") return lengthOf(r);
+      const s = sizeOf(r);
+      return typeof s.value === "number" ? s : { ...s, display: model.tokens.get(tokenKey(r.kind, r.name))!.raw };
+    };
+    const pctSides = (sides: (Resolved<number | Pct> | undefined)[]): PctSides | undefined => {
+      const out: PctSides = {};
+      (["top", "right", "bottom", "left"] as const).forEach((k, i) => {
+        const v = sides[i]?.value;
+        if (v !== undefined && typeof v !== "number") out[k] = v;
+      });
+      return Object.keys(out).length ? out : undefined;
+    };
     const colorOf = (r: Ref): Resolved<string> => {
       const t = model.tokens.get(tokenKey(r.kind, r.name))!;
       return { value: t.raw, display: t.raw, steps: [tokenStep(r), ...pre, src(r.path)] };
@@ -232,7 +273,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const rowPct = l.rowGap?.kind === "size" ? model.tokens.get(tokenKey("size", l.rowGap.name))!.pct : undefined;
         // A percentage of the grid's height: 0 while its rows are sized, then of its final content height.
         if (l.rowGap) out.rowGap = rowPct !== undefined ? { ...sizeOf(l.rowGap), value: 0, pct: rowPct, display: `${rowPct}% of the content height (0 while the rows are sized)` } : lengthOf(l.rowGap);
-        if (l.pattern !== "stack" && l.pattern !== "flow") {
+        if (l.pattern !== "flow" && (l.pattern !== "stack" || l.align)) {
           const def = l.pattern === "cluster" ? "center" : "stretch";
           const a = l.align ?? def;
           out.align = { value: a, display: l.align ? a : `${def} (default)`, steps: [...pre, src(l.align ? `${l.path}.align` : l.path)] };
@@ -287,31 +328,35 @@ export function resolveElement(model: Model, component: Component, slot: string 
       }
       case "padding": {
         const pd = p.padding!;
-        const sides = (["top", "right", "bottom", "left"] as const).map((s) => (pd[s] ? lengthOf(pd[s]!) : undefined));
-        const [top, right, bottom, left] = sides.map((x) => x?.value ?? 0);
+        const SIDES = ["top", "right", "bottom", "left"] as const;
+        const sides = SIDES.map((s) => (pd[s] ? sideOf(pd[s]!) : undefined));
+        const [top, right, bottom, left] = sides.map((x) => (typeof x?.value === "number" ? x.value : 0));
         const tokens = sides.filter((x) => x).map((x) => x!.steps[0]);
         const value = { top, right, bottom, left };
+        const pct = pctSides(sides);
         out.padding = {
           value,
-          display: sidesDisplay(value),
+          display: sidesDisplay(value, undefined, sides.map((x) => x?.display)),
           steps: [...tokens.filter((t, k) => tokens.findIndex((u) => u.path === t.path) === k), ...pre, src(pd.path)],
+          ...(pct && { pct }),
         };
         break;
       }
       case "margin": {
         const m = p.margin!;
-        const side = (r: MarginSide | undefined) => (r && !isAuto(r) ? lengthOf(r) : undefined);
+        const side = (r: MarginSide | undefined) => (r && !isAuto(r) ? sideOf(r) : undefined);
         const sides = (["top", "right", "bottom", "left"] as const).map((s) => side(m[s]));
-        const [top, right, bottom, left] = sides.map((x) => x?.value ?? 0);
+        const [top, right, bottom, left] = sides.map((x) => (typeof x?.value === "number" ? x.value : 0));
         const tokens = sides.filter((x) => x).map((x) => x!.steps[0]);
-        const autoLeft = isAuto(m.left);
-        const autoRight = isAuto(m.right);
-        const value: Margins = { top, right, bottom, left, ...(autoLeft && { autoLeft }), ...(autoRight && { autoRight }) };
-        const px = (n: number) => `${fmtPx(n)}px`;
+        const [autoTop, autoRight, autoBottom, autoLeft] = [m.top, m.right, m.bottom, m.left].map(isAuto);
+        const value: Margins = { top, right, bottom, left, ...(autoLeft && { autoLeft }), ...(autoRight && { autoRight }), ...(autoTop && { autoTop }), ...(autoBottom && { autoBottom }) };
+        const px = (n: number, i: number) => sides[i]?.display ?? `${fmtPx(n)}px`;
+        const pct = pctSides(sides);
         out.margin = {
           value,
-          display: strSides([px(top), autoRight ? "auto" : px(right), px(bottom), autoLeft ? "auto" : px(left)]),
+          display: strSides([autoTop ? "auto" : px(top, 0), autoRight ? "auto" : px(right, 1), autoBottom ? "auto" : px(bottom, 2), autoLeft ? "auto" : px(left, 3)]),
           steps: [...tokens.filter((t, k) => tokens.findIndex((u) => u.path === t.path) === k), ...pre, src(m.path)],
+          ...(pct && { pct }),
         };
         break;
       }

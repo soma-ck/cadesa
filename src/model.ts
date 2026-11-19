@@ -136,9 +136,9 @@ export const isAuto = (m: MarginSide | undefined): m is { auto: true; path: stri
  */
 export interface MarginProp {
   path: string;
-  top?: Ref;
+  top?: MarginSide;
   right?: MarginSide;
-  bottom?: Ref;
+  bottom?: MarginSide;
   left?: MarginSide;
 }
 

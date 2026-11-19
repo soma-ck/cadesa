@@ -61,6 +61,15 @@ function asPercent(v: unknown): number | undefined {
   return n > 0 && n <= 100 ? n : undefined;
 }
 
+/** A percentage for padding or margins (of the containing block's width): any finite value, negative too (margins). */
+function asSidePercent(v: unknown): number | undefined {
+  if (typeof v !== "string") return undefined;
+  const m = /^\s*(-?(?:\d+(?:\.\d+)?|\.\d+))%\s*$/.exec(v);
+  if (!m) return undefined;
+  const n = parseFloat(m[1]);
+  return isFinite(n) && Math.abs(n) <= 10000 ? n : undefined;
+}
+
 const NAMED_COLORS: Record<string, string> = { white: "#ffffff", black: "#000000", transparent: "#00000000" };
 
 /** Colors as people write them: hex, rgb()/rgba(), white/black/transparent. Returns lowercase hex. */
@@ -163,7 +172,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
       for (const [name, value] of Object.entries(cat)) {
         const path = [...catPath, name];
         if (!ident(name, path)) continue;
-        const pct = category === "size" ? asPercent(value) : undefined;
+        const pct = category === "size" ? (asPercent(value) ?? asSidePercent(value)) : undefined;
         if (pct !== undefined) {
           tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: `${pct}%`, pct });
         } else if (LENGTH_CATEGORIES.has(category)) {
@@ -393,6 +402,21 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
     }
     return r;
   };
+  /**
+   * A padding or margin side: a space token, or a size token that is a percentage of the containing
+   * block's width ("7%", "calc(5% + 8px)"); padding can't be negative.
+   */
+  const sideRef = (value: unknown, path: PathSeg[], what: string, signed: boolean): Ref | undefined => {
+    const t = typeof value === "string" && !tokens.has(tokenKey("space", value)) ? tokens.get(tokenKey("size", value)) : undefined;
+    if (t && relative(t)) {
+      if (!signed && t.pct !== undefined && t.pct < 0) {
+        err(path, `"${t.name}" is negative; ${what} can't be`, { expected: "a token of 0 or more (only margins may be negative)", got: value });
+        return undefined;
+      }
+      return ref(value, path, "size");
+    }
+    return signed ? ref(value, path, "space") : spaceRef(value, path, what);
+  };
   /** Per-side space tokens: { top, right, bottom, left } and the { block, inline } axes (a side beats its axis). */
   const sideRefs = (v: Obj, p: PathSeg[], what: string, one: (value: unknown, path: PathSeg[]) => Ref | undefined) => {
     const SIDES = ["top", "right", "bottom", "left"] as const;
@@ -473,8 +497,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const pctRowGap = typeof l.rowGap === "string" && l.pattern === "grid" && tokens.get(tokenKey("size", l.rowGap))?.pct !== undefined && !tokens.has(tokenKey("space", l.rowGap));
           const rowGap = l.rowGap === undefined ? undefined : pctRowGap ? ref(l.rowGap, [...p, "rowGap"], "size") : spaceRef(l.rowGap, [...p, "rowGap"], "a gap");
           if (l.rowGap !== undefined && !rowGap) break;
-          if (l.align !== undefined && (l.pattern === "stack" || l.pattern === "flow" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
-            err([...p, "align"], l.pattern === "stack" || l.pattern === "flow" ? `align doesn't apply to a ${l.pattern} (its children always stretch)` : "invalid align", {
+          // A stack's align: where its children sit across it (stretch, or as wide as their content).
+          if (l.align !== undefined && (l.pattern === "flow" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
+            err([...p, "align"], l.pattern === "flow" ? `align doesn't apply to a ${l.pattern} (its children always stretch)` : "invalid align", {
               expected: "start, center, end or stretch",
               got: l.align,
             });
@@ -518,10 +543,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
               err(p, "empty padding", { expected: "a space token, { block, inline } or { top, right, bottom, left } space tokens" });
               break;
             }
-            const sides = sideRefs(v, p, "padding", (x, q) => spaceRef(x, q, "padding"));
+            const sides = sideRefs(v, p, "padding", (x, q) => sideRef(x, q, "padding", false));
             if (sides) out.padding = { path: p.join("."), ...sides } as PaddingProp;
           } else {
-            const r = spaceRef(v, p, "padding");
+            const r = sideRef(v, p, "padding", false);
             if (r) out.padding = { path: p.join("."), top: r, right: r, bottom: r, left: r };
           }
           break;
@@ -534,15 +559,11 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
               err(p, "empty margin", { expected: "a space token, { block, inline } or { top, right, bottom, left } space tokens" });
               break;
             }
-            // auto: left and right only (it takes the line's free space, or centers a narrower box).
+            // auto: it takes the line's free space, or centers a narrower box. Top and bottom: in a
+            // stack, cluster or grid (in block flow an auto top or bottom margin is 0).
             const one = (value: unknown, q: PathSeg[]): MarginSide | undefined => {
-              if (value === "auto") {
-                const side = q[q.length - 1];
-                if (side === "left" || side === "right" || side === "inline") return { auto: true, path: q.join(".") };
-                err(q, "only left and right margins can be auto", { expected: "a space token", got: value });
-                return undefined;
-              }
-              return ref(value, q, "space");
+              if (value === "auto") return { auto: true, path: q.join(".") };
+              return sideRef(value, q, "a margin", true);
             };
             const axis = (k: "block" | "inline") => (v[k] === undefined ? undefined : one(v[k], [...p, k]));
             const block = axis("block");
@@ -557,7 +578,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             }
             if (ok) out.margin = m;
           } else {
-            const r = ref(v, p, "space");
+            const r = sideRef(v, p, "a margin", true);
             if (r) out.margin = { path: p.join("."), top: r, right: r, bottom: r, left: r };
           }
           break;

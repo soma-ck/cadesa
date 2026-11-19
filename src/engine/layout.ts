@@ -11,7 +11,7 @@
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
-import { activeBreakpoints, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
+import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
 const EPS = 0.001;
@@ -385,6 +385,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const contentCache = new Map<FixtureNode, Intrinsic>();
   /** Intrinsic widths are rounded up to a layout unit, so content fits the box it sizes. */
   const up = (v: number) => Math.ceil(v * 64 - TEXT_EPS) / 64;
+  /**
+   * A box's content-sized widths once its own percentage padding is resolved (a flex item, an
+   * absolutely positioned box: the containing block's width is known). Intrinsic sizes count those
+   * percentages as 0, as Chromium does; the box itself adds its resolved padding to its content.
+   */
+  const withOwnPct = (it: Intrinsic, raw: ResolvedProps, resolved: ResolvedProps): Intrinsic => {
+    if (it.why || raw === resolved) return it;
+    const a = insets(raw);
+    const b = insets(resolved);
+    const d = b.left + b.right - (a.left + a.right);
+    return d ? { ...it, min: it.min + d, max: it.max + d } : it;
+  };
 
   /** Children that are Cadesa slots or components; anything else inside a text box is inline text. */
   const classedOf = (n: FixtureNode, c: Component) =>
@@ -575,7 +587,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
    */
   function cluster(kids: { node: FixtureNode; comp: Component; slot: string | undefined }[], innerW: number, gap: number, justify: string, nowrap: boolean): Box[][] {
     const items = kids.map((k) => {
-      const p = resolveElement(model, k.comp, k.slot, width);
+      const p0 = resolveElement(model, k.comp, k.slot, width);
+      // Percentage padding and margins: of the flex container's width.
+      const p = atBase(p0, innerW);
       const km: Margins = { ...marginOf(p) };
       const out = km.left + km.right;
       const kins = insets(p);
@@ -597,7 +611,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       let wraps = false;
       let intr: Intrinsic | undefined;
       // The content's own sizes: the item's max width (maybe a percentage of this line) is applied below.
-      const content = () => (intr ??= intrinsic(k.node, k.comp, k.slot, true));
+      const content = () => (intr ??= withOwnPct(intrinsic(k.node, k.comp, k.slot, true), p0, p));
       const cannot = (why: string) => {
         errors.push({ path: kpath, message: (id) => (g?.basis === "zero" && pw !== undefined ? `#${id} grows from zero in a cluster, and the minimum width of its content can't be measured (${why})` : `#${id} sits in a cluster without a width, and its content can't be measured (${why}); ${say("give it a size token width", "give it a width in px or rem")}`) });
       };
@@ -635,7 +649,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       }
       if (g && g.basis === "zero") {
         // flex-basis: 0, never below the automatic minimum: the content's min-content width, capped by a set width.
-        const it = intrinsic(k.node, k.comp, k.slot, true);
+        const it = withOwnPct(intrinsic(k.node, k.comp, k.slot, true), p0, p);
         const specified = typeof pw === "number" ? pw : pw !== undefined && typeof pw === "object" ? sizeAt(pw, innerW) : pw === "fill" ? innerW : Infinity;
         if (it.why) cannot(it.why);
         else {
@@ -809,8 +823,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   function placeAbsolute(parentOf: Map<Box, Box>, pageX: number, pageY: number) {
     while (absQueue.length) {
       const a = absQueue.shift()!;
-      const p = resolveElement(model, a.k.comp, a.k.slot, width);
-      const pos = p.position!.value;
+      const p0 = resolveElement(model, a.k.comp, a.k.slot, width);
+      const pos = p0.position!.value;
       let cbBox: Box | undefined;
       for (let x = a.parent; x; x = parentOf.get(x))
         if (containingBlock(x, pos.type)) {
@@ -821,6 +835,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const cb = cbBox ? { x: cbBox.x + bw(cbBox).left, y: cbBox.y + bw(cbBox).top, w: cbBox.w - bw(cbBox).left - bw(cbBox).right, h: cbBox.h - bw(cbBox).top - bw(cbBox).bottom } : { x: 0, y: 0, w: width, h: windowH };
       const at = (v: number | { pct: number } | undefined, base: number) => (v === undefined ? undefined : sizeAt(v, base));
       const [l, r, t, b] = [at(pos.left, cb.w), at(pos.right, cb.w), at(pos.top, cb.h), at(pos.bottom, cb.h)];
+      // Percentage padding and margins: of the containing block's width.
+      const p = atBase(p0, cb.w);
       const m = marginOf(p);
       const ins = insets(p);
       const notes: string[] = [];
@@ -833,7 +849,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       else if (l !== undefined && r !== undefined && pw !== "fit") w = cb.w - l - r - m.left - m.right;
       else {
         const avail = cb.w - (l ?? 0) - (r ?? 0) - m.left - m.right;
-        const it = intrinsic(a.k.node, a.k.comp, a.k.slot, true);
+        const it = withOwnPct(intrinsic(a.k.node, a.k.comp, a.k.slot, true), p0, p);
         if (it.why) {
           notes.push(`an absolutely positioned box is as wide as its content, which can't be measured here (${it.why})`);
           w = Math.max(0, avail);
@@ -841,7 +857,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       }
       w = Math.max(ins.left + ins.right, Math.min(w, cap));
       if (p.aspect) notes.push("an absolutely positioned box with an aspect ratio isn't modelled");
-      const box = measure(a.k.node, a.k.comp, a.k.slot, w, "abs", w);
+      const box = measure(a.k.node, a.k.comp, a.k.slot, w, "abs", w, cb.w);
       box.assumptions.push(...notes);
       // Height: a percentage of the containing block's, or stretched between top and bottom when it has none of its own.
       if (pos.height !== undefined && !p.height) {
@@ -878,9 +894,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
   }
 
-  function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind, forcedW?: number): Box {
+  function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind, forcedW?: number, cbW?: number, stackAlign?: "start" | "center" | "end" | "stretch"): Box {
     const id = idOf(n);
-    const props = resolveElement(model, c, slot, width);
+    const rawProps = resolveElement(model, c, slot, width);
+    // Percentage padding and margins: of the containing block's width.
+    const props = atBase(rawProps, cbW ?? avail);
     const sourcePath = slot ? `${c.path}.slots.${slot}` : c.path;
     const assumptions: string[] = [];
     const ins = insets(props);
@@ -908,7 +926,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const maxW = Math.min(props.maxWidth ? sizeAt(props.maxWidth.value, avail) : Infinity, props.measure ? sizeAt(props.measure.value, avail) : Infinity);
     /** fit-content in `room`: the content's max-content width, at most the room, at least its min-content. */
     const fit = (room: number, what: string): number => {
-      const it = intrinsic(n, c, slot, true);
+      const it = withOwnPct(intrinsic(n, c, slot, true), rawProps, props);
       if (it.why) {
         issues.push({ severity: "error", id, path: props.width?.steps.at(-1)?.path ?? sourcePath, message: `#${id} ${what}, and its content can't be measured (${it.why})` });
         return room;
@@ -928,6 +946,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // Auto margins across a stack (a column flexbox) switch off stretching: it's as wide as its content.
       else if (parent === "stack" && pw === undefined && (m.autoLeft || m.autoRight) && !props.maxWidth && !props.aspect)
         w = fit(Math.max(0, avail - m.left - m.right), "has an auto margin in a stack, which sizes it to its content");
+      // A stack that doesn't stretch its children (align-items: center, start, end): fit-content.
+      else if (parent === "stack" && pw === undefined && stackAlign && stackAlign !== "stretch" && !props.maxWidth && !props.aspect)
+        w = fit(Math.max(0, avail - m.left - m.right), `sits in a stack aligned ${stackAlign}, which sizes it to its content`);
       else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
       else w = Math.max(0, avail - m.left - m.right); // page, flow, stack, grid cell, layer: stretch inside the margins
       if (w > maxW) w = maxW;
@@ -1004,7 +1025,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         const cw = colW[j % cols];
         if (justify === "stretch") return measure(k.node, k.comp, k.slot, cw, "grid");
         // Not stretched: as wide as its content (fit-content in its column), unless it sets a width.
-        const kp = resolveElement(model, k.comp, k.slot, width);
+        const kp = atBase(resolveElement(model, k.comp, k.slot, width), cw);
         const km = marginOf(kp);
         if (kp.width?.value !== undefined && kp.width.value !== "fit") return measure(k.node, k.comp, k.slot, cw, "grid");
         const it = intrinsic(k.node, k.comp, k.slot);
@@ -1032,16 +1053,20 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     } else if (kids.length && pattern === "stack") {
       // A column flexbox: margins add to each item's outer size and never collapse.
       let y = 0;
+      const align = props.align?.value ?? "stretch";
       kids.forEach((k, i) => {
-        const b = measure(k.node, k.comp, k.slot, innerW, "stack");
+        const b = measure(k.node, k.comp, k.slot, innerW, "stack", undefined, undefined, align);
         const km = marginOf(b.props);
-        b.x = offsetX(b, innerW);
+        // Aligned across the stack by its margin box (auto inline margins win over align-items).
+        const free = U(innerW) - U(b.w) - U(km.left) - U(km.right);
+        b.x = align === "stretch" || km.autoLeft || km.autoRight || b.props.maxWidth ? offsetX(b, innerW) : km.left + PX(align === "center" ? Math.trunc(free / 2) : align === "end" ? free : 0);
         b.y = y + km.top;
         y += km.top + b.h + km.bottom + (i < kids.length - 1 ? gap : 0);
         children.push(b);
       });
       contentH = y;
-      if (children.some((b) => b.props.grow)) grows = { kids: children, gap, insetTop: ins.top, insetY: insY, natural: children.map((b) => b.h) };
+      // Children that grow, or auto top and bottom margins, take the extra height once it's known (placeStack).
+      if (children.some((b) => b.props.grow || marginOf(b.props).autoTop || marginOf(b.props).autoBottom)) grows = { kids: children, gap, insetTop: ins.top, insetY: insY, natural: children.map((b) => b.h) };
     } else if (kids.length && pattern === "flow") {
       // A box sized by its aspect ratio keeps its last child's bottom margin neither inside nor out (Chromium drops it).
       const end = throughBottom ? "escape" : inFlow && !scroller && ins.bottom === 0 && props.aspect && !props.height ? "drop" : "keep";
@@ -1278,6 +1303,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       for (const c of row) {
         // Items are aligned by their margin boxes.
         const m = marginOf(c.props);
+        // Auto top or bottom margins take the row's free space (none: the item sits at the start), and switch off stretching.
+        if (m.autoTop || m.autoBottom) {
+          const space = Math.max(0, U(rowH) - U(outerH(c)));
+          c.y = y + m.top + PX(m.autoTop && m.autoBottom ? Math.trunc(space / 2) : m.autoTop ? space : 0);
+          continue;
+        }
         // stretch grows every item without a fixed height, aspect ratio or not.
         if (a.align === "stretch" && !c.props.height) {
           // In a one-line cluster the line may be shorter than the item: stretching then shrinks it (its content overflows).
@@ -1313,14 +1344,23 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const base = gr && gr.basis === "zero" ? iy.top + iy.bottom : k.props.height ? k.props.height.value : natural;
       return { base: U(base), hyp: U(natural), factor: gr?.factor ?? 0, shrink: 0, pad: U(iy.top + iy.bottom), min: U(natural), max: Infinity, out: U(m.top + m.bottom) };
     });
-    const sizes = flexLine(items, U(inner), U(g.gap));
-    let y = 0;
+    const sizes = g.kids.some((k) => k.props.grow) ? flexLine(items, U(inner), U(g.gap)) : undefined;
     g.kids.forEach((k, i) => {
-      const m = marginOf(k.props);
       const h = sizes ? PX(sizes[i]) : g.natural[i];
       if (h > k.h) grow(k, h);
-      k.y = y + m.top;
-      y += m.top + k.h + m.bottom + g.gap;
+    });
+    // Auto top and bottom margins take what free space is left (before justify-content), shared as the
+    // line's auto margins are (Chromium's diffuser, in layout units).
+    const autos = g.kids.reduce((t, k) => t + (marginOf(k.props).autoTop ? 1 : 0) + (marginOf(k.props).autoBottom ? 1 : 0), 0);
+    const free = U(inner) - g.kids.reduce((t, k) => t + U(outerH(k)), 0) - U(g.gap) * (g.kids.length - 1);
+    const auto = autos && free > 0 ? diffuser(free, autos) : () => 0;
+    let y = 0;
+    g.kids.forEach((k) => {
+      const m = marginOf(k.props);
+      const at = m.autoTop ? PX(auto()) : 0;
+      const ab = m.autoBottom ? PX(auto()) : 0;
+      k.y = y + at + m.top;
+      y += at + m.top + k.h + m.bottom + ab + g.gap;
     });
   }
 

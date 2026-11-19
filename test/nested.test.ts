@@ -79,10 +79,6 @@ describe("alignment, text alignment, decoration", () => {
     expect(css).toContain("list-style: none;");
   });
 
-  it("rejects align on a stack", () => {
-    const bad = text.replace("layout: { pattern: stack, gap: card }", "layout: { pattern: stack, gap: card, align: center }");
-    expect(() => modelOf(loadSource(SRC, bad))).toThrow(/align doesn't apply to a stack/);
-  });
 
   it("lifts align-items, text-align and text-decoration back", () => {
     const l = lift("x.css", compile(model));
