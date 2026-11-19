@@ -10,7 +10,7 @@
  */
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
-import { scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
+import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
 import { activeBreakpoints, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
@@ -93,6 +93,15 @@ function offsetX(b: Box, cell: number): number {
 const inLine = (b: Box) => b.props.pattern?.value === "stack" || b.props.pattern?.value === "flow";
 
 const NO_MARGIN: Margins = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/**
+ * Whether box `b` is the containing block of an absolutely positioned (any positioned box, or
+ * layout or paint containment) or fixed (containment only) descendant.
+ */
+export function containingBlock(b: Box, type: "absolute" | "fixed" | string): boolean {
+  if (containsLayout(b.props.contain?.value)) return true;
+  return type === "absolute" && !!b.props.position;
+}
 const marginOf = (p: ResolvedProps): Margins => p.margin?.value ?? NO_MARGIN;
 /** Height including the vertical margins (a flex or grid item's outer size; they never collapse there). */
 const outerH = (b: Box) => {
@@ -479,6 +488,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     if (pw !== undefined && pw !== "fit") return unknown(`<${n.tag}> has a ${pw === "fill" ? "fill" : "percentage"} width, which depends on the box being sized`);
     if (p.aspect && !contentOnly) return unknown(`<${n.tag}> has an aspect ratio`);
+    // Size containment (size or inline-size): as wide as if it were empty.
+    if (p.contain?.value.size) return { min: insX, max: insX };
     let min = 0;
     let max = 0;
     let wraps = false;
@@ -792,12 +803,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const p = resolveElement(model, a.k.comp, a.k.slot, width);
       const pos = p.position!.value;
       let cbBox: Box | undefined;
-      if (pos.type === "absolute")
-        for (let x = a.parent; x; x = parentOf.get(x))
-          if (x.props.position) {
-            cbBox = x;
-            break;
-          }
+      for (let x = a.parent; x; x = parentOf.get(x))
+        if (containingBlock(x, pos.type)) {
+          cbBox = x;
+          break;
+        }
       const bw = (b: Box) => b.props.border?.value.widths ?? { top: 0, right: 0, bottom: 0, left: 0 };
       const cb = cbBox ? { x: cbBox.x + bw(cbBox).left, y: cbBox.y + bw(cbBox).top, w: cbBox.w - bw(cbBox).left - bw(cbBox).right, h: cbBox.h - bw(cbBox).top - bw(cbBox).bottom } : { x: 0, y: 0, w: width, h: windowH };
       const at = (v: number | { pct: number } | undefined, base: number) => (v === undefined ? undefined : sizeAt(v, base));
@@ -970,7 +980,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // overflow other than visible or clip: a scroll container, a new block formatting context that
     // keeps its children's margins inside.
     const ov = props.overflow?.value;
-    const scroller = scrolls(ov);
+    // So does layout or paint containment (an independent formatting context).
+    const scroller = scrolls(ov) || containsLayout(props.contain?.value);
     const throughTop = inFlow && ins.top === 0 && !scroller;
     const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.minHeight && !props.aspect && !scroller;
     let escaped: FlowResult | undefined;
@@ -1040,7 +1051,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         contentH = lines.length * lineH;
         contentW = Math.max(...lines.map((l) => l.width));
         // Text in a box that clips or scrolls it (overflow-x other than visible) doesn't spill out: check reports it as clipped.
-        if (tl.minContent > innerW + 0.5 && !t.nowrap && !t.wrapAnywhere && (!ov || ov.x === "visible")) {
+        if (tl.minContent > innerW + 0.5 && !t.nowrap && !t.wrapAnywhere && (!ov || ov.x === "visible") && !props.contain?.value.paint) {
           issues.push({
             severity: "warning",
             id,
@@ -1059,10 +1070,15 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // their content needs more (aspect-ratio's automatic minimum size). In a stack (a column
     // flexbox) that minimum is capped by the max-width converted through the ratio.
     const media = MEDIA.has(n.tag);
-    let h = props.height?.value ?? contentH + insY;
+    // Size containment: as tall as if it were empty (its content is laid out, and overflows).
+    const sizeContained = props.contain?.value.size === "both";
+    if (sizeContained && (rows || grows || (kids.length && !containsLayout(props.contain!.value) && (throughTop || throughBottom))))
+      assumptions.push("size containment on a flex, grid or block container without layout containment: how its content sizes against its empty height isn't modelled");
+    const ownH = sizeContained ? 0 : contentH;
+    let h = props.height?.value ?? ownH + insY;
     if (props.aspect && !props.height) {
       const ratioH = w / props.aspect.value;
-      const contentMin = parent === "stack" ? Math.min(contentH + insY, maxW / props.aspect.value) : contentH + insY;
+      const contentMin = parent === "stack" ? Math.min(ownH + insY, maxW / props.aspect.value) : ownH + insY;
       h = media ? ratioH : Math.max(ratioH, contentMin);
       // A one-line cluster with an aspect ratio whose content is taller: Chromium sometimes keeps the ratio.
       if (!media && pattern === "cluster" && props.wrap?.value === false && contentMin > ratioH + EPS) assumptions.push("a one-line cluster with an aspect ratio whose content is taller than the ratio: its height isn't modelled");
@@ -1163,7 +1179,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // A box that clips or scrolls its content horizontally: what doesn't fit is cut off or scrolls,
     // it doesn't spill out (check reports clipped text). Scrollbars take space only where they
     // aren't overlaid (Windows, many Linux setups); Cadesa predicts overlay scrollbars.
-    const clipsX = !!ov && ov.x !== "visible";
+    const clipsX = (!!ov && ov.x !== "visible") || !!props.contain?.value.paint;
     const where = "where scrollbars aren't overlaid (Windows, many Linux setups)";
     const sb: { taller?: string; narrower?: string } = {};
     if (!props.height && !props.aspect && (ov?.x === "scroll" || (ov?.x === "auto" && widest > innerW + 0.5)))
@@ -1192,7 +1208,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           message: `the text of #${id} doesn't wrap (white-space: nowrap) and overflows it by ${fmtPx(contentW - innerW)}px at ${width}px`,
         });
     }
-    const clipsY = !!ov && ov.y !== "visible";
+    const clipsY = (!!ov && ov.y !== "visible") || !!props.contain?.value.paint;
     if (props.height && contentH > props.height.value - insY + 0.5 && clipsY) box.overflowY = contentH - (props.height.value - insY);
     else if (props.height && contentH > props.height.value - insY + 0.5) {
       box.overflowY = contentH - (props.height.value - insY);

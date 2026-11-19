@@ -5,6 +5,7 @@ import {
   DEFAULT_PREFIX,
   LENGTH_CATEGORIES,
   OVERFLOWS,
+  parseContain,
   PROP_ORDER,
   ROOT_FONT_PX,
   TOKEN_CATEGORIES,
@@ -661,6 +662,13 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const fix = (a: Overflow, other: Overflow): Overflow => (scrolling(other) && !scrolling(a) ? (a === "visible" ? "auto" : "hidden") : a);
           [x, y] = [fix(x, y), fix(y, x)];
           out.overflow = { x, y, raw: x === y ? x : `x ${x}, y ${y}`, path: p.join(".") };
+          break;
+        }
+        case "contain": {
+          // contain: "layout paint style", content, strict, size, inline-size; none in an override.
+          const c = typeof v === "string" ? parseContain(v) : undefined;
+          if (!c) err(p, "invalid contain", { expected: "none, content, strict, or any of size (or inline-size), layout, style and paint, e.g. \"layout paint\"", got: v });
+          else out.contain = { ...c, raw: (v as string).trim().toLowerCase().replace(/\s+/g, " "), path: p.join(".") };
           break;
         }
         case "textAlign":

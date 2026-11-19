@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: containment, fluid percentages and static positions</title>
+    <link rel="stylesheet" href="contained.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel">
+        <div class="panel-inner">
+          <h2 class="panel-title">Seasonal planting guide</h2>
+          <p class="panel-text">Which vegetables to sow each month, with the depth, spacing and days until harvest for each one.</p>
+        </div>
+        <span class="panel-badge">Spring</span>
+      </section>
+      <section class="notes">
+        <p class="note">Content containment keeps the margins of its paragraphs inside.</p>
+        <div class="note-pin"></div>
+      </section>
+      <div class="loose">
+        <p class="note">A plain block lets them collapse through its edges.</p>
+      </div>
+      <div class="sized">
+        <p class="note">Size containment: as tall as its padding, whatever it holds.</p>
+      </div>
+      <div class="row">
+        <div class="row-item">
+          <p class="row-text">Narrow as if empty</p>
+        </div>
+        <p class="row-side">Beside it</p>
+      </div>
+      <aside class="dock">
+        <p class="dock-text">A layout-contained box is the containing block of its fixed child.</p>
+        <div class="dock-bar"></div>
+      </aside>
+      <div class="painted">
+        <p class="note">Style and paint containment.</p>
+      </div>
+    </main>
+  </body>
+</html>

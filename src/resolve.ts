@@ -4,6 +4,7 @@ import {
   tokenKey,
   type Breakpoint,
   type Component,
+  type Contain,
   type Justify,
   type MarginSide,
   type Model,
@@ -92,6 +93,8 @@ export interface ResolvedProps {
   grow?: Resolved<{ factor: number; basis: "zero" | "content" }>;
   aspect?: Resolved<number>;
   overflow?: Resolved<{ x: Overflow; y: Overflow }>;
+  /** Containment (see Props.contain). */
+  contain?: Resolved<Contain>;
   /** Positioning and its offsets (px, or a percentage of the containing block). */
   position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct; height?: number | Pct }>;
   fit?: Resolved<"cover" | "contain">;
@@ -258,6 +261,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "overflow": {
         const o = p.overflow!;
         out.overflow = { value: { x: o.x, y: o.y }, display: o.raw, steps: [...pre, src(o.path)] };
+        break;
+      }
+      case "contain": {
+        const c = p.contain!;
+        if (c.layout || c.paint || c.size) out.contain = { value: { layout: c.layout, paint: c.paint, ...(c.size && { size: c.size }) }, display: c.raw, steps: [...pre, src(c.path)] };
         break;
       }
       case "textAlign": {

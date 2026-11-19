@@ -18,6 +18,17 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- `contain` is laid out. `layout` and `paint` (and `content`, `strict`) make the box an independent
+  formatting context, so its children's margins stay inside, and the containing block of its
+  absolute and fixed descendants; `paint` also clips what overflows it. `size` sizes the box as if
+  it were empty (as tall as its padding and border, its intrinsic widths too), `inline-size` only
+  its widths; `style` moves nothing. In a source: `contain: "layout paint"`. `content-visibility:
+  auto` is that containment, its height `≈` (off screen its content is skipped). `will-change` and
+  `isolation` change nothing, except that `will-change: transform` (like a transform or filter)
+  makes an ancestor the containing block of a fixed box, which stays `≈`.
+
 ## 0.1.12 (2026-11-19)
 
 - The window height is an input like the widths: `--height <px>` (MCP `height`), 800 by

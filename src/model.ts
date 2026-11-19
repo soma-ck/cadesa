@@ -183,9 +183,47 @@ export interface Props {
    * absolute box's height as a percentage size token of its containing block's height.
    */
   position?: { type: PositionType; top?: Ref; right?: Ref; bottom?: Ref; left?: Ref; height?: Ref; path: string };
+  /**
+   * Containment (CSS contain). layout or paint: an independent formatting context (margins don't
+   * collapse through it) and the containing block of its absolute and fixed descendants; paint also
+   * clips what overflows it. size: sized as if empty on both axes (its height is its padding and
+   * border unless set, its intrinsic widths too); inline: on the inline axis only (its intrinsic
+   * widths). style never moves a box. none: in a breakpoint override, no containment.
+   */
+  contain?: Contain & { raw: string; path: string };
   /** Removed by this override (`maxWidth: none`), with the YAML path. */
   unset?: Partial<Record<Unsettable, string>>;
 }
+
+export interface Contain {
+  layout: boolean;
+  paint: boolean;
+  size?: "both" | "inline";
+}
+
+/** A CSS contain value (none, strict, content, or size / inline-size / layout / style / paint); undefined when invalid. */
+export function parseContain(v: string): Contain | undefined {
+  const words = v.trim().toLowerCase().split(/\s+/);
+  if (words.length === 1 && words[0] === "none") return { layout: false, paint: false };
+  if (words.length === 1 && words[0] === "strict") return { layout: true, paint: true, size: "both" };
+  if (words.length === 1 && words[0] === "content") return { layout: true, paint: true };
+  const out: Contain = { layout: false, paint: false };
+  const seen = new Set<string>();
+  for (const w of words) {
+    if (seen.has(w) || !["size", "inline-size", "layout", "style", "paint"].includes(w)) return undefined;
+    seen.add(w);
+    if (w === "layout") out.layout = true;
+    if (w === "paint") out.paint = true;
+    if (w === "size" || w === "inline-size") {
+      if (out.size) return undefined;
+      out.size = w === "size" ? "both" : "inline";
+    }
+  }
+  return out;
+}
+
+/** Layout or paint containment: an independent formatting context and the containing block of absolute and fixed descendants. */
+export const containsLayout = (c?: Contain) => !!c && (c.layout || c.paint);
 
 export type PositionType = "relative" | "absolute" | "fixed" | "sticky";
 export type Overflow = "visible" | "hidden" | "clip" | "auto" | "scroll";
@@ -214,6 +252,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "grow",
   "overflow",
   "position",
+  "contain",
 ];
 
 export interface Slot {

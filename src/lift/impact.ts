@@ -12,7 +12,7 @@
  *   paint              → no geometry; contrast checks on B (and its text subtree) become inconclusive.
  *   state (:hover)     → nothing in the default state.
  */
-import { walk, type Box, type Layout } from "../engine/layout.js";
+import { containingBlock, walk, type Box, type Layout } from "../engine/layout.js";
 import { insets } from "../resolve.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import type { LiftResult, Unlifted } from "./lift.js";
@@ -215,7 +215,7 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
     if (!outOfFlow(b) || marks.has(b)) continue;
     let cb: Box | undefined;
     for (let a = parentOf.get(b); a; a = parentOf.get(a))
-      if (a.props.position) {
+      if (containingBlock(a, b.props.position!.value.type)) {
         cb = a;
         break;
       }

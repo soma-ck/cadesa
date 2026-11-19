@@ -13,6 +13,7 @@ import { parseCss, specificity, splitSelectors, type CssRule, type Decl, type Pa
 import { classify } from "./selectors.js";
 import { validate } from "../validate.js";
 import { lengthExpr } from "../fluid.js";
+import { parseContain } from "../model.js";
 
 /**
  * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
@@ -830,6 +831,14 @@ export function liftElements(input: LiftInput): LiftResult {
       if (!ok(x) || !ok(y)) note(e, s, (!ok(x) ? ox : oy)!, "overflow must be visible, hidden, clip, auto or scroll", "geometry");
       else if (x !== "visible" || y !== "visible") out.overflow = x === y ? x : { x, y };
     }
+    // contain: layout and paint make an independent formatting context, size sizes the box as if empty.
+    const ct = take("contain");
+    if (ct) {
+      const raw = resolveVar(ct.value)?.raw.trim().toLowerCase().replace(/\s+/g, " ");
+      const c = raw ? parseContain(raw) : undefined;
+      if (!c) note(e, s, ct, "contain must be none, content, strict, or size, inline-size, layout, style and paint", "geometry");
+      else if (c.layout || c.paint || c.size) out.contain = raw;
+    }
     const bi = take("background-image");
     if (bi && bi.value.trim() !== "none") {
       const r = resolveVar(bi.value);
@@ -1059,6 +1068,7 @@ export function liftElements(input: LiftInput): LiftResult {
         margin: () => lengthToken("space", "0px"),
         radius: () => lengthToken("radius", "0px"),
         overflow: () => "visible",
+        contain: () => "none",
         textAlign: () => "start",
       };
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {

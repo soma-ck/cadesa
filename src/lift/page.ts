@@ -24,6 +24,7 @@ import { borderPx, insets } from "../resolve.js";
 import { lineHeightPx } from "../engine/layout.js";
 import { metricsFor } from "../engine/text.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
+import { containsLayout, parseContain, type Contain } from "../model.js";
 import { firstFamily } from "../fonts.js";
 import type { Decl } from "./css.js";
 import { linesOf } from "./impact.js";
@@ -761,6 +762,50 @@ export abstract class PageLifter {
     return v === "absolute" || v === "fixed";
   }
 
+  /**
+   * The containment that applies to the element (contain, and content-visibility: auto's layout,
+   * paint and style), or undefined for none. Nothing applies to a non-atomic inline box or a table part.
+   */
+  containOf(el: El, si: number): Contain | undefined {
+    const own = el.own[si];
+    if (!own || (!own.has("contain") && !own.has("content-visibility"))) return undefined;
+    if (/^(inline|contents|none)$|^table-/.test(this.displayOf(el, si))) return undefined;
+    const r = (p: string) => {
+      const o = own.get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    const v = r("contain");
+    const c: Contain = { ...((v && parseContain(v)) || { layout: false, paint: false }) };
+    if (r("content-visibility") === "auto") c.layout = c.paint = true;
+    return c.layout || c.paint || c.size ? c : undefined;
+  }
+
+  /**
+   * For an absolutely positioned or fixed box: the declaration on an ancestor that makes it its
+   * containing block by a transform, filter or will-change (which Cadesa doesn't model), when that
+   * ancestor comes before any positioned (absolute only) or contained one.
+   */
+  transformedContainer(el: El, si: number): string | undefined {
+    const fixed = this.resolve(el, si, el.own[si].get("position")?.value ?? "") === "fixed";
+    for (let a = el.parent; a; a = a.parent) {
+      const own = a.own[si];
+      if (!own) continue;
+      const r = (p: string) => {
+        const o = own.get(p);
+        return o ? this.resolve(a, si, o.value) : undefined;
+      };
+      // The same box positioned (for an absolute box) or contained: modelled.
+      const c = this.containOf(a, si);
+      if (c && (c.layout || c.paint)) return undefined;
+      if (!fixed && !/^(static)?$/.test(r("position") ?? "")) return undefined;
+      const tf = ["transform", "translate", "rotate", "scale", "perspective", "filter", "backdrop-filter"].find((p) => !/^(none)?$/.test(r(p) ?? ""));
+      if (tf) return `${own.get(tf)!.utility} (${tf}: ${r(tf)})`;
+      const wc = r("will-change");
+      if (wc && /\b(transform|translate|rotate|scale|perspective|filter|backdrop-filter)\b/.test(wc)) return `${own.get("will-change")!.utility} (will-change: ${wc})`;
+    }
+    return undefined;
+  }
+
   /** The display the cascade gives the element (the browser's default for its tag when nothing sets it). */
   ownDisplay(el: El, si: number): string {
     const d = el.own[si].get("display");
@@ -852,7 +897,10 @@ export abstract class PageLifter {
         if (el.tag === "button" || !(h >= 0)) return undefined;
         hm = mt + (res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb) + mb;
       }
-      const clips = !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "");
+      // Clipping its overflow, or layout containment, leaves it no baseline: its bottom margin edge is.
+      const contained = this.containOf(el, si);
+      if ((contained?.paint && !contained.layout) || contained?.size) return undefined;
+      const clips = !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "") || !!contained?.layout;
       a = clips ? hm : mt + bt + pt + own.sa;
     }
     const va = res(el, "vertical-align") ?? "baseline";
@@ -919,7 +967,7 @@ export abstract class PageLifter {
       const o = k.own[si].get(p);
       return o ? this.resolve(k, si, o.value) : undefined;
     };
-    if (!/^(baseline)?$/.test(res(el, "vertical-align") ?? "") || !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "")) return false;
+    if (!/^(baseline)?$/.test(res(el, "vertical-align") ?? "") || !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "") || this.containOf(el, si)) return false;
     if (parent !== this.bodyEl && !/^(block|flow-root|list-item)$/.test(this.displayOf(parent, si))) return false;
     const t = this.textOf(el, si);
     const pt = this.textOf(parent, si);
@@ -963,7 +1011,7 @@ export abstract class PageLifter {
     const prev = (i < 0 ? sibs : sibs.slice(0, i)).at(-1);
     const next = i < 0 ? undefined : sibs[i];
     const parentDisplay = parent.parent ? this.displayOf(parent.parent, si) : "block";
-    const ownContext = /^(inline-block|flow-root)$/.test(this.displayOf(parent, si)) || !/^(visible|clip)?$/.test(res(parent, "overflow-x") ?? "");
+    const ownContext = /^(inline-block|flow-root)$/.test(this.displayOf(parent, si)) || !/^(visible|clip)?$/.test(res(parent, "overflow-x") ?? "") || containsLayout(this.containOf(parent, si));
     const contained = (side: "top" | "bottom") => parent !== this.bodyEl && (edge(parent, side) || ownContext || /flex|grid/.test(parentDisplay));
     for (const side of ["top", "bottom"] as const) {
       const m = px(el, `margin-${side}`);
@@ -1722,6 +1770,27 @@ export abstract class PageLifter {
           const base = o ? (lengthPx(this.resolveBox(el, si, o.value) ?? "0", this.textOf(el, si).size) ?? 0) : 0;
           decl(`padding-${side}`, `${fmtNum(base + lp[side])}px`, `${o ? `${o.utility} and ` : ""}the line box around its inline-block`);
         }
+
+      // Containment: layout and paint make an independent formatting context (and the containing
+      // block of positioned descendants), size sizes the box as if empty, style moves nothing. None
+      // of it applies to a non-atomic inline box. content-visibility: auto is layout, paint and style
+      // containment, plus size containment while the box is off screen.
+      const contain = this.containOf(el, si);
+      for (const p of ["contain", "content-visibility", "contain-intrinsic-size", "contain-intrinsic-width", "contain-intrinsic-height", "contain-intrinsic-block-size", "contain-intrinsic-inline-size"]) handled.add(p);
+      const cv = res("content-visibility");
+      if (cv === "auto")
+        this.note(el, si, { decl: `${own.get("content-visibility")!.utility} (content-visibility: auto)`, reason: "content-visibility: auto skips the content of a box off screen, which is then as tall as its contain-intrinsic-size; which boxes are off screen isn't modelled", kind: "height" });
+      else if (cv === "hidden") this.note(el, si, { decl: `${own.get("content-visibility")!.utility} (content-visibility: hidden)`, reason: "content-visibility: hidden skips the box's content, which isn't modelled", kind: "geometry" });
+      if (contain) {
+        const words = [contain.size === "both" ? "size" : contain.size === "inline" ? "inline-size" : "", contain.layout ? "layout" : "", contain.paint ? "paint" : ""].filter(Boolean).join(" ");
+        decl("contain", words, (own.get("contain") ?? own.get("content-visibility"))!.utility);
+        const cis = contain.size ? [...handled].find((p) => p.startsWith("contain-intrinsic") && own.has(p) && !/^none$/.test(res(p) ?? "none")) : undefined;
+        if (cis) this.note(el, si, { decl: `${own.get(cis)!.utility} (${cis}: ${res(cis)})`, reason: "contain-intrinsic-size sizes a size-contained box, which isn't modelled", kind: "geometry" });
+      }
+      // A transform, filter or will-change on an ancestor makes it the containing block of this
+      // positioned box, which Cadesa places by its positioned (or contained) ancestor or the window.
+      const trap = abs ? this.transformedContainer(el, si) : undefined;
+      if (trap) this.note(el, si, { decl: trap, reason: "a transform, filter or will-change on an ancestor makes it this box's containing block, which isn't modelled", kind: "geometry" });
       // Everything else the element sets on itself.
       for (const [p, o] of own) {
         if (handled.has(p) || skipProp(p)) continue;
@@ -1936,7 +2005,8 @@ export abstract class PageLifter {
     const allSame = kids.every((k) => same(this.textOf(k, si)));
     const tops: number[] = [];
     for (const k of kids) {
-      if (k.roles[si] !== "text") return undefined;
+      // (Layout containment leaves an item no baseline.)
+      if (k.roles[si] !== "text" || this.containOf(k, si)) return undefined;
       const strut = allSame ? undefined : this.strutOf(k, si);
       if (!allSame && !strut) return undefined;
       const own = k.own[si];
