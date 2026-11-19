@@ -447,6 +447,8 @@ export interface Contribution {
   maxContent: number;
   /** Its minimum contribution (the automatic minimum: min-content, or 0 for a scroll container; or its min size). */
   minimum: number;
+  /** Its minimum contribution when it spans several tracks, a flexible one among them: no automatic minimum (its padding, border and margins). */
+  minimumSpanningFlex?: number;
 }
 
 const LU = (px: number) => Math.round(px * 64);
@@ -561,7 +563,9 @@ export function sizeTracks(tracks: TrackSize[], items: Contribution[], gap: numb
     const span = Array.from({ length: it.b - it.a }, (_, k) => it.a + k);
     const flex = span.filter((i) => flexible[i] && intrinsicMin(ts[i]));
     if (!flex.length) continue;
-    let extra = LU(minOf(it)) - span.reduce((s, i) => s + base[i], 0) - gapsIn(it);
+    // (An item spanning more than one track, a flexible one among them, has no automatic minimum: only its padding and border.)
+    const min = it.b - it.a > 1 ? (it.minimumSpanningFlex ?? it.minimum) : it.minimum;
+    let extra = LU(min) - span.reduce((s, i) => s + base[i], 0) - gapsIn(it);
     if (extra <= 0) continue;
     const sum = flex.reduce((s, i) => s + (ts[i].max as { fr: number }).fr, 0);
     if (flex.length === 1) {

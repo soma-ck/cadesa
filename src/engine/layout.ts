@@ -906,7 +906,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const mx = m.left + m.right;
     // A scroll container's automatic minimum width is 0 (its padding and border remain).
     const minimum = scrolls(kp.overflow?.value) ? ins.left + ins.right : it.min;
-    return { a, b, minContent: it.min + mx, maxContent: it.max + mx, minimum: minimum + mx, ...(it.why && { why: it.why, minOnly: true }) };
+    return { a, b, minContent: it.min + mx, maxContent: it.max + mx, minimum: minimum + mx, minimumSpanningFlex: ins.left + ins.right + mx, ...(it.why && { why: it.why, minOnly: true }) };
   }
 
   /** A grid's own min-content and max-content widths (its columns sized under that constraint). */
@@ -971,6 +971,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     });
     const colW = sizeTracks(colTracks, colItems, colGap, innerW, /^(normal|stretch)$/.test(spec.justifyContent));
     const colX = trackStarts(colW, colGap, innerW, spec.justifyContent);
+    // Columns that overflow the grid while an item spans a flexible one: how Chromium shares them out then isn't pinned down.
+    const colSum = colW.reduce((s, x) => s + x, 0) + colGap * Math.max(0, colW.length - 1);
+    if (colSum > innerW + EPS && colItems.some((it) => it.b - it.a > 1 && colTracks.slice(it.a, it.b).some((t) => typeof t.max === "object" && "fr" in t.max))) notes.push("grid columns wider than the grid, with an item spanning a flexible one: not modelled");
     const span = (x: number[], w: number[], a: number, b: number) => x[b - 1] + w[b - 1] - x[a];
 
     // Items at their area's width (stretched, or fit-content when aligned or with auto inline margins).
@@ -1860,6 +1863,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       if (parent) flag(parent, why, !!grand && !inLine(grand));
     }
   }
+  // A transform maps everything inside its box about an origin that depends on the box's size (and
+  // percentages of it): a transformed box that isn't guaranteed takes its whole subtree with it.
+  for (const b of walk(boxes)) if (b.props.transform && flagged.has(b)) flag(b, flagged.get(b)!, true);
   // An out-of-flow box moves with its containing block (and its parent, at its static position).
   for (let changed = true; changed; ) {
     changed = false;
