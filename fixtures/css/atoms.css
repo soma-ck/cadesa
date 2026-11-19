@@ -203,3 +203,37 @@ p {
   font-size: 26px;
   line-height: 2;
 }
+
+/* Inline-blocks holding blocks of text on a line: as wide as their widest block, their baseline their last line's. */
+.crate {
+  display: inline-block;
+  border: 1px solid #b8c0c8;
+  padding: 3px;
+}
+
+.crate--mid {
+  vertical-align: middle;
+}
+
+.crate__head {
+  display: block;
+  padding: 2px 6px;
+  margin: 0 0 4px;
+  background: #24303c;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.crate__body {
+  display: block;
+  margin: 6px 2px 0;
+  padding: 0 4px 3px;
+  border-bottom: 2px solid #8899aa;
+  font-size: 15px;
+  line-height: 1.4;
+}
+
+.crate__note {
+  display: block;
+  font-size: 11px;
+}

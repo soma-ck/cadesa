@@ -118,7 +118,22 @@ export function genCssCase(seed: number): CssCase {
       if (r.chance(0.3)) d.push(`line-height: ${r.pick(["1", "1.25", "20px", "normal"])}`);
       if (r.chance(0.2)) d.push(`height: ${r.int(16, 40)}px`);
       if (r.chance(0.4)) d.push(`vertical-align: ${r.pick(["middle", "top", "bottom", "-3px", "text-top"])}`);
+      if (r.chance(0.15)) d.push(`width: ${r.int(60, 220)}px`);
       const lines = Array.from({ length: r.int(1, 3) }, () => (r.chance(0.3) ? `${words(r, 1, 2)} ${run(1)}` : words(r, 1, 3)));
+      // Or blocks of such lines, with edges and margins of their own.
+      if (r.chance(0.35)) {
+        const block = () => {
+          const b = ["display: block"];
+          if (r.chance(0.5)) b.push(`padding: ${r.int(0, 6)}px ${r.int(0, 8)}px`);
+          if (r.chance(0.4)) b.push(`margin: ${r.int(-2, 8)}px ${r.int(0, 6)}px ${r.int(-2, 8)}px`);
+          if (r.chance(0.3)) b.push(`border-bottom: ${r.int(1, 3)}px solid #889`);
+          if (r.chance(0.4)) b.push(`font-size: ${r.pick(["11px", "12px", "15px", "20px"])}`);
+          if (r.chance(0.3)) b.push(`line-height: ${r.pick(["1", "1.4", "18px", "normal"])}`);
+          const inner = Array.from({ length: r.int(1, 2) }, () => (r.chance(0.3) ? `${words(r, 1, 2)} ${run(1)}` : words(r, 1, 3)));
+          return `<span${attr(cls(b))}>${inner.join("<br>")}</span>`;
+        };
+        return `<span${attr(cls(d))}>${Array.from({ length: r.int(1, 3) }, block).join("")}</span>`;
+      }
       return `<span${attr(cls(d))}>${lines.join("<br>")}</span>`;
     }
     const decls = ["display: inline-block", `width: ${r.int(4, 40)}px`, `height: ${r.int(4, 48)}px`, "background: #9ab"];

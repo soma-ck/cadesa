@@ -50,6 +50,14 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   (`steps(n, start)`), no duration, and keyframes that set a layout property (`width`, `top`,
   `margin`...); a box positioned inside an element whose transform is animated is `≈` too (that
   element is its containing block).
+- An inline-block holding blocks on a line of text is laid out: blocks of inline text (runs in other
+  fonts, sizes and weights, `<br>`s) with padding, borders and margins of their own. It is as wide as
+  its widest block (or its own `width`, where its text wraps), as tall as its blocks with the margins
+  between them collapsed (it keeps them inside), and sits on its last line's baseline. An inline-block
+  of set width holding lines of text is laid out the same way. A scroll container (`overflow` other
+  than `visible` or `clip`) sits on its bottom margin edge. Fixed: an inline-block with text beside
+  an inline element in another font or size (`a <b>bold</b> word` in it) was refused, and its runs in
+  another size were measured at its own size where they set its width.
 
 ## 0.1.18 (2026-11-19)
 

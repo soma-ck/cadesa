@@ -20,7 +20,7 @@ import { parse } from "parse5";
 import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
 import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type Generated, type InlineInfo, type P5Node, type RunStyle } from "../fixture.js";
 import { ABSOLUTE, lengthExpr, MATHY } from "../fluid.js";
-import { borderPx, insets } from "../resolve.js";
+import { borderPx, insets, scrollbarPx } from "../resolve.js";
 import { lineHeightPx, lineHeightRatio } from "../engine/layout.js";
 import { layoutText, metricsFor } from "../engine/text.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
@@ -2181,7 +2181,10 @@ export abstract class PageLifter {
     let text: string;
     /** Lines of inline content (runs in other fonts and sizes, <br>s): measured as a text box of its own. */
     let lines: { width: number; h: number; base: number }[] | undefined;
-    if (!k.pseudo && (lines = this.atomicLines(k, si))) text = "x";
+    // A width of its own (px): its content wraps there.
+    const fixedW = k.pseudo ? Infinity : this.contentWidthOf(k, si);
+    if (fixedW === undefined) return undefined;
+    if (!k.pseudo && (lines = this.atomicLines(k, si, false, fixedW))) text = "x";
     else if (k.pseudo) {
       const c = k.content?.[si];
       if (typeof c !== "string") return undefined;
@@ -2210,7 +2213,7 @@ export abstract class PageLifter {
       const o = own.get(p);
       return o ? this.resolveBox(k, si, o.value) : undefined;
     };
-    if (["width", "min-width", "max-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
+    if (["width", "min-width", "max-width", "min-height", "max-height"].some((p) => !(p === "width" && lines && fixedW !== Infinity) && !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
     const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
     // A height of its own (a chip as tall as its line height): its line stays at the top of its content box.
     const hset = /^(auto)?$/.test(res("height") ?? "") ? undefined : lengthPx(res("height")!, t.size);
@@ -2219,7 +2222,7 @@ export abstract class PageLifter {
     const [ml, mr, mt, mb, pl, pr, pt, pb] = ["margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].map(px);
     if (![ml, mr, mt, mb, pl, pr, pt, pb].every(isFinite)) return undefined;
     // Its width: its text's max-content width (rounded up to a layout unit) and its edges.
-    const textW = lines ? Math.max(...lines.map((l) => l.width)) : (m.measure(text, t.size, t.weight, t.letterSpacing !== 0) ?? NaN) + [...text].length * t.letterSpacing;
+    const textW = lines ? (fixedW !== Infinity ? fixedW : Math.max(...lines.map((l) => l.width))) : (m.measure(text, t.size, t.weight, t.letterSpacing !== 0) ?? NaN) + [...text].length * t.letterSpacing;
     if (!isFinite(textW)) return undefined;
     const width = ml + bdr("left") + pl + Math.ceil(textW * 64 - 1e-6) / 64 + pr + bdr("right") + mr;
     // Its own line: its line height, its baseline where its font's strut puts it. Several lines:
@@ -2233,7 +2236,11 @@ export abstract class PageLifter {
     const borderBox = this.resolve(k, si, own.get("box-sizing")?.value ?? "content-box") === "border-box";
     const bh = hset === undefined ? lh + insY : borderBox ? Math.max(lu(hset), insY) : lu(hset) + insY;
     const hm = mt + bh + mb;
-    const a0 = mt + bdr("top") + pt + sa;
+    // A scroll container's (overflow other than visible or clip) baseline is its bottom margin edge.
+    // (Where scrollbars take space, one may narrow its content: not modelled here.)
+    const scrolls = ["overflow-x", "overflow-y"].some((p) => /^(hidden|auto|scroll)$/.test(res(p) ?? "visible"));
+    if (scrolls && scrollbarPx()) return undefined;
+    const a0 = scrolls ? hm : mt + bdr("top") + pt + sa;
     let a = a0;
     const strut = this.strutOf(k.parent, si);
     if (!strut) return undefined;
@@ -2251,23 +2258,32 @@ export abstract class PageLifter {
 
   /**
    * An inline-block's content as lines of inline text (runs in other fonts, sizes and weights, and
-   * <br>s; no blocks or atomic inlines in it), each laid out on one line at its max-content width:
-   * its width (px, unrounded), height and baseline from its top (its strut united with its runs'
-   * extents). undefined when its content isn't that, or isn't all measured. Its width must fit its
-   * container's (dynamic() flags the widths where it doesn't: it would wrap there).
+   * <br>s; no atomic inlines in it), each laid out on one line at its max-content width: its width
+   * (px, unrounded), height and baseline from its top (its strut united with its runs' extents).
+   * Or blocks of such lines: each block's lines, its padding and border above its first line and
+   * below its last, the margins between blocks collapsed (the inline-block keeps them inside), and
+   * its horizontal margins, borders and padding in each line's width; the baseline is the last
+   * line's. undefined when its content isn't that, or isn't all measured. Its width must fit its
+   * container's (dynamic() flags the widths where it doesn't: it would wrap there). With `plain`,
+   * text with no elements in it too (a block's). With `avail` (a width of its own), its text wraps
+   * there, as many lines as it takes.
    */
-  atomicLines(k: El, si: number): { width: number; h: number; base: number }[] | undefined {
+  atomicLines(k: El, si: number, plain = false, avail = Infinity): { width: number; h: number; base: number }[] | undefined {
     const t = this.textOf(k, si);
     const ws = t.inherited.get("white-space")?.value ?? "normal";
     if (!/^(normal|nowrap)$/.test(ws) || !/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "") || t.letterSpacing) return undefined;
-    if (!k.children.length) return undefined;
+    if (!k.children.length && !plain) return undefined;
+    const flowKids = k.children.filter((c) => this.displayOf(c, si) !== "none" && !this.outOfFlow(c, si));
+    if (flowKids.length && !k.ownText && flowKids.every((c) => !c.pseudo && c.anonymous === undefined && this.displayOf(c, si) === "block")) return this.blockLines(flowKids, si, avail);
     const m = metricsFor(t.family.value, t.italic);
     const strut = this.strutOf(k, si);
     if (!m || !strut) return undefined;
     // Every descendant an inline box whose text is measured (runStyle), with nothing else of its own that moves text.
     const ok = (d: El): boolean => {
       if (d.tag === "br") return true;
-      if (d.pseudo || d.anonymous !== undefined || this.outOfFlow(d, si)) return false;
+      // Text beside elements (an anonymous text child) is part of the runs.
+      if (d.anonymous !== undefined) return d.tag === "#text" && !d.pseudo;
+      if (d.pseudo || this.outOfFlow(d, si)) return false;
       if (this.displayOf(d, si) === "none") return true;
       if (this.displayOf(d, si) !== "inline" || REPLACED_BLOCK.has(d.tag) || CONTROL.has(d.tag)) return false;
       const dt = this.textOf(d, si);
@@ -2282,7 +2298,8 @@ export abstract class PageLifter {
     };
     if (!k.children.every(ok)) return undefined;
     const byNode = new Map<P5, El>();
-    const add = (e: El) => (byNode.set(e.node, e), e.children.forEach(add));
+    // (Anonymous text children are the text nodes themselves: their text is in the runs.)
+    const add = (e: El) => (e.anonymous === undefined && byNode.set(e.node, e), e.children.forEach(add));
     add(k);
     const { runs, runMeta } = textAndRuns(k.node as unknown as P5Node, (x) => { const e = byNode.get(x as unknown as P5); return !!e && this.displayOf(e, si) === "none"; }, this.inlineInfo(k, si, byNode));
     if (!runs.length) return undefined;
@@ -2291,11 +2308,62 @@ export abstract class PageLifter {
       const spans = runMeta[i]?.spans;
       const shown = runs[i].replaceAll("\uFFFC", "");
       if (m.unsupported(shown).length) return undefined;
-      const l = layoutText(m, runs[i], t.size, t.weight, Infinity, { hangKern: false, ...(spans && { spans }), strut: { above: strut.sa, below: strut.sd } });
-      if (l.approximate || l.lines.length !== 1) return undefined;
-      const line = l.lines[0];
-      out.push({ width: l.maxContent, h: line.h ?? strut.sa + strut.sd, base: line.base ?? strut.sa });
+      // (Its inline elements' edges too: text in another font or size is measured item by item.)
+      const items = runMeta[i]?.items;
+      const l = layoutText(m, runs[i], t.size, t.weight, avail, { hangKern: false, ...(spans && { spans }), ...(items?.length && { items }), strut: { above: strut.sa, below: strut.sd } });
+      if (l.approximate || (l.lines.length !== 1 && avail === Infinity)) return undefined;
+      for (const line of l.lines) out.push({ width: avail === Infinity ? l.maxContent : line.width, h: line.h ?? strut.sa + strut.sd, base: line.base ?? strut.sa });
     }
+    return out;
+  }
+
+  /** An inline-block's content width from a width of its own in px: Infinity for auto, undefined for one not resolved here (a percentage). */
+  contentWidthOf(k: El, si: number): number | undefined {
+    const own = k.own[si];
+    const size = this.textOf(k, si).size;
+    const r = (p: string) => {
+      const o = own.get(p);
+      return o ? this.resolveBox(k, si, o.value) : undefined;
+    };
+    const w = r("width");
+    if (w === undefined || /^auto$/.test(w)) return Infinity;
+    const px = (v: string | undefined) => (v === undefined ? 0 : (lengthPx(v, size) ?? NaN));
+    const width = px(w);
+    if (!isFinite(width)) return undefined;
+    if (this.resolve(k, si, own.get("box-sizing")?.value ?? "content-box") !== "border-box") return width;
+    const bdr = (side: string) => (/^(none|hidden)$/.test(this.resolve(k, si, own.get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(r(`border-${side}-width`))));
+    const inner = width - px(r("padding-left")) - px(r("padding-right")) - bdr("left") - bdr("right");
+    return isFinite(inner) ? Math.max(0, inner) : undefined;
+  }
+
+  /** Blocks of lines of inline text in an inline-block (see atomicLines): its lines, with the blocks' edges and margins. */
+  blockLines(blocks: El[], si: number, avail = Infinity): { width: number; h: number; base: number }[] | undefined {
+    const out: { width: number; h: number; base: number }[] = [];
+    /** Two adjoining vertical margins as one: the largest positive one less the most negative one. */
+    const collapse = (a: number, b: number) => Math.max(0, a, b) + Math.min(0, a, b);
+    let pending = 0;
+    for (const [j, c] of blocks.entries()) {
+      const own = c.own[si];
+      // Only edges, text styles and colors of its own: nothing else that sizes or moves it.
+      for (const p of own.keys())
+        if (!p.startsWith("--") && !/^(color|background(-color|-image)?|font-(size|family|weight|style)|line-height|display|box-sizing|text-align|text-decoration.*|cursor|opacity|(margin|padding)-(top|right|bottom|left)|border-(top|right|bottom|left)-(width|style|color)|border(-(top|bottom)-(left|right))?-radius)$/.test(p)) return undefined;
+      const size = this.textOf(c, si).size;
+      const px = (p: string) => {
+        const v = own.get(p);
+        return v ? lengthPx(this.resolve(c, si, v.value) ?? "", size) ?? NaN : 0;
+      };
+      const bdr = (side: string) => (/^(none|hidden)$/.test(this.resolve(c, si, own.get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+      const [ml, mr, mt, mb, pl, pr, pt, pb] = ["margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].map(px);
+      if (![ml, mr, mt, mb, pl, pr, pt, pb].every(isFinite)) return undefined;
+      const across = ml + bdr("left") + pl + pr + bdr("right") + mr;
+      const lines = this.atomicLines(c, si, true, avail === Infinity ? Infinity : Math.max(0, avail - across));
+      if (!lines?.length) return undefined;
+      const above = (j ? collapse(pending, mt) : mt) + bdr("top") + pt;
+      lines.forEach((l, i) => out.push({ width: l.width + across, h: l.h + (i === 0 ? above : 0), base: l.base + (i === 0 ? above : 0) }));
+      out[out.length - 1].h += pb + bdr("bottom");
+      pending = mb;
+    }
+    out[out.length - 1].h += pending;
     return out;
   }
 
