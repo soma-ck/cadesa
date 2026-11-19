@@ -1668,7 +1668,8 @@ export abstract class PageLifter {
           const sized = ["height", "min-height"].some((p) => own.has(p) && !/^(auto|0(px)?)$/.test(res(p) ?? "auto"));
           const single = !cols || cols === "none" || (n && n[1] === "1");
           // (A percentage row gap is a grid's own: of its final height.)
-          if (single && plainItems && !sized && !/%$/.test(rowGap ?? "")) {
+          // (Nor with an absolutely positioned child: its static position is the grid's padding box corner.)
+          if (single && plainItems && !sized && !/%$/.test(rowGap ?? "") && !el.children.some((k) => this.positioned(k, si))) {
             // One column: a stack with the row gap.
             decl("display", "flex", own.get("display")!.utility);
             decl("flex-direction", "column", own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);

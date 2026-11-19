@@ -40,6 +40,11 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   container with a set height takes its percentage row gap of it. In a source: a grid's `rowGap`
   may name a percentage size token. A grid whose height may be stretched, or with a min-height or
   max-height (and more than one row), stays `≈`.
+- An absolutely positioned box without offsets is placed at its static position after in-flow
+  siblings too: in block flow below the boxes before it and the margins pending there (only those
+  before it: what follows can't collapse with it), then its own margin; in a flexbox at the start of
+  its content box, as if it were the only item; in a grid at its padding box corner. After empty
+  blocks whose margins collapse through the parent, or aligned other than at the start, it stays `≈`.
 - A top or bottom `auto` margin is 0 in block flow and in a column flexbox with no free space. A
   transform that moves nothing (`translateZ(0)`, `scale(1)`) is no longer `≈`.
 

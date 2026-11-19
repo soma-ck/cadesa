@@ -267,7 +267,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     return t === "absolute" || t === "fixed";
   };
   /** Out-of-flow boxes waiting for their containing block's final geometry, parents first. */
-  const absQueue: { k: { node: FixtureNode; comp: Component; slot: string | undefined }; parent: Box | undefined; first: boolean; pattern: string }[] = [];
+  const absQueue: {
+    k: { node: FixtureNode; comp: Component; slot: string | undefined };
+    parent: Box | undefined;
+    /** Its static position from its parent's content box corner (before its own margins), or undefined when it isn't known. */
+    at?: { x: number; y: number };
+  }[] = [];
   /** Each placed out-of-flow box: its containing block (undefined: the window) and whether it sits at its static position. */
   const absInfo = new Map<Box, { cb?: Box; parent?: Box; staticPos: boolean }>();
   /** The window's height: fixed boxes, and absolute ones with no positioned ancestor, are placed in it. */
@@ -797,7 +802,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
    * is the padding box of the nearest positioned ancestor (fixed, or none: the window). Offsets in
    * px or a percentage of it; a width from left and right, else its own, else shrink-to-fit; a
    * height from top and bottom, else its own or its content's. With no offset on an axis it sits
-   * at its static position, which is known only before any in-flow sibling in block flow.
+   * at its static position (see measure: below the in-flow boxes before it in block flow, at the
+   * start of a flexbox, at the padding box corner of a grid).
    */
   function placeAbsolute(parentOf: Map<Box, Box>, pageX: number, pageY: number) {
     while (absQueue.length) {
@@ -851,13 +857,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // Position: by its offsets, else where it would be in flow.
       const parent = a.parent;
       const pin = parent ? insets(parent.props) : undefined;
-      const sx = parent ? parent.x + pin!.left : pageX;
-      const sy = parent ? parent.y + pin!.top : pageY;
-      const staticOk = a.first && /^(flow|page|stack)$/.test(a.pattern);
+      const sx = (parent ? parent.x + pin!.left : pageX) + (a.at?.x ?? 0);
+      const sy = (parent ? parent.y + pin!.top : pageY) + (a.at?.y ?? 0);
+      const staticOk = !!a.at;
       let staticPos = false;
       const x = l !== undefined ? cb.x + l + m.left : r !== undefined ? cb.x + cb.w - r - box.w - m.right : ((staticPos = true), sx + m.left);
       const y = t !== undefined ? cb.y + t + m.top : b !== undefined ? cb.y + cb.h - b - box.h - m.bottom : ((staticPos = true), sy + m.top);
-      if (staticPos && !staticOk) box.assumptions.push("an absolutely positioned box without offsets sits where it would be in flow, which is known only before any in-flow sibling in block flow");
+      if (staticPos && !staticOk) box.assumptions.push("an absolutely positioned box without offsets sits where it would be in flow, which isn't modelled here (after content the engine doesn't lay out, after empty blocks whose margins collapse through the parent, or aligned in a flex row or grid)");
       box.x = 0;
       box.y = 0;
       place(box, x, y, cb.w, cb.h);
@@ -1171,10 +1177,32 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       });
     if (rows || grows) arrange(box);
     for (const k of outKids) {
-      // In flow before it: what its static position (where it would be with no offsets) depends on.
+      // Its static position (where it would be with no offsets): in block flow, below the in-flow
+      // boxes before it and the margins pending there (those before it only: what follows can't
+      // collapse with it), as if it were the only item in a flexbox, at the padding box corner of a grid.
       const at = n.children.indexOf(k.node);
-      const first = !kids.some((x) => n.children.indexOf(x.node) < at) && !skipped.some((x) => n.children.indexOf(x) < at);
-      absQueue.push({ k, parent: box, first, pattern: pattern ?? "flow" });
+      const before = kids.flatMap((x, i) => (n.children.indexOf(x.node) < at ? [i] : []));
+      const skippedBefore = skipped.some((x) => n.children.indexOf(x) < at);
+      let pos: { x: number; y: number } | undefined;
+      const flowLike = pattern === undefined || pattern === "flow";
+      if (skippedBefore) pos = undefined;
+      else if (!before.length && (flowLike || pattern === "stack")) pos = { x: 0, y: 0 };
+      else if (pattern === "stack") pos = { x: 0, y: 0 };
+      else if (pattern === "cluster") pos = (props.justify?.value ?? "start") === "start" && /^(start|stretch)$/.test(props.align?.value ?? "center") ? { x: 0, y: 0 } : undefined;
+      else if (pattern === "grid" || pattern === "layer") pos = /^(start|stretch)$/.test(props.align?.value ?? "stretch") && /^(start|stretch)$/.test(props.justifyItems?.value ?? "stretch") ? { x: -(ins.left - (props.border?.value.widths.left ?? 0)), y: -(ins.top - (props.border?.value.widths.top ?? 0)) } : undefined;
+      else if (flowLike) {
+        const boxesBefore = before.map((i) => children[i]);
+        let last = -1;
+        boxesBefore.forEach((b, i) => {
+          if (!collapse.get(b)!.empty) last = i;
+        });
+        const empties = boxesBefore.slice(last + 1).map((b) => collapse.get(b)!.top);
+        if (last >= 0) {
+          const lb = boxesBefore[last];
+          pos = { x: 0, y: lb.y + lb.h + sum(join(collapse.get(lb)!.bottom, ...empties)) };
+        } else if (!throughTop) pos = { x: 0, y: sum(join(...empties)) };
+      }
+      absQueue.push({ k, parent: box, at: pos });
     }
 
     // Overflow: past the content box on the right (a negative right margin may pull a child past it on purpose).
@@ -1415,7 +1443,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       continue;
     }
     if (outOfFlow(c, undefined)) {
-      absQueue.push({ k: { node: n, comp: c, slot: undefined }, parent: undefined, first: !boxes.length, pattern: "page" });
+      absQueue.push({ k: { node: n, comp: c, slot: undefined }, parent: undefined, ...(!boxes.length && { at: { x: 0, y: 0 } }) });
       continue;
     }
     boxes.push(measure(n, c, undefined, pageW, "page"));

@@ -115,6 +115,20 @@ describe("containment", () => {
     expect(identityTransform("rotate", "0deg")).toBe(true);
   });
 
+  it("an absolutely positioned box without offsets after in-flow siblings sits at its static position", () => {
+    // Below the title and its 18px bottom margin (not the next paragraph's larger one), then its own 4px margin.
+    expect(geo(wide.box("card-rule"))).toEqual([31, 1788.188, 48, 3]);
+    expect(wide.approx("card-rule")).toBeUndefined();
+    // After the last paragraph and its 20px margin.
+    expect(geo(wide.box("card-mark"))).toEqual([31, 1976.188, 12, 12]);
+    // After an empty block: its collapsed 10px margins, then its own.
+    expect(geo(wide.box("card-rule-2"))).toEqual([31, 2032.188, 48, 3]);
+    // In a column flexbox: at the content box corner, as if it were the only item.
+    expect(geo(wide.box("card-rule-3"))).toEqual([31, 2138.188, 48, 3]);
+    // In a grid: at the padding box corner.
+    expect(geo(wide.box("card-rule-4"))).toEqual([17, 2218.188, 48, 3]);
+  });
+
   it("will-change and isolation change nothing, unless will-change makes a fixed box's containing block", () => {
     const c = run(`<div class="a"><p class="t">Text</p></div><div class="b"><p class="t">Text</p><div class="bar"></div></div>`, `p { margin: 0 } .a { will-change: transform; isolation: isolate } .b { will-change: transform } .bar { position: fixed; top: 0; width: 10px; height: 10px }`);
     expect(c.approx("a")).toBeUndefined();

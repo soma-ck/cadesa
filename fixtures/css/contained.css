@@ -217,3 +217,55 @@ p {
 .layered {
   transform: translateZ(0);
 }
+
+/* Absolutely positioned boxes without offsets after in-flow siblings: at their static position. */
+.card {
+  position: relative;
+  margin-top: 16px;
+  padding: 12px 14px;
+  border: 1px solid #d9e2ec;
+}
+
+.card-title {
+  font-size: 18px;
+  line-height: 1.4;
+  margin-bottom: 18px;
+}
+
+.card-rule {
+  position: absolute;
+  width: 48px;
+  height: 3px;
+  margin-top: 4px;
+  background: #0b69a3;
+}
+
+.card-text {
+  margin-top: 26px;
+}
+
+.tail {
+  margin-bottom: 20px;
+}
+
+.card-mark {
+  position: absolute;
+  width: 12px;
+  height: 12px;
+  background: #3e4c59;
+}
+
+.spacer {
+  margin: 10px 0;
+}
+
+.stacked {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.gridded {
+  display: grid;
+  gap: 8px;
+}
