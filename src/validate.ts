@@ -758,8 +758,13 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   if (top.page !== undefined) {
     const po = obj(top.page, ["page"], "page settings");
     if (po) {
-      keys(po, ["page"], ["background", "margin", "padding", "outer"]);
+      keys(po, ["page"], ["background", "margin", "padding", "outer", "overflow"]);
       page = { path: "page", background: po.background === undefined ? undefined : ref(po.background, ["page", "background"], "color") };
+      // overflow: hidden (or clip): what is past the page's right edge is cut off instead of scrolling.
+      if (po.overflow !== undefined) {
+        if (!OVERFLOWS.includes(po.overflow as Overflow)) err(["page", "overflow"], "invalid overflow", { expected: "visible, hidden, clip, auto or scroll", got: po.overflow });
+        else if (po.overflow === "hidden" || po.overflow === "clip") page.clipX = true;
+      }
       // The body's margin (may be negative) and padding, and the root element's insets: a space token, or per side.
       for (const k of ["margin", "padding", "outer"] as const) {
         const v = po[k];

@@ -230,3 +230,19 @@ describe("approximate only where it matters", () => {
     expect(r.exact()).toBe(true);
   });
 });
+
+describe("a page that scrolls sideways", () => {
+  const ROW = `.content { width: 100%; padding: 0 } .row { display: flex; flex-wrap: wrap; margin-left: -12px; margin-right: -12px } .col { flex: 1 0 0%; padding: 0 12px }`;
+  const HTML = `<div class="shell"><div class="content"><div class="row"><div class="col">A card with some text</div></div></div></div>`;
+  it("reports a box past the right edge of the viewport (a gutter row without its container padding)", () => {
+    const r = run(HTML, ROW, [400]);
+    const f = r.findings.filter((x) => /past the right edge/.test(x.message));
+    expect(f.map((x) => [x.id, x.message, x.inconclusive])).toEqual([["row", "#row extends 12px past the right edge of the viewport at 400px (to 412px): the page scrolls sideways", undefined]]);
+    expect(r.exact()).toBe(true);
+  });
+
+  it("not when the page clips it (overflow-x: hidden on the body), nor what a box clips", () => {
+    expect(run(HTML, `${ROW} body { overflow-x: hidden }`, [400]).findings.filter((x) => /past the right edge/.test(x.message))).toEqual([]);
+    expect(run(HTML, `${ROW} .content { overflow: hidden }`, [400]).findings.filter((x) => /past the right edge/.test(x.message))).toEqual([]);
+  });
+});

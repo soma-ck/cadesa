@@ -409,7 +409,7 @@ export abstract class PageLifter {
   vars = new Map<string, Decl>();
   pageBackground?: Decl;
   /** The page's insets per side (CSS lengths): the body's margin and padding (with its border), and the root element's (outer). */
-  pageSides: { margin?: string[]; padding?: string[]; outer?: string[] } = {};
+  pageSides: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string } = {};
   rootText!: TextCtx;
   /** Custom properties defined on :root (unresolved): token names come from them. */
   theme = new Map<string, string>();
@@ -1719,6 +1719,13 @@ export abstract class PageLifter {
         const [m, p] = insets[0];
         if (el === this.bodyEl) this.pageSides = { ...this.pageSides, margin: m, padding: p };
         else this.pageSides = { ...this.pageSides, outer: m.map((x, i) => (x === "0px" ? p[i] : p[i] === "0px" ? x : lengthExpr(`calc(${x} + ${p[i]})`)!.css)) };
+      }
+      // The viewport takes <html>'s overflow, or <body>'s when <html>'s is visible: hidden or clip
+      // there cuts off what is past the right edge instead of scrolling to it.
+      if (el === this.bodyEl) {
+        const ox = (x: El | undefined, s: number) => (x ? (this.resolve(x, s, x.own[s]?.get("overflow-x")?.value ?? "visible") ?? "visible") : "visible");
+        const clips = this.states.every((_, s) => /^(hidden|clip)$/.test(ox(this.htmlEl, s) !== "visible" ? ox(this.htmlEl, s) : ox(this.bodyEl, s)));
+        if (clips) this.pageSides = { ...this.pageSides, overflow: "hidden" };
       }
       // overflow on <html> or <body> applies to the viewport (it scrolls or clips the page; no box
       // moves), unless both set it: then the body's own is a box's, which keeps its children's margins in.

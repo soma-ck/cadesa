@@ -441,7 +441,7 @@ export interface LiftInput {
   layerChildren: Map<string, Map<number, boolean>>;
   pageBackground?: Decl;
   /** The page's insets per side, as CSS lengths: the body's margin and padding, and the root element's (outer). */
-  pageSides?: { margin?: string[]; padding?: string[]; outer?: string[] };
+  pageSides?: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string };
   /** Records found before mapping (more are added). */
   unlifted: Unlifted[];
   resets: Map<string, Set<string>>;
@@ -1069,7 +1069,9 @@ export function liftElements(input: LiftInput): LiftResult {
   }
   // The body's margin and padding and the root element's insets: space tokens per side.
   const pageInsets: Record<string, unknown> = {};
-  for (const [k, sides] of Object.entries(input.pageSides ?? {})) {
+  const { overflow: pageOverflow, ...pageSides } = input.pageSides ?? {};
+  if (pageOverflow) pageInsets.overflow = pageOverflow;
+  for (const [k, sides] of Object.entries(pageSides)) {
     if (!sides || sides.every((v) => isZero(v))) continue;
     const t = sides.map((v) => (isZero(v) ? undefined : lengthToken("space", v, k === "margin")));
     if (t.some((x, i) => !x && !isZero(sides[i]))) unlifted.push({ file: input.file, line: 0, selector: k === "outer" ? "html" : "body", decl: `${k}: ${sides.join(" ")}`, reason: `page-level ${k} must be px or rem lengths`, kind: "geometry" });

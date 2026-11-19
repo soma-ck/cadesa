@@ -241,8 +241,9 @@ export interface Model {
    * The page every component sits on. background: paint only (makes contrast checks conclusive).
    * margin and padding: the <body>'s (its top margin collapses with the first box's unless padding
    * separates them); outer: the root element's margin, border and padding, outside the body.
+   * clipX: the page clips what is past its right edge (overflow-x: hidden or clip on html or body) instead of scrolling.
    */
-  page?: { background?: Ref; path: string; margin?: PageSides; padding?: PageSides; outer?: PageSides };
+  page?: { background?: Ref; path: string; margin?: PageSides; padding?: PageSides; outer?: PageSides; clipX?: boolean };
 }
 
 /** Space tokens per side of the page (a missing side is 0). */

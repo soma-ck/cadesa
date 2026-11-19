@@ -282,6 +282,7 @@ export function compile(model: Model): string {
     if (decls.length) parts.push(rule(sel, [...vars, ...decls]));
   };
   pageRule("html", [["padding", model.page?.outer]]);
+  if (model.page?.clipX) parts.push(rule("html", ["overflow-x: hidden"]));
   pageRule("body", [["margin", model.page?.margin], ["padding", model.page?.padding]]);
   // Every reset comes first. A nested component's root rule (.ca-child) has the same specificity as
   // its parent's reset (.ca-parent :where(*)), so it must come later in the file to win.

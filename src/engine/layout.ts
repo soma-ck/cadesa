@@ -1300,6 +1300,32 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   };
   for (const b of boxes) place(b, 0, 0);
 
+  // A box past the right edge of the viewport makes the page scroll sideways, unless a box around
+  // it (or the page itself) clips or scrolls what doesn't fit. Reported once, on the outermost.
+  if (!pg?.clipX) {
+    const past = (b: Box) => b.x + b.w > width + 0.5;
+    // A box already reported as overflowing its parent isn't reported again.
+    const overflowing = new Set(issues.flatMap((i) => /^#(\S+) overflows #/.exec(i.message)?.[1] ?? []));
+    const visit = (b: Box) => {
+      if (past(b) && overflowing.has(b.id)) return;
+      if (past(b)) {
+        const m = marginOf(b.props);
+        const path = (m.right < 0 || m.left < 0 ? b.props.margin?.steps.at(-1)?.path : undefined) ?? b.props.width?.steps.at(-1)?.path ?? b.sourcePath;
+        issues.push({
+          severity: "warning",
+          id: b.id,
+          path,
+          message: `#${b.id} extends ${fmtPx(b.x + b.w - width)}px past the right edge of the viewport at ${width}px (to ${fmtPx(b.x + b.w)}px): the page scrolls sideways`,
+        });
+        return;
+      }
+      const ov = b.props.overflow?.value;
+      if (ov && ov.x !== "visible") return;
+      b.children.forEach(visit);
+    };
+    boxes.forEach(visit);
+  }
+
   const pageBg = model.page?.background;
   return {
     width,
