@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.17 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.17 mcp
+npx -y cadesa@0.1.18 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.18 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -18,7 +18,11 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## 0.1.17 (2026-11-19)
+## 0.1.18 (2026-11-19)
+
+0.1.17 was tagged but never published (a test didn't typecheck in the release build); 0.1.18 is the same code.
+
+## 0.1.17 (2026-11-19, not published)
 
 - Rem lengths resolve against the page's root font size (`html { font-size: 62.5% | 10pt | 14px }`),
   in lengths, `calc()`, `clamp()`, custom properties and font sizes, per width range when a media

@@ -125,7 +125,7 @@ describe("tables measured by an older Cadesa", () => {
     clearMetricsCache();
     const r = run(`<p><input data-fixture="i"></p>`, `body { font-family: "Old Sans" } input { font: inherit }`);
     expect(r.approx("i")).toMatch(/re-measure: cadesa fonts … --measure/);
-    const report = fontReport([{ family: "Old Sans", stack: '"Old Sans"', weights: [400], sizes: [16], boxes: ["p"] }], { faces: [], google: [], declared: [] });
+    const report = fontReport([{ family: "Old Sans", stack: '"Old Sans"', weights: [400], sizes: [16], boxes: ["p"] }], { faces: [], google: [], declared: [], stylesheets: [] });
     expect(report[0].remeasure).toMatch(/older Cadesa and has no vertical metrics/);
   });
 });
