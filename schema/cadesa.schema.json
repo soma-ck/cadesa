@@ -296,7 +296,7 @@
             },
             "gap": {
               "$ref": "#/$defs/ref",
-              "description": "space token"
+              "description": "space token; for a cluster or grid also a percentage size token (of the content width, between columns only)"
             },
             "min": {
               "$ref": "#/$defs/ref",
@@ -455,7 +455,7 @@
         },
         "height": {
           "$ref": "#/$defs/ref",
-          "description": "size token (a length, not a percentage); none: in a breakpoint override, removes the value a wider state set"
+          "description": "size token; a percentage is of the parent's content height once that is definite (stretched in a cluster or grid row, or set), auto until then; none: in a breakpoint override, removes the value a wider state set"
         },
         "text": {
           "$ref": "#/$defs/ref",

@@ -139,6 +139,8 @@ export interface El {
   asBlock: ("block" | "empty" | undefined)[];
   /** An inline-block alone on its line whose line box is exactly its margin box: lifted as a block of its content's width. */
   alone: boolean[];
+  /** An inline element alone between blocks: the height of each of its lines (per state), see inlineLine. */
+  inlineLine?: (number | undefined)[];
   /** A lone inline-block placed for one line of its text (per state): see dynamic(). */
   oneLine?: boolean[];
   /** A lone inline-block's line is centered or end-aligned (per state). */
@@ -984,8 +986,45 @@ export abstract class PageLifter {
         const parentDisplay = el.parent !== this.bodyEl ? this.displayOf(el.parent!, si) : "block";
         if (/flex|grid/.test(parentDisplay) && parentRole === "container") return;
         if (this.ownDisplay(el, si) === "inline-block" && this.aloneOnLine(el, si)) el.alone[si] = true;
+        if (this.ownDisplay(el, si) === "inline" && role === "text") {
+          const lh = this.inlineLine(el, si);
+          if (lh !== undefined) (el.inlineLine ??= [])[si] = lh;
+        }
       });
     }
+  }
+
+  /**
+   * An inline element alone between blocks (its anonymous block holds nothing else), text on the
+   * baseline: each of its lines is as tall as the union of the parent's strut and its own (from the
+   * fonts' vertical metrics), so it lays out as a block of its text with that line height. Its own
+   * rectangle (its text's content area) isn't that block's: noted as visual.
+   */
+  inlineLine(el: El, si: number): number | undefined {
+    const parent = el.parent;
+    if (!parent || el.pseudo || el.tag === "br" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag)) return undefined;
+    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|inline-block)$/.test(this.displayOf(parent, si))) return undefined;
+    const shown = (k: El) => k.anonymous !== undefined || (this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si));
+    const i = parent.children.indexOf(el);
+    const near = [parent.children.slice(0, i).filter(shown).at(-1), parent.children.slice(i + 1).find(shown)];
+    if (near.some((k) => k && (k.anonymous !== undefined || k.pseudo || k.tag === "br" || this.isInlineLevel(k, si)))) return undefined;
+    const res = (p: string) => {
+      const o = el.own[si].get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    if (!/^(baseline)?$/.test(res("vertical-align") ?? "")) return undefined;
+    const e = this.inlineEdges(el, si);
+    if (!e || e.open || e.close) return undefined;
+    const pt = this.textOf(parent, si);
+    if (!/^(normal|nowrap)?$/.test(pt.inherited.get("white-space")?.value ?? "") || !/^(0|0px)?$/.test(pt.inherited.get("text-indent")?.value ?? "")) return undefined;
+    // Its inline children in its own font and size (another one adds its own box to the line).
+    const t = this.textOf(el, si);
+    const same = (k: El): boolean => k.anonymous !== undefined || ((this.displayOf(k, si) === "none" || (this.textOf(k, si).size === t.size && this.textOf(k, si).family.value === t.family.value && JSON.stringify(this.textOf(k, si).lineHeight) === JSON.stringify(t.lineHeight))) && k.children.every(same));
+    if (!el.children.every(same)) return undefined;
+    const a = this.strutOf(parent, si);
+    const b = this.strutOf(el, si);
+    if (!a || !b) return undefined;
+    return Math.max(a.sa, b.sa) + Math.max(a.sd, b.sd);
   }
 
   /** min-height no taller than one line of the element's text plus its padding and border (border-box). */
@@ -1462,7 +1501,11 @@ export abstract class PageLifter {
 
       // Inline-level boxes in block flow sit on line boxes, which Cadesa doesn't model, except an
       // inline-block alone on its line whose line box is exactly its margin box.
-      if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && el.anonymous === undefined)
+      const inlineLine = !inFlexOrGrid ? el.inlineLine?.[si] : undefined;
+      if (inlineLine !== undefined) {
+        this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline box's own rectangle is its text's content area; Cadesa lays out its lines (exact), not that rectangle", kind: "visual" });
+        if (!own.has("width")) decl("width", "fit-content", "an inline element alone between blocks");
+      } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && el.anonymous === undefined)
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
       // An empty inline (zero size where the next block starts) or a lone inline-block: as wide as its content.
       if (((el.asBlock[si] === "empty" && !inFlexOrGrid) || el.alone[si]) && !own.has("width")) decl("width", "fit-content", el.alone[si] ? "inline-block (alone on its line)" : "empty inline element");
@@ -1797,6 +1840,8 @@ export abstract class PageLifter {
         // normal: the font's ascent, descent and line gap, when its vertical metrics are known.
         const normal = lh === "normal" ? this.normalLine(text) : undefined;
         decl("line-height", normal !== undefined ? fmtNum(normal / text.size) : lh === "normal" ? "normal" : "num" in lh ? fmtNum(lh.num) : fmtNum(lh.px / text.size), normal !== undefined ? `line-height: normal (${normal}px: the font's ascent, descent and line gap)` : "inherited line height");
+        const unionLine = el.inlineLine?.[si];
+        if (unionLine !== undefined && !(parentRole === "container" && /flex|grid/.test(parentDisplay))) decl("line-height", fmtNum(unionLine / text.size), `its lines (${fmtNum(unionLine)}px: the parent's strut and its own, on one baseline)`);
         decl("color", this.colorValue(text.color.hex, text.color.hint), "inherited color");
         if (text.letterSpacing) decl("letter-spacing", `${fmtNum(text.letterSpacing / text.size)}em`, "inherited tracking");
         if (text.fluid && text.letterSpacing) this.note(el, si, { decl: "letter-spacing", reason: "letter spacing with a font size that follows the viewport width is not modelled", kind: "text" });

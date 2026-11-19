@@ -151,6 +151,22 @@ p {
   line-height: normal;
 }
 
+/* An inline span alone after blocks: its lines are the union of the strut and its own. */
+.tally {
+  padding: 8px;
+  border: 1px solid #d9e2ec;
+}
+
+.tally-value {
+  font-size: 22px;
+  line-height: 1.2;
+}
+
+.tally-note {
+  font-size: 13px;
+  color: #52606d;
+}
+
 /* line-height: normal from the font's vertical metrics. */
 .normal {
   margin-top: 12px;

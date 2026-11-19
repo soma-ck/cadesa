@@ -66,6 +66,9 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
     padding takes the difference (text that may wrap is checked at each width). `text-align:
     center` and `right` place it as Chromium does. Its only content an inline-block, a box is
     no longer a text box.
+  - An inline element alone between blocks (a smaller note under a card's figures): each of its
+    lines is the union of the parent's strut and its own, so the boxes around it are exact; its
+    own rectangle (its text's content area) stays `≈`.
   - `line-height: normal` is the font's ascent, descent and line gap.
   - `align-items: baseline` in a flex row aligns text items in different fonts, sizes and line
     heights (each first baseline is its strut's ascent below its content edge).

@@ -89,3 +89,21 @@ describe("text fields and line-height: normal", () => {
     expect(r.approx("in3")).toBeUndefined();
   });
 });
+
+describe("an inline element alone between blocks", () => {
+  const r = run(
+    `<div class="card"><p class="label">Open orders</p><p class="value">1,284</p><span class="delta">+4.2% on last week, a longer note that wraps in narrow cards</span></div><div class="card"><h3 class="h">Head</h3><span class="tight">Tight line height</span></div><p class="end">End</p>`,
+    `p, h3 { margin: 0 } .card { padding: 8px; border: 1px solid #ccc; margin-bottom: 4px } .delta { font-size: 13px } .tight { font-size: 12px; line-height: 1 }`,
+    [400, 150],
+  );
+
+  it("its lines are the union of the parent's strut and its own: the boxes around it are exact", () => {
+    // Chromium: one 24px line at 400px, four at 150px; 12px/12px text on a 16px/24px parent's line: 24px.
+    expect([r.box("card", 400).h, r.box("card", 150).h, r.box("card-2", 400).h]).toEqual([90, 162, 70.078125]);
+    for (const id of ["card", "label", "value", "card-2", "h", "end"]) expect(r.approx(id, 150)).toBeUndefined();
+  });
+
+  it("its own rectangle (its text's content area) stays ≈", () => {
+    expect(r.approx("delta")).toMatch(/an inline box's own rectangle is its text's content area/);
+  });
+});
