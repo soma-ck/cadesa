@@ -142,8 +142,12 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (e.grow && (p.grow || p.width || unset("width"))) out.push(`flex: ${e.grow.value} ${e.width ? 0 : 1} ${e.grow.basis === "zero" ? "0px" : "auto"}`);
   else if (unset("grow")) out.push(`flex: ${e.width ? "none" : "0 1 auto"}`);
   // min-height too: a column flex parent shorter than its content would otherwise shrink the box.
-  if (p.height) out.push(`height: ${v(p.height)}`, `min-height: ${v(p.height)}`);
-  else if (unset("height")) out.push("height: auto", "min-height: auto");
+  // With a minHeight, the larger of the two (CSS's used height when both apply).
+  const minOf = (h?: Ref, m?: Ref) => (h && m ? `max(${v(h)}, ${v(m)})` : h ? v(h) : m ? v(m) : "auto");
+  if (p.height) out.push(`height: ${v(p.height)}`, `min-height: ${minOf(p.height, e.minHeight)}`);
+  else if (unset("height")) out.push("height: auto", `min-height: ${minOf(undefined, e.minHeight)}`);
+  if (p.minHeight && !p.height) out.push(`min-height: ${minOf(e.height, p.minHeight)}`);
+  else if (unset("minHeight") && !p.height && !unset("height")) out.push(`min-height: ${minOf(e.height, undefined)}`);
   if (unset("aspect")) out.push("aspect-ratio: auto", ...(e.width || e.maxWidth ? [] : ["width: auto"]));
   // A height that replaces an aspect from a wider rule also undoes what aspect set.
   if (p.height && !p.aspect && ctx.aspectBefore) out.push("aspect-ratio: auto", ...(e.width || e.maxWidth ? [] : ["width: auto"]));
@@ -225,6 +229,7 @@ function usedTokens(model: Model, c: Component): string[] {
       p.measure,
       p.width && !("keyword" in p.width) ? p.width : undefined,
       p.height,
+      p.minHeight,
     ];
     for (const r of refs) if (r) used.add(tokenKey(r.kind, r.name));
     if (p.text) {

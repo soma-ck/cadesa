@@ -833,7 +833,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const ov = props.overflow?.value;
     const scroller = scrolls(ov);
     const throughTop = inFlow && ins.top === 0 && !scroller;
-    const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.aspect && !scroller;
+    const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.minHeight && !props.aspect && !scroller;
     let escaped: FlowResult | undefined;
     let grows: StackGrow | undefined;
 
@@ -928,6 +928,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // A one-line cluster with an aspect ratio whose content is taller: Chromium sometimes keeps the ratio.
       if (!media && pattern === "cluster" && props.wrap?.value === false && contentMin > ratioH + EPS) assumptions.push("a one-line cluster with an aspect ratio whose content is taller than the ratio: its height isn't modelled");
     }
+    // min-height: never shorter (border-box; content taller than it makes the box taller as usual).
+    if (props.minHeight) h = Math.max(h, props.minHeight.value);
     h = Math.max(h, insY);
     // A box shorter than its content shrinks the items that may shrink: an <hr> clips its overflow
     // (overflow: hidden), so its automatic minimum height is 0 and a stack, grid or layer that is

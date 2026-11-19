@@ -70,7 +70,7 @@ const VISUAL = /^(transform|translate|rotate|scale|perspective.*|transform-origi
  * effect on boxes or on contrast.
  */
 const COLORLESS =
-  /^((-webkit-)?transition.*|cursor|(-webkit-|-moz-|-ms-)?user-select|pointer-events|touch-action|will-change|resize|scroll-.*|overscroll-.*|caret-color|accent-color|outline.*|border(-top|-right|-bottom|-left)?-color|border(-top|-bottom)?(-left|-right)?-radius|border-(start|end)-(start|end)-radius|list-style.*|isolation|text-decoration.*|(-webkit-)?print-color-adjust|color-adjust|forced-color-adjust|-webkit-tap-highlight-color|(-webkit-|-moz-|-ms-)?text-size-adjust|-webkit-font-smoothing|-moz-osx-font-smoothing|-webkit-touch-callout|-webkit-overflow-scrolling|z-index|text-align|text-overflow)$/;
+  /^((-webkit-)?transition.*|cursor|counter-(reset|increment|set)|text-rendering|font-display|image-rendering|shape-rendering|(page-)?break-(before|after|inside)|orphans|widows|speak|backface-visibility|scrollbar-(width|color)|-webkit-text-stroke.*|text-underline-offset|text-underline-position|(-webkit-|-moz-|-ms-)?user-select|pointer-events|touch-action|will-change|resize|scroll-.*|overscroll-.*|caret-color|accent-color|outline.*|border(-top|-right|-bottom|-left)?-color|border(-top|-bottom)?(-left|-right)?-radius|border-(start|end)-(start|end)-radius|list-style.*|isolation|text-decoration.*|(-webkit-)?print-color-adjust|color-adjust|forced-color-adjust|-webkit-tap-highlight-color|(-webkit-|-moz-|-ms-)?text-size-adjust|-webkit-font-smoothing|-moz-osx-font-smoothing|-webkit-touch-callout|-webkit-overflow-scrolling|z-index|text-align|text-overflow)$/;
 
 export function kindOf(prop: string): ImpactKind {
   if (COLORLESS.test(prop)) return "none";
@@ -270,7 +270,7 @@ export function parseFlex(v: string): { grow: number; shrink: number; basis: str
   return undefined;
 }
 
-const UNSETTABLE_PROPS = new Set(["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "grow"]);
+const UNSETTABLE_PROPS = new Set(["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow"]);
 
 // ---------------------------------------------------------------- the lift
 
@@ -850,6 +850,12 @@ export function liftElements(input: LiftInput): LiftResult {
       const d = take(p);
       // min-height equal to the height is what Cadesa emits with every height.
       if (p === "min-height" && d && height && (d.value.trim() === height.value.trim() || (/^[\d.]+px$/.test(resolveVar(d.value)?.raw ?? "") && /^[\d.]+px$/.test(resolveVar(height.value)?.raw ?? "") && parseFloat(resolveVar(d.value)!.raw) <= parseFloat(resolveVar(height.value)!.raw)))) continue;
+      if (p === "min-height" && d && !["0", "auto", "none", "0px"].includes(d.value.trim())) {
+        const t = lengthToken("size", d.value);
+        if (t) out.minHeight = t;
+        else note(e, s, d, "min-height must be a px or rem length", "geometry");
+        continue;
+      }
       if (d && !["0", "auto", "none", "0px"].includes(d.value.trim())) note(e, s, d, `${p} is not modelled`, "geometry");
     }
 
@@ -968,7 +974,9 @@ export function liftElements(input: LiftInput): LiftResult {
       const k =
         (/(^|-)appearance$/.test(d.prop) && (styled || d.value.trim() === "none")) || (/^(-webkit-)?background-(clip|origin)$/.test(d.prop) && /^(border|padding|content)-box$/.test(d.value.trim()))
           ? "none"
-          : kindOf(d.prop);
+          : d.prop === "text-rendering" && /^(optimizespeed|geometricprecision)$/i.test(d.value.trim())
+            ? "text"
+            : kindOf(d.prop);
       note(e, s, d, k === "paint" ? "paint only; no effect on layout" : k === "none" ? "no effect on layout or contrast" : `${d.prop} is not modelled`, k);
     }
     return out;

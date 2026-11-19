@@ -66,6 +66,8 @@ interface Simple {
   arg?: string;
   /** :is() / :where() / :not() arguments. */
   list?: Complex[];
+  /** :has() arguments: relative selectors, each with its leading combinator. */
+  relative?: { comb: " " | ">" | "+" | "~"; complex: Complex }[];
 }
 interface Compound {
   simples: Simple[];
@@ -164,6 +166,15 @@ export function parseSelector(text: string): Complex | undefined {
         if (list.some((x) => !x)) return undefined;
         simple.list = list as Complex[];
       }
+      // :has(): relative selectors, each anchored at the element (`> .a` is a child, `.a` a descendant, `+ .a` the next sibling).
+      if (!element && name === "has") {
+        const list = splitList(arg ?? "").map((r) => {
+          const m = /^\s*([>+~])?\s*([\s\S]*)$/.exec(r)!;
+          return { comb: (m[1] ?? " ") as " " | ">" | "+" | "~", complex: parseSelector(`:${ANCHOR}${m[1] ? ` ${m[1]} ` : " "}${m[2]}`) };
+        });
+        if (!list.length || list.some((x) => !x.complex)) return undefined;
+        simple.relative = list as { comb: " " | ">" | "+" | "~"; complex: Complex }[];
+      }
       cur.push(simple);
       m = { 0: s.slice(i, i + len) } as unknown as RegExpExecArray;
     } else if ((m = re.tag.exec(rest)) && !cur.length) cur.push({ kind: "tag", name: m[1] === "*" ? "*" : unescape(m[1]).toLowerCase() });
@@ -188,9 +199,10 @@ export function specificityOf(c: Complex): [number, number, number] {
       else if (s.kind === "tag" && s.name !== "*") out[2]++;
       else if (s.kind === "pseudo-element") out[2]++;
       else if (s.kind === "pseudo") {
-        if (s.name === "where") continue;
-        if (s.list) {
-          const best = s.list.map(specificityOf).sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2])[0];
+        if (s.name === "where" || s.name === ANCHOR) continue;
+        const list = s.list ?? s.relative?.map((r) => r.complex);
+        if (list) {
+          const best = list.map(specificityOf).sort((a, b) => b[0] - a[0] || b[1] - a[1] || b[2] - a[2])[0];
           if (best) add(best);
         } else out[1]++;
       }
@@ -221,6 +233,33 @@ function nthMatches(arg: string, pos: number): boolean | undefined {
 
 const siblingsOf = (el: El): El[] => (el.parent ? el.parent.children : [el]);
 
+/** The pseudo-class that stands for :has()'s anchor element in its relative selectors. */
+const ANCHOR = "-cadesa-has-anchor";
+const anchors: El[] = [];
+
+/**
+ * :has(): the page is static, so it is decided against the DOM. Its descendants (or following
+ * siblings and theirs) are tried against each relative selector, anchored at the element. An svg's
+ * content isn't read, so a selector that might match inside one stays undecided.
+ */
+function hasMatches(rel: { comb: " " | ">" | "+" | "~"; complex: Complex }[], el: El): M {
+  const below = (x: El): El[] => x.children.flatMap((k) => [k, ...below(k)]);
+  const sibs = siblingsOf(el);
+  const after = sibs.slice(sibs.indexOf(el) + 1);
+  anchors.push(el);
+  try {
+    const out: M[] = [];
+    for (const r of rel) {
+      const cands = r.comb === " " || r.comb === ">" ? below(el) : (r.comb === "+" ? after.slice(0, 1) : after).flatMap((k) => [k, ...below(k)]);
+      const m = best(cands.map((c) => matchComplex(r.complex, c)));
+      out.push(m === "no" && cands.some((c) => c.tag === "svg") ? "unknown" : m);
+    }
+    return best(out);
+  } finally {
+    anchors.pop();
+  }
+}
+
 function simpleMatches(s: Simple, el: El): M {
   switch (s.kind) {
     case "tag":
@@ -242,6 +281,8 @@ function simpleMatches(s: Simple, el: El): M {
       return "yes"; // decided by the caller
     case "pseudo": {
       const n = s.name;
+      if (n === ANCHOR) return el === anchors.at(-1) ? "yes" : "no";
+      if (s.relative) return hasMatches(s.relative, el);
       if (s.list) {
         const r = best(s.list.map((c) => matchComplex(c, el)));
         // :not(): in the default state, an interactive-state selector doesn't hold.

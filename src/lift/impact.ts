@@ -114,7 +114,11 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
    * place rows inside it).
    */
   const sizeChange = (b: Box, why: string, heightOnly = false) => {
-    if (heightOnly) mark(b, "size", why);
+    if (heightOnly) {
+      mark(b, "size", why);
+      // Its rows (grid rows, cluster lines, a stack's growing items) share its height: what's in them moves and stretches.
+      if (placesRows(b)) for (const k of b.children) subtree(k, "size", `stretched with #${b.id}: ${why}`);
+    }
     else subtree(b, "size", why);
     let cur = b;
     for (let p = parentOf.get(cur); p; cur = p, p = parentOf.get(cur)) {

@@ -109,6 +109,7 @@ export interface ResolvedProps {
   measure?: Resolved<number | Pct>;
   width?: Resolved<number | "fill" | "fit" | Pct>;
   height?: Resolved<number>;
+  minHeight?: Resolved<number>;
   text?: Resolved<ResolvedText>;
 }
 
@@ -284,6 +285,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
         out[key] = sizeOf(p[key]!);
         break;
       case "radius":
+      case "minHeight":
       case "height":
         out[key] = lengthOf(p[key]!);
         break;

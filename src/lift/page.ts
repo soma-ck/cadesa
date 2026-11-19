@@ -168,7 +168,7 @@ const UA_TEXT: Record<string, string> = {
 };
 
 const TEXT_PROPS = new Set(["font-size", "line-height", "font-family", "font-weight", "color", "letter-spacing"]);
-const INHERITED_OTHER = new Set(["text-transform", "text-align", "font-style", "white-space", "text-wrap", "text-wrap-mode", "text-wrap-style", "word-break", "overflow-wrap", "hyphens", "text-indent", "word-spacing", "font-variant-numeric", "font-stretch", "line-break", "tab-size", "direction"]);
+const INHERITED_OTHER = new Set(["text-rendering", "text-transform", "text-align", "font-style", "white-space", "text-wrap", "text-wrap-mode", "text-wrap-style", "word-break", "overflow-wrap", "hyphens", "text-indent", "word-spacing", "font-variant-numeric", "font-stretch", "line-break", "tab-size", "direction"]);
 /** Inherited, but only paint: never affect a box. */
 const INHERITED_PAINT = new Set(["-webkit-font-smoothing", "-moz-osx-font-smoothing", "font-feature-settings", "font-variation-settings", "cursor", "visibility", "list-style-type", "list-style-position", "text-shadow", "caret-color", "accent-color", "fill", "stroke"]);
 
@@ -1244,6 +1244,17 @@ export abstract class PageLifter {
         let v = this.resolve(el, si, o.value);
         // Empty after substitution (`height: var(--unset)`): invalid at computed-value time, so the initial value.
         if (v === undefined || v === "") continue;
+        // A percentage height: of the parent's height when that is definite, else as if auto.
+        if ((p === "height" || p === "min-height") && /^[\d.]+%$/.test(v)) {
+          const of = this.definiteHeight(el.parent, si);
+          if (of === "auto") continue;
+          if (of === "unknown") {
+            this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: `a percentage ${p} of a parent whose height may be stretched (a flex or grid item) is not decided`, kind: "height" });
+            continue;
+          }
+          if (of.viewport) this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: `a percentage of the viewport's height is computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`, kind: "height" });
+          v = `${fmtNum((parseFloat(v) / 100) * of.px)}px`;
+        }
         if (p === "background-color" || p === "outline-color" || p === "text-decoration-color") {
           const c = parseColor(v, parseColor(text.color.hex));
           if (c) v = this.colorValue(hexOf(c), c.a >= 0.9995 ? hintOf(o.value, this.theme) : undefined);
@@ -1384,6 +1395,46 @@ export abstract class PageLifter {
         kind: /height$/.test(prop) ? "height" : "geometry",
       });
     return f.css;
+  }
+
+  /**
+   * What a percentage height of `el`'s children resolves against: its content height when that is
+   * definite (a length, or a percentage of a definite height; the viewport for <html>), "auto" when
+   * the percentage behaves as auto, "unknown" when it depends on stretching (a flex or grid item).
+   */
+  definiteHeight(el: El | undefined, si: number, depth = 0): "auto" | "unknown" | { px: number; viewport: boolean } {
+    if (!el) return { px: VIEWPORT_HEIGHT, viewport: true };
+    if (depth > 64) return "unknown";
+    const own = el.own[si];
+    const o = own?.get("height");
+    const v = o ? this.resolveBox(el, si, o.value) : undefined;
+    const parentDisplay = el.parent ? this.displayOf(el.parent, si) : "block";
+    const item = el !== this.bodyEl && el !== this.htmlEl && /flex|grid/.test(parentDisplay);
+    if (!v || v === "auto") return item ? "unknown" : "auto";
+    const size = this.textOf(el, si).size;
+    let px: number;
+    let viewport = false;
+    const pct = /^([\d.]+)%$/.exec(v);
+    if (pct) {
+      const of = this.definiteHeight(el.parent, si, depth + 1);
+      if (typeof of === "string") return of;
+      px = (parseFloat(pct[1]) / 100) * of.px;
+      viewport = of.viewport;
+    } else {
+      const f = lengthExpr(v, { em: size, vh: VIEWPORT_HEIGHT });
+      if (!f || f.fluid) return "unknown";
+      px = f.at(0);
+      viewport = /\d[dsl]?v(?:h|min|max)\b/i.test(v);
+    }
+    const res = (p: string) => this.resolve(el, si, own?.get(p)?.value ?? "") ?? "";
+    if (res("box-sizing") === "border-box") {
+      const len = (p: string) => lengthPx(this.resolveBox(el, si, own?.get(p)?.value ?? "0") ?? "0", size) ?? 0;
+      for (const s of ["top", "bottom"]) {
+        px -= len(`padding-${s}`);
+        if (!/^(none|hidden|)$/.test(res(`border-${s}-style`))) px -= borderPx(len(`border-${s}-width`));
+      }
+    }
+    return { px: Math.max(0, px), viewport };
   }
 
   /**

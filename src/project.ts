@@ -102,6 +102,7 @@ const PROPS: (keyof ResolvedProps)[] = [
   "measure",
   "width",
   "height",
+  "minHeight",
   "text",
   "justify",
   "wrap",

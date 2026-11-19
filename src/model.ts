@@ -134,7 +134,7 @@ export interface MarginProp {
 }
 
 /** Props an override can remove (`maxWidth: none`): the element is then as if it never had them. */
-export const UNSETTABLE = ["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "grow"] as const;
+export const UNSETTABLE = ["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow"] as const;
 export type Unsettable = (typeof UNSETTABLE)[number];
 
 export interface Props {
@@ -150,6 +150,8 @@ export interface Props {
   /** fill: the parent's full width; fit: shrink-to-fit (its content's width, at most the parent's). */
   width?: Ref | { keyword: "fill" | "fit"; path: string };
   height?: Ref;
+  /** The least height (min-height): the box is as tall as its content or its height, and never less. */
+  minHeight?: Ref;
   /** Width / height ratio; height follows the width (images, media, cards). */
   aspect?: { value: number; raw: string; path: string };
   /** How an image fills an aspect box. Paint only. */
@@ -194,6 +196,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "measure",
   "width",
   "height",
+  "minHeight",
   "aspect",
   "fit",
   "text",
