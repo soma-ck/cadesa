@@ -156,6 +156,10 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     out.push(...(e.width || e.maxWidth ? [] : ["width: 100%"]), `aspect-ratio: ${p.aspect.raw}`, "height: auto", ...(ctx.height ? ["min-height: auto"] : []));
   if (p.fit) out.push(`object-fit: ${p.fit.value}`);
   if (p.overflow) out.push(`overflow-x: ${p.overflow.x}`, `overflow-y: ${p.overflow.y}`);
+  if (p.position) {
+    const ps = p.position;
+    out.push(`position: ${ps.type}`, ...(["top", "right", "bottom", "left"] as const).map((k) => `${k}: ${ps[k] ? v(ps[k]!) : "auto"}`));
+  }
   // A fixed-height text box centers its lines vertically. align-content on a block container keeps
   // inline formatting intact (display: flex would split <strong> etc. into separate items).
   if (p.height && ctx.leafText) out.push("align-content: center");
@@ -206,6 +210,10 @@ function usedTokens(model: Model, c: Component): string[] {
     const refs: (Ref | undefined)[] = [
       p.layout?.gap,
       p.layout?.rowGap,
+      p.position?.top,
+      p.position?.right,
+      p.position?.bottom,
+      p.position?.left,
       p.layout?.min,
       ...(p.layout?.columns ?? []).map((t) => ("size" in t ? t.size : undefined)),
       p.padding?.top,

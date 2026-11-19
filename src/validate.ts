@@ -15,6 +15,7 @@ import {
   type Component,
   type MarginSide,
   type Overflow,
+  type PositionType,
   type PaddingProp,
   type Unsettable,
   type Length,
@@ -619,6 +620,24 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           if (v === "cover" || v === "contain") out.fit = { value: v, path: p.join(".") };
           else err(p, "invalid fit", { expected: "cover or contain", got: v });
           break;
+        case "position": {
+          // position: absolute, or { type: absolute, top: <token>, left: <token> }.
+          const o = isObj(v) ? v : { type: v };
+          if (isObj(v)) keys(v, p, ["type", "top", "right", "bottom", "left"]);
+          if (!["relative", "absolute", "fixed", "sticky"].includes(o.type as string)) {
+            err(isObj(v) ? [...p, "type"] : p, "invalid position", { expected: "relative, absolute, fixed or sticky", got: o.type });
+            break;
+          }
+          const side = (k: "top" | "right" | "bottom" | "left") => {
+            if (o[k] === undefined) return undefined;
+            const names = [...tokens.values()].filter((t) => (t.category === "space" || (t.category === "size" && t.pct !== undefined)) && t.name === o[k]);
+            return names.length && names[0].category === "size" ? ref(o[k], [...p, k], "size") : ref(o[k], [...p, k], "space");
+          };
+          const sides = { top: side("top"), right: side("right"), bottom: side("bottom"), left: side("left") };
+          if ((["top", "right", "bottom", "left"] as const).some((k) => o[k] !== undefined && !sides[k])) break;
+          out.position = { type: o.type as PositionType, path: p.join("."), ...Object.fromEntries(Object.entries(sides).filter(([, r]) => r)) };
+          break;
+        }
         case "overflow": {
           // overflow: hidden (both axes), or { x: auto } (y visible): Bootstrap's .table-responsive.
           if (isObj(v)) keys(v, p, ["x", "y"]);
@@ -758,8 +777,13 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   if (top.page !== undefined) {
     const po = obj(top.page, ["page"], "page settings");
     if (po) {
-      keys(po, ["page"], ["background", "margin", "padding", "outer", "overflow"]);
+      keys(po, ["page"], ["background", "margin", "padding", "outer", "overflow", "windowHeight"]);
       page = { path: "page", background: po.background === undefined ? undefined : ref(po.background, ["page", "background"], "color") };
+      // The window's height (px) the source was laid out for: fixed boxes and absolute ones with no positioned ancestor are placed in it.
+      if (po.windowHeight !== undefined) {
+        if (typeof po.windowHeight !== "number" || !(po.windowHeight > 0)) err(["page", "windowHeight"], "invalid window height", { expected: "a height in px, e.g. 800", got: po.windowHeight });
+        else page.windowHeight = po.windowHeight;
+      }
       // overflow: hidden (or clip): what is past the page's right edge is cut off instead of scrolling.
       if (po.overflow !== undefined) {
         if (!OVERFLOWS.includes(po.overflow as Overflow)) err(["page", "overflow"], "invalid overflow", { expected: "visible, hidden, clip, auto or scroll", got: po.overflow });

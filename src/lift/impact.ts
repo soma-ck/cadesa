@@ -66,6 +66,9 @@ function stretched(b: Box): boolean {
   return !!b.props.height || !!b.props.aspect || b.h > natural + i.top + i.bottom + 0.001;
 }
 
+/** Absolutely positioned or fixed: out of flow. */
+const outOfFlow = (b: Box) => b.props.position?.value.type === "absolute" || b.props.position?.value.type === "fixed";
+
 /** A box that places rows inside its height (stretching it moves its children). */
 const placesRows = (b: Box) => /^(cluster|grid|layer)$/.test(b.props.pattern?.value ?? "") || (b.props.pattern?.value === "stack" && b.children.some((c) => c.props.grow));
 
@@ -122,6 +125,8 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
     else subtree(b, "size", why);
     let cur = b;
     for (let p = parentOf.get(cur); p; cur = p, p = parentOf.get(cur)) {
+      // An absolutely positioned or fixed box neither moves its siblings nor resizes its parent.
+      if (outOfFlow(cur)) return;
       const i = p.children.indexOf(cur);
       const moved = `moved by #${b.id}: ${why}`;
       const pattern = p.props.pattern?.value;
@@ -132,7 +137,7 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
         const align = p.props.align?.value ?? "center";
         lines.forEach((ln, k) => {
           for (const s of ln) {
-            if (s === cur || k < li) continue;
+            if (s === cur || k < li || outOfFlow(s)) continue;
             if (k > li || align === "center" || align === "end") subtree(s, "position", moved);
             else if (align === "stretch" && !s.props.height) (placesRows(s) ? subtree : mark)(s, "size", `stretched with #${b.id}: ${why}`);
           }
@@ -140,12 +145,13 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
       } else {
         const shared = pattern === "cluster" || grows;
         const sibs = shared ? p.children.filter((c) => c !== cur) : p.children.slice(i + 1);
-        for (const s of sibs) subtree(s, "position", moved);
+        for (const s of sibs) if (!outOfFlow(s)) subtree(s, "position", moved);
       }
       mark(p, "size", `resized by #${b.id}: ${why}`);
     }
     const roots = l.boxes;
-    for (const r of roots.slice(roots.indexOf(cur) + 1)) subtree(r, "position", `moved by #${b.id}: ${why}`);
+    if (outOfFlow(cur)) return;
+    for (const r of roots.slice(roots.indexOf(cur) + 1)) if (!outOfFlow(r)) subtree(r, "position", `moved by #${b.id}: ${why}`);
   };
 
   const noEffect: string[] = [];
@@ -201,6 +207,22 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
       sizeChange(b, `${src}: <${tag}> is bold by default; no font-weight is set, Cadesa assumes 400`);
     if (b.props.width && typeof b.props.width.value === "number" && !has("box-sizing") && !UA_CONTROL.has(tag) && (b.props.padding || b.props.border))
       sizeChange(b, `${src}: box-sizing is content-box here; Cadesa sizes border-box`);
+  }
+
+  // An absolutely positioned box moves and resizes with its containing block (the nearest
+  // positioned ancestor) and, without offsets, with its parent.
+  for (const b of boxes) {
+    if (!outOfFlow(b) || marks.has(b)) continue;
+    let cb: Box | undefined;
+    for (let a = parentOf.get(b); a; a = parentOf.get(a))
+      if (a.props.position) {
+        cb = a;
+        break;
+      }
+    const pos = b.props.position!.value;
+    const atStatic = (pos.left === undefined && pos.right === undefined) || (pos.top === undefined && pos.bottom === undefined);
+    const dep = [cb, atStatic ? parentOf.get(b) : undefined].find((a) => a && [...(marks.get(a)?.values() ?? [])].length);
+    if (dep) subtree(b, "position", `moved by #${dep.id}: ${[...marks.get(dep)!.keys()][0].replace(/^(moved|resized) by #\S+: /, "")}`);
   }
 
   const exact: string[] = [];

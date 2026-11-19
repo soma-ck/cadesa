@@ -68,19 +68,16 @@ describe("lift of hand-written CSS", () => {
       [50, "none"],
       [50, "none"],
       [59, "state"],
-      [78, "geometry"],
       [106, "geometry"],
     ]);
-    expect(r.stats).toMatchObject({ declarations: 54, unlifted: 5, components: 1, breakpoints: 1 });
+    expect(r.stats).toMatchObject({ declarations: 54, unlifted: 4, components: 1, breakpoints: 1 });
   });
 
   it("marks only the boxes an unlifted rule or browser default can move", () => {
-    expect(narrow.exact).toEqual(["name", "bio", "actions", "follow", "message"]);
-    expect(narrow.uncertain.map((u) => u.id)).toEqual(["card", "meta", "badge"]);
+    // The badge is absolutely positioned: the margin above it moves nothing it depends on.
+    expect(narrow.exact).toEqual(["name", "bio", "actions", "follow", "message", "badge"]);
+    expect(narrow.uncertain.map((u) => u.id)).toEqual(["card", "meta"]);
     expect(narrow.uncertain.find((u) => u.id === "meta")!.reasons[0]).toMatch(/<p> keeps the browser's default margin/);
-    expect(narrow.uncertain.find((u) => u.id === "badge")!.reasons).toContain(
-      "fixtures/legacy.css:78 position: absolute: position: absolute takes the box out of normal flow",
-    );
     expect(narrow.noEffect).toEqual(["fixtures/legacy.css:59 background: #1d4ed8: interactive state; the default state is unaffected"]);
     expect(mid.exact).toEqual(narrow.exact);
   });

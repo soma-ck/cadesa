@@ -32,13 +32,10 @@ describe("elements not laid out", () => {
   it("counts table contents and out-of-flow elements, not inline text, form internals or hidden ones", () => {
     const r = checkCmd({ fixture: page, css, widths: [400] });
     const nl = (r.data as { coverage: Coverage }).coverage.notLaidOut!;
-    // tbody, 2 tr, 4 td inside the table; the absolute panel and its 2 paragraphs.
-    expect(nl.causes).toEqual([
-      { cause: "inside a table, laid out as one box", count: 7 },
-      { cause: "out of flow: position absolute or fixed, or a float", count: 3 },
-    ]);
-    expect(nl.count).toBe(10);
-    expect(r.text).toMatch(/! 10 of \d+ elements not laid out: inside a table, laid out as one box \(×7\) · out of flow/);
+    // tbody, 2 tr, 4 td inside the table (the absolute panel is laid out in the window).
+    expect(nl.causes).toEqual([{ cause: "inside a table, laid out as one box", count: 7 }]);
+    expect(nl.count).toBe(7);
+    expect(r.text).toMatch(/! 7 of \d+ elements not laid out: inside a table, laid out as one box \(×7\);/);
   });
 
   it("says so first when most of the page isn't laid out", () => {

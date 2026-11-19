@@ -8,6 +8,7 @@ import {
   type MarginSide,
   type Model,
   type Overflow,
+  type PositionType,
   type Pattern,
   type Props,
   type Ref,
@@ -91,6 +92,8 @@ export interface ResolvedProps {
   grow?: Resolved<{ factor: number; basis: "zero" | "content" }>;
   aspect?: Resolved<number>;
   overflow?: Resolved<{ x: Overflow; y: Overflow }>;
+  /** Positioning and its offsets (px, or a percentage of the containing block). */
+  position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct }>;
   fit?: Resolved<"cover" | "contain">;
   backdrop?: Resolved<string>;
   shadow?: Resolved<string>;
@@ -238,6 +241,14 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "grow": {
         const g = p.grow!;
         out.grow = { value: { factor: g.value, basis: g.basis }, display: `${g.value}${g.basis === "zero" ? " (from zero)" : ""}`, steps: [...pre, src(g.path)] };
+        break;
+      }
+      case "position": {
+        const ps = p.position!;
+        const off = (r?: Ref) => (r ? (r.kind === "size" ? sizeOf(r).value : lengthOf(r).value) : undefined);
+        const value = { type: ps.type, ...Object.fromEntries((["top", "right", "bottom", "left"] as const).flatMap((k) => (ps[k] ? [[k, off(ps[k])]] : []))) };
+        const shown = (["top", "right", "bottom", "left"] as const).filter((k) => ps[k]).map((k) => `${k} ${ps[k]!.name}`);
+        out.position = { value, display: [ps.type, ...shown].join(", "), steps: [...pre, src(ps.path)] };
         break;
       }
       case "overflow": {

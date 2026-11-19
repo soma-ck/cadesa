@@ -100,7 +100,7 @@ describe("MCP server", () => {
   it("lifts CSS and renders it with uncertainty marks", async () => {
     const l = await call("cadesa_lift", { css: "fixtures/legacy.css", fixture: "fixtures/legacy.html", widths: [390] });
     expect(l.text).toContain("55 of 56 declarations lifted");
-    expect(l.text).toContain("✓ exact (7): #card #name #bio #actions #follow #message #meta");
+    expect(l.text).toContain("✓ exact (8): #card #name #bio #actions #follow #message #meta #badge");
     const r = await call("cadesa_render", { css: "fixtures/legacy.css", fixture: "fixtures/legacy.html", widths: [390] });
     expect(r.text).toMatch(/#meta +p +16,241 +358×18/);
   });

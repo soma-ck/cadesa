@@ -441,7 +441,7 @@ export interface LiftInput {
   layerChildren: Map<string, Map<number, boolean>>;
   pageBackground?: Decl;
   /** The page's insets per side, as CSS lengths: the body's margin and padding, and the root element's (outer). */
-  pageSides?: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string };
+  pageSides?: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string; windowHeight?: number };
   /** Records found before mapping (more are added). */
   unlifted: Unlifted[];
   resets: Map<string, Set<string>>;
@@ -864,11 +864,26 @@ export function liftElements(input: LiftInput): LiftResult {
     if (bsz && bsz.value.trim() !== "border-box") note(e, s, bsz, "Cadesa boxes are border-box", "geometry");
 
     // position
+    // position: relative shifts the box (nothing else moves), absolute and fixed take it out of flow
+    // into its containing block. Offsets are px or rem lengths (negative too) or percentages. Sticky
+    // is predicted at scroll position 0, where it hasn't moved; it still contains absolute children.
     const pos = take("position");
-    const offsets = ["top", "right", "bottom", "left", "inset"].map((p) => take(p)).filter(Boolean) as Decl[];
-    if (pos && ["absolute", "fixed", "sticky"].includes(pos.value.trim()))
-      note(e, s, pos, `position: ${pos.value.trim()} takes the box out of normal flow`, "geometry");
-    else if (offsets.length && pos?.value.trim() === "relative") note(e, s, offsets[0], "relative offsets move the box visually", "visual");
+    const inset = take("inset");
+    const insetSides = inset ? sides(inset.value) : undefined;
+    const offs = (["top", "right", "bottom", "left"] as const).map((k, i) => take(k) ?? (insetSides ? { ...inset!, prop: k, value: insetSides[i] } : undefined));
+    const pv = pos?.value.trim();
+    if (pos && pv && ["relative", "absolute", "fixed", "sticky"].includes(pv)) {
+      const ps: Record<string, string> = {};
+      offs.forEach((d, i) => {
+        const k = ["top", "right", "bottom", "left"][i];
+        if (!d || d.value.trim() === "auto" || pv === "sticky") return;
+        const v = d.value.trim();
+        const t = /%$/.test(resolveVar(v)?.raw ?? v) ? sizeToken(v) : lengthToken("space", v, true);
+        if (t) ps[k] = t;
+        else note(e, s, d, `${k} must be a px or rem length, a percentage or auto`, pv === "relative" ? "visual" : "geometry");
+      });
+      out.position = Object.keys(ps).length ? { type: pv, ...ps } : pv;
+    } else if (pos && pv && pv !== "static") note(e, s, pos, `position: ${pv} is not modelled`, "geometry");
 
     // text role
     const ff = take("font-family");
@@ -1069,7 +1084,8 @@ export function liftElements(input: LiftInput): LiftResult {
   }
   // The body's margin and padding and the root element's insets: space tokens per side.
   const pageInsets: Record<string, unknown> = {};
-  const { overflow: pageOverflow, ...pageSides } = input.pageSides ?? {};
+  const { overflow: pageOverflow, windowHeight, ...pageSides } = input.pageSides ?? {};
+  if (windowHeight) pageInsets.windowHeight = windowHeight;
   if (pageOverflow) pageInsets.overflow = pageOverflow;
   for (const [k, sides] of Object.entries(pageSides)) {
     if (!sides || sides.every((v) => isZero(v))) continue;
