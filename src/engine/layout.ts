@@ -1227,7 +1227,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // A table cell's border as its table lays it out (table.ts); a collapsed table's own border and padding.
     if (over) rawProps = { ...rawProps, ...over };
     // Percentage padding and margins: of the containing block's width.
-    let props = atBase(rawProps, cbW ?? avail);
+    const pctProps = atBase(rawProps, cbW ?? avail);
+    let props = pctProps;
     const grid = props.pattern?.value === "table" ? gridOf(n, c, props) : undefined;
     if (grid?.collapse) {
       const t = tableInsets(grid);
@@ -1260,7 +1261,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const maxW = Math.min(props.maxWidth ? sizeAt(props.maxWidth.value, avail) : Infinity, props.measure ? sizeAt(props.measure.value, avail) : Infinity);
     /** fit-content in `room`: the content's max-content width, at most the room, at least its min-content. */
     const fit = (room: number, what: string): number => {
-      const it = withOwnPct(intrinsic(n, c, slot, true), rawProps, props);
+      // (Only the percentage padding resolved here: a collapsed table's own border is in its intrinsic widths already.)
+      const it = withOwnPct(intrinsic(n, c, slot, true), rawProps, pctProps);
       if (it.why) {
         issues.push({ severity: "error", id, path: props.width?.steps.at(-1)?.path ?? sourcePath, message: `#${id} ${what}, and its content can't be measured (${it.why})` });
         return room;
