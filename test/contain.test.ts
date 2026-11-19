@@ -68,6 +68,28 @@ describe("containment", () => {
     expect(c.approx("after")).toMatch(/content-visibility/);
   });
 
+  it("widths with percentages in min(), max(), clamp() and calc() are of the containing block", () => {
+    const wide = fixture("contained");
+    const at = (w: number) => run(readFileSync("fixtures/css/contained.html", "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, ""), readFileSync("fixtures/css/contained.css", "utf8"), [w], { bare: true });
+    const big = at(1300);
+    expect(wide.exact()).toBe(true);
+    expect(big.exact()).toBe(true);
+    // min(440px, 100%): the page's width at 400px, 440px at 1300px (centered by its auto margins).
+    expect(geo(wide.box("signup")).slice(2, 3)).toEqual([368]);
+    expect(geo(big.box("signup"))).toEqual([430, 546, 440, 82]);
+    // min(1100px, 100% - 28px).
+    expect(geo(wide.box("wide"))).toEqual([30, 788, 340, 48]);
+    expect(geo(big.box("wide"))).toEqual([100, 644, 1100, 24]);
+    // clamp(180px, 50%, 520px) in a flex row.
+    expect(wide.box("split-main").w).toBe(184);
+    expect(big.box("split-main").w).toBe(520);
+    // calc((100% - 2rem) / 3), in float, cut to a layout unit.
+    expect(geo(wide.box("third")).slice(2, 3)).toEqual([111.984]);
+    // max-width: min(36rem, 90%), centered.
+    expect(geo(wide.box("capped"))).toEqual([34.406, 1004, 331.188, 24]);
+    expect(geo(big.box("capped"))).toEqual([362, 764, 576, 24]);
+  });
+
   it("will-change and isolation change nothing, unless will-change makes a fixed box's containing block", () => {
     const c = run(`<div class="a"><p class="t">Text</p></div><div class="b"><p class="t">Text</p><div class="bar"></div></div>`, `p { margin: 0 } .a { will-change: transform; isolation: isolate } .b { will-change: transform } .bar { position: fixed; top: 0; width: 10px; height: 10px }`);
     expect(c.approx("a")).toBeUndefined();

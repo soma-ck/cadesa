@@ -24,7 +24,15 @@ export interface Token {
   fluid?: (viewport: number) => number;
   /** A size token in percent ("50%"): of the containing block's content width. */
   pct?: number;
+  /**
+   * A size token with percentages inside calc(), min(), max() or clamp() ("min(440px, 100%)"): its
+   * px at a viewport width for a containing block content width (`base`), as Chromium evaluates it.
+   */
+  calc?: (viewport: number, base: number) => number;
 }
+
+/** A size token that is (or has) a percentage of the containing block's width. */
+export const relative = (t: Token) => t.pct !== undefined || !!t.calc;
 
 export interface TextRole {
   name: string;

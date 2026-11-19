@@ -49,9 +49,13 @@ export interface ResolvedText {
   underline: boolean;
 }
 
-/** A percentage of the containing block's content width (a size token like "50%"). */
+/**
+ * A percentage of the containing block's content width (a size token like "50%"), or an expression
+ * with percentages in it ("min(440px, 100%)"): `of` gives its px (float) for that width.
+ */
 export interface Pct {
   pct: number;
+  of?: (base: number) => number;
 }
 
 export interface Sides {
@@ -68,6 +72,8 @@ export interface Sides {
 export function sizeAt(v: number | Pct, base: number): number {
   if (typeof v === "number") return v;
   const f = Math.fround;
+  // An expression: its float value cut to a layout unit (LayoutUnit(float) truncates).
+  if (v.of) return Math.trunc(f(v.of(base) * 64)) / 64;
   return Math.trunc(f(f(f(base) * f(v.pct)) / 100) * 64) / 64;
 }
 
@@ -204,6 +210,10 @@ export function resolveElement(model: Model, component: Component, slot: string 
     /** A size token: a length, or a percentage of the containing block's width. */
     const sizeOf = (r: Ref): Resolved<number | Pct> => {
       const t = model.tokens.get(tokenKey(r.kind, r.name))!;
+      if (t.calc) {
+        const calc = t.calc;
+        return { value: { pct: NaN, of: (base) => calc(width, base) }, display: `${t.raw} (% of the parent's width)`, steps: [tokenStep(r), ...pre, src(r.path)] };
+      }
       if (t.pct === undefined) return lengthOf(r);
       return { value: { pct: t.pct }, display: `${t.pct}% of the parent's width`, steps: [tokenStep(r), ...pre, src(r.path)] };
     };
@@ -309,7 +319,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
         break;
       case "height": {
         const t = model.tokens.get(tokenKey(p.height!.kind, p.height!.name))!;
-        if (t.pct !== undefined) out.heightPct = sizeOf(p.height!);
+        if (t.pct !== undefined || t.calc) out.heightPct = sizeOf(p.height!);
         else out.height = lengthOf(p.height!);
         break;
       }

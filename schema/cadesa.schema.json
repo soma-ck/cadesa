@@ -589,6 +589,11 @@
             "type": "string",
             "pattern": "^\\s*(?:\\d+(?:\\.\\d+)?|\\.\\d+)%\\s*$",
             "description": "a percentage of the parent's content width (width, maxWidth and measure only)"
+          },
+          {
+            "type": "string",
+            "pattern": "^\\s*(?:calc|min|max|clamp)\\(.*%.*\\)\\s*$",
+            "description": "calc(), min(), max() or clamp() with percentages of the parent's content width, e.g. \"min(440px, 100%)\" (width, maxWidth and measure only)"
           }
         ]
       }

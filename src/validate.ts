@@ -6,6 +6,7 @@ import {
   LENGTH_CATEGORIES,
   OVERFLOWS,
   parseContain,
+  relative,
   PROP_ORDER,
   ROOT_FONT_PX,
   TOKEN_CATEGORIES,
@@ -172,9 +173,15 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: fl.css, px: fl.at(1280), fluid: fl.at });
             continue;
           }
+          // A size with percentages of the parent's width in calc(), min(), max() or clamp().
+          const withPct = !len && !fl && category === "size" && typeof value === "string" ? lengthExpr(value, { pct: true }) : undefined;
+          if (withPct?.pct) {
+            tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: withPct.css, calc: withPct.pct });
+            continue;
+          }
           if (!len) {
             err(path, `invalid ${category} length`, {
-              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px), or one that follows the viewport width, e.g. "clamp(16px, 8px + 2vw, 32px)"${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%"' : category === "space" ? "; negative for a margin that pulls the box outward" : ""}`,
+              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px), or one that follows the viewport width, e.g. "clamp(16px, 8px + 2vw, 32px)"${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%" or "min(440px, 100%)"' : category === "space" ? "; negative for a margin that pulls the box outward" : ""}`,
               got: value,
             });
             continue;
@@ -232,7 +239,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   /** A size token that must be a fixed length (a percentage of the width can't size it). */
   const fixedRef = (value: unknown, path: PathSeg[], what: string): Ref | undefined => {
     const r = ref(value, path, "size");
-    if (r && tokens.get(tokenKey("size", r.name))!.pct !== undefined) {
+    if (r && relative(tokens.get(tokenKey("size", r.name))!)) {
       err(path, `"${r.name}" is a percentage; ${what} needs a length`, { expected: "a size token in px or rem", got: value });
       return undefined;
     }

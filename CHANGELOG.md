@@ -28,6 +28,12 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   auto` is that containment, its height `≈` (off screen its content is skipped). `will-change` and
   `isolation` change nothing, except that `will-change: transform` (like a transform or filter)
   makes an ancestor the containing block of a fixed box, which stays `≈`.
+- A `width` or `max-width` with percentages inside `min()`, `max()`, `clamp()` or `calc()`
+  (`width: min(440px, 100%)`, `min(1100px, 100% - 28px)`, `calc((100% - 2rem) / 3)`) is computed
+  per box against its containing block's width, in float as Chromium evaluates it, then cut to a
+  layout unit. In a source: a size token such as `"min(440px, 100%)"`. With `box-sizing:
+  content-box` and padding or a border, it stays `≈`; so do percentages inside `height`, padding
+  and margins.
 
 ## 0.1.12 (2026-11-19)
 

@@ -1984,7 +1984,8 @@ export abstract class PageLifter {
       this.note(el, si, { decl: `${utility} (${prop}: ${v})`, reason: "an em length under a font size that follows the viewport width is not modelled", kind: "geometry" });
       return v;
     }
-    const f = lengthExpr(v, { em: t.size, vh: this.viewportHeight });
+    // (A width or max-width may hold percentages of the containing block: lift keeps them for the engine.)
+    const f = lengthExpr(v, { em: t.size, vh: this.viewportHeight, pct: prop === "width" || prop === "max-width" });
     if (f && /\d[dsl]?v(?:h|min|max)\b/i.test(v)) this.usesViewportHeight = true;
     return f ? f.css : v;
   }

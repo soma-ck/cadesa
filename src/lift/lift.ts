@@ -528,7 +528,9 @@ export function liftElements(input: LiftInput): LiftResult {
     const r = resolveVar(value);
     if (r && /^(?:\d+(?:\.\d+)?|\.\d+)%$/.test(r.raw) && parseFloat(r.raw) > 0 && parseFloat(r.raw) <= 100)
       return r.varName ? tokens.named("size", r.varName, r.raw) : tokens.literal("size", r.raw);
-    return lengthToken("size", value);
+    // Percentages in calc(), min(), max() or clamp() ("min(440px, 100%)"): computed per box.
+    const f = r ? lengthExpr(r.raw, { pct: true }) : undefined;
+    return lengthToken("size", value) ?? (f?.pct ? tokens.literal("size", f.css) : undefined);
   };
   /** grid-template-columns as Cadesa tracks: size tokens, "<n>fr" and "minmax(0, <n>fr)" (undefined when another kind of track is used). */
   const gridTracks = (v: string): string[] | undefined => {
@@ -744,7 +746,7 @@ export function liftElements(input: LiftInput): LiftResult {
     const maxW = take("max-width");
     const autoX = margins[1]?.value.trim() === "auto" && margins[3]?.value.trim() === "auto";
     const both = maxW && /^min\(\s*([^,]+?)\s*,\s*([^,]+?)\s*\)$/.exec(maxW.value.trim());
-    if (both && autoX) {
+    if (both && autoX && lengthToken("size", both[1]) && lengthToken("size", both[2])) {
       // Cadesa's own output when maxWidth and measure both apply: max-width: min(maxWidth, measure).
       const a = lengthToken("size", both[1]);
       const b = lengthToken("size", both[2]);

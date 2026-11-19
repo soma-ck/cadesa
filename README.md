@@ -332,13 +332,14 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `grow` | `{ factor, basis: zero \| auto }` | `flex: <factor> …`: items share a row's free space (Bootstrap's `.col`, Tailwind's `flex-1`) |
 | `padding` | space token, or `{ block, inline }` | `padding` (a missing axis is 0) |
 | `margin` | space token (negative allowed), `auto`, `{ block, inline }` or `{ top, right, bottom, left }` | `margin`; collapses between blocks in `flow`, adds to the outer size in stacks, rows and grids |
-| `width` | size token (px, rem or `"50%"`), `fill` or `fit` | fixed width, stretch in a stack, or `fit-content`. Unset: stretch in a stack, sized to its content in a cluster |
+| `width` | size token (px, rem, `"50%"` or `"min(440px, 100%)"`), `fill` or `fit` | fixed width, stretch in a stack, or `fit-content`. Unset: stretch in a stack, sized to its content in a cluster |
 | `height` | size token (a percentage: of a stretched or set parent height) | `height` |
 | `maxWidth` | size token | a centered column (`max-width` + `margin-inline: auto`), e.g. content inside a full-bleed band |
 | `measure` | size token | a left-aligned `max-width`: a comfortable line length |
 | `aspect` | `"16:9"` | `aspect-ratio`: the height follows the width |
 | `text` | text role | font family, size, weight, line height, color; optional `letterSpacing` (em), `transform: uppercase`, `decoration`, `wrap: anywhere` (long words break) |
 | `overflow` | `hidden`, `clip`, `auto`, `scroll`, or `{ x, y }` | `overflow-x` / `overflow-y`: what doesn't fit scrolls or is cut off. Anything but `clip` also keeps the children's margins inside and lets the box shrink below its content in a cluster |
+| `contain` | `"layout paint"`, `content`, `strict`, `size`, `inline-size`, `none` | `contain`: layout or paint keeps the children's margins inside and places absolute and fixed children in the box; size sizes it as if empty |
 | `textAlign` | `start`, `center`, `end` | `text-align` (fixed-height text is also centered vertically) |
 | `border` | color token, or `{ color, width, top, right, bottom, left }` | `border` with per-side widths (they count in layout, so it's structure) |
 | `background`, `radius`, `backdrop`, `shadow`, `fit` | tokens | polish: `background-color`, `border-radius`, `background-image`, `box-shadow`, `object-fit` |

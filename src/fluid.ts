@@ -10,7 +10,7 @@
  */
 
 type Node =
-  | { t: "num"; v: number; unit: "px" | "vw" | "" }
+  | { t: "num"; v: number; unit: "px" | "vw" | "%" | "" }
   | { t: "op"; op: "+" | "-" | "*" | "/"; a: Node; b: Node }
   | { t: "fn"; name: "min" | "max" | "clamp"; args: Node[] };
 
@@ -19,6 +19,11 @@ export interface ExprOptions {
   em?: number;
   /** The viewport height in px for vh, dvh, svh and lvh (and vmin / vmax); undefined: not allowed. */
   vh?: number;
+  /**
+   * Percentages are allowed (of a base the caller gives at evaluation: the containing block's
+   * width for a width or max-width). Such an expression is returned with `pct`.
+   */
+  pct?: boolean;
 }
 
 /** Absolute units in px (CSS: 1in = 96px). */
@@ -96,6 +101,7 @@ export function parseExpr(src: string, opts: ExprOptions = {}): Node | undefined
     const unit = m![2].toLowerCase();
     if (unit === "") return { t: "num", v: n, unit: "" };
     if (unit === "vw") return { t: "num", v: n, unit: "vw" };
+    if (unit === "%" && opts.pct) return { t: "num", v: n, unit: "%" };
     if (ABSOLUTE[unit] !== undefined) return { t: "num", v: n * ABSOLUTE[unit], unit: "px" };
     if (unit === "rem") return { t: "num", v: n * 16, unit: "px" };
     if (unit === "em" && opts.em !== undefined) return { t: "num", v: n * opts.em, unit: "px" };
@@ -136,6 +142,55 @@ function kind(n: Node): "length" | "number" {
 }
 
 const hasVw = (n: Node): boolean => (n.t === "num" ? n.unit === "vw" : n.t === "op" ? hasVw(n.a) || hasVw(n.b) : n.args.some(hasVw));
+const hasPct = (n: Node): boolean => (n.t === "num" ? n.unit === "%" : n.t === "op" ? hasPct(n.a) || hasPct(n.b) : n.args.some(hasPct));
+
+type Linear = { px: number; vw: number; pct: number };
+/** A sum of px, vw and % terms (no min(), max() or clamp() inside), or undefined. */
+function linear(n: Node): Linear | undefined {
+  if (n.t === "num") return n.unit === "" ? undefined : { px: n.unit === "px" ? n.v : 0, vw: n.unit === "vw" ? n.v : 0, pct: n.unit === "%" ? n.v : 0 };
+  if (n.t === "fn") return undefined;
+  const num = (x: Node): number | undefined => (kindSafe(x) === "number" ? evalExpr(x, 0) : undefined);
+  if (n.op === "+" || n.op === "-") {
+    const [a, b] = [linear(n.a), linear(n.b)];
+    if (!a || !b) return undefined;
+    const s = n.op === "+" ? 1 : -1;
+    return { px: a.px + s * b.px, vw: a.vw + s * b.vw, pct: a.pct + s * b.pct };
+  }
+  const scale = (l: Linear | undefined, k: number | undefined) => (l && k !== undefined && isFinite(k) ? { px: l.px * k, vw: l.vw * k, pct: l.pct * k } : undefined);
+  if (n.op === "*") return scale(linear(n.a), num(n.b)) ?? scale(linear(n.b), num(n.a));
+  const d = num(n.b);
+  return d ? scale(linear(n.a), 1 / d) : undefined;
+}
+function kindSafe(n: Node): "length" | "number" | undefined {
+  try {
+    return kind(n);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The value in px of an expression with percentages of `base`, as Chromium evaluates it: in float
+ * (float32), each sum of px and % as one pixels-and-percent value (pixels + percent / 100 × base),
+ * min(), max() and clamp() of those, and other arithmetic in float. A width is never negative.
+ */
+export function evalPct(n: Node, viewport: number, base: number): number {
+  const f = Math.fround;
+  const go = (x: Node): number => {
+    const l = linear(x);
+    if (l) return f(f(l.px + (l.vw * viewport) / 100) + f(f(f(l.pct) / 100) * f(base)));
+    if (x.t === "num") return f(x.v);
+    if (x.t === "fn") {
+      const xs = x.args.map(go);
+      if (x.name === "min") return Math.min(...xs);
+      if (x.name === "max") return Math.max(...xs);
+      return Math.max(xs[0], Math.min(xs[1], xs[2]));
+    }
+    const [a, b] = [go(x.a), go(x.b)];
+    return f(x.op === "+" ? a + b : x.op === "-" ? a - b : x.op === "*" ? a * b : a / b);
+  };
+  return Math.max(0, go(n));
+}
 
 /** The value in px at a viewport width. */
 export function evalExpr(n: Node, viewport: number): number {
@@ -164,12 +219,15 @@ export interface Fluid {
   at(viewport: number): number;
   /** It changes with the viewport width. */
   fluid: boolean;
+  /** It has percentages (only with the `pct` option): its px for a viewport width and a percentage base; `at` is then NaN. */
+  pct?: (viewport: number, base: number) => number;
 }
 
 /** A length expression: its canonical CSS and its value per viewport width (undefined: not one Cadesa computes). */
 export function lengthExpr(src: string, opts: ExprOptions = {}): Fluid | undefined {
   const n = parseExpr(src, opts);
   if (!n) return undefined;
+  if (hasPct(n)) return { css: n.t === "num" ? print(n) : print(n, true), at: () => NaN, fluid: hasVw(n), pct: (w, base) => evalPct(n, w, base) };
   if (!hasVw(n)) {
     const v = evalExpr(n, 0);
     return isFinite(v) ? { css: `${fmt(v)}px`, at: () => v, fluid: false } : undefined;

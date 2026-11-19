@@ -2,7 +2,7 @@
  * Containment from app stylesheets: panels that are contain: layout paint style or content
  * (margins stay inside, absolute children are placed in them), a size-contained block, an
  * inline-size-contained flex item, a layout-contained dock holding a fixed bar, and paint
- * containment on its own.
+ * containment on its own. Then widths with percentages in min(), max(), clamp() and calc().
  */
 *,
 *::before,
@@ -118,4 +118,51 @@ p {
 .painted {
   contain: style paint;
   margin-top: 20px;
+}
+
+/* Widths with percentages inside min(), max(), clamp() and calc(): of the containing block. */
+.signup {
+  width: min(440px, 100%);
+  margin: 24px auto 0;
+  padding: 16px;
+  background: #f0f4f8;
+}
+
+.signup-title {
+  font-size: 20px;
+  line-height: 1.3;
+}
+
+.wide {
+  width: min(1100px, 100% - 28px);
+  margin: 16px auto 0;
+}
+
+.split {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.split-main {
+  width: clamp(180px, 50%, 520px);
+  flex-shrink: 0;
+}
+
+.split-side {
+  flex: 1;
+}
+
+.split-text {
+  margin: 0;
+}
+
+.third {
+  width: calc((100% - 2rem) / 3);
+  margin-top: 16px;
+}
+
+.capped {
+  max-width: min(36rem, 90%);
+  margin: 16px auto 0;
 }
