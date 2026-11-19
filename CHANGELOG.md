@@ -30,6 +30,13 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   table without losing what it has. Where a box is `≈` because of what its table lacks, the
   coverage line says `re-measure: cadesa fonts <page> --css <files> --measure`, as does `check`'s
   fonts note.
+- Italic text in a real italic face is measured: a page that loads one (`@font-face` with
+  `font-style: italic`, or a Google Fonts link with the `ital` axis) gets it measured by `cadesa
+  fonts --measure` into its own table (`<family>-italic.metrics.json`; `cadesa metrics <file>
+  --italic`, and `--system --italic` for an installed font's), and italic text boxes and runs (`<em>`,
+  `<i>`, `<cite>`, `font-style: italic`) are measured with it, vertical metrics too. Italic text in a
+  family without an italic face is the upright one slanted, and measured upright. In a source: a text
+  role's `style: italic`.
 - A line height in px with a font size that isn't a whole number of 1/64 px (`40px` at `16.8px`) is
   exactly that many px (it came out 1/64 px short).
 - A table given its width by a grid track or a stretching flex container is never narrower than its

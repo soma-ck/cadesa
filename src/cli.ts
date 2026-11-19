@@ -55,12 +55,13 @@ Usage:
                     where it comes from (@font-face file, Google Fonts, system font). --measure
                     measures each one it can (Chrome or Chromium; Google Fonts are downloaded);
                     add --system to also measure installed system fonts (machine-specific)
-  cadesa metrics  <font-file> --family <name> [--weight <n>] [--out .cadesa/metrics]
+  cadesa metrics  <font-file> --family <name> [--weight <n>] [--italic] [--out .cadesa/metrics]
                     measure a font once in Chromium so the engine can measure text set in it
-                    (omit --weight for a variable font; repeat per face for static fonts)
+                    (omit --weight for a variable font; repeat per face for static fonts;
+                    --italic for an italic face, kept in its own table)
   cadesa metrics  --google <family> [--weights 400,700]   a Google font by name (its variable
                     wght axis when it has one), downloaded into .cadesa/fonts/
-  cadesa metrics  --system --family <name> [--weights 400,700]   the font installed on this machine
+  cadesa metrics  --system --family <name> [--weights 400,700] [--italic]   the font installed on this machine
   cadesa metrics  --auto <page.html> --css <file.css>   same as cadesa fonts ... --measure
   cadesa mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
 
@@ -119,6 +120,7 @@ async function main(argv: string[]) {
       width: { type: "string" },
       auto: { type: "boolean", default: false },
       system: { type: "boolean", default: false },
+      italic: { type: "boolean", default: false },
       json: { type: "boolean", default: false },
       lines: { type: "boolean", default: false },
       svg: { type: "string" },
@@ -166,7 +168,7 @@ async function main(argv: string[]) {
     if (weight !== undefined && !(weight >= 1 && weight <= 1000)) throw new InputError(`invalid --weight "${values.weight}"`);
     const weights = values.weights?.split(",").map((w) => Number(w.trim()));
     if (weights?.some((w) => !(w >= 1 && w <= 1000))) throw new InputError(`invalid --weights "${values.weights}"`);
-    return asyncResult(metricsCmd({ font: input, family: values.family, weight, google: values.google, system: values.system, weights, out: values.out }));
+    return asyncResult(metricsCmd({ font: input, family: values.family, weight, google: values.google, system: values.system, weights, out: values.out, italic: values.italic }));
   }
 
   const need = (v: string | undefined, what: string) => {

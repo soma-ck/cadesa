@@ -55,6 +55,8 @@ export interface ResolvedText {
   /** px */
   letterSpacing: number;
   uppercase: boolean;
+  /** Set in the font's italic face: measured with its italic table. */
+  italic?: boolean;
   /** overflow-wrap: anywhere or break-word: a word too long for a line breaks between characters. */
   wrapAnywhere: boolean;
   /** overflow-wrap: break-word: as anywhere, but min-content still counts whole words. */
@@ -499,6 +501,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
             color: color.raw,
             letterSpacing: (role.letterSpacing ?? 0) * sizePx,
             uppercase: role.transform === "uppercase",
+            ...(role.style === "italic" && { italic: true }),
             wrapAnywhere: role.wrap === "anywhere" || role.wrap === "break-word",
             breakWord: role.wrap === "break-word",
             nowrap: role.wrap === "none",

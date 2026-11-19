@@ -35,6 +35,8 @@ export interface FontMetrics {
   file: string;
   /** Where the table came from: what was measured, with what, and whether it ships with Cadesa. */
   info: MetricsInfo;
+  /** A table of an italic face (measured with font-style: italic). */
+  italic: boolean;
   /** Width in px, or undefined if the text has a character outside the measured set. */
   /** With `spaced`, as letter-spaced text (no contextual alternates); letter-spacing itself isn't added. */
   measure(text: string, sizePx: number, weight: number, spaced?: boolean): number | undefined;
@@ -198,6 +200,7 @@ function load(file: string): FontMetrics {
   return {
     family: m.family,
     file,
+    italic: m.style === "italic",
     info: {
       source: m.source,
       generatedWith: m.generatedWith,
@@ -305,11 +308,14 @@ export function metricsDirs(): string[] {
   ];
 }
 
-/** Metrics for the first family in a font-family list, if it has been measured. */
-export function metricsFor(fontFamily: string | undefined): FontMetrics | undefined {
+/**
+ * Metrics for the first family in a font-family list, if it has been measured. With `italic`, its
+ * italic table (for text in a real italic face; a synthesized one is as wide as upright text).
+ */
+export function metricsFor(fontFamily: string | undefined, italic = false): FontMetrics | undefined {
   if (!fontFamily) return undefined;
   const first = fontFamily.split(",")[0].trim().replace(/^["']|["']$/g, "");
-  const name = metricsFileName(first);
+  const name = metricsFileName(first, italic);
   // A table may be gzipped (.metrics.json.gz), as the bundled ones are.
   const file = metricsDirs()
     .flatMap((d) => [join(d, name), join(d, `${name}.gz`)])
@@ -317,7 +323,7 @@ export function metricsFor(fontFamily: string | undefined): FontMetrics | undefi
   const key = file ?? `missing:${name}`;
   if (!registry.has(key)) {
     const m = file ? load(file) : undefined;
-    registry.set(key, m && m.family.toLowerCase() === first.toLowerCase() ? m : undefined);
+    registry.set(key, m && m.family.toLowerCase() === first.toLowerCase() && m.italic === italic ? m : undefined);
   }
   return registry.get(key);
 }
@@ -456,14 +462,19 @@ export function layoutText(
     let wt = weight;
     let font: string | undefined;
     let size = sizePx;
+    let italic: boolean | undefined;
     for (const sp of spans) {
       if (!(sp.from <= at && at < sp.to)) continue;
       if (sp.weight !== undefined) wt = sp.weight;
       if (sp.font !== undefined) font = sp.font;
       if (sp.size !== undefined) size = sp.size;
+      if (sp.italic !== undefined) italic = sp.italic;
     }
-    if (wt === weight && font === undefined && size === sizePx) return base;
-    return { m: (font !== undefined && metricsFor(font)) || m, size, weight: wt, key: `${font ?? ""}|${size}|${wt}` };
+    if (wt === weight && font === undefined && size === sizePx && (italic === undefined || italic === m.italic)) return base;
+    // Text in another font, or in the italic (or upright) face of this one: that table.
+    const it = italic ?? m.italic;
+    const other = font !== undefined || it !== m.italic ? metricsFor(font ?? JSON.stringify(m.family), it) : undefined;
+    return { m: other || m, size, weight: wt, key: `${font ?? ""}|${size}|${wt}|${it ? "i" : ""}` };
   };
   // Letter-spaced text is shaped without contextual alternates. Text in another weight, font or
   // size is another font: measured on its own, with no kerning across the edge.

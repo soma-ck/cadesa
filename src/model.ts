@@ -46,6 +46,8 @@ export interface TextRole {
   /** In em; measured exactly (added after every character, as browsers do). */
   letterSpacing?: number;
   transform?: "uppercase" | "none";
+  /** italic: set in the font's italic face, measured with its italic table (a synthesized italic is as wide as upright text). */
+  style?: "italic" | "normal";
   /**
    * "anywhere": a word too long for a line breaks between characters (overflow-wrap: anywhere), and
    * the text's min-content width counts single characters. "break-word": the same breaking, but the

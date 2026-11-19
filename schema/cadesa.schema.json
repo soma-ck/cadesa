@@ -148,6 +148,13 @@
               "none"
             ]
           },
+          "style": {
+            "enum": [
+              "italic",
+              "normal"
+            ],
+            "description": "italic: set in the font's italic face (measured with its italic metrics table)"
+          },
           "wrap": {
             "enum": [
               "normal",

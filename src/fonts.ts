@@ -24,6 +24,8 @@ export interface FontUse {
   declaredIn?: string;
   /** Text boxes set in it, at any of the widths laid out. */
   boxes: string[];
+  /** The weights of its italic text (in a face the page may load as italic): measured with its italic table. */
+  italicWeights?: number[];
   /**
    * Characters its text uses beyond the standard measured set (icon fonts' Private Use Area
    * codepoints from `content:` values, other scripts): measured too.
@@ -42,13 +44,20 @@ export function fontUses(layouts: Layout[]): FontUse[] {
     for (const b of walk(l.boxes)) {
       const t = b.props.text?.value;
       if (!t || !b.text?.trim()) continue;
-      const family = t.font ? firstFamily(t.font) : "(browser default)";
-      const key = family.toLowerCase();
-      let u = out.get(key);
-      if (!u) out.set(key, (u = { family, stack: t.font, weights: [], sizes: [], boxes: [] }));
-      if (!u.weights.includes(t.weight)) u.weights.push(t.weight);
-      if (!u.sizes.includes(t.sizePx)) u.sizes.push(t.sizePx);
-      if (!u.boxes.includes(b.id)) u.boxes.push(b.id);
+      const use = (stack: string | undefined, weight: number, italic: boolean) => {
+        const family = stack ? firstFamily(stack) : "(browser default)";
+        const key = family.toLowerCase();
+        let u = out.get(key);
+        if (!u) out.set(key, (u = { family, stack, weights: [], sizes: [], boxes: [] }));
+        if (!u.weights.includes(weight)) u.weights.push(weight);
+        if (!u.sizes.includes(t.sizePx)) u.sizes.push(t.sizePx);
+        if (!u.boxes.includes(b.id)) u.boxes.push(b.id);
+        if (italic && !(u.italicWeights ??= []).includes(weight)) u.italicWeights.push(weight);
+        return u;
+      };
+      // Runs in another font or face (an <em> in a real italic face) need that font's table too.
+      for (const r of b.runFonts ?? []) use(r.font, r.weight, r.italic);
+      const u = use(t.font, t.weight, !!t.italic);
       const extra = [...b.text].filter((c) => !STANDARD.has(c) && c !== "\uFFFC" && /\S/.test(c));
       if (extra.length) u.chars = [...new Set([...(u.chars ?? ""), ...extra])].sort().join("");
     }
@@ -331,6 +340,10 @@ export function fontReport(uses: FontUse[], sources: PageFontSources): FontRepor
       const declared = faces.length ? faces.filter((f) => f.style === "normal").map((f) => f.weight) : google ? googleWeights(google.url, u.family) : [];
       if (!r.remeasure && m.info.kind === "variable" && declared.length && declared.every((w) => !w.includes(" ")) && u.weights.some((w) => !declared.includes(String(w))))
         r.remeasure = `the page declares only weights ${declared.join(", ")} (text at ${u.weights.filter((w) => !declared.includes(String(w))).join(", ")} uses the nearest of them), but the table is variable`;
+      // Italic text in a face the page loads (or may have installed) as italic: its italic table.
+      const it = u.italicWeights?.length && u.stack ? metricsFor(u.stack, true) : undefined;
+      if (!r.remeasure && u.italicWeights?.length && !it) r.remeasure = `its italic text (${u.italicWeights.join(", ")}) is set in the italic face, which isn't measured`;
+      else if (!r.remeasure && it?.outdated) r.remeasure = `the italic table was measured by an older Cadesa and has no ${it.outdated}`;
       // A table measured by an older Cadesa, without what it measures now: measured again.
       if (!r.remeasure && m.outdated) r.remeasure = `the table was measured by an older Cadesa and has no ${m.outdated}`;
       if (r.remeasure) r.note = `${r.remeasure}: --measure${m.info.machineSpecific ? " --system" : ""} measures ${m.info.machineSpecific ? "it again" : "what the page loads"}`;
@@ -475,8 +488,8 @@ export async function googleCssFor(family: string, weights?: number[]): Promise<
 }
 
 /** The faces to measure for a family: normal style, Latin subset, one per weight (variable first). */
-function facesToMeasure(faces: FontFaceRule[], family: string): FontFaceRule[] {
-  const own = faces.filter((f) => f.family.toLowerCase() === family.toLowerCase() && f.style === "normal" && coversLatin(f.unicodeRange) && f.src.length);
+function facesToMeasure(faces: FontFaceRule[], family: string, style: "normal" | "italic" = "normal"): FontFaceRule[] {
+  const own = faces.filter((f) => f.family.toLowerCase() === family.toLowerCase() && (style === "italic" ? /^(italic|oblique)/.test(f.style) : f.style === "normal") && coversLatin(f.unicodeRange) && f.src.length);
   const variable = own.find((f) => f.weight.includes(" "));
   if (variable) return [variable];
   const byWeight = new Map<string, FontFaceRule>();
@@ -522,7 +535,8 @@ export async function measureFaces(
   opts: { out: string; cacheDir: string; browser: Browser; via: Measured["via"]; extra?: string },
 ): Promise<Measured> {
   const result: Measured = { family, via: opts.via, faces: [] };
-  const todo = facesToMeasure(faces, family);
+  // Its italic faces too, when the page loads them: italic text is set in them.
+  const todo = [...facesToMeasure(faces, family), ...facesToMeasure(faces, family, "italic")];
   if (!todo.length) return { ...result, error: `no normal-style face of "${family}" covering Latin text` };
   let file: string | undefined;
   // A face whose file can't be had (a weight the page declares but its text doesn't use, served
@@ -532,12 +546,14 @@ export async function measureFaces(
     try {
       const { path, url } = await fileFor(f, opts.cacheDir);
       const variable = f.weight.includes(" ");
-      const m: MetricsFile = await generateMetrics({ font: path, family, weight: variable ? undefined : Number(f.weight), url, browser: opts.browser, extra: opts.extra });
-      file = writeMetrics(m, opts.out);
-      result.faces.push({ weight: f.weight, file: rel(path), ...(url && { url }), ...(m.files?.[0].sha256 && { sha256: m.files[0].sha256 }) });
+      const italic = /^(italic|oblique)/.test(f.style);
+      const m: MetricsFile = await generateMetrics({ font: path, family, weight: variable ? undefined : Number(f.weight), url, browser: opts.browser, extra: opts.extra, italic });
+      const written = writeMetrics(m, opts.out);
+      if (!italic || !file) file = written;
+      result.faces.push({ weight: italic ? `${f.weight} italic` : f.weight, file: rel(path), ...(url && { url }), ...(m.files?.[0].sha256 && { sha256: m.files[0].sha256 }) });
     } catch (e) {
       if (todo.length === 1) throw e;
-      failed.push(`${f.weight}: ${(e as Error).message.split("\n")[0]}`);
+      failed.push(`${f.weight}${/^(italic|oblique)/.test(f.style) ? " italic" : ""}: ${(e as Error).message.split("\n")[0]}`);
     }
   }
   if (!result.faces.length) throw new Error(failed.join("; "));
@@ -548,14 +564,17 @@ export async function measureFaces(
  * Measure the font installed on this machine under `family` (machine-specific). With `stack`,
  * the first of its families this machine has, as the browser would pick it.
  */
-export async function measureSystem(family: string, weights: number[], opts: { out: string; browser: Browser; stack?: string; extra?: string }): Promise<Measured> {
+export async function measureSystem(family: string, weights: number[], opts: { out: string; browser: Browser; stack?: string; extra?: string; italicWeights?: number[] }): Promise<Measured> {
   const m = await generateMetrics({ family, system: { weights, stack: opts.stack }, browser: opts.browser, extra: opts.extra });
   const file = writeMetrics(m, opts.out);
+  // Italic text: the italic face as this machine's browser picks it (an installed italic, or the upright one slanted).
+  const italic = opts.italicWeights?.length ? await generateMetrics({ family, system: { weights: opts.italicWeights, stack: opts.stack }, browser: opts.browser, extra: opts.extra, italic: true }) : undefined;
+  if (italic) writeMetrics(italic, opts.out);
   return {
     family,
     via: "system",
     metrics: rel(file),
-    faces: [{ weight: weights.join(", "), file: m.source }],
+    faces: [{ weight: weights.join(", "), file: m.source }, ...(italic ? [{ weight: `${opts.italicWeights!.join(", ")} italic`, file: italic.source }] : [])],
     warning: m.machineSpecific,
   };
 }
@@ -615,7 +634,7 @@ export async function measureReport(report: FontReport[], opts: MeasureOptions =
         const extra = r.chars;
         if (r.status === "file" || (r.status === "measured" && r.faces.length)) done.push(await measureFaces(r.family, r.faces, { out, cacheDir, browser, via: "file", extra }));
         else if (r.status === "google" || (r.status === "measured" && r.google)) done.push(await measureFaces(r.family, await googleFaces(r.google!.url), { out, cacheDir, browser, via: "google", extra }));
-        else done.push(await measureSystem(r.family, [...new Set([400, 700, ...r.weights])].sort((a, b) => a - b), { out, browser, stack: r.stack, extra }));
+        else done.push(await measureSystem(r.family, [...new Set([400, 700, ...r.weights])].sort((a, b) => a - b), { out, browser, stack: r.stack, extra, italicWeights: r.italicWeights?.length ? [...new Set([400, 700, ...r.italicWeights])].sort((a, b) => a - b) : undefined }));
       } catch (e) {
         done.push({ family: r.family, via: r.status === "system" || r.status === "unknown" ? "system" : r.status === "google" ? "google" : "file", faces: [], error: (e as Error).message.split("\n")[0] });
       }

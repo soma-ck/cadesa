@@ -1459,7 +1459,7 @@ export function firstBaseline(h: Pick<TableHooks, "lineHeight">, b: Box): LU | u
     if (b.lines[0].base !== undefined) return U(ins.top) + U(b.lines[0].base);
     const t = b.props.text?.value;
     if (!t) return "unknown";
-    const v = metricsFor(t.font)?.vertical(t.sizePx, t.weight);
+    const v = metricsFor(t.font, !!t.italic)?.vertical(t.sizePx, t.weight);
     if (!v) return "unknown";
     const lh = h.lineHeight(t.sizePx, t.lineHeight);
     const leading = Math.round((lh - v.ascent - v.descent) * 64);

@@ -54,6 +54,10 @@ export function genCssCase(seed: number): CssCase {
   const css: string[] = [
     `@font-face { font-family: "Inter"; font-weight: 100 900; src: url("../../../fonts/InterVariable-latin.woff2") format("woff2"); }`,
     `@font-face { font-family: "Roboto"; font-weight: 100 900; src: url("../../../fixtures/fonts/fonts/roboto/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2") format("woff2"); }`,
+    // Lato with a real italic face (Inter and Roboto have none here: their italic is synthesized).
+    `@font-face { font-family: "Lato"; font-weight: 400; src: url("../../../fixtures/fonts/fonts/lato/Lato-Regular.woff2") format("woff2"); }`,
+    `@font-face { font-family: "Lato"; font-weight: 700; src: url("../../../fixtures/fonts/fonts/lato/Lato-Bold.woff2") format("woff2"); }`,
+    `@font-face { font-family: "Lato"; font-weight: 400; font-style: italic; src: url("../../../fixtures/fonts/fonts/lato/Lato-Italic.woff2") format("woff2"); }`,
     `body { margin: 8px; font-family: Inter; font-size: ${r.pick(["16px", "16px", "14px", "15px", "18px"])}; line-height: ${r.pick(["1.5", "1.5", "1.25", "1.4", "24px", "normal", "1"])}; color: #222; }`,
     `p { margin: 0 0 ${r.int(0, 12)}px }`,
   ];
@@ -77,13 +81,14 @@ export function genCssCase(seed: number): CssCase {
   const valign = () => r.pick(["baseline", "sub", "super", "middle", "text-top", "text-bottom", "-0.125em", "2px", "-3px", "0.3em", "20%", "-50%"]);
   /** An inline run: a tag with text, maybe styled, maybe nested. */
   const run = (depth: number): string => {
-    const tag = r.pick(["span", "span", "span", "small", "sup", "sub", "b", "strong", "a"]);
+    const tag = r.pick(["span", "span", "span", "small", "sup", "sub", "b", "strong", "a", "em", "i"]);
     const decls: string[] = [];
     if (r.chance(0.5)) decls.push(`font-size: ${size()}`);
     if (r.chance(0.3)) decls.push(`line-height: ${lineHeight()}`);
     if (r.chance(0.35)) decls.push(`vertical-align: ${valign()}`);
-    if (r.chance(0.25)) decls.push(`font-family: ${r.pick(["Roboto", "Inter"])}`);
+    if (r.chance(0.25)) decls.push(`font-family: ${r.pick(["Roboto", "Inter", "Lato"])}`);
     if (r.chance(0.15)) decls.push(`font-weight: ${r.pick(["300", "600", "700"])}`);
+    if (r.chance(0.12)) decls.push(`font-style: ${r.pick(["italic", "normal"])}`);
     const inner = depth < 2 && r.chance(0.25) ? `${words(r, 0, 2)} ${run(depth + 1)} ${words(r, 0, 2)}` : words(r, 1, 4);
     return `<${tag}${tag === "a" ? ' href="#"' : ""}${attr(cls(decls))}>${inner}</${tag}>`;
   };
@@ -164,6 +169,8 @@ export function genCssCase(seed: number): CssCase {
     if (r.chance(0.2)) decls.push(`width: ${remRoot && r.chance(0.5) ? `${r.int(8, 40)}rem` : `${r.int(120, 600)}px`}`);
     if (r.chance(0.15)) decls.push(`padding: ${remRoot && r.chance(0.5) ? `${r.int(0, 12) / 8}rem` : `${r.int(0, 12)}px`}`);
     if (r.chance(0.1)) decls.push(`font-family: Roboto`);
+    else if (r.chance(0.15)) decls.push("font-family: Lato");
+    if (r.chance(0.12)) decls.push("font-style: italic");
     const parts: string[] = [];
     const k = r.int(1, 5);
     for (let j = 0; j < k; j++) {
@@ -195,6 +202,8 @@ export interface CssFuzzStats {
 /** Run cases `seeds` (lifted and laid out, then measured in Chromium); failing cases are kept in `out`. */
 export async function runCssFuzz(seeds: number[], opts: { tolerance: number; out: string; workers: number; verbose?: boolean; quiet?: boolean }): Promise<CssFuzzStats> {
   const ROOT = process.cwd();
+  // The fixture fonts' tables (Lato's upright and italic faces, as the pages load them).
+  process.env.CADESA_METRICS ??= "fixtures/fonts/metrics";
   const overrides = new Map<string, string>();
   const server = await serveFiles(ROOT, overrides);
   const browser = await launchChromium();

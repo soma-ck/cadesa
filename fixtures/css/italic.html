@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: italic faces</title>
+    <link rel="stylesheet" href="italic.css" />
+    <style>
+      @font-face {
+        font-family: "Lato";
+        font-weight: 400;
+        src: url("../fonts/fonts/lato/Lato-Regular.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Lato";
+        font-weight: 700;
+        src: url("../fonts/fonts/lato/Lato-Bold.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Lato";
+        font-weight: 400;
+        font-style: italic;
+        src: url("../fonts/fonts/lato/Lato-Italic.woff2") format("woff2");
+      }
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <article class="review">
+      <h1 class="review__title">The lighthouse keeper's almanac</h1>
+      <p class="review__byline">Reviewed by the reading circle, autumn meeting</p>
+      <p class="review__body">A slim book of weather notes, kept for <em>forty-one years</em> on a rock off the northern cape. The keeper writes of fog that <em>arrives like a guest</em> and leaves without a word, of gulls, of the supply boat, and of the long winter when the lamp's clockwork failed and was wound by hand every hour.</p>
+      <blockquote class="review__quote">"The sea was flat as a plate this morning, and I could not trust it."</blockquote>
+      <p class="review__body">Readers who prefer a plot will be disappointed; readers who like <i>lists of wind directions</i> will not. The final chapter, <cite>A Year Without Storms</cite>, is the strongest.</p>
+      <p class="review__aside">Inter has no italic face here, so its italic is the upright face slanted: <em>as wide as upright text</em>, measured upright.</p>
+      <figure class="review__figure">
+        <div class="review__plate"></div>
+        <figcaption class="review__caption">Plate four: the lamp room, drawn from the keeper's own sketch.</figcaption>
+      </figure>
+    </article>
+  </body>
+</html>

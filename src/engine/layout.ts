@@ -39,6 +39,8 @@ export interface Box {
   text?: string;
   /** Laid-out lines, with widths in px, when the text could be measured. */
   lines?: Line[];
+  /** Runs of its text in another font, weight or face (italic or upright): what they are set in, for `cadesa fonts`. */
+  runFonts?: { font?: string; weight: number; italic: boolean }[];
   /** Px this box's content extends past its content box horizontally. */
   overflowX?: number;
   /** Px this box's content extends past its fixed height. */
@@ -205,6 +207,20 @@ export function lineHeightRatio(px: number, sizePx: number): number {
   return Math.round(exact * 1e12) / 1e12;
 }
 
+/** The fonts, weights and faces runs of a text box's text are set in, where they differ from the box's. */
+function runFontsOf(n: FixtureNode, props: ResolvedProps): { font?: string; weight: number; italic: boolean }[] {
+  const t = props.text?.value;
+  if (!t) return [];
+  const out = new Map<string, { font?: string; weight: number; italic: boolean }>();
+  for (const r of n.runMeta)
+    for (const sp of r.spans ?? []) {
+      if (sp.font === undefined && sp.italic === undefined && sp.weight === undefined) continue;
+      const f = { font: sp.font ?? t.font, weight: sp.weight ?? t.weight, italic: sp.italic ?? !!t.italic };
+      out.set(`${f.font}|${f.weight}|${f.italic}`, f);
+    }
+  return [...out.values()];
+}
+
 /** A color that paints nothing (a background in it doesn't count as painted). */
 function transparent(color: string): boolean {
   const c = color.trim().toLowerCase();
@@ -327,16 +343,16 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   /** Measure the text of a leaf box. Returns undefined when the font has no metrics. */
   function text(n: FixtureNode, props: ResolvedProps, id: string, assumptions: string[]) {
     const t = props.text!.value;
-    const m = metricsFor(t.font);
+    const m = metricsFor(t.font, !!t.italic);
     const raw = n.runs.length ? n.runs : [n.text];
     const runs = raw.map((r) => (t.uppercase ? r.toUpperCase() : r));
     const shown = [...runs, ...n.runMeta.flatMap((r) => (r.lead ? [r.lead.text] : []))].join(" ").replaceAll("\uFFFC", "");
     // Runs in another font: that font's metrics, for the characters in it, at its weights.
-    const runFonts = n.runMeta.flatMap((r, i) => (r.spans ?? []).filter((sp) => sp.font !== undefined).map((sp) => ({ sp, text: [...(runs[i] ?? "")].slice(sp.from, sp.to).join("").replaceAll("\uFFFC", "") })));
+    const runFonts = n.runMeta.flatMap((r, i) => (r.spans ?? []).filter((sp) => sp.font !== undefined || (sp.italic !== undefined && sp.italic !== !!t.italic)).map((sp) => ({ sp, text: [...(runs[i] ?? "")].slice(sp.from, sp.to).join("").replaceAll("\uFFFC", "") })));
     const runWhy = runFonts
       .map(({ sp, text }) => {
-        const rm = metricsFor(sp.font);
-        const fam = sp.font!.split(",")[0].trim();
+        const rm = metricsFor(sp.font ?? t.font, sp.italic ?? !!t.italic);
+        const fam = `${(sp.font ?? t.font ?? "inherited").split(",")[0].trim()}${(sp.italic ?? t.italic) ? " italic" : ""}`;
         if (!rm) return `font "${fam}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`;
         const un = rm.unsupported(text);
         if (un.length) return `characters outside the measured set of "${fam}": ${un.map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`;
@@ -344,7 +360,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       })
       .find(Boolean);
     const why = !m
-      ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`
+      ? `font "${(t.font ?? "inherited").split(",")[0]}${t.italic ? " italic" : ""}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`
       : m.unsupported(shown).length
         ? `characters outside the measured set: ${m.unsupported(shown).map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`
         : ([t.weight, ...n.runMeta.flatMap((r) => (r.spans ?? []).flatMap((sp) => (sp.weight === undefined || sp.font !== undefined ? [] : [sp.weight])))].map((wt) => m.weightIssue(wt)).find(Boolean) ?? runWhy);
@@ -1594,6 +1610,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       props,
       text: isText ? n.text || undefined : undefined,
       lines,
+      ...(isText && runFontsOf(n, props).length && { runFonts: runFontsOf(n, props) }),
       assumptions,
       children,
       ...(n.anonymous && { anonymous: true }),

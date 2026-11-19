@@ -206,6 +206,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     // Always set, never left to the reset: descendants (<p>, <a>, <strong>) inherit them.
     out.push(`letter-spacing: ${role.letterSpacing !== undefined ? `${role.letterSpacing}em` : "normal"}`);
     out.push(`text-transform: ${role.transform ?? "none"}`);
+    if (role.style === "italic") out.push("font-style: italic");
     out.push(`overflow-wrap: ${role.wrap === "anywhere" || role.wrap === "break-word" ? role.wrap : "normal"}`);
     // white-space: nowrap; restated on the inline content (the reset sets white-space: normal on every element).
     if (role.wrap === "none" || ctx.nowrap) out.push(`white-space: ${role.wrap === "none" ? "nowrap" : "normal"}`);

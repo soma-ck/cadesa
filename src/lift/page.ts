@@ -97,6 +97,11 @@ export interface TextCtx {
   letterSpacing: number;
   /** letter-spacing set in em of this fluid font size (its px follow the viewport width with it). */
   lsFluid?: string;
+  /**
+   * Italic (or oblique) text in a face the page may load as italic: measured with the family's italic
+   * table. Without an italic face it is the upright one slanted, as wide as upright text (not set).
+   */
+  italic?: boolean;
   /** Other inherited properties, with the utility that set them. */
   inherited: Map<string, Origin>;
 }
@@ -885,6 +890,7 @@ export abstract class PageLifter {
         if (v !== undefined && !/^(inherit|unset|-webkit-match-parent)$/.test(v)) t.inherited.set(p, { value: v, utility: o.utility });
       }
     }
+    t.italic = this.italic(el, si) && this.italicFace(firstFamily(t.family.value)) !== false;
     el.text[si] = t;
     return t;
   }
@@ -971,7 +977,7 @@ export abstract class PageLifter {
   staleFont(els: (El | undefined)[], si: number): Note | undefined {
     for (const e of els) {
       const t = this.textOf(e, si);
-      const m = metricsFor(t.family.value);
+      const m = metricsFor(t.family.value, t.italic);
       if (m?.outdated)
         return { decl: `font-family: ${m.family}`, reason: `re-measure: cadesa fonts … --measure${m.info.machineSpecific ? " --system" : ""}; its metrics table is from an older Cadesa, without ${m.outdated}`, kind: "text" };
     }
@@ -981,7 +987,7 @@ export abstract class PageLifter {
   /** line-height: normal in px: the font's ascent, descent and line gap as Chromium rounds them (undefined without vertical metrics, or for a font size that follows the viewport). */
   normalLine(t: TextCtx): number | undefined {
     if (t.fluid) return undefined;
-    const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
+    const v = metricsFor(t.family.value, t.italic)?.vertical(t.size, t.weight);
     return v && v.ascent + v.descent + v.lineGap;
   }
 
@@ -994,7 +1000,7 @@ export abstract class PageLifter {
   strutOf(el: El, si: number): { sa: number; sd: number; xh2: number; lh: number; ascent: number; descent: number } | undefined {
     const t = this.textOf(el, si);
     if (t.fluid) return undefined;
-    const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
+    const v = metricsFor(t.family.value, t.italic)?.vertical(t.size, t.weight);
     if (!v) return undefined;
     const lu = (x: number) => Math.floor(x * 64 + 1e-6) / 64;
     const lh = t.lineHeight === "normal" ? v.ascent + v.descent + v.lineGap : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : lu(t.lineHeight.px);
@@ -1111,9 +1117,8 @@ export abstract class PageLifter {
     const kt = this.textOf(k, si);
     const pt = this.textOf(k.parent, si);
     if (kt.fluid || pt.fluid || this.textOf(root, si).fluid || kt.letterSpacing !== pt.letterSpacing) return false;
-    const m = metricsFor(kt.family.value);
+    const m = metricsFor(kt.family.value, kt.italic);
     if (!m || !m.vertical(kt.size, kt.weight) || m.weightIssue(kt.weight)) return false;
-    if (this.italic(k, si) !== this.italic(k.parent, si) && this.italicFace(firstFamily(kt.family.value)) !== false) return false;
     const e = this.inlineExtent(k, si);
     if (!e || !this.strutOf(root, si) || this.baselineShift(k, si) === undefined) return false;
     if (e.grown && this.alignsByExtent(k, si)) return false;
@@ -1132,6 +1137,8 @@ export abstract class PageLifter {
     const out: RunStyle = {};
     if (kt.family.value !== pt.family.value) out.font = kt.family.value;
     if (kt.size !== pt.size) out.size = kt.size;
+    // In its family's italic face (or out of it): that table. (Set with a font of its own too: a span's font and face go together.)
+    if (!!kt.italic !== !!pt.italic || out.font !== undefined) out.italic = !!kt.italic;
     const own = this.strutOf(k, si)!;
     const rs = this.strutOf(this.lineRoot(k, si)!, si)!;
     const shift = this.baselineShift(k, si)!;
@@ -1214,7 +1221,7 @@ export abstract class PageLifter {
       if (ctype === "textarea") a = hm;
       else if (/^(checkbox|radio|range)$/.test(ctype)) a = mt + ch;
       else {
-        const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
+        const v = metricsFor(t.family.value, t.italic)?.vertical(t.size, t.weight);
         const own = this.strutOf(el, si);
         if (!v || !own) return undefined;
         a = mt + bt + pt + (ctype === "select" ? own.sa : v.ascent + Math.floor(v.lineGap / 2));
@@ -1326,7 +1333,7 @@ export abstract class PageLifter {
     const t = this.textOf(el, si);
     const pt = this.textOf(parent, si);
     const lh = (x: TextCtx) => (x.lineHeight === "normal" ? NaN : "num" in x.lineHeight ? lineHeightPx(x.size, x.lineHeight.num) : x.lineHeight.px);
-    if (t.size !== pt.size || t.family.value !== pt.family.value || !(lh(t) === lh(pt))) return false;
+    if (t.size !== pt.size || t.family.value !== pt.family.value || !!t.italic !== !!pt.italic || !(lh(t) === lh(pt))) return false;
     if (t.inherited.get("direction")?.value === "rtl") return false;
     const px = (k: El, p: string) => lengthPx(res(k, p) ?? "0", this.textOf(k, si).size) ?? NaN;
     // A set height shorter than its line of text (a 20px button on a 24px line): the parent's
@@ -1406,7 +1413,7 @@ export abstract class PageLifter {
     if (spaced.some((x) => x !== spaced[0])) return;
     let gap = 0;
     if (spaced[0]) {
-      const w = metricsFor(pt.family.value)?.measure(" ", pt.size, pt.weight);
+      const w = metricsFor(pt.family.value, pt.italic)?.measure(" ", pt.size, pt.weight);
       if (w === undefined) return;
       gap = w + pt.letterSpacing;
     }
@@ -1471,7 +1478,7 @@ export abstract class PageLifter {
     if (!/^(normal|nowrap)?$/.test(pt.inherited.get("white-space")?.value ?? "") || !/^(0|0px)?$/.test(pt.inherited.get("text-indent")?.value ?? "")) return undefined;
     // Its inline children in its own font and size (another one adds its own box to the line).
     const t = this.textOf(el, si);
-    const same = (k: El): boolean => k.anonymous !== undefined || ((this.displayOf(k, si) === "none" || (this.textOf(k, si).size === t.size && this.textOf(k, si).family.value === t.family.value && JSON.stringify(this.textOf(k, si).lineHeight) === JSON.stringify(t.lineHeight))) && k.children.every(same));
+    const same = (k: El): boolean => k.anonymous !== undefined || ((this.displayOf(k, si) === "none" || (this.textOf(k, si).size === t.size && this.textOf(k, si).family.value === t.family.value && !!this.textOf(k, si).italic === !!t.italic && JSON.stringify(this.textOf(k, si).lineHeight) === JSON.stringify(t.lineHeight))) && k.children.every(same));
     if (!el.children.every(same)) return undefined;
     const a = this.strutOf(parent, si);
     const b = this.strutOf(el, si);
@@ -1523,7 +1530,7 @@ export abstract class PageLifter {
     // Fixed sizes from the theme (border box).
     if ((type === "checkbox" || type === "radio") && native) return isFinite(insX) ? Math.max(0, 13 - insX) : undefined;
     if (type === "range" && native) return isFinite(insX) ? Math.max(0, 129 - insX) : undefined;
-    const m = metricsFor(t.family.value);
+    const m = metricsFor(t.family.value, t.italic);
     if (!m || m.weightIssue(t.weight) || t.letterSpacing || !/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "")) return undefined;
     if (el.tag === "select") {
       if (attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1) return undefined;
@@ -1591,7 +1598,7 @@ export abstract class PageLifter {
     const t = this.textOf(el, si);
     const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
     const top = px("padding-top") + (/^(none|hidden)$/.test(res("border-top-style") ?? "none") ? 0 : borderPx(px("border-top-width")));
-    const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
+    const v = metricsFor(t.family.value, t.italic)?.vertical(t.size, t.weight);
     const own = this.strutOf(el, si);
     const normal = this.normalLine(t);
     if (!v || !own || normal === undefined || !isFinite(top)) return NaN;
@@ -1871,7 +1878,7 @@ export abstract class PageLifter {
       const [ml, mr, mt, mb] = ["margin-left", "margin-right", "margin-top", "margin-bottom"].map((p) => px(p));
       if (![ml, mr, mt, mb, bw, bh].every(isFinite)) return undefined;
       // The line's strut at this size, from the font's vertical metrics.
-      const v = metricsFor(pt.family.value)?.vertical(size, pt.weight);
+      const v = metricsFor(pt.family.value, pt.italic)?.vertical(size, pt.weight);
       if (!v) return undefined;
       const lh = pt.lineHeight === "normal" ? v.ascent + v.descent + v.lineGap : "num" in pt.lineHeight ? lineHeightPx(size, pt.lineHeight.num) : lu(pt.lineHeight.px);
       const leading = Math.round((lh - v.ascent - v.descent) * 64);
@@ -1928,7 +1935,7 @@ export abstract class PageLifter {
       if (kids.some((c) => !c.pseudo || this.ownDisplay(c, si) !== "inline" || typeof c.content?.[si] !== "string" || c.children.length)) return undefined;
       const same = (c: El) => {
         const ct = this.textOf(c, si);
-        return ct.size === t.size && ct.family.value === t.family.value && ct.weight === t.weight && ct.letterSpacing === t.letterSpacing;
+        return ct.size === t.size && ct.family.value === t.family.value && !!ct.italic === !!t.italic && ct.weight === t.weight && ct.letterSpacing === t.letterSpacing;
       };
       if (!kids.every(same) || kids.some((c) => { const e = this.inlineEdges(c, si); return !e || e.open || e.close; })) return undefined;
       const own = (k.node.childNodes ?? []).filter((c) => c.nodeName === "#text").map((c) => c.value ?? "").join("");
@@ -1939,7 +1946,7 @@ export abstract class PageLifter {
     text = text.replace(/[ \t\n\r\f]+/g, " ").trim();
     if (!text || /^(nowrap|pre)$/.test(t.inherited.get("white-space")?.value ?? "") === false && text.includes(" ")) return undefined;
     if (!/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "")) return undefined;
-    const m = metricsFor(t.family.value);
+    const m = metricsFor(t.family.value, t.italic);
     const v = m?.vertical(t.size, t.weight);
     if (!m || !v || m.unsupported(text).length || m.weightIssue(t.weight)) return undefined;
     const own = k.own[si];
@@ -2009,7 +2016,7 @@ export abstract class PageLifter {
       if (k.pseudo || k.anonymous !== undefined || k.tag === "br" || this.displayOf(k, si) === "none" || this.outOfFlow(k, si) || this.displayOf(k, si) !== "inline") return false;
       if (this.textOf(k, si).weight !== this.textOf(k.parent, si).weight) return true;
       const st = this.runStyle(k, si);
-      if (st && (st.font !== undefined || st.size !== undefined || st.above !== undefined)) return true;
+      if (st && (st.font !== undefined || st.size !== undefined || st.italic !== undefined || st.above !== undefined)) return true;
       const e = this.inlineEdges(k, si);
       if (e && (e.open || e.close)) return true;
       return k.children.some(visit);
@@ -2951,8 +2958,10 @@ export abstract class PageLifter {
             this.note(el, si, { decl: o.utility, reason: `text-wrap: ${o.value} moves line breaks but keeps the line count; the box is exact, the reported lines are not`, kind: "none" });
           } else if (/^text-wrap(-style)?$/.test(p) && o.value === "stable") {
             // stable: the same breaks as auto when the page is laid out (it only differs while editing).
-          } else if (!/^(normal|none|auto|wrap|manual|0|0px|ltr)$/.test(o.value) && !(p === "font-style" && o.value === "normal")) decl(p, o.value, o.utility);
+          } else if (p !== "font-style" && !/^(normal|none|auto|wrap|manual|0|0px|ltr)$/.test(o.value)) decl(p, o.value, o.utility);
         }
+        // Italic in a face the page may load as italic (a synthesized slant is measured upright).
+        if (text.italic) decl("font-style", "italic", text.inherited.get("font-style")?.utility ?? `<${el.tag}> (italic)`);
         this.inlineContent(el, si);
       }
     });
@@ -3070,7 +3079,7 @@ export abstract class PageLifter {
   baselineShifts(kids: El[], si: number): number[] | undefined {
     if (!kids.length) return undefined;
     const t0 = this.textOf(kids[0], si);
-    const same = (t: TextCtx) => t.size === t0.size && t.family.value === t0.family.value && t.weight === t0.weight && JSON.stringify(t.lineHeight) === JSON.stringify(t0.lineHeight) && !t.fluid && !t0.fluid;
+    const same = (t: TextCtx) => t.size === t0.size && t.family.value === t0.family.value && !!t.italic === !!t0.italic && t.weight === t0.weight && JSON.stringify(t.lineHeight) === JSON.stringify(t0.lineHeight) && !t.fluid && !t0.fluid;
     // In one font, size and line height their first baselines sit equally far below their content
     // edges; otherwise each is its strut's ascent below it (from the fonts' vertical metrics).
     const allSame = kids.every((k) => same(this.textOf(k, si)));
@@ -3286,7 +3295,7 @@ export abstract class PageLifter {
             return v(`margin-${side}`) === 0 && v(`padding-${side}`) === 0 && (v(`border-${side}-width`) === 0 || /^(none|hidden)$/.test(res(`border-${side}-style`) ?? "none"));
           });
           const ok =
-            k.parent === el && flat && edges !== undefined && kt0.size === base.size && kt0.family.value === base.family.value && lh(kt0) === lh(base) && kt0.letterSpacing === base.letterSpacing &&
+            k.parent === el && flat && edges !== undefined && kt0.size === base.size && kt0.family.value === base.family.value && !!kt0.italic === !!base.italic && lh(kt0) === lh(base) && kt0.letterSpacing === base.letterSpacing &&
             (el.ownText || el.children.some((c) => !c.pseudo && !this.ignorable(c) && this.inlineChild(c) && this.visibleText(c))) && /^(start|left|unset|initial|-webkit-auto)?$/.test(base.inherited.get("text-align")?.value ?? "") && base.inherited.get("direction")?.value !== "rtl";
           if (!ok) this.note(el, si, { decl: `${where} { float: left }`, reason: `a floated ${where} is modelled only at the start of a text box, as tall as its first line`, kind: "geometry" });
         } else if (/^(left|right|inline-start|inline-end)$/.test(res("float") ?? "none"))
@@ -3306,14 +3315,14 @@ export abstract class PageLifter {
       // Bold runs are measured at their weight (strong, b); italic runs too when the font has no
       // italic face (it is slanted, not redrawn); other defaults change the font or its size.
       const synthetic = this.italicFace(firstFamily(kt.family.value)) === false;
-      if (ua === "is italic" && (!this.italic(k, si) || synthetic)) {
-        /* measured upright */
+      // An inline box whose font, size, line height and vertical-align are measured (runStyle), in its italic face too.
+      const modelled = inline && !lead && this.runModelled(k, si);
+      if (ua === "is italic" && (!this.italic(k, si) || synthetic || modelled)) {
+        /* measured upright, or in its italic face */
       } else if (ua && k.tag !== "strong" && k.tag !== "b" && !textChanges.some((c) => c.prop === "font-weight" || c.prop === "font-style" || c.prop === "font-family" || c.prop === "font-size"))
         this.note(el, si, this.staleFont([k, el], si) ?? { decl: `<${k.tag}>`, reason: `inline <${k.tag}> ${ua}; text runs in another style aren't measured`, kind: "text" });
       // Text in another font family (an icon font) or size sits on the line with its own metrics.
       const famDiff = kt.family.value !== pt.family.value;
-      // An inline box whose font, size, line height and vertical-align are measured (runStyle).
-      const modelled = inline && !lead && this.runModelled(k, si);
       if (famDiff && changes.some((c) => c.prop === "font-family") === false && k.pseudo && !modelled)
         this.note(el, si, this.staleFont([k, el], si) ?? { decl: `${where} (font-family: ${kt.family.value})`, reason: "inline runs in another style aren't measured", kind: "text" });
       // box-sizing changes nothing on a box with no width, height, padding or border.
@@ -3321,7 +3330,7 @@ export abstract class PageLifter {
       // An inline-block that is all the text box holds, with no box of its own and the same text
       // style: its line is the text box's line, broken the same way (Bootstrap's <label> in .form-check).
       const shown = el.children.filter((x) => x.tag !== "br" && !this.outOfFlow(x, si) && this.displayOf(x, si) !== "none");
-      const sameText = kt.size === pt.size && kt.weight === pt.weight && kt.family.value === pt.family.value && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight) && kt.letterSpacing === pt.letterSpacing;
+      const sameText = kt.size === pt.size && kt.weight === pt.weight && kt.family.value === pt.family.value && !!kt.italic === !!pt.italic && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight) && kt.letterSpacing === pt.letterSpacing;
       const whole = k.parent === el && shown.length === 1 && shown[0] === k && !el.ownText && !boxy && sameText && this.displayOf(k, si) === "inline-block";
       for (const c of changes) {
         // display: inline on an inline run (Bootstrap's d-md-inline where it shows) is what it was anyway.
@@ -3342,7 +3351,7 @@ export abstract class PageLifter {
         }
         // Text properties equal to what the run inherits anyway change nothing.
         if (c.prop === "font-size" && kt.size === pt.size) continue;
-        if (modelled && /^(font-size|font-family|line-height|vertical-align)$/.test(c.prop)) continue;
+        if (modelled && /^(font-size|font-family|font-style|line-height|vertical-align)$/.test(c.prop)) continue;
         if (c.prop === "font-family" && !famDiff) continue;
         if (c.prop === "font-style" && (synthetic || this.italic(k, si) === this.italic(k.parent!, si))) continue;
         if (c.prop === "line-height" && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight)) continue;

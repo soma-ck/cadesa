@@ -93,7 +93,7 @@ function asColor(v: unknown): string | undefined {
 const TOP_KEYS = ["version", "prefix", "tokens", "text", "breakpoints", "page", "styles"];
 const PAINT = /^(?:(?:repeating-)?(?:linear|radial|conic)-gradient|url|image-set)\(/;
 const PREFIX = /^(?:[a-z][a-z0-9]*-)?$/;
-const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration", "letterSpacing", "transform", "wrap"];
+const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration", "letterSpacing", "transform", "style", "wrap"];
 const ROOT_PROPS = PROP_ORDER as string[];
 const SLOT_PROPS = ROOT_PROPS;
 
@@ -397,6 +397,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         err([...path, "transform"], "invalid text transform", { expected: "uppercase or none", got: role.transform });
         ok = false;
       }
+      if (role.style !== undefined && role.style !== "italic" && role.style !== "normal") {
+        err([...path, "style"], "invalid font style", { expected: "italic or normal", got: role.style });
+        ok = false;
+      }
       if (role.decoration !== undefined && role.decoration !== "none" && role.decoration !== "underline") {
         err([...path, "decoration"], "invalid text decoration", { expected: "none or underline", got: role.decoration });
         ok = false;
@@ -414,6 +418,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         decoration: role.decoration as "none" | "underline" | undefined,
         letterSpacing: role.letterSpacing as number | undefined,
         transform: role.transform as "uppercase" | "none" | undefined,
+        ...(role.style === "italic" && { style: "italic" as const }),
         wrap: role.wrap as TextRole["wrap"],
         color,
       });

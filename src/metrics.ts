@@ -90,6 +90,11 @@ export interface MetricsFile {
    * Tables from before they were measured leave them out.
    */
   vertical?: { size: number; byWeight: Record<string, VerticalMetrics> };
+  /**
+   * An italic table: measured with font-style: italic, from the family's italic face (as the page
+   * loads it, or as installed). It is kept apart from the upright table, in `<family>-italic.metrics.json`.
+   */
+  style?: "italic";
 }
 
 export interface VerticalMetrics {
@@ -112,9 +117,9 @@ export interface VerticalMetrics {
  * font-family value), at `size` px: canvas reports its ascent and descent, a line of line-height:
  * normal its line gap, and an ex its x-height.
  */
-export async function measureVertical(page: import("playwright-core").Page, family: string, weight: number, size: number): Promise<VerticalMetrics> {
-  return (await page.evaluate(`(async ({ FAMILY, W, S }) => {
-    const font = W + " " + S + "px " + FAMILY;
+export async function measureVertical(page: import("playwright-core").Page, family: string, weight: number, size: number, italic = false): Promise<VerticalMetrics> {
+  return (await page.evaluate(`(async ({ FAMILY, W, S, ST }) => {
+    const font = ST + W + " " + S + "px " + FAMILY;
     await document.fonts.load(font);
     const ctx = document.createElement("canvas").getContext("2d");
     ctx.font = font;
@@ -140,7 +145,7 @@ export async function measureVertical(page: import("playwright-core").Page, fami
     out.avgChar = two - one;
     out.maxChar = one;
     return out;
-  })(${JSON.stringify({ FAMILY: family, W: weight, S: size })})`)) as VerticalMetrics;
+  })(${JSON.stringify({ FAMILY: family, W: weight, S: size, ST: italic ? "italic " : "" })})`)) as VerticalMetrics;
 }
 
 export interface MetricsFace {
@@ -188,8 +193,8 @@ export function findChrome(): string | undefined {
   );
 }
 
-export const metricsFileName = (family: string) =>
-  `${family.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}.metrics.json`;
+export const metricsFileName = (family: string, italic = false) =>
+  `${family.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")}${italic ? "-italic" : ""}.metrics.json`;
 
 /** Read a metrics file, plain or gzipped (`.metrics.json.gz`). */
 export function readMetrics(file: string): MetricsFile {
@@ -240,6 +245,8 @@ export async function generateMetrics(opts: {
   browser?: Browser;
   /** Characters to measure beyond the standard set (icon codepoints in the Private Use Area, other scripts). */
   extra?: string;
+  /** Measure the italic face (font-style: italic): the file is an italic face, or the installed family's italic. */
+  italic?: boolean;
 }): Promise<MetricsFile> {
   if (!opts.font && !opts.system) throw new Error("generateMetrics needs a font file or system");
   const format = opts.font ? FORMATS[extname(opts.font).toLowerCase()] : undefined;
@@ -260,18 +267,18 @@ export async function generateMetrics(opts: {
     const family = opts.system ? (opts.system.stack ?? JSON.stringify(opts.family)) : "__cadesa";
     await page.setContent(
       "<style>" +
-        (bytes ? `@font-face{font-family:"__cadesa";font-weight:${descriptor};src:url(data:font/${format};base64,${bytes.toString("base64")}) format("${format}")}` : "") +
+        (bytes ? `@font-face{font-family:"__cadesa";font-weight:${descriptor};${opts.italic ? "font-style:italic;" : ""}src:url(data:font/${format};base64,${bytes.toString("base64")}) format("${format}")}` : "") +
         `@font-face{font-family:"__cadesa_fb";font-weight:100 900;src:url(data:font/woff2;base64,${fb}) format("woff2")}</style>`,
     );
     // Passed as a string so bundlers/transpilers can't inject helpers that don't exist in the page.
-    const result = (await page.evaluate(`(async ({ ALL, STD, WEIGHTS, SIZE, UNITS, RUN_BUDGET, FAMILY, FAMS }) => {
+    const result = (await page.evaluate(`(async ({ ALL, STD, WEIGHTS, SIZE, UNITS, RUN_BUDGET, FAMILY, FAMS, ST }) => {
       const ctx = document.createElement("canvas").getContext("2d");
       ctx.fontKerning = "normal";
       const W0 = WEIGHTS[0];
-      await document.fonts.load(W0 + " " + SIZE + "px " + FAMILY);
+      await document.fonts.load(ST + W0 + " " + SIZE + "px " + FAMILY);
       await document.fonts.load("400 " + SIZE + "px __cadesa_fb");
       const widthIn = (font, s) => ((ctx.font = font), ctx.measureText(s).width);
-      const f0 = W0 + " " + SIZE + "px " + FAMILY;
+      const f0 = ST + W0 + " " + SIZE + "px " + FAMILY;
       const missing = [...ALL].filter((c) => widthIn(f0 + ", monospace", c) !== widthIn(f0 + ", __cadesa_fb", c));
       const CHARS = [...ALL].filter((c) => !missing.includes(c)).join("");
       // Characters measured beyond the standard set (icon codepoints) get widths, not kerning pairs.
@@ -279,13 +286,13 @@ export async function generateMetrics(opts: {
       // An optical-size axis: widths that don't scale with the font size can't come from one table.
       const sample = "Hamburgefonstiv HAMBURGEFONSTIV 0123456789";
       const big = widthIn(f0, sample);
-      const small = widthIn(W0 + " 12px " + FAMILY, sample) * (SIZE / 12);
+      const small = widthIn(ST + W0 + " 12px " + FAMILY, sample) * (SIZE / 12);
       const scales = Math.abs(big - small) / big < 2e-4;
       const advances = {}, kerning = {}, kerningSpaced = {}, contextual = {};
       let incomplete = false;
       for (const w of WEIGHTS) {
-        await document.fonts.load(w + " " + SIZE + "px " + FAMILY);
-        ctx.font = w + " " + SIZE + "px " + FAMILY;
+        await document.fonts.load(ST + w + " " + SIZE + "px " + FAMILY);
+        ctx.font = ST + w + " " + SIZE + "px " + FAMILY;
         const width = (s) => ctx.measureText(s).width;
         advances[w] = [...CHARS].map((c) => Math.round((width(c) / SIZE) * UNITS));
         const kc = [...KERN_CHARS], single = new Map(kc.map((c) => [c, width(c)])), k = {};
@@ -359,8 +366,8 @@ export async function generateMetrics(opts: {
         const from = WEIGHTS[0], to = WEIGHTS[WEIGHTS.length - 1];
         const rows = [];
         for (let w = from; w <= to; w++) {
-          await document.fonts.load(w + " " + SIZE + "px " + FAMILY);
-          ctx.font = w + " " + SIZE + "px " + FAMILY;
+          await document.fonts.load(ST + w + " " + SIZE + "px " + FAMILY);
+          ctx.font = ST + w + " " + SIZE + "px " + FAMILY;
           rows.push([...CHARS].map((c) => Math.round((ctx.measureText(c).width / SIZE) * UNITS)));
         }
         fine = {
@@ -377,7 +384,7 @@ export async function generateMetrics(opts: {
           const ci = new Map([...CHARS].map((c, i) => [c, i]));
           const rowsC = [];
           for (let w = from; w <= to; w++) {
-            ctx.font = w + " " + SIZE + "px " + FAMILY;
+            ctx.font = ST + w + " " + SIZE + "px " + FAMILY;
             const hi = WEIGHTS.findIndex((x) => x >= w);
             const wa = WEIGHTS[Math.max(0, hi - 1)], wb = WEIGHTS[hi], t = wb === wa ? 0 : (w - wa) / (wb - wa);
             const adv = rows[w - from], cx = {};
@@ -404,15 +411,15 @@ export async function generateMetrics(opts: {
       let resolved;
       for (const f of FAMS) {
         const generic = /^(serif|sans-serif|monospace|cursive|fantasy|system-ui|ui-sans-serif|ui-serif|ui-monospace|ui-rounded|math)$/i.test(f);
-        const s = W0 + " " + SIZE + "px " + f;
+        const s = ST + W0 + " " + SIZE + "px " + f;
         if (generic || widthIn(s + ", monospace", "Hamburgefonstiv") === widthIn(s + ", __cadesa_fb", "Hamburgefonstiv")) {
           resolved = f.replace(/^["']|["']$/g, "");
           break;
         }
       }
-      const loaded = FAMILY === "__cadesa" ? document.fonts.check(W0 + " 16px __cadesa") : resolved !== undefined;
+      const loaded = FAMILY === "__cadesa" ? document.fonts.check(ST + W0 + " 16px __cadesa") : resolved !== undefined;
       return { chars: CHARS, missing: missing.join(""), scales, advances, kerning, kerningSpaced, contextual, incomplete, fine, loaded, resolved };
-    })(${JSON.stringify({ ALL: [...new Set([...CHARS, ...[...(opts.extra ?? "")].slice(0, 512)])].join(""), STD: CHARS, WEIGHTS: weights, SIZE, UNITS, RUN_BUDGET, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()) })})`)) as {
+    })(${JSON.stringify({ ALL: [...new Set([...CHARS, ...[...(opts.extra ?? "")].slice(0, 512)])].join(""), STD: CHARS, WEIGHTS: weights, SIZE, UNITS, RUN_BUDGET, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()), ST: opts.italic ? "italic " : "" })})`)) as {
       resolved?: string;
       chars: string;
       missing: string;
@@ -429,7 +436,7 @@ export async function generateMetrics(opts: {
     const vSize = (bytes && fontFileInfo(bytes)?.unitsPerEm) || 2048;
     const vWeights = opts.system ? weights : [opts.weight ?? 400];
     const vertical: NonNullable<MetricsFile["vertical"]> = { size: vSize, byWeight: {} };
-    if (result.loaded) for (const w of vWeights) vertical.byWeight[w] = await measureVertical(page, family, w, vSize);
+    if (result.loaded) for (const w of vWeights) vertical.byWeight[w] = await measureVertical(page, family, w, vSize, opts.italic);
     await page.close();
     if (!result.loaded)
       throw new Error(
@@ -457,6 +464,7 @@ export async function generateMetrics(opts: {
       ...(Object.values(result.contextual).some((c) => Object.keys(c).length) && { contextual: result.contextual }),
       ...(result.incomplete && { contextualIncomplete: true }),
       vertical,
+      ...(opts.italic && { style: "italic" as const }),
     };
     const upm = (bytes && fontFileInfo(bytes)?.unitsPerEm) || unitsPerEm(m);
     if (upm) m.upm = upm;
@@ -520,7 +528,7 @@ function completeFaces(byWeight: Record<string, VerticalMetrics>): Record<string
  */
 export function writeMetrics(m: MetricsFile, dir: string, opts: { gzip?: boolean } = {}): string {
   mkdirSync(dir, { recursive: true });
-  const plain = join(dir, metricsFileName(m.family));
+  const plain = join(dir, metricsFileName(m.family, m.style === "italic"));
   const file = opts.gzip ? `${plain}.gz` : plain;
   const existing = [plain, `${plain}.gz`].find(existsSync);
   let out = m;

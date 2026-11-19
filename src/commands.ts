@@ -596,6 +596,8 @@ export async function metricsCmd(s: {
   system?: boolean;
   weights?: number[];
   out?: string;
+  /** An italic face (a file), or the installed family's italic too (--system). */
+  italic?: boolean;
 }): Promise<Result> {
   const out = s.out ?? join(".cadesa", "metrics");
   let measured: Measured;
@@ -610,17 +612,18 @@ export async function metricsCmd(s: {
     if (!s.family) throw new InputError("metrics --system needs --family <installed font name>");
     const browser = await launchChromium();
     try {
-      measured = await measureSystem(s.family, s.weights?.length ? s.weights : [400, 700], { out, browser });
+      const weights = s.weights?.length ? s.weights : [400, 700];
+      measured = await measureSystem(s.family, weights, { out, browser, ...(s.italic && { italicWeights: weights }) });
     } finally {
       await browser.close();
     }
   } else {
     if (!s.font) throw new InputError("metrics needs <font-file>, --google <family> or --system --family <name>");
     if (!s.family) throw new InputError("metrics needs --family <name> (the font-family name your CSS uses)");
-    const m = await generateMetrics({ font: s.font, family: s.family, weight: s.weight });
+    const m = await generateMetrics({ font: s.font, family: s.family, weight: s.weight, italic: s.italic });
     const file = writeMetrics(m, out);
     const pairs = Object.values(m.kerning).reduce((n, k) => n + Object.keys(k).length, 0);
-    const text = `wrote ${file}: ${m.family} (${m.kind}${s.weight ? ` ${s.weight}` : ", 100–900"}), ${m.chars.length} glyphs, ${pairs} kerning pairs${m.missing ? `; no glyph for ${[...m.missing].map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}` : ""}\n`;
+    const text = `wrote ${file}: ${m.family}${s.italic ? " italic" : ""} (${m.kind}${s.weight ? ` ${s.weight}` : ", 100–900"}), ${m.chars.length} glyphs, ${pairs} kerning pairs${m.missing ? `; no glyph for ${[...m.missing].map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}` : ""}\n`;
     return { text, data: { file, family: m.family, kind: m.kind, weights: m.weights, files: m.files }, ok: true };
   }
   if (measured.error) return { text: `✖ ${measured.family}: ${measured.error}\n`, data: measured, ok: false };

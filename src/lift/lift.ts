@@ -1033,7 +1033,9 @@ export function liftElements(input: LiftInput): LiftResult {
     const lh = take("line-height");
     const color = take("color");
     const fst = take("font-style");
-    if (fst && fst.value.trim() !== "normal") note(e, s, fst, "only upright text is measured", "text");
+    // Italic (oblique falls back to the italic face): measured with the family's italic table.
+    const italicStyle = !!fst && /^(italic|oblique)\b/.test(fst.value.trim());
+    if (fst && !italicStyle && fst.value.trim() !== "normal") note(e, s, fst, `font-style: ${fst.value.trim()} is not measured`, "text");
     if (fs || lh || ff || fw || color) {
       const sizeRaw = fs ? resolveVar(fs.value)?.raw : undefined;
       const sizeOk = sizeRaw !== undefined && (LENGTH.test(sizeRaw) || !!lengthExpr(sizeRaw)?.fluid);
@@ -1098,6 +1100,7 @@ export function liftElements(input: LiftInput): LiftResult {
           ...((decoration === "none" || decoration === "underline") && { decoration }),
           ...(letterSpacing !== undefined && { letterSpacing }),
           ...(transform === "uppercase" && { transform }),
+          ...(italicStyle && { style: "italic" }),
           ...(wsv === "nowrap" ? { wrap: "none" } : (owv === "anywhere" || owv === "break-word") && { wrap: owv }),
         };
         const key = JSON.stringify(spec);

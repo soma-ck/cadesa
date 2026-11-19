@@ -75,6 +75,8 @@ export interface RunStyle {
   font?: string;
   /** Text at another font size (px). */
   size?: number;
+  /** Text in (or out of) the font's italic face: measured with its italic (or upright) table. */
+  italic?: boolean;
   /**
    * The inline box (or an atomic inline's margin box) on each line it is on: how far it reaches
    * above and below the line's baseline in px, after its vertical-align. A line box is the union of
@@ -85,7 +87,7 @@ export interface RunStyle {
 }
 
 /** Whether a run style changes anything. */
-export const styled = (s: RunStyle | undefined) => !!s && (s.weight !== undefined || s.font !== undefined || s.size !== undefined || s.above !== undefined || s.below !== undefined);
+export const styled = (s: RunStyle | undefined) => !!s && (s.weight !== undefined || s.font !== undefined || s.size !== undefined || s.italic !== undefined || s.above !== undefined || s.below !== undefined);
 
 /** What an inline element adds to the text it is part of (see textAndRuns). */
 export interface InlineInfo extends RunStyle {
@@ -212,6 +214,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     ...(sp.weight !== undefined && { weight: sp.weight }),
     ...(sp.font !== undefined && { font: sp.font }),
     ...(sp.size !== undefined && { size: sp.size }),
+    ...(sp.italic !== undefined && { italic: sp.italic }),
     ...(sp.above !== undefined && { above: sp.above }),
     ...(sp.below !== undefined && { below: sp.below }),
   });
