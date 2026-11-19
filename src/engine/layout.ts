@@ -15,7 +15,7 @@ import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, s
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 import { boxMatrix, mapRect, multiply, type Matrix } from "./transform.js";
 import { expandTracks, place as gridPlace, sizeTracks, trackStarts, type Contribution, type Explicit, type TrackList, type TrackSize } from "./grid.js";
-import { layoutTable, tableGrid, tableInsets, tableIntrinsic, type Grid, type TableHooks } from "./table.js";
+import { firstBaseline, layoutTable, tableGrid, tableInsets, tableIntrinsic, type Grid, type TableHooks } from "./table.js";
 
 const EPS = 0.001;
 
@@ -208,7 +208,7 @@ interface Arrangement {
   gap: number;
   /** A grid's percentage row gap: of its final content height (its rows were sized with none). */
   gapPct?: number;
-  align: "start" | "center" | "end" | "stretch";
+  align: "start" | "center" | "end" | "stretch" | "baseline";
   insetTop: number;
   insetY: number;
   /** A wrapping flex container's lines share extra height in layout units (Chromium's diffuser). */
@@ -316,11 +316,23 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const raw = n.runs.length ? n.runs : [n.text];
     const runs = raw.map((r) => (t.uppercase ? r.toUpperCase() : r));
     const shown = [...runs, ...n.runMeta.flatMap((r) => (r.lead ? [r.lead.text] : []))].join(" ").replaceAll("\uFFFC", "");
+    // Runs in another font: that font's metrics, for the characters in it, at its weights.
+    const runFonts = n.runMeta.flatMap((r, i) => (r.spans ?? []).filter((sp) => sp.font !== undefined).map((sp) => ({ sp, text: [...(runs[i] ?? "")].slice(sp.from, sp.to).join("").replaceAll("\uFFFC", "") })));
+    const runWhy = runFonts
+      .map(({ sp, text }) => {
+        const rm = metricsFor(sp.font);
+        const fam = sp.font!.split(",")[0].trim();
+        if (!rm) return `font "${fam}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`;
+        const un = rm.unsupported(text);
+        if (un.length) return `characters outside the measured set of "${fam}": ${un.map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`;
+        return rm.weightIssue(sp.weight ?? t.weight);
+      })
+      .find(Boolean);
     const why = !m
       ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`
       : m.unsupported(shown).length
         ? `characters outside the measured set: ${m.unsupported(shown).map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`
-        : [t.weight, ...n.runMeta.flatMap((r) => (r.spans ?? []).flatMap((sp) => (sp.weight === undefined ? [] : [sp.weight])))].map((wt) => m.weightIssue(wt)).find(Boolean);
+        : ([t.weight, ...n.runMeta.flatMap((r) => (r.spans ?? []).flatMap((sp) => (sp.weight === undefined || sp.font !== undefined ? [] : [sp.weight])))].map((wt) => m.weightIssue(wt)).find(Boolean) ?? runWhy);
     if (why) {
       assumptions.push(`text height assumes a single line (${why})`);
       return undefined;
@@ -357,6 +369,19 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const one = layoutText(m!, lt, t.sizePx, r.lead.weight ?? t.weight, Infinity, { letterSpacing: t.letterSpacing, hangKern: false });
       return Math.ceil(one.maxContent * 64 - TEXT_EPS) / 64 + r.lead.extra;
     });
+    // Inline boxes that may reach past the strut: lines are sized around the baseline, from the
+    // font's vertical metrics (the leading split as Chromium splits it, floor(leading / 2) above).
+    let strut: { above: number; below: number } | undefined;
+    if (n.runMeta.some((r) => r.spans?.some((sp) => sp.above !== undefined || sp.below !== undefined))) {
+      const v = m!.vertical(t.sizePx, t.weight);
+      if (!v) assumptions.push(`line heights assume the strut (font "${m!.family}" has no vertical metrics; measure it again)`);
+      else {
+        const lh = lineHeightPx(t.sizePx, t.lineHeight);
+        const leading = Math.round((lh - v.ascent - v.descent) * 64);
+        const above = v.ascent + Math.floor(Math.trunc(leading / 2) / 64);
+        strut = { above, below: lh - above };
+      }
+    }
     let ambiguous = false;
     let anywhereFlagged = false;
     // A <button> centers its text unless the role says otherwise (the reset leaves text-align alone).
@@ -364,7 +389,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     return (maxWidth: number) => {
       const parts = runs.map((r, i) => {
-        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i] };
+        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i], strut };
         // white-space: nowrap: the paragraph is one line, and its min-content is its whole width.
         if (t.nowrap) {
           const one = layoutText(m!, r, t.sizePx, t.weight, Infinity, { ...opts, wrapAnywhere: false, hangKern: false });
@@ -1436,7 +1461,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const align = props.align?.value ?? "stretch";
       kids.forEach((k, i) => {
         // Its own alignment (align-self) wins over the stack's.
-        const own = resolveElement(model, k.comp, k.slot, width).place?.value.align ?? align;
+        const own = (resolveElement(model, k.comp, k.slot, width).place?.value.align ?? align) as "start" | "center" | "end" | "stretch";
         const b = measure(k.node, k.comp, k.slot, innerW, "stack", undefined, undefined, undefined, own);
         const km = marginOf(b.props);
         // Aligned across the stack by its margin box (auto inline margins win over align-items).
@@ -1464,7 +1489,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       if (measureText) {
         const tl = measureText(innerW);
         lines = tl.lines;
-        contentH = lines.length * lineH;
+        contentH = lines.reduce((s, l) => s + (l.h ?? lineH), 0);
         contentW = Math.max(...lines.map((l) => l.width));
         // Text in a box that clips or scrolls it (overflow-x other than visible) doesn't spill out: check reports it as clipped.
         if (tl.minContent > innerW + 0.5 && !t.nowrap && !t.wrapAnywhere && (!ov || ov.x === "visible") && !props.contain?.value.paint) {
@@ -1479,7 +1504,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     if (rows) {
       children.push(...rows.flat());
-      contentH = rows.reduce((s, r) => s + Math.max(0, ...r.map(outerH)), 0) + rowGap * (rows.length - 1);
+      contentH = rows.reduce((s, r) => s + rowHeight(r, props.align?.value), 0) + rowGap * (rows.length - 1);
     }
 
     // aspect: the height follows the width. Media elements take exactly that; other boxes grow if
@@ -1576,7 +1601,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (rows)
       arrangement.set(box, {
         rows,
-        heights: rows.map((r) => Math.max(0, ...r.map(outerH))),
+        heights: rows.map((r) => rowHeight(r, props.align?.value)),
         gap: rowGap,
         ...(props.rowGap?.pct !== undefined && { gapPct: props.rowGap.pct }),
         align: props.align?.value ?? (pattern === "cluster" ? "center" : "stretch"),
@@ -1714,6 +1739,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           // A stretched item's height is definite: percentages of it resolve.
           fillPct(c);
         }
+        if (al === "baseline") {
+          // Its first baseline on the line's: the line's highest item (above its baseline) at the top.
+          const top = Math.max(...row.filter((x) => (x.props.place?.value.align ?? a.align) === "baseline" && !marginOf(x.props).autoTop && !marginOf(x.props).autoBottom).map(itemBaseline));
+          c.y = y + m.top + top - itemBaseline(c);
+          continue;
+        }
         const space = rowH - outerH(c);
         c.y = y + m.top + (al === "center" ? space / 2 : al === "end" ? space : 0);
       }
@@ -1756,6 +1787,39 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       k.y = y + at + m.top;
       y += at + m.top + k.h + m.bottom + ab + g.gap;
     });
+  }
+
+  /**
+   * Where a flex item's first baseline sits below its margin box's top (px), for align-items:
+   * baseline: its first line's (or its first child's that has one), else one synthesized at the
+   * bottom of its border box. An item whose baseline can't be told is placed as if at its bottom,
+   * and flagged.
+   */
+  function itemBaseline(c: Box): number {
+    const m = marginOf(c.props);
+    const fb = firstBaseline({ lineHeight: lineHeightPx }, c);
+    if (fb === "unknown") {
+      if (!c.assumptions.some((a) => a.startsWith("its baseline")))
+        c.assumptions.push(`its baseline (for align-items: baseline) isn't known: ${say("a cluster, grid or scrolling box inside", "a flex row, grid or scroll container inside")} gives it one Cadesa doesn't compute`);
+      return m.top + c.h;
+    }
+    return m.top + (fb === undefined ? c.h : PX(fb));
+  }
+  /** The natural height of a flex line: its tallest item, or with baseline alignment the most any item reaches above the line's baseline plus the most any reaches below it. */
+  function rowHeight(r: Box[], align: string | undefined): number {
+    let tall = 0;
+    let above = -Infinity;
+    let below = -Infinity;
+    for (const c of r) {
+      const al = c.props.place?.value.align ?? align;
+      if (al !== "baseline" || marginOf(c.props).autoTop || marginOf(c.props).autoBottom) tall = Math.max(tall, outerH(c));
+      else {
+        const a = itemBaseline(c);
+        above = Math.max(above, a);
+        below = Math.max(below, outerH(c) - a);
+      }
+    }
+    return Math.max(0, tall, above + below);
   }
 
   /** A box stretched taller after its own layout: its rows (if any) are placed again. */

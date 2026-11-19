@@ -306,6 +306,11 @@ export function metricsFor(fontFamily: string | undefined): FontMetrics | undefi
 export interface Line {
   text: string;
   width: number;
+  /** Where the line starts in the text (characters). */
+  at?: number;
+  /** Its height, when inline boxes on it may reach past the text's strut (see layoutText's `strut`), and its baseline from its top. */
+  h?: number;
+  base?: number;
 }
 
 export interface TextLayout {
@@ -412,6 +417,12 @@ export function layoutText(
     spans?: Span[];
     /** A float at the start of the text, this wide: the first line fits beside it. */
     lead?: number;
+    /**
+     * The text box's strut: how far its lines reach above and below the baseline (px). With it,
+     * each line is as tall as the union of the strut and the inline boxes on it (spans' `above`
+     * and `below`), and lines record their height.
+     */
+    strut?: { above: number; below: number };
   } = {},
 ): TextLayout {
   // letter-spacing is added after every character, including the last one on a line (or, with
@@ -419,20 +430,33 @@ export function layoutText(
   const ls = opts.letterSpacing ?? 0;
   const spans = opts.spans ?? [];
   /** The weight of the character at `at` (its innermost span with a weight, or the text's). */
-  const weightAt = (at: number | undefined) => {
-    if (at === undefined || !spans.length) return weight;
+  const base = { m, size: sizePx, weight, key: "" };
+  /** The font of the character at `at`: its innermost span's weight, font and size, each where set, else the text's. */
+  const fontAt = (at: number | undefined) => {
+    if (at === undefined || !spans.length) return base;
     let wt = weight;
-    for (const sp of spans) if (sp.weight !== undefined && sp.from <= at && at < sp.to) wt = sp.weight;
-    return wt;
+    let font: string | undefined;
+    let size = sizePx;
+    for (const sp of spans) {
+      if (!(sp.from <= at && at < sp.to)) continue;
+      if (sp.weight !== undefined) wt = sp.weight;
+      if (sp.font !== undefined) font = sp.font;
+      if (sp.size !== undefined) size = sp.size;
+    }
+    if (wt === weight && font === undefined && size === sizePx) return base;
+    return { m: (font !== undefined && metricsFor(font)) || m, size, weight: wt, key: `${font ?? ""}|${size}|${wt}` };
   };
-  // Letter-spaced text is shaped without contextual alternates. Text at another weight is another
-  // font: measured on its own, with no kerning across the edge.
-  const measure = (s: string, at?: number) => m.measure(s.includes(OBJ) ? s.replaceAll(OBJ, "") : s, sizePx, weightAt(at), ls !== 0) ?? 0;
+  // Letter-spaced text is shaped without contextual alternates. Text in another weight, font or
+  // size is another font: measured on its own, with no kerning across the edge.
+  const measure = (s: string, at?: number) => {
+    const f = fontAt(at);
+    return f.m.measure(s.includes(OBJ) ? s.replaceAll(OBJ, "") : s, f.size, f.weight, ls !== 0) ?? 0;
+  };
   /**
    * Whether kerning applies between the characters before and at `at`: both in one font, with no
    * margin, border or padding of an inline box between them (Chromium shapes them apart then).
    */
-  const kerns = (at: number) => weightAt(at - 1) === weightAt(at) && !spans.some((sp) => (sp.open && sp.from === at) || (sp.close && sp.to === at));
+  const kerns = (at: number) => fontAt(at - 1).key === fontAt(at).key && !spans.some((sp) => (sp.open && sp.from === at) || (sp.close && sp.to === at));
   /** Margin, border and padding of inline boxes that open in [a, b) or close in (a, b]. */
   const edgesIn = (a: number, b: number) => {
     let px = 0;
@@ -447,11 +471,11 @@ export function layoutText(
     }
     return px;
   };
-  const spaceWs = new Map<number, number>();
+  const spaceWs = new Map<string, number>();
   const spaceWAt = (at?: number) => {
-    const wt = weightAt(at);
-    let v = spaceWs.get(wt);
-    if (v === undefined) spaceWs.set(wt, (v = measure(" ", at)));
+    const k = fontAt(at).key;
+    let v = spaceWs.get(k);
+    if (v === undefined) spaceWs.set(k, (v = measure(" ", at)));
     return v;
   };
   const w = (s: string, hangKern = opts.hangKern !== false, at?: number) => {
@@ -580,7 +604,7 @@ export function layoutText(
           approximate ??= "a word breaks between characters close to the line's width";
       }
       if (cur && !(fragW(cur + ch, k + 1) <= maxWidth + 1e-6)) {
-        lines.push({ text: cur, width: fragW(cur, k) });
+        lines.push({ text: cur, width: fragW(cur, k), at: consumed });
         consumed += [...cur].length;
         broke = true;
         cur = ch;
@@ -610,14 +634,14 @@ export function layoutText(
     // A first piece that doesn't fit beside the float at the start goes below it, on a line of its
     // own (the float is as tall as one line).
     if (!line && lead && !fits(p)) {
-      lines.push({ text: "", width: lead });
+      lines.push({ text: "", width: lead, at: consumed });
       lead = 0;
     }
     let open: string | undefined;
     if (!line) open = start(p, mid);
     else if (fits(line + p)) line += p;
     else {
-      lines.push({ text: trimSpaces(line), width: reported(line) });
+      lines.push({ text: trimSpaces(line), width: reported(line), at: consumed });
       consumed += [...line].length;
       lead = 0;
       open = start(p, mid);
@@ -628,7 +652,25 @@ export function layoutText(
       i = -1;
     }
   }
-  if (line || !lines.length) lines.push({ text: trimSpaces(line), width: reported(line) });
+  if (line || !lines.length) lines.push({ text: trimSpaces(line), width: reported(line), at: consumed });
+  // Each line box: the strut and every inline box with content on the line (an empty one where it
+  // stands), each placed by its vertical-align around the baseline.
+  if (opts.strut && spans.some((sp) => sp.above !== undefined || sp.below !== undefined)) {
+    lines.forEach((l, i) => {
+      const a = l.at ?? 0;
+      const b = lines[i + 1]?.at ?? all.length;
+      let above = opts.strut!.above;
+      let below = opts.strut!.below;
+      for (const sp of spans) {
+        const on = sp.from === sp.to ? sp.from >= a && (sp.from < b || (b === all.length && sp.from === b)) : sp.from < b && sp.to > a;
+        if (!on) continue;
+        if (sp.above !== undefined) above = Math.max(above, sp.above);
+        if (sp.below !== undefined) below = Math.max(below, sp.below);
+      }
+      l.h = above + below;
+      l.base = above;
+    });
+  }
   let widestPiece = "";
   let minContent = 0;
   const piecesAt: { p: string; at: number }[] = [];

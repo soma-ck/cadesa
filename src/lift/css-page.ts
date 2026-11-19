@@ -52,6 +52,9 @@ caption { text-align: center }
 hr { margin: 0.5em auto; border-width: 1px; border-style: inset; color: #808080; overflow: hidden }
 a:any-link { color: #0000ee; text-decoration: underline }
 pre, code, kbd, samp, tt { font-family: monospace }
+small { font-size: smaller }
+sub { vertical-align: sub; font-size: smaller }
+sup { vertical-align: super; font-size: smaller }
 button, input, select, textarea { font-family: system-ui; font-size: 13.333333px; font-weight: 400; line-height: normal; letter-spacing: normal; text-transform: none; color: #000000 }
 button { text-align: center }
 button, select, input[type=button], input[type=submit], input[type=reset], input[type=image], input[type=checkbox], input[type=radio], input[type=color], input[type=file] { box-sizing: border-box }

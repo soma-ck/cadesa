@@ -20,6 +20,22 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
 ## Unreleased
 
+- Inline runs in another size, font, line height or vertical-align are measured: `<small>`,
+  `.small` and `font-size: .875em` spans, `<sup>` and `<sub>`, text in another family, nested
+  runs, and generated content. Each run is measured in its own font, and each line box is the union
+  of the strut and every inline box on it around the baseline, from the fonts' vertical metrics, as
+  LayoutNG computes it: sub and super by the parent's font size, middle around its x-height,
+  text-top and text-bottom, lengths and percentages. Atomic inlines (an icon, an inline-block of set
+  size, one line of text in an inline-block) taller than the line grow it the same way. A run with
+  `vertical-align: middle`, `text-top` or `text-bottom` whose content reaches past its own strut, and
+  real italic faces, stay `≈`. The browser's own `small`, `sub` and `sup` sizes come from its
+  stylesheet (`font-size: smaller`).
+- `align-items: baseline` in a flex row is laid out for any items: each item's first baseline (its
+  first line's, a nested block's, or one synthesized at the bottom of its border box) sits on the
+  line's, and the line is as tall as what reaches above that baseline plus what reaches below it. In
+  a source: a cluster's `align: baseline`.
+- A space before an inline element's end is measured in that element's font (it was measured in the
+  text box's).
 - `cadesa metrics` measures fonts with contextual alternates almost everywhere (Caveat, and Inter 4
   as Google Fonts serves it) instead of failing with "Set maximum size exceeded": the search for
   runs the font shapes in context is bounded, and a table where it stopped short says so; text in

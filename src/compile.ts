@@ -8,8 +8,8 @@ export const VERSION: string = JSON.parse(readFileSync(new URL("../package.json"
 const varName = (r: { kind: string; name: string }) => `--ca-${r.kind}-${r.name}`;
 const v = (r: Ref) => `var(${varName(r)})`;
 
-const FLEX_ALIGN = { start: "flex-start", center: "center", end: "flex-end", stretch: "stretch" } as const;
-const GRID_ALIGN = { start: "start", center: "center", end: "end", stretch: "stretch" } as const;
+const FLEX_ALIGN = { start: "flex-start", center: "center", end: "flex-end", stretch: "stretch", baseline: "baseline" } as const;
+const GRID_ALIGN = { start: "start", center: "center", end: "end", stretch: "stretch", baseline: "baseline" } as const;
 const JUSTIFY = { start: "flex-start", end: "flex-end", center: "center", between: "space-between", around: "space-around", evenly: "space-evenly" } as const;
 
 interface Ctx {

@@ -76,7 +76,8 @@ export type GridTrack = { size: Ref } | { fr: number; auto: boolean };
  */
 export type Pattern = "stack" | "cluster" | "grid" | "layer" | "flow" | "table";
 
-export type Align = "start" | "center" | "end" | "stretch";
+/** baseline: a cluster's items sit with their first baselines on one line (align-items: baseline). */
+export type Align = "start" | "center" | "end" | "stretch" | "baseline";
 /** Where a cluster puts the free space of each line (justify-content). */
 export type Justify = "start" | "end" | "center" | "between" | "around" | "evenly";
 export type TextAlign = "start" | "center" | "end";
@@ -88,7 +89,7 @@ export interface LayoutProp {
   gap?: Ref;
   /** Grid and cluster: the gap between rows (lines) when it differs from the gap between columns. */
   rowGap?: Ref;
-  /** Cross-axis alignment: cluster (default center), grid and layer (default stretch). Not for stack. */
+  /** Cross-axis alignment: cluster (default center; or baseline), grid and layer (default stretch). Not for stack. */
   align?: Align;
   /** Grid: minimum column width; columns auto-fill the row. Table: its minimum width (min-width). */
   min?: Ref;

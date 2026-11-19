@@ -615,11 +615,13 @@ export function liftElements(input: LiftInput): LiftResult {
       const pattern = column ? "stack" : "cluster";
       const av = align?.value.trim();
       const CLUSTER_ALIGN: Record<string, string> = { center: "center", "flex-start": "start", start: "start", "flex-end": "end", end: "end", stretch: "stretch", normal: "stretch" };
+      // Across a row: their first baselines on one line (laid out by the engine; page.ts aligns rows of text in one font itself).
+      const ROW_ALIGN: Record<string, string> = { ...CLUSTER_ALIGN, baseline: "baseline", "first baseline": "baseline" };
       // Across a column: stretched, or as wide as their content at the start, center or end (baseline is start there).
       const STACK_ALIGN: Record<string, string> = { ...CLUSTER_ALIGN, "self-start": "start", "self-end": "end", left: "start", right: "end", baseline: "start", "first baseline": "start" };
       const stackAlign = column && av !== undefined ? STACK_ALIGN[av] : undefined;
       if (align && column && !stackAlign) note(e, s, align, `align-items: ${av} has no Cadesa equivalent`, "geometry");
-      const clusterAlign = av === undefined ? "stretch" : CLUSTER_ALIGN[av];
+      const clusterAlign = av === undefined ? "stretch" : ROW_ALIGN[av];
       if (!column && !clusterAlign) note(e, s, align!, `align-items: ${av} has no Cadesa equivalent`, "geometry");
       const jv = justify?.value.trim();
       const JUSTIFY: Record<string, string> = { "flex-start": "start", start: "start", normal: "start", left: "start", "flex-end": "end", end: "end", right: "end", center: "center", "space-between": "between", "space-around": "around", "space-evenly": "evenly" };

@@ -120,7 +120,9 @@ describe("lift details", () => {
     expect(r.unlifted.map((u) => u.decl)).toEqual([]);
     expect(style(r, "c").layout).toEqual({ pattern: "cluster", align: "end", justify: "between" });
     expect(one(".c{display:flex;flex-wrap:wrap;justify-content:stretch}").unlifted.map((u) => u.decl)).toEqual(["justify-content: stretch"]);
-    expect(one(".c{display:flex;flex-wrap:wrap;align-items:baseline}").unlifted.map((u) => u.decl)).toEqual(["align-items: baseline"]);
+    expect(one(".c{display:flex;flex-wrap:wrap;align-items:baseline}").unlifted.map((u) => u.decl)).toEqual([]);
+    expect(style(one(".c{display:flex;flex-wrap:wrap;align-items:baseline}"), "c").layout).toEqual({ pattern: "cluster", align: "baseline" });
+    expect(one(".c{display:flex;align-items:last baseline}").unlifted.map((u) => u.decl)).toEqual(["align-items: last baseline"]);
   });
 
   it("converts rgb() and px line heights, and lifts asymmetric padding per side", () => {

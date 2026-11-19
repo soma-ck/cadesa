@@ -18,7 +18,7 @@
  */
 import { parse } from "parse5";
 import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
-import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type Generated, type InlineInfo, type P5Node } from "../fixture.js";
+import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type Generated, type InlineInfo, type P5Node, type RunStyle } from "../fixture.js";
 import { ABSOLUTE, lengthExpr, MATHY } from "../fluid.js";
 import { borderPx, insets } from "../resolve.js";
 import { lineHeightPx } from "../engine/layout.js";
@@ -926,7 +926,7 @@ export abstract class PageLifter {
    * Chromium splits it (floor(leading / 2) above), and half its x-height in layout units (`xh2`,
    * for vertical-align: middle). undefined without vertical metrics.
    */
-  strutOf(el: El, si: number): { sa: number; sd: number; xh2: number; lh: number } | undefined {
+  strutOf(el: El, si: number): { sa: number; sd: number; xh2: number; lh: number; ascent: number; descent: number } | undefined {
     const t = this.textOf(el, si);
     if (t.fluid) return undefined;
     const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
@@ -935,7 +935,167 @@ export abstract class PageLifter {
     const lh = t.lineHeight === "normal" ? v.ascent + v.descent + v.lineGap : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : lu(t.lineHeight.px);
     const leading = Math.round((lh - v.ascent - v.descent) * 64);
     const above = Math.floor(Math.trunc(leading / 2) / 64);
-    return { sa: v.ascent + above, sd: v.descent + leading / 64 - above, xh2: Math.round((v.xHeight / 2) * 64) / 64, lh };
+    return { sa: v.ascent + above, sd: v.descent + leading / 64 - above, xh2: Math.round((v.xHeight / 2) * 64) / 64, lh, ascent: v.ascent, descent: v.descent };
+  }
+
+  /** The text box whose lines an inline-level element sits on: its nearest ancestor that isn't an inline box. */
+  lineRoot(k: El, si: number): El | undefined {
+    let p = k.parent;
+    while (p && p !== this.bodyEl && p.pseudo === undefined && this.displayOf(p, si) === "inline" && p.roles[si] !== "text") p = p.parent;
+    return p;
+  }
+
+  /**
+   * The vertical-align shift of an inline-level box from its parent's baseline (px, positive down),
+   * as LayoutNG computes it when the box closes: sub and super by the parent's font size (/5 + 1px,
+   * /3 + 1px), middle by half the box's extent around the parent's x-height, text-top and
+   * text-bottom to the parent font's ascent and descent, a length, or a percentage of the box's own
+   * line height. `ext`: the box's extent around its own baseline (see inlineExtent). undefined
+   * for a vertical-align that isn't modelled (top, bottom).
+   */
+  ownShift(k: El, si: number, ext: { sa: number; sd: number; lh?: number }): number | undefined {
+    const p = k.parent;
+    if (!p) return undefined;
+    const o = k.own[si].get("vertical-align");
+    const va = (o ? this.resolve(k, si, o.value) : undefined) ?? "baseline";
+    if (va === "baseline") return 0;
+    const parent = this.strutOf(p, si);
+    if (!parent) return undefined;
+    const U = (x: number) => Math.round(x * 64);
+    if (va === "sub" || va === "super") {
+      const ps = U(this.textOf(p, si).size);
+      return (va === "sub" ? Math.trunc(ps / 5) + 64 : -(Math.trunc(ps / 3) + 64)) / 64;
+    }
+    if (va === "middle") return (Math.trunc((U(ext.sa) - U(ext.sd)) / 2) - U(parent.xh2)) / 64;
+    if (va === "text-top") return ext.sa - parent.ascent;
+    if (va === "text-bottom") return parent.descent - ext.sd;
+    if (/%$/.test(va)) {
+      const pct = parseFloat(va);
+      if (!isFinite(pct) || ext.lh === undefined) return undefined;
+      return -Math.trunc(Math.fround((ext.lh * pct) / 100) * 64) / 64;
+    }
+    const len = lengthPx(va, this.textOf(k, si).size);
+    if (len === undefined) return undefined;
+    return -Math.trunc(Math.fround(len) * 64) / 64;
+  }
+
+  /** Whether a box's vertical-align depends on its extent (middle, text-top, text-bottom). */
+  alignsByExtent(k: El, si: number): boolean {
+    const o = k.own[si].get("vertical-align");
+    return /^(middle|text-top|text-bottom)$/.test((o ? this.resolve(k, si, o.value) : undefined) ?? "");
+  }
+
+  /** Inline-level children that sit on a box's lines (inline boxes, atomic inlines, inline generated content). */
+  lineKids(k: El, si: number): El[] {
+    return k.children.filter((c) => c.tag !== "br" && c.anonymous === undefined && !this.outOfFlow(c, si) && this.displayOf(c, si) !== "none" && !(c.pseudo && this.floatsAtStart(c, si)));
+  }
+
+  /**
+   * An inline-level box's extent around its own baseline, before its vertical-align (px): an inline
+   * box's strut united with what its children add (each shifted by its own vertical-align), an
+   * atomic inline's margin box (its baseline: its line's, or its bottom margin edge). `grown`: its
+   * children reach past its strut (then its extent, and a vertical-align that depends on it, may
+   * differ from line to line). undefined when it can't be told.
+   */
+  inlineExtent(k: El, si: number): { sa: number; sd: number; lh?: number; grown: boolean } | undefined {
+    const atom = this.atomicBox(k, si);
+    if (atom) return { sa: atom.a, sd: atom.hm - atom.a, grown: false };
+    const inlineBox = this.displayOf(k, si) === "inline" || (k.pseudo !== undefined && this.ownDisplay(k, si) === "inline");
+    if (!inlineBox) return undefined;
+    const own = this.strutOf(k, si);
+    if (!own) return undefined;
+    let sa = own.sa;
+    let sd = own.sd;
+    for (const c of this.lineKids(k, si)) {
+      const e = this.inlineExtent(c, si);
+      const sh = e && this.ownShift(c, si, e);
+      if (!e || sh === undefined) return undefined;
+      sa = Math.max(sa, e.sa - sh);
+      sd = Math.max(sd, e.sd + sh);
+    }
+    return { sa, sd, lh: own.lh, grown: sa > own.sa + 1e-9 || sd > own.sd + 1e-9 };
+  }
+
+  /**
+   * How far an inline-level box's baseline sits below its line's (px, in layout units): its own
+   * vertical-align shift and those of the inline boxes it is in. undefined where one isn't modelled.
+   */
+  baselineShift(k: El, si: number): number | undefined {
+    const p = k.parent;
+    const root = this.lineRoot(k, si);
+    const e = this.inlineExtent(k, si);
+    if (!p || !root || !e) return undefined;
+    const own = this.ownShift(k, si, e);
+    if (own === undefined) return undefined;
+    if (p === root) return own;
+    if (this.displayOf(p, si) !== "inline" || p.pseudo !== undefined) return undefined;
+    const up = this.baselineShift(p, si);
+    return up === undefined ? undefined : up + own;
+  }
+
+  /**
+   * An inline box in a text box whose text and line box Cadesa measures: its own font (with metrics
+   * and vertical metrics, no synthesized bold, upright or synthetic italic as its parent's), the same
+   * letter-spacing as its parent's, a font size that doesn't follow the viewport, and a vertical-align
+   * placed by baselineShift (one that depends on its extent only while nothing in it reaches past
+   * its strut), inside inline boxes that are measured too.
+   */
+  runModelled(k: El, si: number): boolean {
+    const root = this.lineRoot(k, si);
+    if (!root || !k.parent) return false;
+    const kt = this.textOf(k, si);
+    const pt = this.textOf(k.parent, si);
+    if (kt.fluid || pt.fluid || this.textOf(root, si).fluid || kt.letterSpacing !== pt.letterSpacing) return false;
+    const m = metricsFor(kt.family.value);
+    if (!m || !m.vertical(kt.size, kt.weight) || m.weightIssue(kt.weight)) return false;
+    if (this.italic(k, si) !== this.italic(k.parent, si) && this.italicFace(firstFamily(kt.family.value)) !== false) return false;
+    const e = this.inlineExtent(k, si);
+    if (!e || !this.strutOf(root, si) || this.baselineShift(k, si) === undefined) return false;
+    if (e.grown && this.alignsByExtent(k, si)) return false;
+    return k.parent === root || (this.displayOf(k.parent, si) === "inline" && this.runModelled(k.parent, si));
+  }
+
+  /**
+   * What an inline box of a text box changes in its text (see RunStyle): its font and size where
+   * they differ from its parent's, and its own strut's extent around the line's baseline where it
+   * may reach past the text box's. undefined when it isn't measured (runModelled).
+   */
+  runStyle(k: El, si: number): RunStyle | undefined {
+    if (!k.parent || !this.runModelled(k, si)) return undefined;
+    const kt = this.textOf(k, si);
+    const pt = this.textOf(k.parent, si);
+    const out: RunStyle = {};
+    if (kt.family.value !== pt.family.value) out.font = kt.family.value;
+    if (kt.size !== pt.size) out.size = kt.size;
+    const own = this.strutOf(k, si)!;
+    const rs = this.strutOf(this.lineRoot(k, si)!, si)!;
+    const shift = this.baselineShift(k, si)!;
+    const above = own.sa - shift;
+    const below = own.sd + shift;
+    if (above > rs.sa + 1e-9 || below > rs.sd + 1e-9) Object.assign(out, { above, below });
+    return out;
+  }
+
+  /** An atomic inline's extent around its line's baseline, when it reaches past the line's strut (the line box is sized around it then). */
+  pastStrut(k: El, si: number): { above: number; below: number } | undefined {
+    const x = this.atomicExtent(k, si);
+    const rs = this.strutOf(this.lineRoot(k, si)!, si);
+    return x && rs && (x.above > rs.sa + 1e-9 || x.below > rs.sd + 1e-9) ? x : undefined;
+  }
+
+  /**
+   * An atomic inline on a line of text: where its margin box sits around the line's baseline (px),
+   * from its own baseline and the vertical-align of it and of the inline boxes it is in. undefined
+   * when that isn't known.
+   */
+  atomicExtent(k: El, si: number): { above: number; below: number } | undefined {
+    const atom = this.atomicBox(k, si);
+    const root = this.lineRoot(k, si);
+    if (!atom || !root || !this.strutOf(root, si)) return undefined;
+    const shift = this.baselineShift(k, si);
+    if (shift === undefined) return undefined;
+    if (k.parent !== root && !this.runModelled(k.parent!, si)) return undefined;
+    return { above: atom.a - shift, below: atom.hm - atom.a + shift };
   }
 
   /**
@@ -1429,6 +1589,30 @@ export abstract class PageLifter {
     const d = this.displayOf(k, si);
     if (!(d === "inline-block" || (d === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
     if (!REPLACED_BLOCK.has(k.tag) && (k.ownText || k.children.length)) return this.atomicText(k, si);
+    const g = this.atomicSized(k, si);
+    if (!g) return undefined;
+    const inside = (x: ReturnType<typeof g.at>) => !!x && x.above <= x.strut.sa + 1e-6 && x.below <= x.strut.sd + 1e-6;
+    if (!g.fluid) {
+      const x = g.at(g.size);
+      // Past the line's strut: one object all the same, where its line box is sized around it (atomicExtent).
+      return inside(x) || (x && this.atomicExtent(k, si)) ? x!.width : undefined;
+    }
+    // Every size the viewport can give it must keep the line box (checked every 10px of viewport width).
+    const f = lengthExpr(g.fluid);
+    if (!f) return undefined;
+    for (let vw = 200; vw <= 3000; vw += 10) if (!inside(g.at(f.at(vw)))) return undefined;
+    return (size: number) => g.at(size)?.width ?? 0;
+  }
+
+  /**
+   * An atomic inline of set size (an inline-block or replaced element with a height, see
+   * atomicInline): its geometry at a font size (its margin-box width, how far it reaches above and
+   * below the baseline after its vertical-align, the line's strut, and before its vertical-align
+   * its baseline from its margin box's top, `a0`, and its margin box's height, `hm`). undefined
+   * when it isn't one.
+   */
+  atomicSized(k: El, si: number) {
+    if (!k.parent) return undefined;
     const own = k.own[si];
     const t = this.textOf(k, si);
     const pt = this.textOf(k.parent, si);
@@ -1451,7 +1635,7 @@ export abstract class PageLifter {
     const ratio = arm ? parseFloat(arm[1]) / (arm[2] ? parseFloat(arm[2]) : 1) : NaN;
     const va = raw("vertical-align") ?? "baseline";
     /** Its margin-box width and how far it reaches above and below the baseline, at a font size. */
-    const at = (size: number): { width: number; above: number; below: number; strut: { sa: number; sd: number; xh2: number } } | undefined => {
+    const at = (size: number): { width: number; above: number; below: number; a0: number; hm: number; strut: { sa: number; sd: number; xh2: number } } | undefined => {
       const px = (p: string, def = "0") => lengthPx(raw(p) ?? def, size) ?? NaN;
       const bdr = (side: string) => (/^(none|hidden)$/.test(raw(`border-${side}-style`) ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
       const insX = px("padding-left") + px("padding-right") + bdr("left") + bdr("right");
@@ -1485,21 +1669,13 @@ export abstract class PageLifter {
         a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
       } else if (va !== "baseline") {
         const r = lengthPx(va, size);
-        if (r === undefined) return undefined;
-        a = hm + r;
+        // A keyword (text-top, sub...) or percentage: placed by atomicExtent, never inside the strut here.
+        if (r === undefined) a = Infinity;
+        else a = hm + r;
       }
-      return { width: ml + bw + mr, above: a, below: hm - a, strut };
+      return { width: ml + bw + mr, above: a, below: hm - a, a0: hm, hm, strut };
     };
-    const inside = (x: ReturnType<typeof at>) => !!x && x.above <= x.strut.sa + 1e-6 && x.below <= x.strut.sd + 1e-6;
-    if (!t.fluid) {
-      const x = at(t.size);
-      return inside(x) ? x!.width : undefined;
-    }
-    // Every size the viewport can give it must keep the line box (checked every 10px of viewport width).
-    const f = lengthExpr(t.fluid);
-    if (!f) return undefined;
-    for (let vw = 200; vw <= 3000; vw += 10) if (!inside(at(f.at(vw)))) return undefined;
-    return (size: number) => at(size)?.width ?? 0;
+    return { at, size: t.size, fluid: t.fluid };
   }
 
   /**
@@ -1509,6 +1685,18 @@ export abstract class PageLifter {
    * placed by vertical-align, within the parent's strut). undefined otherwise.
    */
   atomicText(k: El, si: number): number | undefined {
+    const g = this.atomicTextBox(k, si);
+    if (!g) return undefined;
+    if (g.a > g.strut.sa + 1e-6 || g.hm - g.a > g.strut.sd + 1e-6) return this.atomicExtent(k, si) ? g.width : undefined;
+    return g.width;
+  }
+
+  /**
+   * An inline-block holding one line of text (see atomicText): its margin-box width, its baseline
+   * from its margin box's top before (`a0`) and after (`a`) its vertical-align, its margin box's
+   * height and its parent's strut. undefined when it isn't one.
+   */
+  atomicTextBox(k: El, si: number): { width: number; a0: number; a: number; hm: number; strut: { sa: number; sd: number } } | undefined {
     if (!k.parent || this.outOfFlow(k, si) || this.ownDisplay(k, si) !== "inline-block") return undefined;
     const t = this.textOf(k, si);
     if (t.fluid || this.textOf(k.parent, si).fluid) return undefined;
@@ -1557,7 +1745,8 @@ export abstract class PageLifter {
     const leading = Math.round((lh - v.ascent - v.descent) * 64);
     const sa = v.ascent + Math.floor(Math.trunc(leading / 2) / 64);
     const hm = mt + bdr("top") + pt + lh + pb + bdr("bottom") + mb;
-    let a = mt + bdr("top") + pt + sa;
+    const a0 = mt + bdr("top") + pt + sa;
+    let a = a0;
     const strut = this.strutOf(k.parent, si);
     if (!strut) return undefined;
     const va = res("vertical-align") ?? "baseline";
@@ -1566,11 +1755,34 @@ export abstract class PageLifter {
       a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
     } else if (va !== "baseline") {
       const r = lengthPx(va, t.size);
-      if (r === undefined) return undefined;
-      a += r;
+      // A keyword (text-top, sub...) or percentage: placed by atomicExtent, never inside the strut here.
+      a = r === undefined ? Infinity : a + r;
     }
-    if (a > strut.sa + 1e-6 || hm - a > strut.sd + 1e-6) return undefined;
-    return width;
+    return { width, a0, a, hm, strut };
+  }
+
+  /**
+   * An atomic inline on a line of text (atomicSized, atomicTextBox): its margin-box width, its
+   * baseline from its margin box's top and its margin box's height, before its vertical-align.
+   * Only at a font size that doesn't follow the viewport; undefined otherwise.
+   */
+  atomicBox(k: El, si: number): { width: number; a: number; hm: number } | undefined {
+    if (k.anonymous !== undefined || !k.parent || this.outOfFlow(k, si)) return undefined;
+    const d = this.ownDisplay(k, si);
+    if (k.pseudo) {
+      if (d !== "inline-block" || this.floatsAtStart(k, si)) return undefined;
+      const g = this.atomicTextBox(k, si);
+      return g && { width: g.width, a: g.a0, hm: g.hm };
+    }
+    const dd = this.displayOf(k, si);
+    if (!(dd === "inline-block" || (dd === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
+    if (!REPLACED_BLOCK.has(k.tag) && (k.ownText || k.children.length)) {
+      const g = this.atomicTextBox(k, si);
+      return g && { width: g.width, a: g.a0, hm: g.hm };
+    }
+    const g = this.atomicSized(k, si);
+    const x = g && !g.fluid ? g.at(g.size) : undefined;
+    return x && { width: x.width, a: x.a0, hm: x.hm };
   }
 
   /** Whether a text box has inline elements with a weight or edges of their own (its text is then measured run by run). */
@@ -1579,6 +1791,8 @@ export abstract class PageLifter {
       if (this.atomicInline(k, si) !== undefined) return true;
       if (k.pseudo || k.anonymous !== undefined || k.tag === "br" || this.displayOf(k, si) === "none" || this.outOfFlow(k, si) || this.displayOf(k, si) !== "inline") return false;
       if (this.textOf(k, si).weight !== this.textOf(k.parent, si).weight) return true;
+      const st = this.runStyle(k, si);
+      if (st && (st.font !== undefined || st.size !== undefined || st.above !== undefined)) return true;
       const e = this.inlineEdges(k, si);
       if (e && (e.open || e.close)) return true;
       return k.children.some(visit);
@@ -1596,9 +1810,10 @@ export abstract class PageLifter {
       if (!el) return undefined;
       const out: InlineInfo = {};
       const atomic = el !== root ? this.atomicInline(el, si) : undefined;
-      if (atomic !== undefined) return { atomic };
+      if (atomic !== undefined) return { atomic, ...this.pastStrut(el, si) };
       if (el !== root && this.displayOf(el, si) === "inline") {
         if (this.textOf(el, si).weight !== this.textOf(el.parent, si).weight) out.weight = this.textOf(el, si).weight;
+        Object.assign(out, this.runStyle(el, si));
         const e = this.inlineEdges(el, si);
         if (e?.open) out.open = e.open;
         if (e?.close) out.close = e.close;
@@ -1613,10 +1828,11 @@ export abstract class PageLifter {
         const g: Generated = {
           text: typeof c === "string" ? c : "",
           ...(this.textOf(p, si).weight !== this.textOf(el, si).weight && { weight: this.textOf(p, si).weight }),
+          ...(atomic === undefined && !this.floatsAtStart(p, si) && this.ownDisplay(p, si) === "inline" && this.runStyle(p, si)),
           ...(e?.open && { open: e.open }),
           ...(e?.close && { close: e.close }),
           ...(this.floatsAtStart(p, si) && { float: true }),
-          ...(atomic !== undefined && { atomic }),
+          ...(atomic !== undefined && { atomic, ...this.pastStrut(p, si) }),
         };
         out[p.pseudo!] = g;
       }
@@ -2632,6 +2848,9 @@ export abstract class PageLifter {
     for (const k of kids) {
       // (Layout containment leaves an item no baseline.)
       if (k.roles[si] !== "text" || this.containOf(k, si)) return undefined;
+      // An inline box that may make its first line taller than its strut: the engine places it (align baseline).
+      const tall = (x: El): boolean => x.children.some((c) => (this.runStyle(c, si)?.above !== undefined || (this.atomicInline(c, si) !== undefined && this.pastStrut(c, si) !== undefined) || tall(c)));
+      if (tall(k)) return undefined;
       const strut = allSame ? undefined : this.strutOf(k, si);
       if (!allSame && !strut) return undefined;
       const own = k.own[si];
@@ -2863,7 +3082,9 @@ export abstract class PageLifter {
         this.note(el, si, { decl: `<${k.tag}>`, reason: `inline <${k.tag}> ${ua}; text runs in another style aren't measured`, kind: "text" });
       // Text in another font family (an icon font) or size sits on the line with its own metrics.
       const famDiff = kt.family.value !== pt.family.value;
-      if (famDiff && changes.some((c) => c.prop === "font-family") === false && k.pseudo)
+      // An inline box whose font, size, line height and vertical-align are measured (runStyle).
+      const modelled = inline && !lead && this.runModelled(k, si);
+      if (famDiff && changes.some((c) => c.prop === "font-family") === false && k.pseudo && !modelled)
         this.note(el, si, { decl: `${where} (font-family: ${kt.family.value})`, reason: "inline runs in another style aren't measured", kind: "text" });
       // box-sizing changes nothing on a box with no width, height, padding or border.
       const boxy = ["width", "height", "min-width", "min-height", "max-width", "max-height"].some((p) => own.has(p)) || SIDES.some((s) => own.has(`padding-${s}`) || own.has(`border-${s}-width`) || own.has(`margin-${s}`));
@@ -2891,6 +3112,7 @@ export abstract class PageLifter {
         }
         // Text properties equal to what the run inherits anyway change nothing.
         if (c.prop === "font-size" && kt.size === pt.size) continue;
+        if (modelled && /^(font-size|font-family|line-height|vertical-align)$/.test(c.prop)) continue;
         if (c.prop === "font-family" && !famDiff) continue;
         if (c.prop === "font-style" && (synthetic || this.italic(k, si) === this.italic(k.parent!, si))) continue;
         if (c.prop === "line-height" && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight)) continue;

@@ -157,7 +157,7 @@ export interface ResolvedProps {
   fit?: Resolved<"cover" | "contain">;
   backdrop?: Resolved<string>;
   shadow?: Resolved<string>;
-  align?: Resolved<"start" | "center" | "end" | "stretch">;
+  align?: Resolved<"start" | "center" | "end" | "stretch" | "baseline">;
   textAlign?: Resolved<"start" | "center" | "end">;
   /** `pct`: the gap between columns is this percentage of the content width (value is 0: what intrinsic sizes count). */
   gap?: Resolved<number> & { pct?: number };

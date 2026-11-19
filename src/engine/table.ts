@@ -1447,12 +1447,14 @@ const hasContent = (b: Box) => !!b.lines?.length || b.children.length > 0;
  * The first baseline of a box, from its border box's top (layout units): its first line's, or its
  * first child's that has one; undefined when it has none, "unknown" when it can't be told.
  */
-function firstBaseline(h: TableHooks, b: Box): LU | undefined | "unknown" {
+export function firstBaseline(h: Pick<TableHooks, "lineHeight">, b: Box): LU | undefined | "unknown" {
   const ins = insets(b.props);
   if (b.lines?.length) {
     // An inline-block alone on its line (lifted as a fit-content block): the line's baseline is its
     // last line's, which Cadesa doesn't place when it wraps.
     if (b.lines.length > 1 && b.props.width?.value === "fit") return "unknown";
+    // A first line sized around inline boxes of their own: its baseline is where they put it.
+    if (b.lines[0].base !== undefined) return U(ins.top) + U(b.lines[0].base);
     const t = b.props.text?.value;
     if (!t) return "unknown";
     const v = metricsFor(t.font)?.vertical(t.sizePx, t.weight);

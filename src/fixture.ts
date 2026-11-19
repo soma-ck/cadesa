@@ -49,31 +49,53 @@ export interface RunMeta {
   lead?: { text: string; weight?: number; extra: number };
 }
 
-export interface Span {
+export interface Span extends RunStyle {
   from: number;
   to: number;
-  weight?: number;
   open?: number;
   close?: number;
   /** An atomic inline whose width follows the font size (em): its width at a font size, instead of `open`. */
   openAt?: (sizePx: number) => number;
 }
 
-/** What an inline element adds to the text it is part of (see textAndRuns). */
-export interface InlineInfo {
+/**
+ * How an inline box's text differs from the text box's, and where the box sits on its lines. Each
+ * field is set only where it differs from the box around it (the innermost one that sets it wins).
+ */
+export interface RunStyle {
   weight?: number;
+  /** Text in another font: its font-family value (measured with that family's metrics). */
+  font?: string;
+  /** Text at another font size (px). */
+  size?: number;
+  /**
+   * The inline box (or an atomic inline's margin box) on each line it is on: how far it reaches
+   * above and below the line's baseline in px, after its vertical-align. A line box is the union of
+   * these and the text box's own strut.
+   */
+  above?: number;
+  below?: number;
+}
+
+/** Whether a run style changes anything. */
+export const styled = (s: RunStyle | undefined) => !!s && (s.weight !== undefined || s.font !== undefined || s.size !== undefined || s.above !== undefined || s.below !== undefined);
+
+/** What an inline element adds to the text it is part of (see textAndRuns). */
+export interface InlineInfo extends RunStyle {
   open?: number;
   close?: number;
   /** Generated content at its start and end (::before, ::after), laid out as inline boxes. */
   before?: Generated;
-  /** An atomic inline (an inline-block, an icon <svg>) of this margin-box width (or its width at a font size): one unbreakable object on the line. */
+  /**
+   * An atomic inline (an inline-block, an icon <svg>) of this margin-box width (or its width at a
+   * font size): one unbreakable object on the line, reaching `above` and `below` the baseline.
+   */
   atomic?: number | ((sizePx: number) => number);
   after?: Generated;
 }
 
-export interface Generated {
+export interface Generated extends RunStyle {
   text: string;
-  weight?: number;
   open?: number;
   close?: number;
   /** An inline-block of one line of text (an icon glyph in its font): one object on the line, this wide (margin box). */
@@ -148,6 +170,8 @@ function collapseItems(raw: string): { text: string; items: number[]; marks: { i
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i];
     if (ch === OPEN || ch === CLOSE) {
+      // A space before an inline box's end is its text (the spaces after it collapse into it).
+      if (ch === CLOSE) space();
       const end = chars.indexOf(END, i);
       marks.push({ id: Number(chars.slice(i + 1, end).join("")), open: ch === OPEN, at: n });
       i = end;
@@ -176,7 +200,14 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   let underlined = false;
   let depth = 0;
   /** Spans with something of their own, by id; `live`: open ones (carried into the next run when a <br> splits them). */
-  const spans: { weight?: number; open?: number; close?: number; openAt?: (sizePx: number) => number }[] = [];
+  const spans: (RunStyle & { open?: number; close?: number; openAt?: (sizePx: number) => number })[] = [];
+  const style = (sp: RunStyle): RunStyle => ({
+    ...(sp.weight !== undefined && { weight: sp.weight }),
+    ...(sp.font !== undefined && { font: sp.font }),
+    ...(sp.size !== undefined && { size: sp.size }),
+    ...(sp.above !== undefined && { above: sp.above }),
+    ...(sp.below !== undefined && { below: sp.below }),
+  });
   const live: number[] = [];
   let lead: RunMeta["lead"];
   /** Spans open when a run starts (split from the run before by a <br>): they start at 0, with no open edge. */
@@ -186,6 +217,8 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     if (t) {
       runs.push(t);
       const out: Span[] = [];
+      // Which span opened first: an inner span with the same range as its parent comes after it.
+      const order = new Map<Span, number>();
       const from = new Map<number, { at: number; opened: boolean }>();
       for (const id of carried) from.set(id, { at: 0, opened: false });
       for (const m of marks) {
@@ -194,24 +227,28 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
           const f = from.get(m.id) ?? { at: 0, opened: false };
           from.delete(m.id);
           const sp = spans[m.id];
-          out.push({ from: f.at, to: m.at, ...(sp.weight !== undefined && { weight: sp.weight }), ...(f.opened && sp.open && { open: sp.open }), ...(f.opened && sp.openAt && { openAt: sp.openAt }), ...(sp.close && { close: sp.close }) });
+          const s: Span = { from: f.at, to: m.at, ...style(sp), ...(f.opened && sp.open && { open: sp.open }), ...(f.opened && sp.openAt && { openAt: sp.openAt }), ...(sp.close && { close: sp.close }) };
+          out.push(s);
+          order.set(s, m.id);
         }
       }
       const len = [...t].length;
       for (const [id, f] of from) {
         const sp = spans[id];
-        out.push({ from: f.at, to: len, ...(sp.weight !== undefined && { weight: sp.weight }), ...(f.opened && sp.open && { open: sp.open }) });
+        const s: Span = { from: f.at, to: len, ...style(sp), ...(f.opened && sp.open && { open: sp.open }) };
+        out.push(s);
+        order.set(s, id);
       }
-      const useful = out.filter((s) => s.weight !== undefined || s.open || s.close);
-      runMeta.push({ inBlock: depth > 0, underlined, items, ...(useful.length && { spans: useful.sort((a, b) => a.from - b.from || b.to - a.to) }), ...(lead !== undefined && runs.length === 1 && { lead }) });
+      const useful = out.filter((s) => styled(s) || s.open || s.close);
+      runMeta.push({ inBlock: depth > 0, underlined, items, ...(useful.length && { spans: useful.sort((a, b) => a.from - b.from || b.to - a.to || order.get(a)! - order.get(b)!) }), ...(lead !== undefined && runs.length === 1 && { lead }) });
     }
     carried = [...live];
     cur = "";
     underlined = false;
   };
   /** Text in an inline box of its own (an element, or generated content). */
-  const span = (info: { weight?: number; open?: number; close?: number; openAt?: (sizePx: number) => number } | undefined, body: () => void) => {
-    if (!info || (info.weight === undefined && !info.open && !info.close)) {
+  const span = (info: (RunStyle & { open?: number; close?: number; openAt?: (sizePx: number) => number }) | undefined, body: () => void) => {
+    if (!info || (!styled(info) && !info.open && !info.close)) {
       cur += EDGE;
       body();
       cur += EDGE;
@@ -228,7 +265,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   const generated = (g: Generated | undefined) => {
     if (!g) return;
     if (g.float) lead = { text: collapse(g.text), ...(g.weight !== undefined && { weight: g.weight }), extra: (g.open ?? 0) + (g.close ?? 0) };
-    else if (g.atomic !== undefined) span({ open: g.atomic }, () => (cur += "\uFFFC"));
+    else if (g.atomic !== undefined) span({ open: g.atomic, ...(g.above !== undefined && { above: g.above, below: g.below }) }, () => (cur += "\uFFFC"));
     else span(g, () => (cur += g.text));
   };
   const walk = (k: P5Node, u: boolean) => {
@@ -238,8 +275,10 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
       if (u && /\S/.test(k.value ?? "")) underlined = true;
     } else if (k.tagName === "br") flush();
     else if (inline?.(k)?.atomic !== undefined) {
-      const a = inline!(k)!.atomic!;
-      span(typeof a === "number" ? { open: a } : { open: 1, openAt: a }, () => (cur += "\uFFFC"));
+      const info = inline!(k)!;
+      const a = info.atomic!;
+      const v = info.above !== undefined ? { above: info.above, below: info.below } : {};
+      span(typeof a === "number" ? { open: a, ...v } : { open: 1, openAt: a, ...v }, () => (cur += "\uFFFC"));
     }
     else if (k.tagName && BLOCK.has(k.tagName)) {
       flush();

@@ -566,9 +566,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const rowGap = l.rowGap === undefined ? undefined : pctRowGap ? ref(l.rowGap, [...p, "rowGap"], "size") : spaceRef(l.rowGap, [...p, "rowGap"], "a gap");
           if (l.rowGap !== undefined && !rowGap) break;
           // A stack's align: where its children sit across it (stretch, or as wide as their content).
-          if (l.align !== undefined && (l.pattern === "flow" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
+          if (l.align !== undefined && (l.pattern === "flow" || !["start", "center", "end", "stretch", ...(l.pattern === "cluster" ? ["baseline"] : [])].includes(l.align as string))) {
             err([...p, "align"], l.pattern === "flow" ? `align doesn't apply to a ${l.pattern} (its children always stretch)` : "invalid align", {
-              expected: "start, center, end or stretch",
+              expected: l.pattern === "cluster" ? "start, center, end, stretch or baseline" : "start, center, end or stretch",
               got: l.align,
             });
             break;
