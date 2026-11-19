@@ -18,21 +18,8 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## 0.1.12 (2026-11-19)
+## 0.1.13 (2026-11-19)
 
-- The window height is an input like the widths: `--height <px>` (MCP `height`), 800 by
-  default. `vh`, `dvh`, `svh` and `lvh`, percentage heights of the root and `min-height` /
-  `max-height` media queries are exact for it, and the coverage line names it ("for an 800px
-  tall window"). Conformance and `--verify` open Chromium at that height.
-- `position: absolute` and `fixed` are laid out: in the padding box of the nearest positioned
-  ancestor (or the window), by px, %, vw offsets and `inset`; as wide as left and right leave,
-  their own width, or their content; as tall as top and bottom leave, their own height (a
-  percentage of the containing block) or their content. Without offsets they sit at their
-  static position, known before any in-flow sibling in block flow (else `≈`). They don't move
-  their siblings, aren't counted as anyone's overflow, and a fixed box never scrolls the page.
-  `position: relative` offsets shift the box and what it holds; sticky is predicted at scroll
-  position 0 and contains absolute children. In a source: `position: { type, top, right, ... }`
-  and `page.windowHeight`.
 - `::before` and `::after` are laid out from their own cascade. Positioned ones (decorative
   layers, ribbons) move nothing. An empty table or block (the clearfix) is a box of no height:
   the table keeps the last child's margin inside, the block lets it through, and `clear` does
@@ -76,6 +63,22 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
     without native appearance, is one line of its line height, never shorter than normal, plus
     padding and border; alone on its line it is placed like any inline-block. A `<select>`
     keeps its native height (`≈`) unless `appearance: none`.
+
+## 0.1.12 (2026-11-19)
+
+- The window height is an input like the widths: `--height <px>` (MCP `height`), 800 by
+  default. `vh`, `dvh`, `svh` and `lvh`, percentage heights of the root and `min-height` /
+  `max-height` media queries are exact for it, and the coverage line names it ("for an 800px
+  tall window"). Conformance and `--verify` open Chromium at that height.
+- `position: absolute` and `fixed` are laid out: in the padding box of the nearest positioned
+  ancestor (or the window), by px, %, vw offsets and `inset`; as wide as left and right leave,
+  their own width, or their content; as tall as top and bottom leave, their own height (a
+  percentage of the containing block) or their content. Without offsets they sit at their
+  static position, known before any in-flow sibling in block flow (else `≈`). They don't move
+  their siblings, aren't counted as anyone's overflow, and a fixed box never scrolls the page.
+  `position: relative` offsets shift the box and what it holds; sticky is predicted at scroll
+  position 0 and contains absolute children. In a source: `position: { type, top, right, ... }`
+  and `page.windowHeight`.
 - More selectors are decided from the page: `:lang()`, `:dir()`, `:open`, `:placeholder-shown`,
   `:read-only` / `:read-write`, `:valid` / `:invalid` for required controls, `:in-range`,
   `:nth-child(An+B of S)`, `:scope`, `:host`; vendor pseudo-classes Chromium rejects match
