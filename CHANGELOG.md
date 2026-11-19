@@ -45,6 +45,36 @@ Report, `whatif`, `capture` and `--verify` fixes from running 0.1.9 on two real 
 - An unexpected error says it is a Cadesa bug to report; `CADESA_DEBUG=1` prints the stack.
   A missing file is reported as such.
 
+Engine and lift fixes from the same field test:
+
+- A lift never aborts on one rule: a combination Cadesa can't express is dropped and its box
+  marked `≈`. `aspect-ratio` with a height and no width is modelled (the width follows the
+  height; stretched across a column flexbox, it's the column's width).
+- Grids with explicit columns: fixed lengths, percentages, `<n>fr` (never narrower than its
+  items' min-content) and `minmax(0, <n>fr)`, with `repeat()`, shared in layout units as
+  Chromium does; `justify-items` / `place-items`, separate row and column gaps, and a grid's
+  intrinsic width in a flex row. `repeat(3, minmax(0, 1fr))` in a flex row and
+  `repeat(auto-fill, minmax(0, 1fr))` no longer crash. In a source:
+  `layout: { pattern: grid, columns: 3 }` or `columns: [sidebar, "1fr"]`, `justify`, `rowGap`.
+- Units: `pt`, `pc`, `in`, `cm`, `mm` and `Q`; `vw` and `calc()` / `min()` / `max()` /
+  `clamp()` of px, rem, em and vw, computed at each width, for box lengths and font sizes.
+  `vh` (and `dvh`, `svh`, `lvh`) is computed for an 800px tall viewport and the boxes it moves
+  are marked `≈`.
+- `min-height` (`minHeight`), and `height: 100%` of a parent with a definite height (as auto
+  under an auto height; `≈` only inside a flex or grid item, which may be stretched).
+- The page: the body's margin (the browser's 8px too, collapsing with the first box's), padding
+  and border, and the root element's, as `page.margin`, `page.padding` and `page.outer`.
+  `overflow` on `html` or `body` no longer makes the page `≈`.
+- `:has()` is decided against the page. Properties that can't move a box (`counter-reset`,
+  `text-rendering`, `cursor`, font smoothing...) never make it `≈`.
+- `overflow-wrap: break-word` / `anywhere` (or `word-wrap`) lets a long word break: no more
+  "can't wrap and overflows".
+- A box past the right edge of the viewport is reported: the page scrolls sideways (a gutter
+  row whose container has no padding). Not where the page or a box around it clips.
+- `align-items: baseline` in a row of text items in one font; `flex: 0 0 <length>` in a row.
+- Elements the engine skips under a layout it can't model are named in the coverage count.
+- On `--css` and `--tailwind` pages, engine advice is in CSS terms.
+
 ## 0.1.9 (2026-11-19)
 
 Fixes from running 0.1.8 on a captured Angular + Bootstrap app:
