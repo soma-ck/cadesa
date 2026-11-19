@@ -1,0 +1,155 @@
+/*
+ * Animations at their start (t=0): boxes are drawn with their starting keyframe's transform when
+ * the animation runs from t=0 or fills backwards (a delay with backwards or both); reverse starts
+ * at 100%; a keyframe that doesn't set a property leaves the box's own value; transform and
+ * translate from two animations compose. A delayed animation without a backwards fill, a
+ * forwards-only fill and a paused animation behave as Chromium draws them at t=0.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1d2330;
+  background: #f4f5f8;
+}
+
+@keyframes rise {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes slide-in {
+  0% {
+    translate: -24px 0;
+  }
+  100% {
+    translate: 0 0;
+  }
+}
+
+@keyframes grow {
+  0% {
+    transform: scale(0.9);
+  }
+}
+
+@keyframes drift {
+  to {
+    transform: translateX(40px);
+  }
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
+  }
+}
+
+.board {
+  max-width: 880px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.board__title {
+  margin: 0 0 16px;
+  font-size: 26px;
+  line-height: 1.2;
+  animation: rise 0.6s ease-out both;
+}
+
+.board__lede {
+  margin: 0 0 20px;
+  animation: slide-in 0.4s 0.2s backwards;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+  gap: 14px;
+}
+
+.card {
+  padding: 14px 16px;
+  border: 1px solid #d5d9e2;
+  border-radius: 8px;
+  background: #ffffff;
+  animation: rise 0.5s calc(var(--i) * 0.1s) both;
+}
+
+.card--late {
+  animation: rise 0.5s 0.3s;
+}
+
+.card--forwards {
+  animation: rise 0.5s 0.3s forwards;
+}
+
+.card--back {
+  animation: rise 0.5s reverse;
+}
+
+.card--paused {
+  animation: grow 1s paused;
+}
+
+.card--own {
+  transform: translateX(6px);
+  animation: drift 2s;
+}
+
+.card--both {
+  animation: rise 0.5s, slide-in 0.5s;
+}
+
+.card__title {
+  margin: 0 0 6px;
+  font-size: 17px;
+  font-weight: 600;
+}
+
+.card__body {
+  margin: 0;
+  font-size: 14px;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 20px 0 0;
+}
+
+.status__spinner {
+  width: 18px;
+  height: 18px;
+  border: 3px solid #c0c6d4;
+  border-top-color: #3355aa;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+.status__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #33aa66;
+  animation: pulse 2s ease-in-out infinite;
+}

@@ -38,6 +38,18 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   narrow the window the page is laid out in (media queries and `vw` keep the whole window), unless
   `html` or `body` hides the overflow. `conformance:bootstrap` goes from 62,315 to 68,858 exact boxes
   of 69,310, all matching, with either kind of scrollbar.
+- Animations are laid out at their start (t=0, the first frame): an animation that runs from t=0, or
+  fills backwards during its delay (`backwards` or `both`), draws its starting keyframe's
+  `transform`, `translate`, `rotate` and `scale` (100% for `reverse` and `alternate-reverse`) in
+  place of the box's own; a keyframe that doesn't set one leaves the box's value, and several
+  animations compose. A delay without a backwards fill, a `forwards` fill and `paused` are drawn as
+  at t=0 too. The `animation` shorthand is read into its longhands in the cascade (a later
+  `animation-delay` wins). `--verify` and the conformance suites hold every animation at its start
+  (and finish a transition a resize started), since what is drawn at load otherwise depends on how
+  long loading took. Still `≈`: a negative delay, an easing that jumps at the start
+  (`steps(n, start)`), no duration, and keyframes that set a layout property (`width`, `top`,
+  `margin`...); a box positioned inside an element whose transform is animated is `≈` too (that
+  element is its containing block).
 
 ## 0.1.18 (2026-11-19)
 

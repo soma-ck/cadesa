@@ -69,10 +69,16 @@ export async function serveFiles(root: string, overrides = new Map<string, strin
   };
 }
 
-/** Wait for web fonts and images, so text and replaced elements have their final size. */
+/**
+ * Wait for web fonts and images, so text and replaced elements have their final size; then seek
+ * every animation to its start (t=0) and hold it there, where Cadesa predicts boxes: what is drawn
+ * at load would otherwise depend on how long loading took.
+ */
 export async function settle(page: Page): Promise<void> {
   await page.evaluate("document.fonts.ready");
   await page.evaluate("Promise.all([...document.images].map((i) => i.decode().catch(() => {})))");
+  // (A transition a resize started, by a media query, is finished: its end is the page at that width.)
+  await page.evaluate("for (const a of document.getAnimations()) if (a instanceof CSSTransition) a.finish(); else { a.pause(); a.currentTime = 0; }");
 }
 
 /** The border box of every element with a data-fixture id, in CSS px from the viewport's top left. */

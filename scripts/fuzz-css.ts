@@ -62,7 +62,19 @@ export function genCssCase(seed: number): CssCase {
     `@font-face { font-family: "Lato Text"; font-weight: 400; src: url("../../../fixtures/fonts/fonts/lato/Lato-Regular.woff2") format("woff2"); }`,
     `body { margin: 8px; font-family: Inter; font-size: ${r.pick(["16px", "16px", "14px", "15px", "18px"])}; line-height: ${r.pick(["1.5", "1.5", "1.25", "1.4", "24px", "normal", "1"])}; color: #222; }`,
     `p { margin: 0 0 ${r.int(0, 12)}px }`,
+    // Animations, drawn at their start (t=0).
+    "@keyframes kf-rise { from { transform: translateY(9px) } to { transform: none } }",
+    "@keyframes kf-slide { 0% { translate: -14px 3px } 100% { translate: 0 } }",
+    "@keyframes kf-grow { 0%, 20% { transform: scale(0.8) rotate(4deg) } }",
+    "@keyframes kf-drift { to { transform: translateX(30px) } }",
+    "@keyframes kf-fade { 50% { opacity: 0.3 } }",
   ];
+  /** An animation: maybe delayed, filled, reversed, paused or two at once. */
+  const animation = () => {
+    const one = () =>
+      [r.pick(["kf-rise", "kf-slide", "kf-grow", "kf-drift", "kf-fade"]), `${r.pick(["0.3", "0.5", "1", "2"])}s`, ...(r.chance(0.4) ? [`${r.pick(["0", "0.2", "0.5"])}s`] : []), ...(r.chance(0.5) ? [r.pick(["both", "backwards", "forwards", "none"])] : []), ...(r.chance(0.2) ? [r.pick(["reverse", "alternate", "alternate-reverse"])] : []), ...(r.chance(0.2) ? [r.pick(["infinite", "2"])] : []), ...(r.chance(0.1) ? ["paused"] : []), ...(r.chance(0.3) ? [r.pick(["linear", "ease-out", "step-end", "cubic-bezier(0.2, 0.7, 0.2, 1)"])] : [])].join(" ");
+    return `animation: ${r.chance(0.2) ? `${one()}, ${one()}` : one()}`;
+  };
   // A root font size other than 16px (maybe changed by a media query): rem lengths resolve against it.
   const remRoot = r.chance(0.3);
   if (remRoot) {
@@ -197,8 +209,44 @@ export function genCssCase(seed: number): CssCase {
     if (where === "row") return `<div${attr(cls(["display: flex", `gap: ${r.int(0, 10)}px`, ...(r.chance(0.5) ? [`align-items: ${r.pick(["center", "stretch", "flex-start", "baseline"])}`] : [])]))}>${control()}${control()}<span>${words(r, 1, 3)}</span></div>`;
     return `<div><button${attr(cls(["font: inherit", `height: ${r.int(16, 70)}px`, `padding: ${r.int(0, 8)}px ${r.int(0, 12)}px`, ...(r.chance(0.3) ? ["box-sizing: content-box"] : [])]))}>${words(r, 1, 2)}</button></div>`;
   };
+  /**
+   * A scroll container (overflow auto or scroll, on one axis or both), maybe of set height, padded
+   * and bordered, holding what may overflow it: a wide box, a table, text that doesn't wrap, or
+   * paragraphs taller than it. Scrollbars take no space in headless Chromium (overlay); with
+   * CADESA_SCROLLBARS=classic, 15px.
+   */
+  const scroller = () => {
+    const d: string[] = [];
+    const ov = r.pick(["auto", "auto", "scroll", "hidden auto", "auto hidden", "scroll auto"]);
+    if (ov.includes(" ")) d.push(`overflow-x: ${ov.split(" ")[0]}`, `overflow-y: ${ov.split(" ")[1]}`);
+    else d.push(r.chance(0.5) ? `overflow: ${ov}` : `overflow-x: ${ov}`);
+    if (r.chance(0.5)) d.push(`height: ${r.int(30, 160)}px`);
+    if (r.chance(0.4)) d.push(`padding: ${r.int(0, 12)}px ${r.int(0, 16)}px`);
+    if (r.chance(0.3)) d.push(`border: ${r.int(1, 4)}px solid #889`);
+    if (r.chance(0.3)) d.push(`width: ${r.int(120, 500)}px`);
+    if (r.chance(0.2)) d.push("box-sizing: border-box");
+    if (r.chance(0.15)) d.push(animation());
+    const inline = r.chance(0.2);
+    if (inline) d.push("display: inline-block");
+    const kids: string[] = [];
+    const k = r.int(1, 3);
+    for (let j = 0; j < k; j++) {
+      const what = r.pick(["wide", "para", "para", "table", "nowrap", "block"] as const);
+      if (what === "wide") kids.push(`<div${attr(cls([`width: ${r.int(100, 900)}px`, `height: ${r.int(5, 40)}px`, "background: #dde", ...(r.chance(0.3) ? [`margin-right: ${r.int(-10, 30)}px`] : [])]))}></div>`);
+      else if (what === "para") kids.push(`<p>${words(r, 3, 30)}</p>`);
+      else if (what === "table") kids.push(`<table><tr>${Array.from({ length: r.int(2, 6) }, () => `<td>${words(r, 1, 4).replace(/ /g, "-")}</td>`).join("")}</tr></table>`);
+      else if (what === "nowrap") kids.push(`<p${attr(cls(["white-space: nowrap"]))}>${words(r, 3, 14)}</p>`);
+      else kids.push(`<div${attr(cls([`width: ${r.int(50, 400)}px`, `height: ${r.int(10, 80)}px`, "background: #eed"]))}></div>`);
+    }
+    const box = `<div${attr(cls(d))}>${kids.join("")}</div>`;
+    return inline ? `<div>${words(r, 0, 3)} ${box} ${words(r, 0, 3)}</div>` : box;
+  };
   const count = r.int(2, 5);
   for (let i = 0; i < count; i++) {
+    if (r.chance(0.12)) {
+      blocks.push(scroller());
+      continue;
+    }
     if (r.chance(0.3)) {
       blocks.push(baselineRow());
       continue;
@@ -224,6 +272,7 @@ export function genCssCase(seed: number): CssCase {
     else if (r.chance(0.15)) decls.push("font-family: Lato");
     else if (r.chance(0.1)) decls.push('font-family: "Lato Text"', `font-weight: ${r.pick(["400", "600", "700", "800"])}`);
     if (r.chance(0.12)) decls.push("font-style: italic");
+    if (r.chance(0.12)) decls.push(animation());
     const parts: string[] = [];
     const k = r.int(1, 5);
     for (let j = 0; j < k; j++) {

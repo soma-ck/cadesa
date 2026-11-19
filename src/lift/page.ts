@@ -346,6 +346,7 @@ export function longhands(prop: string, value: string): [string, string][] {
     const weight = pre.find((x) => /^(bold|bolder|lighter|\d{3})$/.test(x)) ?? "normal";
     return [["font-style", style], ["font-weight", weight], ["font-size", m[2]], ["line-height", m[3] ?? "normal"], ["font-family", m[4]]];
   }
+  if (prop === "animation") return animationLonghands(value);
   if (prop === "background") {
     // One layer that is only a color, or only an image; anything else stays as written.
     const v = value.trim();
@@ -356,6 +357,31 @@ export function longhands(prop: string, value: string): [string, string][] {
     return [["background-color", v], ["background-image", "none"]];
   }
   return [[prop, value]];
+}
+
+const ANIMATION = ["animation-name", "animation-duration", "animation-timing-function", "animation-delay", "animation-iteration-count", "animation-direction", "animation-fill-mode", "animation-play-state"];
+
+/** The animation shorthand's longhands, each a comma list (one item per animation), by type as Chromium parses them. */
+function animationLonghands(value: string): [string, string][] {
+  const v = value.trim();
+  if (/^(inherit|initial|unset|revert)$/.test(v)) return ANIMATION.map((p) => [p, v]);
+  const cols: string[][] = ANIMATION.map(() => []);
+  for (const g of v.split(/,(?![^(]*\))/)) {
+    const got: (string | undefined)[] = ANIMATION.map(() => undefined);
+    const set = (i: number, t: string) => (got[i] === undefined ? ((got[i] = t), true) : false);
+    for (const t of g.trim().split(/\s+(?![^(]*\))/)) {
+      if (/^-?[\d.]+m?s$/i.test(t)) set(1, t) || set(3, t);
+      else if (/^(linear|ease|ease-in|ease-out|ease-in-out|step-start|step-end)$|^(cubic-bezier|steps|linear)\(/.test(t) && set(2, t)) continue;
+      else if (/^(infinite|[\d.]+)$/.test(t) && set(4, t)) continue;
+      else if (/^(normal|reverse|alternate|alternate-reverse)$/.test(t) && set(5, t)) continue;
+      else if (/^(none|forwards|backwards|both)$/.test(t) && set(6, t)) continue;
+      else if (/^(running|paused)$/.test(t) && set(7, t)) continue;
+      else set(0, t);
+    }
+    const initial = ["none", "0s", "ease", "0s", "1", "normal", "none", "running"];
+    got.forEach((x, i) => cols[i].push(x ?? initial[i]));
+  }
+  return ANIMATION.map((p, i) => [p, cols[i].join(", ")]);
 }
 
 /** Shorthands expanded only after var() substitution, with every longhand each may set. */
@@ -377,6 +403,7 @@ const DEFERRED: Record<string, string[]> = (() => {
     inset: [...SIDES],
     font: ["font-style", "font-weight", "font-size", "line-height", "font-family"],
     background: ["background-color", "background-image", "background"],
+    animation: ANIMATION,
     "border-radius": ["border-radius", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"],
   };
   for (const s of SIDES) out[`border-${s}`] = border([s]);
@@ -532,9 +559,55 @@ export abstract class PageLifter {
   rootVar(_name: string): string | undefined {
     return undefined;
   }
-  /** Whether @keyframes `name` animates where or how large a box is drawn (transform, offsets, sizes). */
-  movingAnimation(_name: string): boolean {
-    return false;
+  /** The declarations of @keyframes `name` at an offset (0 or 1), merged; undefined when there is no such @keyframes rule. */
+  keyframesAt(_name: string, _offset: number): Map<string, string> | undefined {
+    return undefined;
+  }
+
+  /**
+   * What an element's animations draw at their start (t=0, the first frame, before any time has
+   * passed; `--verify` seeks every animation there): each animation that is active then (no delay)
+   * or fills backwards (backwards or both) sets its starting keyframe's values (100% for reverse and
+   * alternate-reverse), later animations winning. Undefined when none does; `why` where the start
+   * isn't modelled (a negative delay, a step at the start, no duration, a layout property animated).
+   */
+  animationStart(el: El, si: number): { decls: Map<string, { value: string; name: string }>; why?: undefined } | { why: string; name: string } | undefined {
+    const own = el.own[si];
+    const list = (p: string) => {
+      const o = own.get(p);
+      const v = o ? this.resolve(el, si, o.value) : undefined;
+      return v ? v.split(/,(?![^(]*\))/).map((x) => x.trim()) : [];
+    };
+    const names = list("animation-name");
+    if (!names.length) return undefined;
+    const at = (xs: string[], i: number, d: string) => (xs.length ? xs[i % xs.length] : d);
+    const secs = (t: string) => (/ms$/i.test(t) ? parseFloat(t) / 1000 : parseFloat(t));
+    const [durs, delays, fills, dirs, iters, timings] = ["duration", "delay", "fill-mode", "direction", "iteration-count", "timing-function"].map((p) => list(`animation-${p}`));
+    const out = new Map<string, { value: string; name: string }>();
+    for (let i = 0; i < names.length; i++) {
+      const name = names[i].replace(/^["']|["']$/g, "");
+      if (name === "none") continue;
+      const dur = secs(at(durs, i, "0s"));
+      const delay = secs(at(delays, i, "0s"));
+      const fill = at(fills, i, "none");
+      const dir = at(dirs, i, "normal");
+      const iter = at(iters, i, "1");
+      const timing = at(timings, i, "ease");
+      if (!this.keyframesAt(name, 0)) continue;
+      if (delay < 0) return { why: `a negative animation-delay (${at(delays, i, "")}) starts it part way through`, name };
+      if (!(dur > 0) || iter === "0") return { why: "an animation with no duration (or no iterations) is at its end at once", name };
+      // Before its delay only a backwards fill shows its start; with none it's active from t=0.
+      if (delay > 0 && !/^(backwards|both)$/.test(fill)) continue;
+      // An easing that jumps at the start (steps(n, start), step-start) is part way already.
+      if (delay === 0 && /^step-start$|^steps\(\s*\d+\s*,\s*(start|jump-start|jump-both)\s*\)$/.test(timing)) return { why: `animation-timing-function: ${timing} jumps at the start`, name };
+      const kf = this.keyframesAt(name, /^(reverse|alternate-reverse)$/.test(dir) ? 1 : 0)!;
+      for (const [p, v] of kf) {
+        if (/^(top|right|bottom|left|inset|width|height|min-|max-|margin|padding|offset|font|line-height|letter-spacing|border-.*width|display|position|flex|grid|gap|aspect)/.test(p))
+          return { why: `its @keyframes set ${p}, which moves or resizes boxes as it runs`, name };
+        out.set(p, { value: v, name });
+      }
+    }
+    return out.size ? { decls: out } : undefined;
   }
   /** A registered (@property) custom property that doesn't inherit. */
   registered(_name: string): { inherits: boolean; initial?: string } | undefined {
@@ -772,7 +845,7 @@ export abstract class PageLifter {
     if (v === undefined || v === "") return [];
     const rawParts = raw.trim().split(/\s+(?![^(]*\))/);
     const resParts = rawParts.map((p) => this.resolve(el, si, p));
-    if (resParts.some((p) => p === undefined || p === "" || /\s/.test(p))) return longhands(prop, v);
+    if (prop === "animation" || resParts.some((p) => p === undefined || p === "" || /\s/.test(p))) return longhands(prop, v);
     if (!/^(border|border-(top|right|bottom|left|inline|block|inline-start|inline-end|block-start|block-end)|font|background)$/.test(prop)) return longhands(prop, raw);
     return longhands(prop, resParts.join(" ")).map(([p, x]) => {
       const i = resParts.indexOf(x);
@@ -956,6 +1029,10 @@ export abstract class PageLifter {
       if (!fixed && !/^(static)?$/.test(r("position") ?? "")) return undefined;
       const tf = ["transform", "translate", "rotate", "scale", "perspective", "filter", "backdrop-filter"].find((p) => !/^(none)?$/.test(r(p) ?? ""));
       if (tf) return `${own.get(tf)!.utility} (${tf}: ${r(tf)})`;
+      // An animation of its transform makes it one too while it runs.
+      const an = r("animation-name");
+      const animates = an?.split(",").map((x) => x.trim().replace(/^["']|["']$/g, "")).find((x) => x !== "none" && [0, 1].some((o) => [...(this.keyframesAt(x, o)?.keys() ?? [])].some((p) => /^(transform|translate|rotate|scale)$/.test(p))));
+      if (animates) return `${own.get("animation-name")!.utility} (animation: ${animates})`;
       const wc = r("will-change");
       if (wc && /\b(transform|translate|rotate|scale|perspective|filter|backdrop-filter)\b/.test(wc)) return `${own.get("will-change")!.utility} (will-change: ${wc})`;
     }
@@ -3007,13 +3084,17 @@ export abstract class PageLifter {
       // positioned box, which Cadesa places by its positioned (or contained) ancestor or the window.
       const trap = abs ? this.transformedContainer(el, si) : undefined;
       if (trap) this.note(el, si, { decl: trap, reason: "a transform, filter or will-change on an ancestor makes it this box's containing block, which isn't modelled", kind: "geometry" });
-      this.transformDecls(el, si, decl, handled);
-      // An animation of its transform, offsets or size: where it is drawn depends on the time (and
-      // fill-mode keeps the last keyframe's). Not modelled: the box and its subtree are approximate.
-      const anim = res("animation-name") ?? res("animation");
-      const named = anim ? anim.split(",").flatMap((a) => a.trim().split(/\s+/)).find((w) => this.movingAnimation(w.replace(/^["']|["']$/g, ""))) : undefined;
-      if (named && res("animation-play-state") !== "paused" && !/^none$/.test(res("animation-name") ?? ""))
-        this.note(el, si, { decl: `${(own.get("animation-name") ?? own.get("animation"))!.utility} (animation: ${named})`, reason: "an animation of its transform, position or size moves what is drawn while it runs", kind: "visual" });
+      // Animations: drawn as at their start (t=0), whose keyframe's transform, translate, rotate and
+      // scale replace the box's own (as `--verify` measures it, every animation seeked to its start).
+      const anim = this.animationStart(el, si);
+      if (anim?.why !== undefined)
+        this.note(el, si, { decl: `${own.get("animation-name")!.utility} (animation: ${anim.name})`, reason: `${anim.why}; boxes are predicted at an animation's start`, kind: "visual" });
+      const moved = anim?.why === undefined ? [...(anim?.decls ?? [])].filter(([p]) => /^(transform|translate|rotate|scale|transform-origin)$/.test(p)) : [];
+      if (moved.length) {
+        el.own[si] = new Map([...own, ...moved.map(([p, a]) => [p, { value: a.value, utility: `@keyframes ${a.name} (at its start)` }] as [string, Origin])]);
+        this.transformDecls(el, si, decl, handled);
+        el.own[si] = own;
+      } else this.transformDecls(el, si, decl, handled);
       // Everything else the element sets on itself.
       for (const [p, o] of own) {
         if (handled.has(p) || skipProp(p)) continue;

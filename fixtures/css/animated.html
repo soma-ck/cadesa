@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: animations at their start</title>
+    <link rel="stylesheet" href="animated.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="board">
+      <h1 class="board__title">Library returns this week</h1>
+      <p class="board__lede">Books come back to the front desk, are checked for damage and go back on the shelves by the end of the day.</p>
+      <section class="cards">
+        <article class="card" style="--i: 0">
+          <h2 class="card__title">Front desk</h2>
+          <p class="card__body">Twelve returns this morning, two of them late.</p>
+        </article>
+        <article class="card" style="--i: 1">
+          <h2 class="card__title">Repairs</h2>
+          <p class="card__body">A torn spine and a loose page, both fixed with tape.</p>
+        </article>
+        <article class="card" style="--i: 2">
+          <h2 class="card__title">Shelving</h2>
+          <p class="card__body">History and travel are back in order.</p>
+        </article>
+        <article class="card card--late">
+          <h2 class="card__title">Holds</h2>
+          <p class="card__body">Four books are waiting for pickup at the counter.</p>
+        </article>
+        <article class="card card--forwards">
+          <h2 class="card__title">Donations</h2>
+          <p class="card__body">A box of picture books from a neighbour.</p>
+        </article>
+        <article class="card card--back">
+          <h2 class="card__title">Inventory</h2>
+          <p class="card__body">The yearly count starts on the first of the month.</p>
+        </article>
+        <article class="card card--paused">
+          <h2 class="card__title">Reading room</h2>
+          <p class="card__body">Open late on Thursdays for the study group.</p>
+        </article>
+        <article class="card card--own">
+          <h2 class="card__title">Lost and found</h2>
+          <p class="card__body">One umbrella, two scarves and a library card.</p>
+        </article>
+        <article class="card card--both">
+          <h2 class="card__title">Volunteers</h2>
+          <p class="card__body">Three new helpers on the weekend shift.</p>
+        </article>
+      </section>
+      <div class="status">
+        <div class="status__spinner"></div>
+        <div class="status__dot"></div>
+        <p class="card__body">Syncing the catalogue</p>
+      </div>
+    </main>
+  </body>
+</html>
