@@ -755,8 +755,23 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   if (top.page !== undefined) {
     const po = obj(top.page, ["page"], "page settings");
     if (po) {
-      keys(po, ["page"], ["background"]);
+      keys(po, ["page"], ["background", "margin", "padding", "outer"]);
       page = { path: "page", background: po.background === undefined ? undefined : ref(po.background, ["page", "background"], "color") };
+      // The body's margin (may be negative) and padding, and the root element's insets: a space token, or per side.
+      for (const k of ["margin", "padding", "outer"] as const) {
+        const v = po[k];
+        if (v === undefined) continue;
+        const p = ["page", k];
+        const one = (x: unknown, q: PathSeg[]) => (k === "margin" ? ref(x, q, "space") : spaceRef(x, q, k));
+        if (isObj(v)) {
+          keys(v, p, ["block", "inline", "top", "right", "bottom", "left"]);
+          const sides = sideRefs(v, p, k, one);
+          if (sides) page[k] = { path: p.join("."), ...sides };
+        } else {
+          const r = one(v, p);
+          if (r) page[k] = { path: p.join("."), top: r, right: r, bottom: r, left: r };
+        }
+      }
     }
   }
 

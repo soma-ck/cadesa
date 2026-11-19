@@ -408,6 +408,8 @@ export abstract class PageLifter {
   bodyEl?: El;
   vars = new Map<string, Decl>();
   pageBackground?: Decl;
+  /** The page's insets per side (CSS lengths): the body's margin and padding (with its border), and the root element's (outer). */
+  pageSides: { margin?: string[]; padding?: string[]; outer?: string[] } = {};
   rootText!: TextCtx;
   /** Custom properties defined on :root (unresolved): token names come from them. */
   theme = new Map<string, string>();
@@ -1384,6 +1386,36 @@ export abstract class PageLifter {
     return f.css;
   }
 
+  /**
+   * <html>'s or <body>'s margin and padding (its border widths added to the padding) per side, as
+   * px (or px and vw) lengths; undefined when a side is something else (auto, a percentage).
+   */
+  pageInsets(el: El, si: number): [string[], string[]] | undefined {
+    const own = el.own[si];
+    if (!own) return [["0px", "0px", "0px", "0px"], ["0px", "0px", "0px", "0px"]];
+    const len = (p: string): string | undefined => {
+      const o = own.get(p);
+      if (!o) return "0px";
+      const r = this.resolveBox(el, si, o.value);
+      if (r === undefined) return undefined;
+      if (/^-?0(?:\.0+)?(?:px|rem|em|%)?$/.test(r)) return "0px";
+      const f = lengthExpr(this.mathValue(el, si, p, r, o.utility), { em: this.textOf(el, si).size });
+      return f ? f.css : undefined;
+    };
+    const margin = SIDES.map((s) => len(`margin-${s}`));
+    const padding = SIDES.map((s) => {
+      const pad = len(`padding-${s}`);
+      const style = this.resolve(el, si, own.get(`border-${s}-style`)?.value ?? "none") ?? "none";
+      if (/^(none|hidden)$/.test(style) || !own.has(`border-${s}-width`)) return pad;
+      const w = lengthPx(this.resolveBox(el, si, own.get(`border-${s}-width`)!.value) ?? "x", this.textOf(el, si).size);
+      if (w === undefined || pad === undefined) return undefined;
+      const b = borderPx(w);
+      return b === 0 ? pad : pad === "0px" ? `${b}px` : lengthExpr(`calc(${pad} + ${b}px)`)?.css;
+    });
+    if (margin.some((x) => x === undefined) || padding.some((x) => x === undefined) || padding.some((x) => lengthExpr(x!)!.at(1280) < 0)) return undefined;
+    return [margin as string[], padding as string[]];
+  }
+
   colorValue(hex: string, hint?: string) {
     if (!hint) return hex;
     return this.varValue(hint, hex);
@@ -1590,6 +1622,7 @@ export abstract class PageLifter {
       fullWidthAsPercent: true,
       wholeCascade: true,
       pageBackground: this.pageBackground,
+      pageSides: this.pageSides,
       unlifted,
       resets,
       declarations: this.declarationCount(),
@@ -1628,15 +1661,28 @@ export abstract class PageLifter {
         const c = v && parseColor(v);
         if (c && c.a >= 0.9995) this.pageBackground = { prop: "background-color", value: this.colorValue(hexOf(c), hintOf(bg.value, this.theme)), important: false, line: el.line };
       }
+      // Margins, borders and padding: the page's insets, when they're lengths and the same at every width.
+      const insets = this.states.map((_, s) => this.pageInsets(el, s));
+      const same = insets.every((x) => x && JSON.stringify(x) === JSON.stringify(insets[0]));
+      if (same && insets[0]) {
+        const [m, p] = insets[0];
+        if (el === this.bodyEl) this.pageSides = { ...this.pageSides, margin: m, padding: p };
+        else this.pageSides = { ...this.pageSides, outer: m.map((x, i) => (x === "0px" ? p[i] : p[i] === "0px" ? x : lengthExpr(`calc(${x} + ${p[i]})`)!.css)) };
+      }
+      // overflow on <html> or <body> applies to the viewport (it scrolls or clips the page; no box
+      // moves), unless both set it: then the body's own is a box's, which keeps its children's margins in.
+      const overflowBoth = [this.htmlEl, this.bodyEl].every((x) => x && this.states.some((_, s) => /^(hidden|clip|auto|scroll)$/.test(this.resolve(x, s, x.own[s]?.get("overflow-x")?.value ?? x.own[s]?.get("overflow-y")?.value ?? "visible") ?? "visible")));
       this.states.forEach((_, s) => {
         for (const [p, o] of el.own[s] ?? []) {
           if (p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p) || p === "background-color") continue;
           // Zero margins and padding change nothing; the body's height doesn't move what's in it.
           const v = this.resolve(el, s, o.value);
           if (/^(margin|padding)-/.test(p) && v !== undefined && /^0(?:\.0+)?(?:px|rem|em|%)?$/.test(v)) continue;
+          if (same && /^(margin|padding)-|^border-(top|right|bottom|left)-(width|style|color)$/.test(p)) continue;
           if (/^(height|min-height|box-sizing|display)$/.test(p) && (p !== "display" || v === "block")) continue;
+          if (/^overflow-[xy]$/.test(p) && !(overflowBoth && el === this.bodyEl)) continue;
           const k = kindOf(p);
-          if (k === "paint") continue;
+          if (k === "paint" || k === "none") continue;
           if (this.bodyEl) this.note(this.bodyEl, s, { decl: `${o.utility} (${p}: ${o.value})`, reason: `page-level ${p} is not modelled`, kind: k });
         }
       });

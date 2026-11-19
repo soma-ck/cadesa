@@ -234,8 +234,21 @@ export interface Model {
   text: Map<string, TextRole>;
   breakpoints: Breakpoint[];
   components: Map<string, Component>;
-  /** The page behind every component (paint only; makes contrast checks conclusive). */
-  page?: { background?: Ref; path: string };
+  /**
+   * The page every component sits on. background: paint only (makes contrast checks conclusive).
+   * margin and padding: the <body>'s (its top margin collapses with the first box's unless padding
+   * separates them); outer: the root element's margin, border and padding, outside the body.
+   */
+  page?: { background?: Ref; path: string; margin?: PageSides; padding?: PageSides; outer?: PageSides };
+}
+
+/** Space tokens per side of the page (a missing side is 0). */
+export interface PageSides {
+  path: string;
+  top?: Ref;
+  right?: Ref;
+  bottom?: Ref;
+  left?: Ref;
 }
 
 export function tokenKey(category: string, name: string) {

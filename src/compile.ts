@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { basename } from "node:path";
-import { isAuto, tokenKey, type Component, type MarginSide, type Model, type Props, type Ref, type Unsettable } from "./model.js";
+import { isAuto, tokenKey, type Component, type MarginSide, type Model, type PageSides, type Props, type Ref, type Unsettable } from "./model.js";
 
 /** The package version, read from package.json (works from src/ under tsx and from lib/). */
 export const VERSION: string = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
@@ -269,6 +269,15 @@ export function compile(model: Model): string {
     const t = model.tokens.get(tokenKey("color", model.page.background.name))!;
     parts.push(rule(":root", [`${varName(model.page.background)}: ${t.raw}`, `background-color: ${v(model.page.background)}`]));
   }
+  // The body's margin and padding, and the root element's insets (as its padding), each with its tokens.
+  const pageRule = (sel: string, list: [string, PageSides | undefined][]) => {
+    const refs = list.flatMap(([, s]) => (s ? [s.top, s.right, s.bottom, s.left] : [])).filter((r): r is Ref => !!r);
+    const vars = [...new Map(refs.map((r) => [r.name, r])).values()].map((r) => `${varName(r)}: ${model.tokens.get(tokenKey(r.kind, r.name))!.raw}`);
+    const decls = list.filter(([, s]) => s).map(([prop, s]) => `${prop}: ${[s!.top, s!.right, s!.bottom, s!.left].map((r) => (r ? v(r) : "0")).join(" ")}`);
+    if (decls.length) parts.push(rule(sel, [...vars, ...decls]));
+  };
+  pageRule("html", [["padding", model.page?.outer]]);
+  pageRule("body", [["margin", model.page?.margin], ["padding", model.page?.padding]]);
   // Every reset comes first. A nested component's root rule (.ca-child) has the same specificity as
   // its parent's reset (.ca-parent :where(*)), so it must come later in the file to win.
   for (const c of model.components.values()) {

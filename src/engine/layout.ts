@@ -10,8 +10,8 @@
  */
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
-import { scrolls, type Component, type Model, type Pattern } from "../model.js";
-import { activeBreakpoints, fmtPx, insets, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
+import { scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
+import { activeBreakpoints, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
 const EPS = 0.001;
@@ -1186,6 +1186,17 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     return slot;
   }
 
+  // The page: the root element's insets (outer), then the body's margin and padding.
+  const pg = model.page;
+  const tokenPx = (r?: Ref) => {
+    if (!r) return 0;
+    const t = model.tokens.get(tokenKey(r.kind, r.name))!;
+    return layoutUnit(t.fluid ? t.fluid(width) : t.px!);
+  };
+  const sidesOf = (s?: PageSides) => ({ top: tokenPx(s?.top), right: tokenPx(s?.right), bottom: tokenPx(s?.bottom), left: tokenPx(s?.left) });
+  const [outer, bodyMargin, bodyPad] = [sidesOf(pg?.outer), sidesOf(pg?.margin), sidesOf(pg?.padding)];
+  const pageW = Math.max(0, width - outer.left - outer.right - bodyMargin.left - bodyMargin.right - bodyPad.left - bodyPad.right);
+
   const boxes: Box[] = [];
   let unknownOnPage: string | undefined;
   for (const n of fixture.body) {
@@ -1206,13 +1217,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       unknownOnPage ??= `<${n.tag}> on the page isn't a Cadesa component; its height and margins are unknown`;
       continue;
     }
-    boxes.push(measure(n, c, undefined, width, "page"));
+    boxes.push(measure(n, c, undefined, pageW, "page"));
   }
-  // The body is block flow: page-level boxes stack, their margins collapsing. Its own (zero) margins
-  // collapse with theirs, so the body starts below the first margin (below all of them when every
-  // page-level box is empty); the root element contains it.
-  const body = flow(boxes, width, true, "escape");
-  for (const b of boxes) b.y += sum(body.empty ? body.pending : body.top);
+  // The body is block flow: page-level boxes stack, their margins collapsing. Its own top margin
+  // collapses with theirs unless its padding separates them, so the body starts below the largest
+  // (below all of them when every page-level box is empty); the root element contains it.
+  const through = bodyPad.top === 0;
+  const body = flow(boxes, pageW, through, "escape");
+  const top = through ? sum(join(strut(bodyMargin.top), body.empty ? body.pending : body.top)) : bodyMargin.top + bodyPad.top;
+  for (const b of boxes) {
+    b.y += outer.top + top;
+    b.x += outer.left + bodyMargin.left + bodyPad.left;
+  }
   // Its margins can collapse through empty boxes above it too, so every page-level box is unsure.
   if (unknownOnPage) for (const b of boxes) sources.set(b, unknownOnPage);
 

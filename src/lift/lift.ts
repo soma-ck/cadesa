@@ -440,6 +440,8 @@ export interface LiftInput {
    */
   layerChildren: Map<string, Map<number, boolean>>;
   pageBackground?: Decl;
+  /** The page's insets per side, as CSS lengths: the body's margin and padding, and the root element's (outer). */
+  pageSides?: { margin?: string[]; padding?: string[]; outer?: string[] };
   /** Records found before mapping (more are added). */
   unlifted: Unlifted[];
   resets: Map<string, Set<string>>;
@@ -1057,6 +1059,14 @@ export function liftElements(input: LiftInput): LiftResult {
     const hex = r && toHex(r.raw);
     if (hex) pageData = { background: r!.varName ? tokens.named("color", r!.varName, hex) : tokens.literal("color", hex) };
   }
+  // The body's margin and padding and the root element's insets: space tokens per side.
+  const pageInsets: Record<string, unknown> = {};
+  for (const [k, sides] of Object.entries(input.pageSides ?? {})) {
+    if (!sides || sides.every((v) => isZero(v))) continue;
+    const t = sides.map((v) => (isZero(v) ? undefined : lengthToken("space", v, k === "margin")));
+    if (t.some((x, i) => !x && !isZero(sides[i]))) unlifted.push({ file: input.file, line: 0, selector: k === "outer" ? "html" : "body", decl: `${k}: ${sides.join(" ")}`, reason: `page-level ${k} must be px or rem lengths`, kind: "geometry" });
+    else pageInsets[k] = sidesValue(t);
+  }
   for (const cat of ["space", "size", "color", "radius", "font", "paint", "shadow"] as Cat[]) {
     const m = tokens.cats.get(cat);
     if (m?.size) tokenData[cat] = Object.fromEntries(m);
@@ -1067,7 +1077,7 @@ export function liftElements(input: LiftInput): LiftResult {
   if (roles.size) data.text = Object.fromEntries([...roles.values()].map((r) => [r.name, r.spec]));
   const bps = bpPx.filter((p) => usedBps.has(p));
   if (bps.length) data.breakpoints = Object.fromEntries(bps.map((p) => [bpName(p), bpRaw.get(p)!]));
-  if (pageData) data.page = pageData;
+  if (pageData || Object.keys(pageInsets).length) data.page = { ...pageData, ...pageInsets };
   data.styles = styles;
   repair(data, css.file, prefix, unlifted);
 
