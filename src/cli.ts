@@ -41,9 +41,11 @@ Usage:
                     findings are decided by what Chromium shows (needs Chrome or Chromium)
   cadesa capture  <url> [--out capture] [--login-script login.mjs] [--wait <selector>] [--width 1280]
                     load a page in Chromium and save what it rendered: page.html (scripts
-                    removed), its stylesheets in cascade order (including CSS-in-JS) and the fonts
-                    it loaded; prints the check command to run. --login-script runs a module's
-                    default export, async (page) => {}, first; no cookies or credentials are saved
+                    removed, one element per line), its stylesheets in cascade order as
+                    css/01-…, 02-… (including CSS-in-JS) and the fonts it loaded; prints the check
+                    command to run (--css <out>/css). An error status (404, 401) stops it.
+                    --login-script runs a module's default export, async (page) => {}, first; no
+                    cookies or credentials are saved
   cadesa critique <fixture.html> --source <source.cadesa.yaml>   design signals: scale, hierarchy, grouping, alignment, palette, tells
   cadesa lift     <file.css> [--out <file.cadesa.yaml>] [--fixture <fixture.html>]
   cadesa lift     --tailwind <page.html> --css <compiled.css> [--out <file.cadesa.yaml>]
@@ -63,7 +65,8 @@ Usage:
   cadesa mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
 
   render, whatif, explain and check also accept --css <file.css> instead of --source (several
-  stylesheets comma-separated, in cascade order: --css bootstrap.css,app.css):
+  stylesheets comma-separated, in cascade order: --css bootstrap.css,app.css; or a directory, whose
+  stylesheets are read in name order: --css capture/css):
   the page and its CSS are lifted on the fly (the whole cascade, element by element: block flow
   with margins, percentage widths, inherited text), and boxes it can't predict exactly are marked ≈.
   lift <file.css> --fixture <page.html> lifts the same way and shows the source.

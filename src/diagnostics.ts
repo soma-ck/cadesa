@@ -17,6 +17,12 @@ export class CadesaError extends Error {
   }
 }
 
+/**
+ * A run that can't go on for a reason outside Cadesa (a page that returns 404, a login script
+ * without the right export): reported as is, not as a Cadesa bug.
+ */
+export class RunError extends Error {}
+
 export function formatDiagnostic(d: Diagnostic): string {
   const where = d.line ? `${d.file}:${d.line}:${d.col}` : d.file;
   const lines = [`${where} ${d.severity}${d.path ? ` ${d.path}` : ""}: ${d.message}`];

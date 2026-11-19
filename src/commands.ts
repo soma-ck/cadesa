@@ -1,6 +1,6 @@
 /** Command implementations shared by the CLI and the MCP server. Each returns text and data. */
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { check } from "./check.js";
 import { wireframeSvg } from "./wireframe.js";
@@ -85,6 +85,35 @@ export interface SourceInput {
    * source, generated class names and ids → fixture).
    */
   tailwind?: string;
+}
+
+/**
+ * --css entries that are directories: their stylesheets, in name order (what capture writes:
+ * css/01-…, css/02-…). Other entries are kept as given.
+ */
+export function cssList(spec: string): string[] {
+  return spec
+    .split(",")
+    .map((f) => f.trim())
+    .filter(Boolean)
+    .flatMap((f) => {
+      if (!existsSync(f) || !statSync(f).isDirectory()) return [f];
+      const files = readdirSync(f)
+        .filter((n) => /\.css$/i.test(n))
+        .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
+        .map((n) => join(f, n));
+      if (!files.length) throw new InputError(`no .css files in ${f}`);
+      return files;
+    });
+}
+
+/** The input with --css (and --after) directories expanded into their files. */
+function withCssDir<T extends { css?: string; after?: string }>(s: T): T {
+  return {
+    ...s,
+    ...(s.css && { css: cssList(s.css).join(",") }),
+    ...(s.after && { after: cssList(s.after).join(",") }),
+  };
 }
 
 const liftFile = (css: string) => lift(css, readFileSync(css, "utf8"));
@@ -198,6 +227,7 @@ export function cssCmd(s: SourceInput): Result {
 }
 
 export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; lines?: boolean; svg?: string }): Result {
+  s = withCssDir(s);
   const t0 = performance.now();
   const p = pageOf(s);
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
@@ -245,6 +275,7 @@ function whatifWidths(model: Model, p: Page): number[] {
 export function whatifCmd(
   s: SourceInput & { fixture: string; widths?: number[]; changes: Change[]; after?: string; addCss?: string },
 ): Result {
+  s = withCssDir(s);
   if (s.after || s.addCss) return cssWhatifCmd({ ...s, css: s.css ?? "" });
   if (!s.changes.length) throw new InputError("whatif needs at least one change (path=value), or with --css: --after <new.css> or --add-css <rules>");
   const t0 = performance.now();
@@ -403,6 +434,7 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
 }
 
 export function explainCmd(s: SourceInput & { fixture: string; widths: number[]; id: string }): Result {
+  s = withCssDir(s);
   const id = s.id.replace(/^#/, "");
   const model = modelOf(load(s));
   const results = renderPage(model, pageOf(s), s.widths).map((l) => explain(model, l, id));
@@ -433,11 +465,13 @@ function finishCheck(s: SourceInput & { fixture: string; widths: number[] }, run
 }
 
 export function checkCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
+  s = withCssDir(s);
   return finishCheck(s, runCheck(s));
 }
 
 /** `check --verify`: the sweep, then each finding measured in Chromium (Playwright). */
 export async function checkVerifyCmd(s: SourceInput & { fixture: string; widths: number[] }): Promise<Result> {
+  s = withCssDir(s);
   const run = runCheck(s);
   if (!run.p.tw) throw new InputError("--verify needs a page with its CSS: --css <file.css> or --tailwind <compiled.css>");
   const cssFiles = (s.tailwind ?? s.css!).split(",").map((f) => f.trim()).filter(Boolean);
@@ -454,7 +488,7 @@ export async function checkVerifyCmd(s: SourceInput & { fixture: string; widths:
 
 /** The fonts a laid-out page's text uses, and what Cadesa knows about each. */
 function fontsOf(s: SourceInput & { fixture: string }, layouts: Layout[]): FontReport[] {
-  return fontReport(fontUses(layouts), pageFontSources(s.fixture, [s.css, s.tailwind].filter((x): x is string => !!x)));
+  return fontReport(fontUses(layouts), pageFontSources(s.fixture, [...(s.css ? cssList(s.css) : []), ...(s.tailwind ? [s.tailwind] : [])]));
 }
 
 const fontsData = (r: FontReport[]) =>
@@ -501,6 +535,7 @@ function fontsNote(r: FontReport[], s: SourceInput & { fixture: string }, always
 export async function fontsCmd(
   s: SourceInput & { fixture: string; widths: number[]; measure?: boolean; system?: boolean; out?: string; via?: "cli" | "mcp" },
 ): Promise<Result> {
+  s = withCssDir(s);
   const p = pageOf(s);
   const model = modelOf(load(s));
   let report = fontsOf(s, renderPage(model, p, s.widths));
@@ -572,6 +607,7 @@ export async function metricsCmd(s: {
 }
 
 export function critiqueCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
+  s = withCssDir(s);
   const model = modelOf(load(s));
   const p = pageOf(s);
   const found = critique(model, p.fixture, renderPage(model, p, s.widths));

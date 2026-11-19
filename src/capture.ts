@@ -5,11 +5,12 @@
  * through the CSSOM) and the font files the page loaded. Cookies, storage and form values are
  * not written.
  */
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, extname, join, relative, resolve, sep } from "node:path";
 import { pathToFileURL } from "node:url";
 import postcss from "postcss";
 import { settle, type Page } from "./browser.js";
+import { RunError } from "./diagnostics.js";
 import { launchChromium } from "./metrics.js";
 
 export interface CaptureOptions {
@@ -99,9 +100,28 @@ const SHEETS_SCRIPT = `(() => {
   return out;
 })()`;
 
-/** Runs in the page: the rendered DOM without scripts, styles, credentials or relative URLs. */
+/**
+ * Runs in the page: the rendered DOM without scripts, styles, credentials or relative URLs, one
+ * element per line where a line break can't change the rendering (so findings name a useful
+ * page.html:line). A line break is added before a block-level element, or any child of a flex or
+ * grid container: white space there collapses away. Never inside white-space: pre and the like,
+ * and never next to inline content, where it would be a space.
+ */
 const DOM_SCRIPT = `(() => {
+  const FLAG = "data-cadesa-capture-ws";
+  const marked = [];
+  for (const el of document.querySelectorAll("*")) {
+    const cs = getComputedStyle(el);
+    const parent = el.parentElement ? getComputedStyle(el.parentElement) : null;
+    const inHead = !!el.closest("head") || el.tagName === "HEAD" || el.tagName === "BODY";
+    const collapse = (s) => !s || (s.whiteSpaceCollapse ? s.whiteSpaceCollapse === "collapse" : !/^(pre|pre-wrap|pre-line|break-spaces)$/.test(s.whiteSpace));
+    let f = "";
+    if (inHead || ((/^(block|flex|grid|table|list-item|flow-root)$/.test(cs.display) || (parent && /(^|-)(flex|grid)$/.test(parent.display))) && collapse(parent))) f += "b";
+    if (!collapse(cs)) f += "p";
+    if (f) { el.setAttribute(FLAG, f); marked.push(el); }
+  }
   const root = document.documentElement.cloneNode(true);
+  for (const el of marked) el.removeAttribute(FLAG);
   const drop = (sel) => root.querySelectorAll(sel).forEach((e) => e.remove());
   drop("script, noscript, style, base, iframe[srcdoc]");
   drop('link[rel~="stylesheet"], link[rel~="preload"], link[rel~="modulepreload"], link[rel~="prefetch"], link[rel~="preconnect"], link[rel~="dns-prefetch"], link[rel~="manifest"]');
@@ -123,8 +143,43 @@ const DOM_SCRIPT = `(() => {
   }
   let shadow = 0;
   for (const el of document.querySelectorAll("*")) if (el.shadowRoot) shadow++;
+  const VOID = new Set(["area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"]);
+  const text = (s) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\\u00a0/g, "&nbsp;");
+  const attr = (s) => s.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/\\u00a0/g, "&nbsp;");
+  const flag = (n) => (n.nodeType === 1 && n.getAttribute(FLAG)) || "";
+  const blockish = (n) => !!n && flag(n).includes("b");
+  const blank = (n) => n.nodeType === 3 && !/[^ \\t\\n\\r\\f]/.test(n.data);
+  const ser = (n, depth, pretty) => {
+    if (n.nodeType === 3) return text(n.data);
+    if (n.nodeType === 8) return "<!--" + n.data + "-->";
+    if (n.nodeType !== 1) return "";
+    // SVG and MathML as the browser writes them.
+    if (n.namespaceURI !== "http://www.w3.org/1999/xhtml") { n.removeAttribute(FLAG); n.querySelectorAll("[" + FLAG + "]").forEach((x) => x.removeAttribute(FLAG)); return n.outerHTML; }
+    const keep = pretty && !flag(n).includes("p");
+    n.removeAttribute(FLAG);
+    const tag = n.localName;
+    let s = "<" + tag + [...n.attributes].map((a) => " " + a.name + (a.value === "" ? "" : '="' + attr(a.value) + '"')).join("") + ">";
+    if (VOID.has(tag)) return s;
+    if (tag === "template") return s + n.innerHTML + "</" + tag + ">";
+    const kids = [...n.childNodes];
+    // The parser drops a newline right after <pre> and <textarea>: write one more to keep it.
+    if (/^(pre|textarea|listing)$/.test(tag) && kids[0] && kids[0].nodeType === 3 && kids[0].data.startsWith("\\n")) s += "\\n";
+    const pad = "\\n" + "  ".repeat(depth + 1);
+    // Read before serializing a child removes its flag.
+    const block = kids.map(blockish);
+    let last = false;
+    kids.forEach((k, i) => {
+      // White space next to a block-level box collapses away: it's replaced by the line breaks.
+      if (keep && blank(k) && (block[i - 1] || block[i + 1])) return;
+      if (keep && block[i]) s += pad;
+      s += ser(k, depth + 1, keep);
+      last = block[i];
+    });
+    if (keep && last) s += "\\n" + "  ".repeat(Math.max(0, depth));
+    return s + "</" + tag + ">";
+  };
   const dt = document.doctype;
-  return { html: (dt ? "<!doctype " + dt.name + ">\\n" : "") + root.outerHTML, shadow };
+  return { html: (dt ? "<!doctype " + dt.name + ">\\n" : "") + ser(root, -1, true), shadow };
 })()`;
 
 /** A file name from a URL's path: "bootstrap.min.css" (no query, nothing unsafe). */
@@ -203,7 +258,7 @@ export function sanitizeCss(
 async function runLogin(file: string, page: Page, url: string) {
   const mod = (await import(pathToFileURL(resolve(file)).href)) as { default?: unknown; login?: unknown };
   const fn = typeof mod.default === "function" ? mod.default : typeof mod.login === "function" ? mod.login : undefined;
-  if (!fn) throw new Error(`${file} must export a function: export default async (page) => { ... }`);
+  if (!fn) throw new RunError(`${file} must export a function: export default async (page) => { ... }`);
   await (fn as (page: Page, ctx: { url: string }) => Promise<void>)(page, { url });
 }
 
@@ -223,15 +278,34 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
       const type = res.request().resourceType();
       if (type !== "stylesheet" && type !== "font") return;
       const url = res.url().split("#")[0];
-      if (!res.ok()) return;
+      if (!res.ok()) {
+        if (type === "stylesheet") notes.push(`the stylesheet ${url} returned HTTP ${res.status()}; its rules are missing`);
+        return;
+      }
       if (type === "font") fontUrls.push(url);
       bodies.set(url, res.body().catch(() => undefined));
     });
     if (opts.loginScript) await runLogin(opts.loginScript, page, opts.url);
-    await page.goto(opts.url, { waitUntil: "load", timeout });
+    // The status of the document itself (Chromium fails the navigation when an error page is empty).
+    let status: { code: number; text: string } | undefined;
+    page.on("response", (r) => {
+      if (r.request().isNavigationRequest() && r.frame() === page.mainFrame()) status = { code: r.status(), text: r.statusText() };
+    });
+    const loaded = await page.goto(opts.url, { waitUntil: "load", timeout }).then(
+      () => undefined,
+      (e: Error) => e,
+    );
+    // An error page (a 404, a login wall's 401) isn't the page that was asked for.
+    if (status && status.code >= 400)
+      throw new RunError(
+        `${opts.url} returned HTTP ${status.code}${status.text ? ` ${status.text}` : ""}: nothing was captured${status.code === 401 || status.code === 403 ? " (if the page needs a login, pass --login-script)" : ""}`,
+      );
+    if (loaded) throw new RunError(`could not load ${opts.url}: ${loaded.message.split("\n")[0].replace(/^page\.goto: /, "")}`);
     await page.waitForLoadState("networkidle", { timeout: Math.min(timeout, 10000) }).catch(() => notes.push("the network was still busy 10s after load; captured anyway"));
     if (opts.wait) await page.waitForSelector(opts.wait, { timeout });
     await settle(page);
+    const landed = page.url();
+    if (landed.split("#")[0] !== new URL(opts.url).href.split("#")[0]) notes.push(`the page ended up at ${landed}, not the URL given (a redirect: is it a login page?)`);
 
     const sheets = (await page.evaluate(SHEETS_SCRIPT)) as SheetInfo[];
     const dom = (await page.evaluate(DOM_SCRIPT)) as { html: string; shadow: number };
@@ -239,6 +313,8 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
 
     // Fonts the page loaded.
     mkdirSync(join(out, "css"), { recursive: true });
+    // check reads every stylesheet in css/: none left over from an earlier capture.
+    for (const f of readdirSync(join(out, "css"))) if (/^\d+-.*\.css$/.test(f)) rmSync(join(out, "css", f));
     const fonts = new Map<string, string>();
     const fontFiles: CaptureResult["fonts"] = [];
     const used = new Set<string>();
@@ -307,7 +383,8 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
       return r.startsWith("..") ? join(out, p) : r;
     };
     const quote = (p: string) => (/[\s"'$`\\]/.test(p) ? `"${p.replace(/(["$`\\])/g, "\\$1")}"` : p);
-    const command = `cadesa check ${quote(rel("page.html"))}${written.length ? ` --css ${quote(written.map((w) => rel(w.file)).join(","))}` : ""}`;
+    // The css directory: check, render and whatif read its stylesheets in name order (01-…, 02-…).
+    const command = `cadesa check ${quote(rel("page.html"))}${written.length ? ` --css ${quote(rel("css"))}` : ""}`;
     return { url: opts.url, out, page: join(out, "page.html"), stylesheets: written, fonts: fontFiles, notes, command };
   } finally {
     await browser.close();
