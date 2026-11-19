@@ -524,6 +524,7 @@ export abstract class PageLifter {
     this.computeRootText();
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.evaluate(el);
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.expandDeferred(el);
+    this.presentationalHints();
     this.pseudoElements();
     this.anonymousText();
     this.inlineBlocks();
@@ -590,6 +591,35 @@ export abstract class PageLifter {
     this.roots = this.bodyEl.children;
   }
   htmlEl?: El;
+
+  /**
+   * The width and height attributes of <svg>, <img>, <video> and <canvas> are presentational
+   * hints: their CSS width and height unless a stylesheet sets them (and on <img>, <video> and
+   * <canvas> their aspect ratio, `auto w / h`). An <svg>'s viewBox gives its aspect ratio. Its
+   * contents (paths, groups, text) are drawn, not laid out: they never move a box.
+   */
+  presentationalHints() {
+    const num = (v: string | undefined) => (v !== undefined && /^\s*\d*\.?\d+(px)?\s*$/.test(v) ? parseFloat(v) : undefined);
+    for (const el of this.els) {
+      if (!/^(svg|img|video|canvas)$/.test(el.tag)) continue;
+      const w = num(attr(el.node, "width"));
+      const h = num(attr(el.node, "height"));
+      const pct = (v: string | undefined) => (el.tag === "svg" && v !== undefined && /^\s*\d*\.?\d+%\s*$/.test(v) ? v.trim() : undefined);
+      const vb = el.tag === "svg" ? (attr(el.node, "viewbox") ?? attr(el.node, "viewBox"))?.trim().split(/[\s,]+/).map(Number) : undefined;
+      this.states.forEach((_, si) => {
+        const own = el.own[si];
+        if (!own) return;
+        const hint = (p: string, v: string, why: string) => {
+          if (!own.has(p)) own.set(p, { value: v, utility: why });
+        };
+        if (w !== undefined) hint("width", `${w}px`, `width="${attr(el.node, "width")}" attribute`);
+        else if (pct(attr(el.node, "width"))) hint("width", pct(attr(el.node, "width"))!, `width="${attr(el.node, "width")}" attribute`);
+        if (h !== undefined) hint("height", `${h}px`, `height="${attr(el.node, "height")}" attribute`);
+        if (el.tag !== "svg" && w && h) hint("aspect-ratio", `${w} / ${h}`, "width and height attributes");
+        if (vb && vb.length === 4 && vb[2] > 0 && vb[3] > 0 && vb.every(isFinite)) hint("aspect-ratio", `${vb[2]} / ${vb[3]}`, "viewBox attribute");
+      });
+    }
+  }
 
   note(el: El, si: number, n: Note) {
     const key = `${n.decl}|${n.reason}|${n.kind}`;

@@ -112,6 +112,34 @@ p {
   content: "\00A7";
 }
 
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+}
+
+.brand-label {
+  font-size: 10px;
+  font-weight: 700;
+  transform: translate(2px, 1px);
+}
+
+.brand-mark {
+  transform-origin: center;
+  transform: rotate(5deg);
+}
+
+.banner {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.links-icon {
+  vertical-align: middle;
+}
+
 @media (max-width: 600px) {
   .toolbar-button {
     font-size: 0;
