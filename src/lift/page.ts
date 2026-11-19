@@ -1511,10 +1511,8 @@ export abstract class PageLifter {
    * normal, as measured in Chromium. Under it, its line isn't known.
    */
   lineAtLeastNormal(t: TextCtx): boolean {
-    if (t.lineHeight === "normal") return true;
-    const normal = this.normalLine(t);
-    const lh = "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
-    return normal !== undefined && lh >= normal - 1e-9;
+    // (Chromium honors some other line heights on a button input and not others: only normal is modelled.)
+    return t.lineHeight === "normal";
   }
 
   controlBaseline(el: El, si: number): number | undefined {
@@ -1571,6 +1569,8 @@ export abstract class PageLifter {
     if (!(field && normal !== undefined) && el.tag !== "textarea" && (res("appearance") ?? res("-webkit-appearance")) !== "none") return undefined;
     if (el.tag === "input" && !/^(text|email|password|search|tel|url)$/.test(type) && !(field && normal !== undefined)) return undefined;
     if (el.tag === "select" && (attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1)) return undefined;
+    // (A select without native appearance at line-height: normal comes out shorter than its font's normal line in Chromium: not modelled.)
+    if (el.tag === "select" && t.lineHeight === "normal") return undefined;
     const set = t.lineHeight === "normal" ? normal : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
     const line = field && normal !== undefined && set !== undefined ? Math.max(set, normal) : set;
     if (line === undefined) return undefined;

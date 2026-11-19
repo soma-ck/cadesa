@@ -141,6 +141,10 @@ button {
   padding: 4px 8px;
 }
 
+.buttons input {
+  line-height: normal;
+}
+
 .buttons {
   margin-bottom: 10px;
 }

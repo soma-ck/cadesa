@@ -29,6 +29,7 @@ describe("form controls", () => {
 <div class="f"><select data-fixture="s1"><option>English</option><option>Español</option></select></div>`,
     `.f { margin: 0 0 4px }
 select, input, textarea { font: inherit }
+input[type=submit], input[type=button], input[type=reset] { line-height: normal }
 .n { appearance: none }
 .row { display: flex; gap: 6px; align-items: center }
 .nav { display: flex; list-style: none; margin: 0; padding: 0; gap: 4px }
