@@ -59,6 +59,13 @@ export interface Layout {
   active: string[];
   boxes: Box[];
   issues: Issue[];
+  /**
+   * Elements (component roots and slots) not laid out at all at this width: under a box with no
+   * layout, or not a slot or component the engine knows. Their boxes are missing from `boxes`.
+   */
+  notLaidOut?: { id: string; tag: string; line?: number }[];
+  /** Elements the page has at this width: the boxes laid out (not anonymous text runs) plus notLaidOut. */
+  elements?: number;
   /** The page background from the source, if declared. */
   page?: { background: string; path: string };
 }
@@ -242,6 +249,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (atTop) return { boxes, contentH: throughTop ? 0 : Math.max(0, sum(pending)), top: pending, bottom: NONE, empty: true, pending };
     return { boxes, contentH: Math.max(0, end === "keep" ? cursor + sum(pending) : cursor), top, bottom: end === "escape" ? pending : NONE, empty: false, pending: NONE };
   }
+  /** Elements of the fixture (component roots and slots) that aren't laid out at all, with their descendants. */
+  const skippedEls = new Map<FixtureNode, { id: string; tag: string; line?: number }>();
+  const isBox = (n: FixtureNode) => n.classes.some((k) => k.startsWith(model.prefix) && (k.includes("__") || model.components.has(k.slice(model.prefix.length))));
+  const notLaidOut = (n: FixtureNode) => {
+    if (isBox(n) && !skippedEls.has(n)) skippedEls.set(n, { id: n.fixtureId ?? n.tag, tag: n.tag, ...(n.line && { line: n.line }) });
+    n.children.forEach(notLaidOut);
+  };
   /** Boxes the engine can't guarantee beyond their own assumptions and errors, and why. */
   const sources = new Map<Box, string>();
   /**
@@ -843,6 +857,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         message: `#${id} has child slots but no layout; add layout: { pattern: stack | cluster | grid | layer }`,
       });
     }
+    for (const k of [...skipped, ...(pattern ? [] : kids.map((k) => k.node))]) notLaidOut(k);
 
     /** Rows of children (grid rows, cluster lines, the layer cell) whose heights `arrange` distributes. */
     let rows: Box[][] | undefined;
@@ -1237,6 +1252,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           : `<${n.tag}> at the page level has no Cadesa component class`,
         suggestion: guess ? closest(guess, model.components.keys()) : undefined,
       });
+      notLaidOut(n);
       unknownOnPage ??= `<${n.tag}> on the page isn't a Cadesa component; its height and margins are unknown`;
       continue;
     }
@@ -1333,6 +1349,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     boxes,
     issues,
     page: pageBg ? { background: model.tokens.get(`color.${pageBg.name}`)!.raw, path: pageBg.path } : undefined,
+    notLaidOut: [...skippedEls.values()],
+    elements: [...walk(boxes)].filter((b) => !b.anonymous).length + skippedEls.size,
   };
 }
 

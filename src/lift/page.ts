@@ -379,6 +379,12 @@ export interface PageLift {
   spacing(width: number): (Issue & { inconclusive?: boolean })[];
   /** Inline runs of a text box with a color or background of their own (`<span class="text-danger">`, a badge), for contrast. */
   inlineRuns(width: number): InlineRun[];
+  /**
+   * Elements shown at `width` that the lift gives no box at all (inside a table, a form control or
+   * another box Cadesa lays out as one leaf). With the layout's own notLaidOut, what the coverage
+   * line counts as not laid out (see elementsNotLaidOut in check.ts).
+   */
+  notLaidOut(width: number): { tag: string; line: number }[];
 }
 
 /** A run of text inside a text box (`id`) styled on its own. */
@@ -1892,6 +1898,7 @@ export abstract class PageLifter {
         const si = this.states.indexOf(stateAt(this.states, w));
         return (spacingAt[si] ??= this.runTogether(si));
       },
+      notLaidOut: (w: number) => this.unboxed(this.states.indexOf(stateAt(this.states, w))),
       inlineRuns: (w: number) => {
         const si = this.states.indexOf(stateAt(this.states, w));
         return (runsAt[si] ??= this.coloredRuns(si));
@@ -1993,6 +2000,25 @@ export abstract class PageLifter {
           ...(why && { inconclusive: true, message: `"${wa}" and "${wb}" may run together as "${wa}${wb}" in #${box.id}: ${why}` }),
         });
       }
+    }
+    return out;
+  }
+
+  /** Elements shown in state si that have no box of their own and aren't inline content of a text box. */
+  unboxed(si: number): { tag: string; line: number }[] {
+    const out: { tag: string; line: number }[] = [];
+    const shown = (el: El) => {
+      for (let x: El | undefined = el; x && x !== this.bodyEl; x = x.parent) if (this.displayOf(x, si) === "none" || this.outOfFlow(x, si)) return false;
+      return true;
+    };
+    for (const el of this.els) {
+      if (el.anonymous !== undefined || el.className || el.tag === "br" || el.tag === "wbr") continue;
+      // The nearest ancestor with a role: inline content of a text box is laid out as its text.
+      let a = el.parent;
+      while (a && a !== this.bodyEl && !a.roles.length) a = a.parent;
+      const role = a && a !== this.bodyEl ? a.roles[si] : undefined;
+      if (role === "text" || role === "hidden" || role === "out" || !shown(el)) continue;
+      out.push({ tag: el.tag, line: el.line });
     }
     return out;
   }
