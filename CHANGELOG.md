@@ -58,6 +58,15 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   than `visible` or `clip`) sits on its bottom margin edge. Fixed: an inline-block with text beside
   an inline element in another font or size (`a <b>bold</b> word` in it) was refused, and its runs in
   another size were measured at its own size where they set its width.
+- Date inputs are laid out as Chromium (en-US, `mm/dd/yyyy`) draws them, as probed in two fonts at
+  sizes from 12 to 24px and line heights from 1 to 40px: as wide as its fields at their widest (each
+  its placeholder or its largest value: `mm` or `12`, `dd` or `31`, `yyyy` or `275760`) and the two
+  `/` between them, rounded down to a whole px, plus 7px and its picker (1em + 4px); as tall as its
+  line plus the fields' 1px padding, or its picker where that's taller; its baseline its fields',
+  centered; Chromium's default padding (1px at the start). With or without `appearance`. A page that
+  styles a date input's inner parts (`::-webkit-datetime-edit`, as Bootstrap does) leaves it `≈`.
+  Time, month, week, datetime-local and file inputs stay `≈` (a file input is `ceil(34 × width of
+  "0")` wide, but its height doesn't follow its font as the others do).
 
 ## 0.1.18 (2026-11-19)
 

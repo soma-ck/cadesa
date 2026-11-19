@@ -559,6 +559,15 @@ export abstract class PageLifter {
   rootVar(_name: string): string | undefined {
     return undefined;
   }
+  /**
+   * Whether the page's stylesheets style a date input's inner parts (its fields, their wrapper, its
+   * value or its picker: ::-webkit-datetime-edit…, ::-webkit-date-and-time-value,
+   * ::-webkit-calendar-picker-indicator), which changes how it lays out its fields.
+   */
+  styledDateParts(): boolean {
+    return false;
+  }
+
   /** The declarations of @keyframes `name` at an offset (0 or 1), merged; undefined when there is no such @keyframes rule. */
   keyframesAt(_name: string, _offset: number): Map<string, string> | undefined {
     return undefined;
@@ -1355,6 +1364,12 @@ export abstract class PageLifter {
         if (!v || !own) return undefined;
         a = mt + bt + pt + (ctype === "select" ? own.sa : v.ascent + Math.floor(v.lineGap / 2));
       }
+    } else if (ch !== undefined && ctype === "date") {
+      // A date input: its fields' baseline (controlBaseline).
+      const base = this.controlBaseline(el, si);
+      if (base === undefined || !isFinite(base)) return undefined;
+      hm = mt + ch + mb;
+      a = mt + base;
     } else if (el.tag === "input" && !el.own[si].has("height")) {
       // A text field: one line of its text (never shorter than line-height: normal), its baseline
       // that line's (exactly so when its line height is at least normal: the line fills the field).
@@ -1675,6 +1690,10 @@ export abstract class PageLifter {
    *   (LayoutTextControlSingleLine, size 20 unless the size attribute says otherwise), from the font;
    * - a textarea: ceil(average character width × cols) + 15px for its vertical scrollbar;
    * - a submit, reset or button input: its label in its font (value, else "Submit" or "Reset");
+   * - a date input (en-US, mm/dd/yyyy, the locale Cadesa checks against): its fields at their widest
+   *   (each its placeholder or its largest value, whichever is wider: "mm" or "12", "dd" or "31",
+   *   "yyyy" or "275760") and the two "/" between them, rounded down to a whole px, plus 7px, plus
+   *   its calendar picker indicator (1em + 4px);
    * - a checkbox or radio with native appearance: 13px, a range: 129px (border box).
    * All measured in Chromium with probe pages (see test/forms.test.ts).
    */
@@ -1726,6 +1745,12 @@ export abstract class PageLifter {
       // ceil(average × size + maximum (rounded) − average).
       return Math.ceil(avg * size + Math.round(v.maxChar) - avg - 1e-4);
     }
+    if (type === "date") {
+      if (this.styledDateParts()) return undefined;
+      const w = (s: string) => m.measure(s, t.size, t.weight) ?? NaN;
+      const fields = Math.max(w("mm"), w("12")) + Math.max(w("dd"), w("31")) + Math.max(w("yyyy"), w("275760")) + 2 * w("/");
+      return isFinite(fields) ? Math.floor(fields + 1e-6) + 7 + t.size + 4 : undefined;
+    }
     if (/^(submit|reset|button)$/.test(type)) {
       const label = (attr(el.node, "value") ?? (type === "submit" ? "Submit" : type === "reset" ? "Reset" : "")).replace(/[ \t\n\r\f]+/g, " ").trim();
       if (m.unsupported(label).length) return undefined;
@@ -1770,6 +1795,9 @@ export abstract class PageLifter {
     if (/^(submit|reset|button)$/.test(type)) return this.lineAtLeastNormal(t) ? top + v.ascent + Math.floor(v.lineGap / 2) : NaN;
     if (type === "select") return native ? this.nativeSelectBaseline(el, si) ?? NaN : top + own.sa;
     if (/^(text|email|password|search|tel|url|number)$/.test(type)) return own.lh >= normal ? top + own.sa : NaN;
+    // A date input: its fields' line (with their 1px padding) centered in its content box, which its
+    // picker (1em + 4px) may make taller.
+    if (type === "date") return this.styledDateParts() ? NaN : top + (Math.max(own.lh + 2, t.size + 4) - own.lh - 2) / 2 + 1 + own.sa;
     return NaN;
   }
 
@@ -1879,6 +1907,14 @@ export abstract class PageLifter {
     if (nativeLook && !limited && ((el.tag === "select" && attr(el.node, "multiple") === undefined && Number(attr(el.node, "size") ?? "1") <= 1) || (el.tag === "input" && /^(submit|reset|button)$/.test(type) && this.lineAtLeastNormal(t)))) {
       const normal = this.normalLine(t);
       const h = normal === undefined ? NaN : normal + (el.tag === "select" ? 2 : 0) + edgesY();
+      return isFinite(h) ? h : undefined;
+    }
+    // A date input: its fields' line (its line height, normal from its font) and their 1px padding
+    // above and below, or its picker indicator (1em + 4px) where that's taller; appearance or not.
+    if (el.tag === "input" && type === "date" && !limited && !this.styledDateParts()) {
+      const normal = this.normalLine(t);
+      const line = t.lineHeight === "normal" ? normal : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
+      const h = line === undefined || t.fluid ? NaN : Math.max(line + 2, t.size + 4) + edgesY();
       return isFinite(h) ? h : undefined;
     }
     // A text field's line, with or without native appearance, is never shorter than line-height:

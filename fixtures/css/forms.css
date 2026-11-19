@@ -2,7 +2,8 @@
  * Form controls at their own sizes, as Chromium draws them on Linux: text fields from their font's
  * average and maximum character widths (size=), textareas from cols and rows, selects from their
  * widest option, button inputs from their label, checkboxes, radios and ranges from the theme, and
- * buttons with a set height centering their text.
+ * buttons with a set height centering their text, and date inputs (en-US) from their fields'
+ * widest values and their picker.
  */
 body {
   margin: 0;
@@ -179,4 +180,19 @@ button {
 .pick-pad {
   padding: 3px 5px;
   border: 2px solid #8899aa;
+}
+
+.date-small {
+  font-size: 13px;
+  line-height: 1;
+}
+
+.date-wide {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 6px 12px;
+  border: 1px solid #9aa5b1;
+  font-size: 20px;
+  line-height: 1.25;
+  appearance: none;
 }

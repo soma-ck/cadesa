@@ -206,12 +206,13 @@ export function genCssCase(seed: number): CssCase {
     if (r.chance(0.4)) d.push(`padding: ${r.int(0, 10)}px ${r.int(0, 12)}px`);
     if (r.chance(0.4)) d.push(`border: ${r.int(0, 3)}px solid #889`);
     if (r.chance(0.2)) d.push("box-sizing: border-box");
-    const kind = r.pick(["text", "text", "select", "select", "textarea", "submit", "button", "checkbox", "radio", "range", "color"] as const);
+    const kind = r.pick(["text", "text", "select", "select", "textarea", "submit", "button", "checkbox", "radio", "range", "color", "date"] as const);
     if ((kind === "select" || kind === "text") && r.chance(0.5)) d.push("appearance: none");
     const c = attr(cls(kind === "checkbox" || kind === "radio" || kind === "range" || kind === "color" ? [] : d));
     const opts = () => Array.from({ length: r.int(1, 4) }, () => `<option>${words(r, 1, 3)}</option>`).join("");
     if (kind === "text") return `<input${c} type="${r.pick(["text", "email", "password", "tel", "url"])}"${r.chance(0.5) ? ` size="${r.int(1, 30)}"` : ""}>`;
     if (kind === "select") return `<select${c}>${opts()}</select>`;
+    if (kind === "date") return `<input${c} type="date">`;
     if (kind === "textarea") return `<textarea${c}${r.chance(0.6) ? ` rows="${r.int(1, 5)}"` : ""}${r.chance(0.6) ? ` cols="${r.int(4, 40)}"` : ""}></textarea>`;
     if (kind === "submit" || kind === "button") return `<input${c} type="${kind}"${kind === "button" || r.chance(0.5) ? ` value="${words(r, 1, 2)}"` : ""}>`;
     return `<input type="${kind}">`;

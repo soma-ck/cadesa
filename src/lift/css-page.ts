@@ -64,6 +64,7 @@ input[type=checkbox i] { margin: 3px 3px 3px 4px; padding: 0; border: none; box-
 input[type=radio i] { margin: 3px 3px 0px 5px; padding: 0; border: none; box-sizing: border-box }
 input[type=range i] { margin: 2px; padding: 0; border: none }
 input[type=color i] { width: 50px; height: 27px; border-width: 1px; padding: 1px 2px }
+input[type=date i], input[type=time i], input[type=datetime-local i], input[type=month i], input[type=week i] { padding: 0 0 0 1px }
 select { border: 1px solid #767676 }
 textarea { padding: 2px; border: 1px solid #767676; font-family: monospace }
 `;
@@ -749,6 +750,11 @@ class CssLifter extends PageLifter {
     for (const r of this.rules)
       if (r.origin === "author" && !r.media.length && /^(:root|html)$/.test(r.selector.trim()))
         for (const d of r.decls) if (d.prop.startsWith("--")) this.theme.set(d.prop, d.value);
+  }
+
+  private dateParts?: boolean;
+  styledDateParts(): boolean {
+    return (this.dateParts ??= this.rules.some((r) => r.origin === "author" && /::-webkit-(datetime-edit|date-and-time-value|calendar-picker-indicator)/i.test(r.selector)));
   }
 
   keyframesAt(name: string, offset: number): Map<string, string> | undefined {

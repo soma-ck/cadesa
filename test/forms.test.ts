@@ -93,3 +93,21 @@ describe("a button with a set height", () => {
     expect(r.exact()).toBe(true);
   });
 });
+
+describe("date inputs (en-US)", () => {
+  it("sizes a date input from its fields' widest values and its picker, and its line", () => {
+    const css = `input { font: 16px Inter } .wide { box-sizing: border-box; width: 100%; padding: 6px 12px; border: 1px solid #999; font: 20px/1.25 Inter }`;
+    const r = run(`<div class="a"><input data-fixture="d" type="date"></div><div class="b"><input data-fixture="wide" class="wide" type="date"></div>`, css, [400]);
+    // Measured in Chromium: 148×26 (its fields 116px + 7px, its picker 20px, padding 1px at the start, a 2px border).
+    expect(geo(r.box("d"))).toEqual([0, 0, 148, 26]);
+    expect(r.approx("d")).toBeUndefined();
+    // A line of 25px (and the fields' 1px padding) over the picker's 24px, its padding and border.
+    expect(r.box("wide").h).toBe(41);
+    expect(r.approx("wide")).toBeUndefined();
+  });
+
+  it("leaves a date input whose inner parts the page styles approximate", () => {
+    const r = run(`<div class="a"><input data-fixture="d" type="date"></div>`, `input { font: 16px Inter } ::-webkit-datetime-edit { padding: 0 }`, [400]);
+    expect(r.approx("d")).toBeDefined();
+  });
+});
