@@ -69,6 +69,15 @@ describe.skipIf(!browserOk)("check --verify", () => {
     expect(clipped[0].verified!.detail).toMatch(/^\d+px of its text is cut off$/);
   });
 
+  it("measures text beside elements (no element of its own) and text cut off by its parent", async () => {
+    const { f } = await verified("fixtures/verify/text.html", "fixtures/verify/text.css", "400");
+    const word = f.find((x) => /"nonconformances" .* can't wrap/.test(x.message))!;
+    expect(word.verified).toEqual({ status: "confirmed", detail: "overflows by 37.38px" });
+    const cut = f.find((x) => x.check === "clipped")!;
+    expect(cut.verified).toEqual({ status: "confirmed", detail: "80px of its text is cut off" });
+    expect(f.every((x) => x.verified?.status === "confirmed")).toBe(true);
+  });
+
   it("loads widths without findings too", async () => {
     const { r } = await verified("fixtures/bootstrap/planning.html", "fixtures/bootstrap/bootstrap.css,fixtures/bootstrap/app.css", "320-1440/20");
     const v = (r.data as { verify: { widths: number[]; sampled: number[] } }).verify;
