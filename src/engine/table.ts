@@ -1450,6 +1450,7 @@ const hasContent = (b: Box) => !!b.lines?.length || b.children.length > 0;
  */
 export function firstBaseline(h: Pick<TableHooks, "lineHeight">, b: Box): LU | undefined | "unknown" {
   const ins = insets(b.props);
+  if (b.controlBaseline !== undefined) return isNaN(b.controlBaseline) ? "unknown" : U(b.controlBaseline);
   if (b.lines?.length) {
     // An inline-block alone on its line (lifted as a fit-content block): the line's baseline is its
     // last line's, which Cadesa doesn't place when it wraps.

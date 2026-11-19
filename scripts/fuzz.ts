@@ -10,6 +10,7 @@
  *   npm run fuzz -- --replay fuzz/failures          (re-check saved reproductions)
  *   npm run fuzz -- --seeds 17,42 --no-shrink       (re-run particular seeds)
  *   npm run fuzz -- --replay fixtures/fuzz --record (re-check and re-record Chromium's boxes)
+ *   npm run fuzz -- --cases 500 --css-cases 200   (and 200 pages lifted from their CSS: scripts/fuzz-css.ts)
  *
  * A mismatch is shrunk (delta debugging over widths, fixture nodes, text, props, overrides and
  * tokens) and saved to fuzz/failures/<hash>/{source.cadesa.yaml,fixture.html,style.css,report.txt,case.json,
@@ -45,6 +46,8 @@ const { values: args } = parseArgs({
     "max-shrinks": { type: "string", default: "40" },
     quiet: { type: "boolean", default: false },
     font: { type: "string" },
+    /** How many lifted-CSS cases (inline runs, baseline rows, form controls: scripts/fuzz-css.ts) to run after the others; default one for every four. */
+    "css-cases": { type: "string" },
   },
 });
 
@@ -1175,7 +1178,16 @@ async function main() {
     console.log(`divergences:       ${distinct.size} distinct after shrinking, ${signatures.size} distinct signatures`);
     for (const d of distinct.values()) console.log(`  ${args.out}/${d.hash}  seeds ${d.seeds.join(",")}  ${d.signature}`);
     console.log(`duration:          ${secs.toFixed(0)}s (${Math.round((stats.cases / secs) * 3600)} cases/hour)`);
-    process.exitCode = stats.failing || stats.invalid || stats.errors ? 1 : 0;
+    // Pages lifted from their CSS: inline runs in another font, size or vertical-align, baseline rows and form controls.
+    const cssCases = args["css-cases"] !== undefined ? Number(args["css-cases"]) : explicit ? 0 : total === Infinity ? 0 : Math.ceil(total / 4);
+    let cssFailing = 0;
+    if (cssCases > 0) {
+      const { runCssFuzz, cssSummary } = await import("./fuzz-css.js");
+      const s = await runCssFuzz(Array.from({ length: cssCases }, (_, i) => seed0 * 100000 + i), { tolerance: TOL, out: "artifacts/fuzz-css", workers: nWorkers });
+      console.log(`\n── lifted CSS cases\n${cssSummary(s)}`);
+      cssFailing = s.failures.length;
+    }
+    process.exitCode = stats.failing || stats.invalid || stats.errors || cssFailing ? 1 : 0;
   } finally {
     await browser.close();
     server.close();

@@ -37,7 +37,15 @@ select, input, textarea { font: inherit }
   );
   it("reads a text field's character widths from the font", () => {
     const v = metricsFor("Inter")!.vertical(16, 400)!;
-    expect([v.avgChar, v.maxChar]).toEqual([10, 44]);
+    expect([v.avgChar, v.maxChar]).toEqual([9.765625, 44.453125]);
+  });
+  it("sizes text fields and textareas from them at every font size as Chromium does", () => {
+    // Widths Chromium gives <input size=1>, <input size=10> and <textarea cols=10> with no padding or border.
+    const chromium: [number, number, number, number][] = [[12, 33, 99, 89], [13, 36, 108, 95], [14, 39, 120, 105], [15, 42, 125, 107], [16, 44, 134, 115], [17, 47, 141, 119], [18, 50, 149, 125], [19, 53, 161, 135], [20, 56, 166, 138], [21, 58, 175, 145], [22, 61, 182, 150], [23, 64, 191, 156], [24, 67, 202, 165], [28, 78, 232, 186], [32, 89, 269, 215], [15.5, 43, 129, 110], [17.6, 49, 148, 125]];
+    const body = chromium.map(([s]) => `<div><input data-fixture="a${String(s).replace(".", "_")}" size="1" style="font-size: ${s}px"></div><div><input data-fixture="b${String(s).replace(".", "_")}" size="10" style="font-size: ${s}px"></div><div><textarea data-fixture="c${String(s).replace(".", "_")}" cols="10" style="font-size: ${s}px"></textarea></div>`).join("");
+    const q = run(body, `input, textarea { font: inherit; padding: 0; border: 0 }`, [800]);
+    const id = (p: string, s: number) => `${p}${String(s).replace(".", "_")}`;
+    expect(chromium.map(([s]) => [s, q.box(id("a", s)).w, q.box(id("b", s)).w, q.box(id("c", s)).w])).toEqual(chromium);
   });
   it("sizes each control as Chromium does", () => {
     expect(geo(r.box("s2"))).toEqual([0, 0, 62, 26]);

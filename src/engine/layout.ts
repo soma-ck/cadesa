@@ -21,6 +21,8 @@ const EPS = 0.001;
 
 export interface Box {
   id: string;
+  /** A form control's baseline from its border box's top (px), where it isn't its bottom (a button input's label). */
+  controlBaseline?: number;
   tag: string;
   component: string;
   slot?: string;
@@ -789,7 +791,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         base = insX;
       }
       // A scroll container's automatic minimum width is 0: it shrinks below its content (which then scrolls or is clipped).
-      if (scrolls(p.overflow?.value)) {
+      // (A textarea is one too: it scrolls its text.)
+      if (scrolls(p.overflow?.value) || k.node.tag === "textarea") {
         min = insX;
         minKnown = true;
       }
@@ -1570,6 +1573,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       sourcePath,
       fixtureLine: n.line,
       attrs: n.attrs,
+      ...(n.controlBaseline !== undefined && { controlBaseline: n.controlBaseline }),
       x: 0,
       y: 0,
       w,

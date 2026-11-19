@@ -1475,16 +1475,20 @@ export abstract class PageLifter {
       return Math.ceil(widest - 1e-9) + (native ? 20 : 0);
     }
     const v = m.vertical(t.size, t.weight);
+    // The average character width as these sizes come out (measured in Chromium at sizes from 12
+    // to 32px): rounded to a whole px where that rounds it up, as is where it would round it down.
+    const avg = v?.avgChar === undefined ? undefined : Math.max(v.avgChar, Math.round(v.avgChar));
     if (el.tag === "textarea") {
       const cols = Number(attr(el.node, "cols") ?? "20");
-      if (!v || v.avgChar === undefined || !Number.isInteger(cols) || cols < 1 || res("overflow-y") !== undefined || res("overflow-x") !== undefined) return undefined;
-      return v.avgChar * cols + 15;
+      if (avg === undefined || !Number.isInteger(cols) || cols < 1 || res("overflow-y") !== undefined || res("overflow-x") !== undefined) return undefined;
+      return Math.ceil(Math.fround(avg * cols) - 1e-4) + 15;
     }
     if (/^(text|email|password|tel|url)$/.test(type) || (type === "number" && attr(el.node, "size") === undefined)) {
       const n = Number(attr(el.node, "size") ?? "20");
       const size = Number.isInteger(n) && n > 0 ? n : 20;
-      if (!v || v.avgChar === undefined || v.maxChar === undefined) return undefined;
-      return v.avgChar * size + v.maxChar - v.avgChar;
+      if (avg === undefined || v?.maxChar === undefined) return undefined;
+      // ceil(average × size + maximum (rounded) − average).
+      return Math.ceil(avg * size + Math.round(v.maxChar) - avg - 1e-4);
     }
     if (/^(submit|reset|button)$/.test(type)) {
       const label = (attr(el.node, "value") ?? (type === "submit" ? "Submit" : type === "reset" ? "Reset" : "")).replace(/[ \t\n\r\f]+/g, " ").trim();
@@ -1493,6 +1497,46 @@ export abstract class PageLifter {
       return w === undefined ? undefined : Math.ceil(w * 64 - 1e-6) / 64;
     }
     return undefined;
+  }
+
+  /**
+   * A form control's baseline from its border box's top (px), for baseline alignment: a text field's
+   * or a select's without native appearance, its line's; a button input's, its label's at
+   * line-height: normal. NaN where it isn't known (a native select, a textarea, a text field whose
+   * line height is under normal); undefined where it is its border box's bottom (a checkbox, radio
+   * or range) or the element isn't a control.
+   */
+  /**
+   * A line height of at least line-height: normal (or normal itself): a button input's line is then
+   * normal, as measured in Chromium. Under it, its line isn't known.
+   */
+  lineAtLeastNormal(t: TextCtx): boolean {
+    if (t.lineHeight === "normal") return true;
+    const normal = this.normalLine(t);
+    const lh = "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
+    return normal !== undefined && lh >= normal - 1e-9;
+  }
+
+  controlBaseline(el: El, si: number): number | undefined {
+    if (!CONTROL.has(el.tag)) return undefined;
+    const res = (p: string) => {
+      const o = el.own[si].get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    const type = el.tag === "input" ? (attr(el.node, "type") ?? "text").toLowerCase() : el.tag;
+    if (/^(checkbox|radio|range)$/.test(type) && (res("appearance") ?? res("-webkit-appearance") ?? "auto") !== "none") return undefined;
+    const t = this.textOf(el, si);
+    const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
+    const top = px("padding-top") + (/^(none|hidden)$/.test(res("border-top-style") ?? "none") ? 0 : borderPx(px("border-top-width")));
+    const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
+    const own = this.strutOf(el, si);
+    const normal = this.normalLine(t);
+    if (!v || !own || normal === undefined || !isFinite(top)) return NaN;
+    const native = (res("appearance") ?? res("-webkit-appearance") ?? "auto") !== "none";
+    if (/^(submit|reset|button)$/.test(type)) return this.lineAtLeastNormal(t) ? top + v.ascent + Math.floor(v.lineGap / 2) : NaN;
+    if (type === "select") return native ? NaN : top + own.sa;
+    if (/^(text|email|password|search|tel|url|number)$/.test(type)) return own.lh >= normal ? top + own.sa : NaN;
+    return NaN;
   }
 
   /**
@@ -1515,7 +1559,7 @@ export abstract class PageLifter {
     if (el.tag === "input" && nativeLook && /^(checkbox|radio|range)$/.test(type)) return limited ? undefined : type === "range" ? 16 : 13;
     const pxY = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
     const edgesY = () => ["top", "bottom"].reduce((h, side) => h + pxY(`padding-${side}`) + (/^(none|hidden)$/.test(res(`border-${side}-style`) ?? "none") ? 0 : borderPx(pxY(`border-${side}-width`))), 0);
-    if (nativeLook && !limited && ((el.tag === "select" && attr(el.node, "multiple") === undefined && Number(attr(el.node, "size") ?? "1") <= 1) || (el.tag === "input" && /^(submit|reset|button)$/.test(type)))) {
+    if (nativeLook && !limited && ((el.tag === "select" && attr(el.node, "multiple") === undefined && Number(attr(el.node, "size") ?? "1") <= 1) || (el.tag === "input" && /^(submit|reset|button)$/.test(type) && this.lineAtLeastNormal(t)))) {
       const normal = this.normalLine(t);
       const h = normal === undefined ? NaN : normal + (el.tag === "select" ? 2 : 0) + edgesY();
       return isFinite(h) ? h : undefined;
@@ -2575,11 +2619,10 @@ export abstract class PageLifter {
       // line height, plus its padding and border.
       const controlH = CONTROL.has(el.tag) && !own.has("height") ? this.controlHeight(el, si) : undefined;
       // Stretched across a flex row or a grid row (align-items: normal or stretch), it is at least that tall, not that tall.
-      const ptype = (attr(el.node, "type") ?? "").toLowerCase();
       const pd = el.parent && el.parent !== this.bodyEl ? this.displayOf(el.parent, si) : "block";
       const selfA = this.resolve(el, si, own.get("align-self")?.value ?? "auto") ?? "auto";
       const itemsA = el.parent && el.parent !== this.bodyEl ? this.resolve(el.parent, si, el.parent.own[si].get("align-items")?.value ?? "normal") ?? "normal" : "normal";
-      const crossStretched = parentRole === "container" && ((/flex/.test(pd) && !this.isColumn(el.parent!, si)) || /grid/.test(pd)) && /^(auto|normal|stretch)$/.test(selfA) && (selfA === "stretch" || /^(normal|stretch)$/.test(itemsA)) && !(el.tag === "input" && /^(checkbox|radio)$/.test(ptype));
+      const crossStretched = parentRole === "container" && ((/flex/.test(pd) && !this.isColumn(el.parent!, si)) || /grid/.test(pd)) && /^(auto|normal|stretch)$/.test(selfA) && (selfA === "stretch" || /^(normal|stretch)$/.test(itemsA));
       if (controlH !== undefined && crossStretched && !own.has("min-height")) {
         // (In CSS terms: of its content box unless box-sizing says border-box.)
         const sz = this.textOf(el, si).size;
@@ -3479,6 +3522,8 @@ export abstract class PageLifter {
         // A form control's intrinsic width, as Chromium sizes it (controlWidth).
         const cw = this.controlWidth(el, si ?? 0);
         if (cw !== undefined) n = { ...n, controlWidth: cw };
+        const cb = this.controlBaseline(el, si ?? 0);
+        if (cb !== undefined) n = { ...n, controlBaseline: cb };
         if (textless && n.text) return { ...n, children, text: "", runs: [] };
         const hidden = si === undefined ? hiddenNodes : hiddenAt[si];
         // Inline boxes with a weight or edges of their own, and generated content, are part of the text.

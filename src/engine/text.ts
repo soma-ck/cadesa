@@ -207,8 +207,8 @@ function load(file: string): FontMetrics {
       const f = Math.fround;
       const px = (u: number) => f(f(u / v.size) * f(sizePx));
       const round = (x: number) => Math.floor(x + 0.5);
-      // A text field's average and maximum character widths: rounded to whole px (roundf) too.
-      const chars = face.avgChar !== undefined && face.maxChar !== undefined ? { avgChar: round(px(face.avgChar)), maxChar: round(px(face.maxChar)) } : {};
+      // A text field's average and maximum character widths at this size (px, unrounded).
+      const chars = face.avgChar !== undefined && face.maxChar !== undefined ? { avgChar: px(face.avgChar), maxChar: px(face.maxChar) } : {};
       return { ascent: round(px(face.ascent)), descent: round(px(face.descent)), lineGap: round(px(face.lineGap)), xHeight: px(face.xHeight), ...chars };
     },
     weightIssue(weight) {

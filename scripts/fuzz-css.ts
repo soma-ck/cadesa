@@ -5,7 +5,7 @@
  * controls, lifted the way `check --css` lifts a page and laid out by the engine, compared with
  * Chromium box by box. Every box the lift and engine mark exact must match within the tolerance.
  *
- *   npm run fuzz -- --cases 500             (runs these cases too: one in five)
+ *   npm run fuzz -- --cases 500             (runs these cases too: one for every four others)
  *   npx tsx scripts/fuzz-css.ts --cases 300 --seed 1
  *   npx tsx scripts/fuzz-css.ts --seeds 17,42   (re-run particular cases, printing every box)
  *
@@ -115,10 +115,40 @@ export function genCssCase(seed: number): CssCase {
     }
     return `<div${attr(cls(decls))}>${items.join("")}</div>`;
   };
+  /** A form control: a text field (size=), textarea (rows, cols), select, button input, checkbox, radio or range, in its own font and box. */
+  const control = () => {
+    const d: string[] = ["font: inherit"];
+    if (r.chance(0.4)) d.push(`font-size: ${r.pick(["13px", "14px", "18px", "20px"])}`);
+    if (r.chance(0.3)) d.push(`line-height: ${r.pick(["1", "1.25", "1.5", "normal"])}`);
+    if (r.chance(0.4)) d.push(`padding: ${r.int(0, 10)}px ${r.int(0, 12)}px`);
+    if (r.chance(0.4)) d.push(`border: ${r.int(0, 3)}px solid #889`);
+    if (r.chance(0.2)) d.push("box-sizing: border-box");
+    const kind = r.pick(["text", "text", "select", "select", "textarea", "submit", "button", "checkbox", "radio", "range"] as const);
+    if ((kind === "select" || kind === "text") && r.chance(0.5)) d.push("appearance: none");
+    const c = attr(cls(kind === "checkbox" || kind === "radio" || kind === "range" ? [] : d));
+    const opts = () => Array.from({ length: r.int(1, 4) }, () => `<option>${words(r, 1, 3)}</option>`).join("");
+    if (kind === "text") return `<input${c} type="${r.pick(["text", "email", "password", "tel", "url"])}"${r.chance(0.5) ? ` size="${r.int(1, 30)}"` : ""}>`;
+    if (kind === "select") return `<select${c}>${opts()}</select>`;
+    if (kind === "textarea") return `<textarea${c}${r.chance(0.6) ? ` rows="${r.int(1, 5)}"` : ""}${r.chance(0.6) ? ` cols="${r.int(4, 40)}"` : ""}></textarea>`;
+    if (kind === "submit" || kind === "button") return `<input${c} type="${kind}"${kind === "button" || r.chance(0.5) ? ` value="${words(r, 1, 2)}"` : ""}>`;
+    return `<input type="${kind}">`;
+  };
+  /** Controls in a line of text, alone on their line, in a flex row, or in a button of set height. */
+  const formBlock = () => {
+    const where = r.pick(["line", "alone", "row", "button"] as const);
+    if (where === "line") return `<p>${words(r, 0, 4)} ${control()} ${words(r, 0, 4)}</p>`;
+    if (where === "alone") return `<div>${control()}</div>`;
+    if (where === "row") return `<div${attr(cls(["display: flex", `gap: ${r.int(0, 10)}px`, ...(r.chance(0.5) ? [`align-items: ${r.pick(["center", "stretch", "flex-start", "baseline"])}`] : [])]))}>${control()}${control()}<span>${words(r, 1, 3)}</span></div>`;
+    return `<div><button${attr(cls(["font: inherit", `height: ${r.int(16, 70)}px`, `padding: ${r.int(0, 8)}px ${r.int(0, 12)}px`, ...(r.chance(0.3) ? ["box-sizing: content-box"] : [])]))}>${words(r, 1, 2)}</button></div>`;
+  };
   const count = r.int(2, 5);
   for (let i = 0; i < count; i++) {
     if (r.chance(0.3)) {
       blocks.push(baselineRow());
+      continue;
+    }
+    if (r.chance(0.3)) {
+      blocks.push(formBlock());
       continue;
     }
     const decls: string[] = [];

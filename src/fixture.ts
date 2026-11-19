@@ -29,6 +29,8 @@ export interface FixtureNode {
    * a text field's characters, a textarea's columns, a button input's label. Set by the lift.
    */
   controlWidth?: number;
+  /** A form control's baseline from its border box's top (px), where it isn't its bottom: a text field's, select's or button input's line. */
+  controlBaseline?: number;
   /**
    * Not an element: a run of text between block-level children (an anonymous block, or an
    * anonymous flex or grid item), laid out as a text box of its own. It has no box in the DOM.
