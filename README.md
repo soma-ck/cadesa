@@ -29,7 +29,7 @@ coverage: 7 boxes × 2 widths · 86% exact · 14% approximate (≈)
     element: fixtures/verify/page.html:12 <div class="box"> "A box wider than its parent"
     set on <div.wide>: fixtures/verify/page.css:52 .wide { width: 400px }
 
-inconclusive (these boxes aren't predicted exactly; confirm in a browser, or run check with --verify):
+inconclusive (Cadesa can't decide these without a browser: confirm in one, or run check with --verify):
 ? [tap-target] <button.zoomed> is 20×20px; WCAG 2.5.8 needs at least 24×24px · at 400, 800px
     element: fixtures/verify/page.html:10 <button class="zoomed"> "+"
     size: fixtures/verify/page.css:33 .zoomed { width: 20px; height: 20px }
@@ -224,7 +224,7 @@ at all 58 widths
   ≈24 boxes below move y +12: #item, #item-name, #item-desc, #details-label +20 more (20 approximate)
 ```
 
-**`check`** covers overflow (horizontal, unbreakable words, text taller than a fixed height), text cut off by `overflow: hidden` or an ellipsis, text that runs together (`<span>Total</span><span>42</span>`), tap targets (WCAG 2.5.8 and 2.5.5), and contrast against the nearest painted background (every stop of a gradient, translucent colors blended, inline `<span>`s and badges in their own color). Content scrolling inside a scroll container (`.table-responsive`) isn't an overflow, and elements hidden at a width (`d-none`, a collapsed navbar menu) aren't laid out or reported there. Text over an image, or a background Cadesa can't see, comes back *inconclusive*, not passed; so does a size-dependent finding on a box whose size isn't exactly predicted (a box that only moves keeps its findings).
+**`check`** covers overflow (horizontal, unbreakable words, text taller than a fixed height), text cut off by `overflow: hidden` or an ellipsis, text that runs together (`<span>Total</span><span>42</span>`), tap targets (WCAG 2.5.8 and 2.5.5), and contrast against the nearest painted background (every stop of a gradient, translucent colors blended, inline `<span>`s and badges in their own color). Content scrolling inside a scroll container (`.table-responsive`) isn't an overflow, and elements hidden at a width (`d-none`, a collapsed navbar menu) aren't laid out or reported there. Text over an image, or a background Cadesa can't see, comes back *inconclusive*, not passed (a page where nothing sets a background is white, as in a browser); so does a size-dependent finding on a box whose size isn't exactly predicted (a box that only moves keeps its findings).
 
 **`critique`** asks whether the page reads as designed, from measurable signals rather than taste: font sizes within 1.12× of each other (they read as one level), headings that barely stand out, groups spaced as far apart inside as outside, text edges that *almost* line up, a palette with no hue or competing accents, and common template tells. Findings are suggestions with numbers and a source line:
 
@@ -344,7 +344,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `background`, `radius`, `backdrop`, `shadow`, `fit` | tokens | polish: `background-color`, `border-radius`, `background-image`, `box-shadow`, `object-fit` |
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)`; each listed property replaces its base value, and the narrowest active breakpoint wins |
 | `none` in `when` | e.g. `maxWidth: none` | removes a base value at a breakpoint (`.container` below 576px) |
-| `page.background` | color token | `:root { background-color }`, so contrast checks are conclusive |
+| `page.background` | color token | `:root { background-color }`, the color text is checked against (without it, the page is white, as in a browser) |
 
 **Components nest:** put a `.ca-plan-card` inside `.ca-pricing__plans` and the card lays out its own slots and breakpoints inside the parent's layout ([`examples/pricing`](examples/pricing)). Classes are `.ca-<component>` and `.ca-<component>__<slot>` (`prefix: ""` drops the `ca-`). The compiled CSS is plain, framework-free and has no runtime, so it works in React, Vue, Svelte or static HTML ([`examples/vue`](examples/vue)).
 

@@ -173,6 +173,9 @@ export class Pointers {
 
   /** The background behind a contrast finding, from the path its message names. */
   private background(f: Finding): SourcePointer | undefined {
+    // Nothing sets a background: the page is white, as in a browser.
+    if (/\(background: the browser's default white/.test(f.message))
+      return { what: "background", rules: [{ property: "background-color", value: "#ffffff", selector: "none set, so the page is white", origin: "browser" }] };
     const m = /\(background: (?:gradient stop \S+ in )?([\w.-]+)\)/.exec(f.message);
     if (!m) return undefined;
     if (m[1] === "page.background") {

@@ -31,8 +31,10 @@ function summary(b: Box): string {
   return parts.join(" · ");
 }
 
-function issueLine(i: Issue) {
+/** One engine issue. On a --css or --tailwind page (`css`), no path into the generated Cadesa source. */
+function issueLine(i: Issue, css = false) {
   const icon = i.severity === "error" ? "✖" : "⚠";
+  if (css) return `  ${icon} ${i.message}`;
   return `  ${icon} ${i.message}${i.path ? `\n    edit: ${i.path}` : ""}${i.suggestion ? `\n    did you mean ${i.suggestion}?` : ""}`;
 }
 
@@ -42,7 +44,7 @@ function header(l: Layout) {
 
 export function formatRender(
   layouts: Layout[],
-  meta: { source: string; fixture: string; ms: number; lines?: boolean; impacts?: WidthImpact[] },
+  meta: { source: string; fixture: string; ms: number; lines?: boolean; impacts?: WidthImpact[]; css?: boolean },
 ): string {
   const out = [`${meta.source} × ${meta.fixture} · computed in ${meta.ms}ms, no browser`, ""];
   for (const l of layouts) {
@@ -69,7 +71,7 @@ export function formatRender(
       out.push(r.cells.map((c, i) => (i < 4 ? pad(c, widths[i]) : c)).join(" ").trimEnd());
       for (const line of r.lines ?? []) out.push(`${" ".repeat(widths[0] + 1)}│ ${line.text}  (${fmtPx(line.width)}px)`);
     }
-    for (const i of l.issues) out.push(issueLine(i));
+    for (const i of l.issues) out.push(issueLine(i, meta.css));
     out.push("");
   }
   return out.join("\n").trimEnd() + "\n";
@@ -172,7 +174,7 @@ export function formatWhatif(
     if (w.removed.length) out.push(`  − hidden after the edit: ${list(w.removed)}`);
     const fresh = issues ? w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message)) : [];
     const fixed = issues ? w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message)) : [];
-    for (const i of fresh) out.push(issueLine(i).replace(/^ {2}/, "  new "));
+    for (const i of fresh) out.push(issueLine(i, meta.css).replace(/^ {2}/, "  new "));
     for (const i of fixed) out.push(`  ✓ fixed: ${i.message}`);
     const moved = w.elements.filter((e) => approx.has(e.id)).length;
     if (moved) out.push(`  ≈ ${moved} of these box${moved === 1 ? " is" : "es are"} approximate: the direction is predicted, the exact pixels need a browser`);
@@ -394,7 +396,7 @@ export function formatCoverage(c: Coverage): string {
   return out.join("\n") + "\n";
 }
 
-export function formatCheck(findings: Finding[], widths: number[], cov?: Coverage, verify?: VerifyReport): string {
+export function formatCheck(findings: Finding[], widths: number[], cov?: Coverage, verify?: VerifyReport, opts: { css?: boolean } = {}): string {
   const head = cov ? formatCoverage(cov) + "\n" : "";
   if (!findings.length) return shortenPaths(`${head}✓ no findings at ${describeWidths(widths)}\n${verify ? "\n" + formatVerify(verify) : ""}`);
   // One line per issue (same check, element, severity and edit path), listing the widths it occurs at.
@@ -436,7 +438,9 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
       out.push(
         "",
         r === 2
-          ? `inconclusive (these boxes aren't predicted exactly; ${verify ? "Chromium couldn't decide them either" : "confirm in a browser, or run check with --verify"}):`
+          ? verify
+            ? "inconclusive (Chromium didn't settle these either: each chromium: line says why):"
+            : "inconclusive (Cadesa can't decide these without a browser: confirm in one, or run check with --verify):"
           : "not reproduced in Chromium (no problem there at the widths it loaded):",
       );
     section = r;
@@ -453,7 +457,8 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
       const [first, ...rest] = describeRules(s.rules);
       out.push(`    ${s.what}: ${first}`, ...rest.map((x) => `    ${" ".repeat(s.what.length + 2)}${x}`));
     }
-    if (!f.element && f.path) out.push(`    edit: ${f.path}`);
+    // A path into the generated Cadesa source means nothing to someone editing CSS.
+    if (!f.element && f.path && !opts.css) out.push(`    edit: ${f.path}`);
     if (verify) out.push(`    chromium: ${verifiedLine(g.all, widths)}`);
   }
   const shown = sorted.filter((g) => !notReproduced(g.first));

@@ -247,7 +247,7 @@ export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; 
   return {
     text: shortenPaths(
       formatCoverage(withNotes(coverage(layouts, imp?.impacts), p)) +
-      formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts }) +
+      formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts, css: !!p.tw }) +
       (imp ? "\n" + formatImpact(imp.impacts) : "") +
       (written.length ? `\nwireframe: ${written.join(", ")}\n` : "") +
       fontsNote(fonts, s, true)),
@@ -311,10 +311,14 @@ export function whatifCmd(
   };
 }
 
+/** Where nothing sets a page background, a browser paints the page white: contrast is judged on that. */
+export const DEFAULT_BACKGROUND = "the browser's default white, as nothing sets a background";
+const onWhite = (ls: Layout[]): Layout[] => ls.map((l) => (l.page ? l : { ...l, page: { background: "#ffffff", path: DEFAULT_BACKGROUND } }));
+
 /** check before and after an edit, compared: what it fixes, what it leaves, what it adds. */
 function findingChanges(before: Layout[], ib: WidthImpact[] | undefined, pb: PageLift | undefined, after: Layout[], ia: WidthImpact[] | undefined, pa: PageLift | undefined): FindingChange[] {
-  const fb = check(before, ib, pb);
-  const fa = check(after, ia, pa);
+  const fb = check(onWhite(before), ib, pb);
+  const fa = check(onWhite(after), ia, pa);
   const changes = compareFindings(fb, fa);
   // Compared by generated id first; then named as check names them (element, rules).
   if (pb) pointFindings(fb, pb);
@@ -447,7 +451,7 @@ function runCheck(s: SourceInput & { fixture: string; widths: number[] }) {
   const p = pageOf(s);
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
-  const findings = check(layouts, imp?.impacts, p.tw);
+  const findings = check(onWhite(layouts), imp?.impacts, p.tw);
   const cov = withNotes(coverage(layouts, imp?.impacts), p);
   return { p, layouts, impacts: imp?.impacts, findings, cov };
 }
@@ -458,7 +462,7 @@ function finishCheck(s: SourceInput & { fixture: string; widths: number[] }, run
   if (p.tw) pointFindings(findings, p.tw);
   const fonts = fontsOf(s, layouts);
   return {
-    text: formatCheck(findings, s.widths, cov, verified) + fontsNote(fonts, s, false),
+    text: formatCheck(findings, s.widths, cov, verified, { css: !!p.tw }) + fontsNote(fonts, s, false),
     data: { coverage: cov, findings, fonts: fontsData(fonts), ...(verified && { verify: verified }) },
     ok: !findings.some((f) => f.severity === "error" && !f.inconclusive && f.verified?.status !== "not reproduced"),
   };
