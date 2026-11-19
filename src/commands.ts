@@ -552,6 +552,8 @@ export async function fontsCmd(
   if (s.measure) {
     measured = await measureReport(report, { out: s.out, system: s.system });
     text += formatMeasured(measured) + (measured.length ? "\n" : "");
+    const unused = report.filter((f) => !f.boxes.length && f.status !== "measured").map((f) => f.family);
+    if (unused.length) text += `not measured, as no laid-out text is set in them: ${unused.join(", ")}\n\n`;
     report = fontsOf(s, renderPage(model, p, s.widths));
   }
   const measurable = report.some((f) => f.status === "file" || f.status === "google" || !!f.remeasure);

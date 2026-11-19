@@ -135,7 +135,7 @@ verified in Chromium 153.0.8010.52 at 2 widths (2 with findings, 0 without)
   boxes marked exact: 10 of 12 match Chromium within 0.5px · boxes marked ≈: 2 of 2 match
 ```
 
-Inconclusive findings are decided by what Chromium measures: on `fixtures/bootstrap/orders.html` both inconclusive contrast findings come back confirmed. Tap targets, contrast, horizontal overflow, unbreakable words and text taller than a fixed height are measured; other findings stay as predicted. The last lines compare every box the engine laid out with Chromium's at those widths. `--verify` needs a Chrome, Chromium or Edge on the machine (or `$CADESA_CHROME` pointing at one), like `metrics --measure`.
+Inconclusive findings are decided by what Chromium measures: on `fixtures/bootstrap/orders.html` both inconclusive contrast findings come back confirmed. Tap targets, contrast, horizontal overflow (also of text beside elements), unbreakable words, text cut off by `overflow: hidden` and text taller than a fixed height are measured; the others stay as predicted, each with the reason (text that runs together is decided by the markup, not by sizes). The last lines compare every box the engine laid out with Chromium's at those widths. `--verify` needs a Chrome, Chromium or Edge on the machine (or `$CADESA_CHROME` pointing at one), like `metrics --measure`.
 
 **Or try the examples:**
 
@@ -280,7 +280,7 @@ Real use has caught Cadesa wrong before: the site rebuild above found seven case
 
 ```sh
 cadesa fonts page.html --css styles.css            # which fonts the text uses, and where each comes from
-cadesa fonts page.html --css styles.css --measure  # measure them all (needs Chrome or Chromium)
+cadesa fonts page.html --css styles.css --measure  # measure the ones text is set in (needs Chrome or Chromium)
 cadesa metrics --google "Work Sans"                # or a Google font by name
 ```
 

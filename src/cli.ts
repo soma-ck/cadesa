@@ -19,7 +19,7 @@ import {
   type Result,
 } from "./commands.js";
 import { VERSION } from "./compile.js";
-import { CadesaError, formatDiagnostic } from "./diagnostics.js";
+import { CadesaError, formatDiagnostic, formatUnexpected } from "./diagnostics.js";
 import { parseSet } from "./project.js";
 
 const HELP = `cadesa ${VERSION}: predict what a style edit will do before you make it
@@ -87,6 +87,8 @@ Options:
              that comes last in the page's cascade, e.g. --add-css ".card { padding: 24px }";
              a rule that matches nothing or loses to a more specific one is reported
   -h, --help show this help
+
+  CADESA_DEBUG=1 prints the stack of an unexpected error (a Cadesa bug: please report it).
 `;
 
 async function main(argv: string[]) {
@@ -231,7 +233,7 @@ try {
   } else if (e instanceof InputError) {
     process.stderr.write(`cadesa: ${e.message}\n\n${HELP}`);
   } else {
-    process.stderr.write(`cadesa: ${(e as Error).message}\n`);
+    process.stderr.write(formatUnexpected(e));
   }
   process.exitCode = 1;
 }

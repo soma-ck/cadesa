@@ -26,7 +26,7 @@ import {
   type Result,
 } from "./commands.js";
 import { VERSION } from "./compile.js";
-import { CadesaError, formatDiagnostic } from "./diagnostics.js";
+import { CadesaError, formatDiagnostic, formatUnexpected } from "./diagnostics.js";
 
 const INSTRUCTIONS = `Cadesa is a small styling language (YAML, *.cadesa.yaml) that compiles to plain CSS.
 Its layout engine runs without a browser, so you can predict what a style edit does before making it.
@@ -111,7 +111,7 @@ function respond(run: () => Result, format: "text" | "json" = "text") {
           : e.diagnostics.map(formatDiagnostic).join("\n\n")
         : e instanceof InputError
           ? e.message
-          : `cadesa: ${(e as Error).message}`;
+          : formatUnexpected(e).trimEnd();
     return { content: [{ type: "text" as const, text }], isError: true };
   }
 }

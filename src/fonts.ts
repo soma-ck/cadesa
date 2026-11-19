@@ -560,6 +560,8 @@ export interface MeasureOptions {
 export async function measureReport(report: FontReport[], opts: MeasureOptions = {}): Promise<Measured[]> {
   const out = opts.out ?? join(".cadesa", "metrics");
   const cacheDir = join(dirname(resolve(out)), "fonts");
+  // Only fonts that laid-out text is set in: a stylesheet can declare many more (KaTeX's dozen faces).
+  report = report.filter((r) => r.boxes.length > 0);
   const todo = report.filter(
     (r) => r.status === "file" || r.status === "google" || (r.status === "measured" && !!r.remeasure) || ((r.status === "system" || r.status === "unknown") && opts.system && !!r.stack),
   );

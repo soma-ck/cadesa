@@ -23,6 +23,24 @@ export class CadesaError extends Error {
  */
 export class RunError extends Error {}
 
+/**
+ * An error that isn't a diagnostic or a usage error. A file that can't be read and a RunError are
+ * the user's to fix; anything else is a bug in Cadesa, said as such, with the stack when `debug`
+ * (CADESA_DEBUG=1).
+ */
+export function formatUnexpected(e: unknown, debug = !!process.env.CADESA_DEBUG && process.env.CADESA_DEBUG !== "0"): string {
+  const err = e instanceof Error ? e : new Error(String(e));
+  const sys = err as Error & { code?: string; path?: string };
+  if (sys.code && /^(ENOENT|EACCES|EISDIR|ENOTDIR|EPERM)$/.test(sys.code) && sys.path)
+    return `cadesa: ${sys.code === "ENOENT" ? "no such file" : sys.code === "EISDIR" ? "a directory, not a file" : sys.code === "ENOTDIR" ? "not a directory" : "can't read"}: ${sys.path}\n`;
+  if (err instanceof RunError) return `cadesa: ${err.message}\n`;
+  return (
+    `cadesa: ${err.message}\n` +
+    `  this is a Cadesa bug; please report it with the page and its CSS: https://github.com/soma-ck/cadesa/issues\n` +
+    (debug ? `${err.stack ?? ""}\n` : "  (run with CADESA_DEBUG=1 to see where it happened)\n")
+  );
+}
+
 export function formatDiagnostic(d: Diagnostic): string {
   const where = d.line ? `${d.file}:${d.line}:${d.col}` : d.file;
   const lines = [`${where} ${d.severity}${d.path ? ` ${d.path}` : ""}: ${d.message}`];
