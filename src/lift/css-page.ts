@@ -30,6 +30,7 @@ import { attr, PageLifter, round, type El, type Origin, type PageLift, type Stat
  */
 const UA_CSS = `
 [hidden] { display: none }
+input[type=hidden i] { display: none !important }
 body { margin: 8px }
 p, blockquote, figure, dl, ul, ol, menu, pre { margin-top: 1em; margin-bottom: 1em }
 blockquote, figure { margin-left: 40px; margin-right: 40px }

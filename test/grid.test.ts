@@ -108,6 +108,14 @@ describe("atomic inlines and zero-size text", () => {
   });
 });
 
+describe("hidden inputs", () => {
+  it("lays out no box for <input type=hidden> (display: none in Chromium's stylesheet)", () => {
+    const r = run(`<form class="f"><input type="hidden" name="token"><p class="p">After</p></form>`, `p { margin: 0 }`, [400]);
+    expect(r.box("p").y).toBe(0);
+    expect(r.exact()).toBe(true);
+  });
+});
+
 describe("icon fonts and initial values", () => {
   it("collects the characters a font's text uses beyond the measured set (icon codepoints), for --measure", async () => {
     const { fontUses } = await import("../src/fonts.js");
