@@ -59,7 +59,7 @@ export interface LiftResult {
 // ---------------------------------------------------------------- property classes
 
 const PAINT =
-  /^(color-adjust|print-color-adjust|forced-color-adjust|color|background(-color|-image|-position|-size|-repeat|-clip|-origin|-attachment)?|box-shadow|outline.*|opacity|cursor|transition.*|animation.*|text-decoration.*|text-shadow|text-align|border(-top|-right|-bottom|-left)?-color|border(-top|-right|-bottom|-left)?-(left|right)?-?radius|border-radius|fill|stroke.*|filter|backdrop-filter|visibility|pointer-events|user-select|caret-color|accent-color|will-change|z-index|mix-blend-mode|appearance|-webkit-.*|-moz-.*|list-style.*|object-.*|scroll-.*|isolation|content|resize|touch-action|clip-path|mask.*)$/;
+  /^(color-scheme|color-adjust|print-color-adjust|forced-color-adjust|color|background(-color|-image|-position|-size|-repeat|-clip|-origin|-attachment)?|box-shadow|outline.*|opacity|cursor|transition.*|animation.*|text-decoration.*|text-shadow|text-align|border(-top|-right|-bottom|-left)?-color|border(-top|-right|-bottom|-left)?-(left|right)?-?radius|border-radius|fill|stroke.*|filter|backdrop-filter|visibility|pointer-events|user-select|caret-color|accent-color|will-change|z-index|mix-blend-mode|appearance|-webkit-.*|-moz-.*|list-style.*|object-.*|scroll-.*|isolation|content|resize|touch-action|clip-path|mask.*)$/;
 const TEXT =
   /^(font.*|letter-spacing|word-spacing|text-transform|white-space|line-height|text-indent|word-break|overflow-wrap|word-wrap|hyphens|tab-size|text-wrap.*|direction|unicode-bidi|writing-mode|text-rendering|font-kerning)$/;
 const VISUAL = /^(transform|translate|rotate|scale|perspective.*|transform-origin)$/;

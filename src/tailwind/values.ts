@@ -44,6 +44,10 @@ export const INVALID = "\u0000invalid";
  */
 export function substitute(value: string, lookup: (name: string) => string | undefined, depth = 0): string {
   if (depth > 16) return INVALID;
+  if (depth === 0 && value.includes("env(")) {
+    const v = substitute(value, lookup, 1);
+    return v === INVALID ? v : resolveEnv(v);
+  }
   let out = "";
   let i = 0;
   for (;;) {
@@ -63,6 +67,30 @@ export function substitute(value: string, lookup: (name: string) => string | und
       if (v === INVALID) return INVALID;
     }
     out += v;
+    i = end + 1;
+  }
+}
+
+/**
+ * env() as a desktop browser window has it: the safe-area and keyboard insets are 0, anything
+ * else takes its fallback (or makes the value invalid without one, as Chromium does).
+ */
+export function resolveEnv(value: string): string {
+  let out = "";
+  let i = 0;
+  for (;;) {
+    const at = value.indexOf("env(", i);
+    if (at < 0) return out + value.slice(i);
+    const end = closing(value, at + 3);
+    if (end < 0) return INVALID;
+    out += value.slice(i, at);
+    const inner = value.slice(at + 4, end);
+    const parts = splitTop(inner);
+    const name = parts[0].trim();
+    const fallback = parts.length > 1 ? inner.slice(inner.indexOf(",") + 1).trim() : undefined;
+    if (/^(safe-area-inset|keyboard-inset)-/.test(name) || /^safe-area-max-inset-/.test(name)) out += "0px";
+    else if (fallback !== undefined) out += resolveEnv(fallback);
+    else return INVALID;
     i = end + 1;
   }
 }

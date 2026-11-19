@@ -296,12 +296,40 @@ function hasMatches(rel: { comb: " " | ">" | "+" | "~"; complex: Complex }[], el
     for (const r of rel) {
       const cands = r.comb === " " || r.comb === ">" ? below(el) : (r.comb === "+" ? after.slice(0, 1) : after).flatMap((k) => [k, ...below(k)]);
       const m = best(cands.map((c) => matchComplex(r.complex, c)));
-      out.push(m === "no" && cands.some((c) => c.tag === "svg") ? "unknown" : m);
+      out.push(m === "no" && cands.some((c) => c.tag === "svg" && mayMatchInside(r.complex, c)) ? "unknown" : m);
     }
     return best(out);
   } finally {
     anchors.pop();
   }
+}
+
+/**
+ * Could the subject of `complex` be an element inside this svg (whose content isn't laid out)?
+ * Only if every id, class and attribute it requires occurs somewhere inside: a necessary
+ * condition, so "no" is certain. `[data-app-shell]` can't match inside icons that lack it.
+ */
+function mayMatchInside(complex: Complex, svg: El): boolean {
+  const ids = new Set<string>();
+  const classes = new Set<string>();
+  const attrs = new Set<string>();
+  const tags = new Set<string>();
+  const visit = (n: { tagName?: string; attrs?: { name: string; value: string }[]; childNodes?: unknown[] }) => {
+    for (const k of (n.childNodes ?? []) as (typeof n)[]) {
+      if (!k.tagName) continue;
+      tags.add(k.tagName.toLowerCase());
+      for (const a of k.attrs ?? []) {
+        attrs.add(a.name.toLowerCase());
+        if (a.name === "id") ids.add(a.value);
+        if (a.name === "class") a.value.split(/\s+/).forEach((c) => classes.add(c));
+      }
+      visit(k);
+    }
+  };
+  visit(svg.node as never);
+  return complex.parts[0].simples.every((x) =>
+    x.kind === "id" ? ids.has(x.name) : x.kind === "class" ? classes.has(x.name) : x.kind === "attr" ? attrs.has(x.name.toLowerCase()) : x.kind === "tag" ? x.name === "*" || tags.has(x.name.toLowerCase()) : true,
+  );
 }
 
 function simpleMatches(s: Simple, el: El): M {
