@@ -1591,7 +1591,6 @@ export abstract class PageLifter {
         if (!/^(horizontal-tb)?$/.test(res(k, "writing-mode") ?? "")) return "a vertical writing mode in a table isn't modelled";
         if (collapse && ["top", "right", "bottom", "left"].some((s) => res(k, `border-${s}-style`) === "hidden")) return "border-style: hidden in a table with collapsed borders isn't modelled";
         if (/%/.test(res(k, "height") ?? "") && k !== table) return "a percentage height on a table part isn't modelled";
-        if ((k.tag === "td" || k.tag === "th") && /^\s*0/.test(attr(k.node, "rowspan") ?? "") && parseInt(attr(k.node, "rowspan")!, 10) === 0) return 'rowspan="0" (to the end of the row group) isn\'t modelled';
         return undefined;
       };
       const own = check(table);

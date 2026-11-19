@@ -91,7 +91,11 @@ function offsetX(b: Box, cell: number): number {
 }
 
 /** Children one under another (a stack or block flow): a child that changes size moves only those after it. */
-const inLine = (b: Box) => b.props.pattern?.value === "stack" || b.props.pattern?.value === "flow";
+const inLine = (b: Box) =>
+  b.props.pattern?.value === "stack" || b.props.pattern?.value === "flow" ||
+  // A table's captions and row groups, and a row group's rows, are one under another too (table.ts flags the
+  // whole table when what changes is a width).
+  b.props.pattern?.value === "table" || /^(header|body|footer)$/.test(b.props.part?.value.part ?? "");
 
 const NO_MARGIN: Margins = { top: 0, right: 0, bottom: 0, left: 0 };
 
@@ -425,6 +429,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }),
     lineHeight: lineHeightPx,
     skip: (n) => notLaidOut(n),
+    doubtful: (b) => {
+      for (const x of walk([b])) {
+        const why = x.assumptions[0] ?? issues.find((i) => i.severity === "error" && i.id === x.id)?.message;
+        if (why) return why;
+      }
+      return undefined;
+    },
   };
   const gridOf = (n: FixtureNode, c: Component, props: ResolvedProps) => {
     let g = grids.get(n);

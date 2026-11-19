@@ -45,6 +45,8 @@ export interface TableHooks {
   box(k: Kid, over: Partial<ResolvedProps>): Box;
   /** Line height of a text role in px (Chromium's rounding). */
   lineHeight(sizePx: number, lineHeight: number): number;
+  /** Why a box (or one inside it) may not be where the engine puts it, if it may not. */
+  doubtful(b: Box): string | undefined;
   /** An element (and its descendants) the engine doesn't lay out. */
   skip(n: FixtureNode): void;
 }
@@ -162,6 +164,8 @@ class Grid {
   cells: Cell[] = [];
   /** Why the structure can't be laid out exactly, if it can't. */
   why?: string;
+  /** What makes its widths approximate (content it can't measure): it is laid out, and marked ≈. */
+  doubts = new Set<string>();
   notes: string[] = [];
   collapse: boolean;
   fixed: boolean;
@@ -322,13 +326,13 @@ class Grid {
           const td = cell.k.node.tag === "td" || cell.k.node.tag === "th";
           cell.colspan = td ? attrInt(cell.k.node, "colspan", 1, 1000) : 1;
           const rs = td ? attrInt(cell.k.node, "rowspan", 1, 65534, 0) : 1;
-          if (rs === 0) this.why ??= "rowspan=\"0\" (to the end of the row group) isn't modelled";
-          cell.rawRowspan = Math.max(1, rs);
+          // rowspan="0": every row left in its row group.
+          cell.rawRowspan = rs === 0 ? 65534 : Math.max(1, rs);
           cell.rowspan = Math.min(cell.rawRowspan, s.rows.length - i);
           cell.row = ri;
           cell.col = col;
           cell.section = this.rows[ri].section;
-          if (Math.max(1, rs) > 1) spanning.push({ col, span: cell.colspan, rows: Math.max(1, rs) });
+          if (cell.rawRowspan > 1) spanning.push({ col, span: cell.colspan, rows: cell.rawRowspan });
           count = Math.max(count, this.fixed ? col + cell.colspan : col + 1);
           col += cell.colspan;
           this.cells.push(cell);
@@ -561,7 +565,7 @@ class Grid {
 }
 
 /** A cell's min/max constraint (CreateCellInlineConstraint). */
-function cellConstraint(g: Grid, cell: Cell): CellC | string {
+function cellConstraint(g: Grid, cell: Cell): CellC {
   const p = cell.p;
   const bp = cell.border.left + cell.border.right + U(cell.padding.left + cell.padding.right);
   const w = p.width?.value;
@@ -571,26 +575,27 @@ function cellConstraint(g: Grid, cell: Cell): CellC | string {
     // The source's width is a border box unless the cell is content-box (its padding and the border it gets added).
     css = cell.contentBox ? U(w) + bp : Math.max(U(w), bp);
   } else if (w !== undefined && typeof w === "object") {
-    if (w.of) return "a cell width with a percentage inside calc(), min() or max() isn't modelled";
-    percent = f32(w.pct);
+    if (w.of) g.doubts.add("a cell width with a percentage inside calc(), min() or max() isn't modelled");
+    else percent = f32(w.pct);
   } else if (w === "fill") percent = 100;
-  else if (w === "fit") return "a cell with width: fit-content isn't modelled";
+  else if (w === "fit") g.doubts.add("a cell with width: fit-content isn't modelled");
   // Its max-width (fixed: caps both sizes; a percentage only caps a percentage width).
   const mw = p.measure?.value ?? p.maxWidth?.value;
   let cssMax: LU | undefined;
   if (typeof mw === "number") cssMax = cell.contentBox ? U(mw) + bp : Math.max(U(mw), bp);
-  else if (mw !== undefined && mw.of) return "a cell max-width with a percentage inside calc(), min() or max() isn't modelled";
+  else if (mw !== undefined && mw.of) g.doubts.add("a cell max-width with a percentage inside calc(), min() or max() isn't modelled");
   else if (mw !== undefined && percent !== undefined) percent = Math.min(percent, f32(mw.pct));
   let content: { min: number; max: number } | undefined;
   const sizes = () => {
     if (!content) {
       const c = g.h.content(cell.k);
-      if (c.why) throw new Error(c.why);
-      content = { min: U(c.min) + bp, max: U(c.max) + bp };
+      // Content it can't measure counts as none (the table is then approximate).
+      if (c.why) g.doubts.add(`its width comes from its cells' content, which can't be measured (${c.why})`);
+      content = c.why ? { min: bp, max: bp } : { min: U(c.min) + bp, max: U(c.max) + bp };
     }
     return content;
   };
-  try {
+  {
     let min = g.fixed ? 0 : sizes().min;
     let contentMax = css ?? sizes().max;
     if (cssMax !== undefined) {
@@ -600,8 +605,6 @@ function cellConstraint(g: Grid, cell: Cell): CellC | string {
     const max = Math.max(min, contentMax);
     const pbp = g.fixed && percent !== undefined && cell.contentBox ? bp : 0;
     return { min, max, ...(percent !== undefined && { percent }), pbp, constrained: css !== undefined };
-  } catch (e) {
-    return `its width comes from its cells' content, which can't be measured (${(e as Error).message})`;
   }
 }
 
@@ -952,7 +955,7 @@ function distributeColspanAuto(cs: Colspan, spacing: LU, cols: Column[]) {
 }
 
 /** ComputeColumnConstraints: the columns, from the <col> elements and the cells. */
-function columnConstraints(g: Grid): Column[] | string {
+function columnConstraints(g: Grid): Column[] {
   const cols = g.columnConstraintsFromElements(Infinity);
   const cellCs: (CellC | undefined)[] = [];
   const spans: Colspan[] = [];
@@ -968,7 +971,6 @@ function columnConstraints(g: Grid): Column[] | string {
         if (maxCol > size) size = maxCol;
         if (ignore) continue;
         const c = cellConstraint(g, cell);
-        if (typeof c === "string") return c;
         if (cell.colspan === 1) {
           const at = cellCs[cell.col];
           if (at) encompassCell(at, c);
@@ -1051,11 +1053,14 @@ function undistributableSpace(g: Grid, cols: Column[]): LU {
 }
 
 /** Caption min-content widths (with margins): the table is never narrower. */
-function captionMin(g: Grid): LU | string {
+function captionMin(g: Grid): LU {
   let min = 0;
   for (const cap of g.captions) {
     const c = g.h.content(cap.k);
-    if (c.why) return `its caption's width can't be measured (${c.why})`;
+    if (c.why) {
+      g.doubts.add(`its caption's width can't be measured (${c.why})`);
+      continue;
+    }
     const ins = insets(cap.p);
     const m = cap.p.margin?.value;
     const w = cap.p.width?.value;
@@ -1080,9 +1085,8 @@ export function tableInsets(g: Grid): { border: Sides; padding: Sides } {
 export function tableIntrinsic(g: Grid, allowPercent: boolean): TableIntrinsic {
   if (g.why) return { min: 0, max: 0, why: g.why };
   const cols = columnConstraints(g);
-  if (typeof cols === "string") return { min: 0, max: 0, why: cols };
   const cap = captionMin(g);
-  if (typeof cap === "string") return { min: 0, max: 0, why: cap };
+  if (g.doubts.size) return { min: 0, max: 0, why: [...g.doubts][0] };
   const und = undistributableSpace(g, cols);
   const mm = gridMinMax(cols, und, g.fixed, allowPercent);
   // Its min-width counts as content: it is never narrower.
@@ -1108,9 +1112,8 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
   const assumptions: string[] = [...g.notes];
   if (g.why) return { w, h: 0, children: [], assumptions: [g.why] };
   const cols = columnConstraints(g);
-  if (typeof cols === "string") return { w, h: 0, children: [], assumptions: [cols] };
   const capMin = captionMin(g);
-  if (typeof capMin === "string") return { w, h: 0, children: [], assumptions: [capMin] };
+  assumptions.push(...g.doubts);
   const bpX = g.border.left + g.border.right + g.padding.left + g.padding.right;
   const und = undistributableSpace(g, cols);
   let assignable: LU;
@@ -1154,6 +1157,8 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
     const b = h.measure(cap.k, PX(tableW), undefined, {});
     const free = U(PX(tableW) - b.w - m.left - m.right);
     const x = m.autoLeft && m.autoRight ? U(m.left) + Math.trunc(free / 2) : m.autoLeft ? U(m.left) + Math.max(0, free) : U(m.left);
+    const d = h.doubtful(b);
+    if (d) assumptions.push(`its width and height depend on its caption #${b.id}, which the engine can't guarantee (${d})`);
     return { cap, b, x, m, side: cap.p.part?.value.side ?? "top" };
   });
   const capsH = capBoxes.reduce((s, c) => s + U(c.b.h) + U(c.m.top) + U(c.m.bottom), 0);
@@ -1176,17 +1181,26 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
     natural: LU;
     baseline?: LU;
   }
+  // A doubt about a cell whose content sizes columns (every cell; in fixed layout the first row's)
+  // is about the whole table; one that only changes a row's height (fixed layout's later rows, a
+  // baseline it can't place) is the cell's: its row and what's below move (the engine's spread).
+  const firstRow = g.sections.find((s) => s.rows.length)?.rows[0];
+  const sizesColumns = (cell: Cell) => !g.fixed || cell.row === firstRow || !g.rows[cell.row].k;
   const laid: Laid[] = g.cells.map((cell) => {
     const cw = PX(cellW(cell));
     const box = h.measure(cell.k, cw, cw, over(cell));
     const natural = U(box.h);
+    const d = h.doubtful(box);
+    if (d && sizesColumns(cell)) assumptions.push(`its columns depend on #${box.id}, which the engine can't guarantee (${d})`);
+    // Doubts about a row's height alone (a cell in an anonymous row: about the table's).
+    const heightDoubt = (why: string) => (g.rows[cell.row].k ? box.assumptions : assumptions).push(why);
     let baseline: LU | undefined;
     if (cell.align === "baseline") {
       const bl = firstBaseline(h, box);
-      if (bl === "unknown") assumptions.push(`a cell aligned to its row's baseline whose first line's baseline isn't known (<${cell.k.node.tag}> #${box.id})`);
+      if (bl === "unknown") heightDoubt(`a cell aligned to its row's baseline whose first line's baseline isn't known (<${cell.k.node.tag}> #${box.id})`);
       else baseline = bl;
     }
-    if (box.props.heightPct || box.children.some((k) => k.props.heightPct)) assumptions.push(`a percentage height inside a table cell isn't modelled (#${box.id})`);
+    if (box.props.heightPct || box.children.some((k) => k.props.heightPct)) heightDoubt(`a percentage height inside a table cell isn't modelled (#${box.id})`);
     return { cell, box, natural, ...(baseline !== undefined && { baseline }) };
   });
   const laidOf = new Map(laid.map((l) => [l.cell, l]));

@@ -76,6 +76,26 @@ describe("tables", () => {
     expect(t.box("t").children).toEqual([]);
   });
 
+  it("what it can't place is ≈ on its own: a doubt about one row's height leaves the rows above exact", () => {
+    // Fixed layout: a later row's cells don't size the columns; one in a font without metrics makes
+    // only its row (and what's below) approximate.
+    const t = run(
+      `<table class="t"><tr class="r0"><td class="a">One</td><td class="b">Two</td></tr><tr class="r1"><td class="odd">Unmeasured</td><td>x</td></tr><tr class="r2"><td class="c">Three</td><td>y</td></tr></table><p class="after">After</p>`,
+      `.t { table-layout: fixed; width: 300px } .odd { font-family: Unmeasured } p { margin: 0 }`,
+    );
+    expect([t.approx("r0"), t.approx("a"), t.approx("b")]).toEqual([undefined, undefined, undefined]);
+    for (const id of ["r1", "odd", "r2", "c", "t", "after"]) expect(t.approx(id)).toBeDefined();
+    // In auto layout the same cell sizes the columns: the whole table is approximate.
+    const a = run(`<table class="t"><tr><td class="a">One</td></tr><tr><td class="odd">Unmeasured</td></tr></table>`, `.odd { font-family: Unmeasured }`);
+    expect(a.approx("a")).toBeDefined();
+  });
+
+  it("rowspan=\"0\" spans the rows left in its row group", () => {
+    const t = run(`<table class="t"><tr><td class="s" rowspan="0">All</td><td>1</td></tr><tr><td>2</td></tr><tr><td>3</td></tr></table>`, ``);
+    expect(t.box("s").h).toBe(82);
+    expect(t.exact()).toBe(true);
+  });
+
   it("a content-box cell's width leaves out its padding and the borders it gets", () => {
     const t = run(`<table class="t"><tr><td class="w">A</td><td>B</td></tr></table>`, `.t { border-collapse: collapse } .t td { border: 3px solid; padding: 4px } .w { width: 50px }`);
     // 50 + 4 + 4 + 1.5 + 1.5 (half of each collapsed 3px border).

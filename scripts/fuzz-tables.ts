@@ -139,7 +139,7 @@ function genCase(seed: number): { html: string; css: string; widths: number[] } 
         let c = 0;
         while (c < cols) {
           const colspan = !divs && r.chance(0.12) ? Math.min(r.int(2, 3), cols - c + (r.chance(0.2) ? 1 : 0)) : 1;
-          const rowspan = !divs && r.chance(0.08) ? r.int(2, 3) : 1;
+          const rowspan = !divs && r.chance(0.08) ? r.pick([2, 2, 3, 0]) : 1;
           const decls = [...textStyle()];
           if (r.chance(0.2)) decls.push(...border(1, 4));
           if (r.chance(0.2)) decls.push(`padding: ${px(0, 10)}`);
@@ -152,7 +152,7 @@ function genCase(seed: number): { html: string; css: string; widths: number[] } 
           const t = tag(th ? "th" : "td");
           const content = r.chance(0.08) ? "" : r.chance(0.15) ? `<div>${words(r, 1, 6)}</div><div>${words(r, 1, 6)}</div>` : r.chance(0.06) ? `<span class="pill">${words(r, 1, 2)}</span>` : words(r, 0, r.chance(0.3) ? 14 : 4) || "x";
           const ca = attrs("td", [r.chance(0.05) ? ` width="${r.chance(0.7) ? r.int(20, 150) : `${r.int(5, 40)}%`}"` : "", r.chance(0.05) ? ` valign="${r.pick(["top", "bottom", "middle", "baseline"])}"` : "", r.chance(0.04) ? " nowrap" : ""].join(""));
-          s += `<${t}${cc ? ` class="${cc}"` : ""}${colspan > 1 ? ` colspan="${colspan}"` : ""}${rowspan > 1 ? ` rowspan="${rowspan}"` : ""}${ca}>${content}</${t}>`;
+          s += `<${t}${cc ? ` class="${cc}"` : ""}${colspan > 1 ? ` colspan="${colspan}"` : ""}${rowspan !== 1 ? ` rowspan="${rowspan}"` : ""}${ca}>${content}</${t}>`;
           c += colspan;
         }
         s += `</${tag("tr")}>`;
