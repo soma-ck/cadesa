@@ -1287,6 +1287,20 @@ export abstract class PageLifter {
         decl(p, v, o.utility);
       }
       this.aspectWithHeight(el, si, out, decl, parentDisplay, parentRole);
+      // flex: 0 0 <length> in a row: neither grows nor shrinks, so it is that wide (the basis beats a width).
+      if (parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si)) {
+        const fl = res("flex") ? parseFlex(res("flex")!) : undefined;
+        const grow = parseFloat(res("flex-grow") ?? String(fl?.grow ?? 0));
+        const shrink = parseFloat(res("flex-shrink") ?? String(fl?.shrink ?? 1));
+        const basisRaw = own.get("flex-basis") ?? (fl ? own.get("flex") : undefined);
+        const basis = own.get("flex-basis") ? this.resolveBox(el, si, own.get("flex-basis")!.value) : fl?.basis !== undefined && /\d/.test(fl.basis) ? (/\dem\b/.test(fl.basis) ? `${fmtNum(parseFloat(fl.basis) * this.textOf(el, si).size)}px` : fl.basis) : undefined;
+        const px = basis !== undefined ? lengthExpr(this.mathValue(el, si, "flex-basis", basis, basisRaw?.utility ?? "flex")) : undefined;
+        if (grow === 0 && shrink === 0 && px && !/^0(px)?$/.test(px.css)) {
+          for (const p of ["flex", "flex-grow", "flex-shrink", "flex-basis"]) out.delete(p);
+          decl("width", px.css, `${basisRaw?.utility ?? "flex"} (flex: 0 0 ${basis}: as wide as its basis)`);
+          el.noShrink[si] = undefined;
+        }
+      }
       // Baseline alignment in its row: pushed down by the difference in top insets (see baselineShifts).
       const shift = el.baselineShift[si];
       if (shift) {

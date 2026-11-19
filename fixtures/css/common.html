@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: everyday CSS from app stylesheets</title>
+    <link rel="stylesheet" href="common.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <header class="masthead">
+      <a class="brand" href="/"><span class="logo">Brand</span></a>
+      <p class="tagline">Field service, inspections and certificates</p>
+    </header>
+    <main class="page">
+      <h1 class="title">Inspection schedule for the coming weeks</h1>
+      <p class="lead">Every site visit, sorted by region, with the inspector who signed it off and the certificates that are still outstanding.</p>
+      <div class="controls">
+        <div class="play"></div>
+        <div class="steps">
+          <p class="step">Plan</p>
+          <p class="step">Visit</p>
+          <p class="step">Inspect</p>
+          <p class="step">Report</p>
+          <p class="step">Certify</p>
+          <p class="step">Archive</p>
+        </div>
+      </div>
+      <section class="layout">
+        <aside class="sidebar"><p class="side">Regions and filters</p></aside>
+        <div class="main"><p class="body">The main column takes what the sidebar leaves, in layout units, and wraps its text as the width changes.</p></div>
+      </section>
+      <div class="shares">
+        <p class="share">One part</p>
+        <p class="share">Two parts of the space</p>
+      </div>
+      <div class="tiles">
+        <p class="tile">Overdue</p>
+        <p class="tile">Due this week with a longer label</p>
+        <p class="tile">Done</p>
+      </div>
+      <div class="cards">
+        <div class="card"><p class="card-title">Nonconformances</p><p class="card-body">Inspections, nonconformances and certifications</p></div>
+        <div class="card"><p class="card-title">Certificates</p><p class="card-body">Issued after each visit</p></div>
+      </div>
+      <div class="facts">
+        <span class="fact-label">Status</span>
+        <span class="fact-value">Awaiting sign-off</span>
+        <span class="fact-badge">New</span>
+      </div>
+      <div class="fixed">
+        <div class="fill"><p class="fill-text">Full height of a 140px box</p></div>
+      </div>
+      <section class="hero"><p class="hero-text">A hero at least 200px tall, in points and viewport widths</p></section>
+      <div class="content">
+        <div class="row"><div class="col"><p class="col-text">A gutter row whose container has no padding</p></div></div>
+      </div>
+      <div class="center">
+        <div class="dialog"><p class="dialog-title">Sign in</p><p class="dialog-body">Centred in a grid at least as tall as the viewport</p></div>
+      </div>
+    </main>
+  </body>
+</html>
