@@ -33,6 +33,49 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   `position: relative` offsets shift the box and what it holds; sticky is predicted at scroll
   position 0 and contains absolute children. In a source: `position: { type, top, right, ... }`
   and `page.windowHeight`.
+- `::before` and `::after` are laid out from their own cascade. Positioned ones (decorative
+  layers, ribbons) move nothing. An empty table or block (the clearfix) is a box of no height:
+  the table keeps the last child's margin inside, the block lets it through, and `clear` does
+  nothing where nothing floats. Text content (`"/"`, `"\2022"`) is an inline run at the start or
+  end of the element's text, with its own weight and padding; a `::before` floated to the start
+  of a text box (Bootstrap's breadcrumb divider) shortens its first line. A sized `::before` is a
+  flex item or a grid cell. Text in a font without metrics (an icon font), and `counter()`,
+  `attr()` or `url()` content, stay `≈`.
+- Inline runs in another weight (`<strong>`, `<b>`, `.fw-semibold`) are measured at their weight,
+  with lines broken across runs as Chromium does (no kerning across a change of font, or across
+  an inline box's margin, border or padding, which take room on the line). Italic text is exact
+  when the page loads no italic face of its font (it is the upright face slanted).
+- A percentage `column-gap` in a flex row or grid is a share of the content width (and counts as
+  0 in intrinsic sizes, as in Chromium). A percentage row gap of a flex container whose height is
+  auto is 0; a grid's percentage row gap stays `≈`. In a source: a cluster or grid `gap` may name
+  a percentage size token.
+- `height: 100%` (any percentage) inside a flex or grid item that its row stretches is of the
+  item's stretched height, as Chromium resolves it once the row is laid out (Bootstrap's `.h-100`
+  card in a `.col`): the only in-flow child of a block or column-flex item, border-box or without
+  vertical padding and border. In a source, `height` may name a percentage size token: of the
+  parent's content height once that is definite (stretched, or set), auto until then.
+- Font vertical metrics: metrics tables record each face's ascent, descent, line gap and
+  x-height as Chromium measures them (`cadesa metrics` and `cadesa fonts --measure` add them;
+  `npm run metrics:vertical` added them to the bundled tables and the font fixtures from the same
+  files, nothing else changed). Older tables still load; without vertical metrics the cases
+  below stay `≈` as before. With them:
+  - An inline-block alone on its line in block flow (a lone button, a badge, an icon in a
+    button) is exact for `vertical-align: baseline` and `middle` in any font and size: its line
+    box is the union of the line's strut (ascent and descent rounded per size, the leading split
+    as Chromium splits it) and its margin box. Where the strut reaches past it, its parent's
+    padding takes the difference (text that may wrap is checked at each width). `text-align:
+    center` and `right` place it as Chromium does. Its only content an inline-block, a box is
+    no longer a text box.
+  - An inline element alone between blocks (a smaller note under a card's figures): each of its
+    lines is the union of the parent's strut and its own, so the boxes around it are exact; its
+    own rectangle (its text's content area) stays `≈`.
+  - `line-height: normal` is the font's ascent, descent and line gap.
+  - `align-items: baseline` in a flex row aligns text items in different fonts, sizes and line
+    heights (each first baseline is its strut's ascent below its content edge).
+  - A text field (`text`, `email`, `search`, `password`, `tel`, `url`, `number`), with or
+    without native appearance, is one line of its line height, never shorter than normal, plus
+    padding and border; alone on its line it is placed like any inline-block. A `<select>`
+    keeps its native height (`≈`) unless `appearance: none`.
 - More selectors are decided from the page: `:lang()`, `:dir()`, `:open`, `:placeholder-shown`,
   `:read-only` / `:read-write`, `:valid` / `:invalid` for required controls, `:in-range`,
   `:nth-child(An+B of S)`, `:scope`, `:host`; vendor pseudo-classes Chromium rejects match

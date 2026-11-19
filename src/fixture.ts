@@ -22,13 +22,58 @@ export interface FixtureNode {
    * (<a href>, <u>, <ins>, <s>, <del>, <strike>). `items`: where inline elements start or end in
    * the run (character offsets): Chromium measures each such piece of text separately when fitting lines.
    */
-  runMeta: { inBlock: boolean; underlined: boolean; items: number[] }[];
+  runMeta: RunMeta[];
   children: FixtureNode[];
   /**
    * Not an element: a run of text between block-level children (an anonymous block, or an
    * anonymous flex or grid item), laid out as a text box of its own. It has no box in the DOM.
    */
   anonymous?: boolean;
+}
+
+/** How a run of text is laid out, beyond its characters. */
+export interface RunMeta {
+  inBlock: boolean;
+  underlined: boolean;
+  items: number[];
+  /**
+   * Inline boxes of the run with something of their own (character offsets `from`-`to`, at item
+   * edges): text measured at another weight, and the margin, border and padding at their start
+   * (`open`) and end (`close`), in px.
+   */
+  spans?: Span[];
+  /**
+   * A float at the start of the run (a ::before with float: left): its text, at its weight, and its
+   * margin, border and padding (px). The first line fits beside it.
+   */
+  lead?: { text: string; weight?: number; extra: number };
+}
+
+export interface Span {
+  from: number;
+  to: number;
+  weight?: number;
+  open?: number;
+  close?: number;
+}
+
+/** What an inline element adds to the text it is part of (see textAndRuns). */
+export interface InlineInfo {
+  weight?: number;
+  open?: number;
+  close?: number;
+  /** Generated content at its start and end (::before, ::after), laid out as inline boxes. */
+  before?: Generated;
+  after?: Generated;
+}
+
+export interface Generated {
+  text: string;
+  weight?: number;
+  open?: number;
+  close?: number;
+  /** Floated to the start of the first line instead: a box as wide as its text plus `open` and `close`. */
+  float?: boolean;
 }
 
 export interface Fixture {
@@ -59,9 +104,11 @@ const BLOCK = new Set([
   "p", "pre", "section", "summary", "table", "tr", "ul",
 ]);
 
-function textOf(n: P5Node, skip?: (n: P5Node) => boolean): string {
+function textOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) => InlineInfo | undefined): string {
   if (n.nodeName === "#text") return n.value ?? "";
-  return (n.childNodes ?? []).filter((c) => !skip?.(c)).map((c) => textOf(c, skip)).join("");
+  const info = inline?.(n);
+  const inner = (n.childNodes ?? []).filter((c) => !skip?.(c)).map((c) => textOf(c, skip, inline)).join("");
+  return `${info?.before && !info.before.float ? info.before.text : ""}${inner}${info?.after ? info.after.text : ""}`;
 }
 
 const UNDERLINED = new Set(["u", "ins", "s", "del", "strike"]);
@@ -69,12 +116,18 @@ const UNDERLINED = new Set(["u", "ins", "s", "del", "strike"]);
 /** Marks an inline element's start or end in raw run text. */
 const EDGE = "\u0001";
 
+/** Marks span `i` opening (OPEN i END) or closing (CLOSE i END), next to an EDGE. Control characters never occur in collapsed text. */
+const OPEN = "\u0002";
+const CLOSE = "\u0004";
+const END = "\u0003";
+
 /** collapse(), also returning where the EDGE marks fall (in characters of the collapsed text). */
-function collapseItems(raw: string): { text: string; items: number[] } {
+function collapseItems(raw: string): { text: string; items: number[]; marks: { id: number; open: boolean; at: number }[] } {
   let out = "";
   let n = 0;
   let pending = false;
   const items: number[] = [];
+  const marks: { id: number; open: boolean; at: number }[] = [];
   const space = () => {
     // A collapsible space after another one (even across an element edge) disappears.
     if (pending && n > 0 && !out.endsWith(" ")) {
@@ -83,7 +136,15 @@ function collapseItems(raw: string): { text: string; items: number[] } {
     }
     pending = false;
   };
-  for (const ch of raw) {
+  const chars = [...raw];
+  for (let i = 0; i < chars.length; i++) {
+    const ch = chars[i];
+    if (ch === OPEN || ch === CLOSE) {
+      const end = chars.indexOf(END, i);
+      marks.push({ id: Number(chars.slice(i + 1, end).join("")), open: ch === OPEN, at: n });
+      i = end;
+      continue;
+    }
     if (ch === EDGE) {
       // A space before an edge belongs to the text before it.
       space();
@@ -97,23 +158,69 @@ function collapseItems(raw: string): { text: string; items: number[] } {
   }
   const text = out.replace(/ $/, "");
   const len = [...text].length;
-  return { text, items: items.filter((b) => b < len) };
+  return { text, items: items.filter((b) => b < len), marks: marks.map((m) => ({ ...m, at: Math.min(m.at, len) })) };
 }
 
-function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): { runs: string[]; runMeta: FixtureNode["runMeta"] } {
+function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) => InlineInfo | undefined): { runs: string[]; runMeta: FixtureNode["runMeta"] } {
   const runs: string[] = [];
   const runMeta: FixtureNode["runMeta"] = [];
   let cur = "";
   let underlined = false;
   let depth = 0;
+  /** Spans with something of their own, by id; `live`: open ones (carried into the next run when a <br> splits them). */
+  const spans: { weight?: number; open?: number; close?: number }[] = [];
+  const live: number[] = [];
+  let lead: RunMeta["lead"];
+  /** Spans open when a run starts (split from the run before by a <br>): they start at 0, with no open edge. */
+  let carried: number[] = [];
   const flush = () => {
-    const { text: t, items } = collapseItems(cur);
+    const { text: t, items, marks } = collapseItems(cur);
     if (t) {
       runs.push(t);
-      runMeta.push({ inBlock: depth > 0, underlined, items });
+      const out: Span[] = [];
+      const from = new Map<number, { at: number; opened: boolean }>();
+      for (const id of carried) from.set(id, { at: 0, opened: false });
+      for (const m of marks) {
+        if (m.open) from.set(m.id, { at: m.at, opened: true });
+        else {
+          const f = from.get(m.id) ?? { at: 0, opened: false };
+          from.delete(m.id);
+          const sp = spans[m.id];
+          out.push({ from: f.at, to: m.at, ...(sp.weight !== undefined && { weight: sp.weight }), ...(f.opened && sp.open && { open: sp.open }), ...(sp.close && { close: sp.close }) });
+        }
+      }
+      const len = [...t].length;
+      for (const [id, f] of from) {
+        const sp = spans[id];
+        out.push({ from: f.at, to: len, ...(sp.weight !== undefined && { weight: sp.weight }), ...(f.opened && sp.open && { open: sp.open }) });
+      }
+      const useful = out.filter((s) => s.weight !== undefined || s.open || s.close);
+      runMeta.push({ inBlock: depth > 0, underlined, items, ...(useful.length && { spans: useful.sort((a, b) => a.from - b.from || b.to - a.to) }), ...(lead !== undefined && runs.length === 1 && { lead }) });
     }
+    carried = [...live];
     cur = "";
     underlined = false;
+  };
+  /** Text in an inline box of its own (an element, or generated content). */
+  const span = (info: { weight?: number; open?: number; close?: number } | undefined, body: () => void) => {
+    if (!info || (info.weight === undefined && !info.open && !info.close)) {
+      cur += EDGE;
+      body();
+      cur += EDGE;
+      return;
+    }
+    const id = spans.push(info) - 1;
+    cur += EDGE + OPEN + id + END;
+    live.push(id);
+    body();
+    live.splice(live.indexOf(id), 1);
+    carried = carried.filter((x) => x !== id);
+    cur += CLOSE + id + END + EDGE;
+  };
+  const generated = (g: Generated | undefined) => {
+    if (!g) return;
+    if (g.float) lead = { text: collapse(g.text), ...(g.weight !== undefined && { weight: g.weight }), extra: (g.open ?? 0) + (g.close ?? 0) };
+    else span(g, () => (cur += g.text));
   };
   const walk = (k: P5Node, u: boolean) => {
     if (skip?.(k)) return;
@@ -124,17 +231,26 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): { runs: string[]; run
     else if (k.tagName && BLOCK.has(k.tagName)) {
       flush();
       depth++;
+      const info = inline?.(k);
+      generated(info?.before);
       (k.childNodes ?? []).forEach((c) => walk(c, u));
+      generated(info?.after);
       flush();
       depth--;
     } else {
       const ul = u || UNDERLINED.has(k.tagName ?? "") || (k.tagName === "a" && attr(k, "href") !== undefined);
-      cur += EDGE;
-      (k.childNodes ?? []).forEach((c) => walk(c, ul));
-      cur += EDGE;
+      const info = inline?.(k);
+      span(info, () => {
+        generated(info?.before);
+        (k.childNodes ?? []).forEach((c) => walk(c, ul));
+        generated(info?.after);
+      });
     }
   };
+  const own = inline?.(n);
+  generated(own?.before);
   (n.childNodes ?? []).forEach((c) => walk(c, false));
+  generated(own?.after);
   flush();
   return { runs, runMeta };
 }
@@ -143,8 +259,8 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean): { runs: string[]; run
  * Text and runs of a parse5 element, leaving out descendants `skip` rejects (e.g. elements that
  * are never displayed). Same rules as the fixture parser.
  */
-export function textAndRuns(n: P5Node, skip?: (n: P5Node) => boolean): { text: string; runs: string[]; runMeta: FixtureNode["runMeta"] } {
-  return { text: collapse(textOf(n, skip)), ...runsOf(n, skip) };
+export function textAndRuns(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) => InlineInfo | undefined): { text: string; runs: string[]; runMeta: FixtureNode["runMeta"] } {
+  return { text: collapse(textOf(n, skip, inline)), ...runsOf(n, skip, inline) };
 }
 
 function convert(n: P5Node): FixtureNode {

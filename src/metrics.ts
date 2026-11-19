@@ -76,6 +76,43 @@ export interface MetricsFile {
    * Chromium shapes without ligatures and contextual alternates.
    */
   contextual?: Record<string, Record<string, number>>;
+  /**
+   * Vertical metrics as Chromium uses them (its font's ascent, descent, line gap and x-height),
+   * measured at a font size of `size` px (the units per em, so they are whole font units), per
+   * face weight (a variable font: at 400). Chromium rounds the ascent, descent and line gap to
+   * whole px at each size; they place the baseline in a line box and size line-height: normal.
+   * Tables from before they were measured leave them out.
+   */
+  vertical?: { size: number; byWeight: Record<string, VerticalMetrics> };
+}
+
+export interface VerticalMetrics {
+  ascent: number;
+  descent: number;
+  lineGap: number;
+  xHeight: number;
+}
+
+/**
+ * Measure a font's vertical metrics in a Chromium page where it is loaded as `family` (a CSS
+ * font-family value), at `size` px: canvas reports its ascent and descent, a line of line-height:
+ * normal its line gap, and an ex its x-height.
+ */
+export async function measureVertical(page: import("playwright-core").Page, family: string, weight: number, size: number): Promise<VerticalMetrics> {
+  return (await page.evaluate(`(async ({ FAMILY, W, S }) => {
+    const font = W + " " + S + "px " + FAMILY;
+    await document.fonts.load(font);
+    const ctx = document.createElement("canvas").getContext("2d");
+    ctx.font = font;
+    const m = ctx.measureText("x");
+    const box = document.createElement("div");
+    box.style.cssText = "position:absolute;left:0;top:0;white-space:nowrap;line-height:normal;font:" + font + ";line-height:normal";
+    box.innerHTML = 'x<span style="display:inline-block;width:1ex;height:0"></span>';
+    document.body.appendChild(box);
+    const out = { ascent: m.fontBoundingBoxAscent, descent: m.fontBoundingBoxDescent, lineGap: box.getBoundingClientRect().height - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent, xHeight: box.lastChild.getBoundingClientRect().width };
+    box.remove();
+    return out;
+  })(${JSON.stringify({ FAMILY: family, W: weight, S: size })})`)) as VerticalMetrics;
 }
 
 export interface MetricsFace {
@@ -330,6 +367,11 @@ export async function generateMetrics(opts: {
       fine?: MetricsFile["fine"];
       loaded: boolean;
     };
+    // Vertical metrics at the units per em, where they are whole font units.
+    const vSize = (bytes && fontFileInfo(bytes)?.unitsPerEm) || 2048;
+    const vWeights = opts.system ? weights : [opts.weight ?? 400];
+    const vertical: NonNullable<MetricsFile["vertical"]> = { size: vSize, byWeight: {} };
+    if (result.loaded) for (const w of vWeights) vertical.byWeight[w] = await measureVertical(page, family, w, vSize);
     await page.close();
     if (!result.loaded)
       throw new Error(
@@ -355,6 +397,7 @@ export async function generateMetrics(opts: {
       kernChars: result.chars,
       ...(result.fine && { fine: result.fine }),
       ...(Object.values(result.contextual).some((c) => Object.keys(c).length) && { contextual: result.contextual }),
+      vertical,
     };
     const upm = (bytes && fontFileInfo(bytes)?.unitsPerEm) || unitsPerEm(m);
     if (upm) m.upm = upm;
@@ -438,6 +481,10 @@ export function writeMetrics(m: MetricsFile, dir: string, opts: { gzip?: boolean
         kerning: { ...prev.kerning, ...cur.kerning },
         ...((prev.kerningSpaced || cur.kerningSpaced) && { kerningSpaced: { ...prev.kerningSpaced, ...cur.kerningSpaced } }),
         ...((prev.contextual || cur.contextual) && { contextual: { ...prev.contextual, ...cur.contextual } }),
+        // Each face's vertical metrics, when every face has them at one size.
+        ...(prev.vertical && cur.vertical && prev.vertical.size === cur.vertical.size
+          ? { vertical: { size: cur.vertical.size, byWeight: { ...prev.vertical.byWeight, ...cur.vertical.byWeight } } }
+          : { vertical: undefined }),
         ...(files.length && { files }),
         ...(missing && { missing }),
       };

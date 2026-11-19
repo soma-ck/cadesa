@@ -194,8 +194,14 @@ describe("heights", () => {
     expect(r.exact()).toBe(true);
   });
 
-  it("height: 100% inside a flex item, whose height may be stretched, is ≈", () => {
-    const r = run(`<div class="row"><div class="col"><div class="h-100"><p>In a column</p></div></div></div>`, `p { margin: 0 } .row { display: flex } .h-100 { height: 100% }`, [400]);
+  it("height: 100% inside a stretched flex item is of the item's stretched height", () => {
+    const r = run(`<div class="row"><div class="col"><div class="h-100"><p>In a column</p></div></div><p class="tall">Two<br>lines</p></div>`, `p { margin: 0 } .row { display: flex } .h-100 { height: 100% }`, [400]);
+    expect(r.approx("h-100")).toBeUndefined();
+    expect(r.box("h-100").h).toBe(48);
+  });
+
+  it("height: 100% inside a flex item that isn't stretched is ≈", () => {
+    const r = run(`<div class="row"><div class="col"><div class="h-100"><p>In a column</p></div></div></div>`, `p { margin: 0 } .row { display: flex; align-items: center } .h-100 { height: 100% }`, [400]);
     expect(r.approx("h-100")).toMatch(/may be stretched/);
   });
 });
@@ -282,9 +288,11 @@ describe("align-items: baseline", () => {
     expect(r.exact()).toBe(true);
   });
 
-  it("text in different sizes needs the font's vertical metrics: ≈", () => {
+  it("text in different sizes: each first baseline from its font's vertical metrics", () => {
     const r = run(`<div class="r2"><span class="a">Small</span><span class="big">Big heading</span></div>`, `.r2 { display: flex; align-items: baseline; gap: 8px } .big { font-size: 28px }`, [400]);
-    expect(r.approx("a")).toMatch(/baseline/);
+    expect(r.approx("a")).toBeUndefined();
+    // Chromium: 16px/24px text's baseline is 18px below its top, 28px/42px text's 31px.
+    expect([r.box("a").y, r.box("big").y, r.box("r2").h]).toEqual([13, 0, 42]);
   });
 });
 
@@ -304,7 +312,7 @@ describe("elements not laid out are counted", () => {
 
 describe("advice on a lifted page is in CSS terms", () => {
   it("no layout: { pattern }, text roles or size tokens", () => {
-    const r = run(`<section class="g"><p>One</p></section><p class="n">Normal</p><img class="i" src="x.png">`, `p { margin: 0 } .g { display: grid; grid-template-columns: minmax(200px, 1fr) auto } .n { line-height: normal }`, [400]);
+    const r = run(`<section class="g"><p>One</p></section><p class="n">Normal</p><img class="i" src="x.png">`, `p { margin: 0 } .g { display: grid; grid-template-columns: minmax(200px, 1fr) auto } .n { font-family: Unmeasured; line-height: normal }`, [400]);
     const text = r.findings.map((f) => f.message).join("\\n");
     expect(text).not.toMatch(/pattern:|text: <role>|size token|add aspect/);
     expect(text).toMatch(/the children of #g aren.t laid out: its display \(or grid template\) has no Cadesa equivalent/);

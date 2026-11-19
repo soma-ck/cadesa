@@ -265,8 +265,8 @@ The engine ([`src/engine/`](src/engine/)) is the spec: its box tree depends only
 | --- | --- | --- |
 | `npm run fuzz` | **differential fuzzer**: random pages covering the whole language | 39,597 pages at 148,328 widths: **688,902 boxes, 0 disagreements** (0 again on fresh seeds) |
 | `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 19,056 boxes marked exact match (400 left `≈`) |
-| `conformance:bootstrap` | six Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` (navbar collapse, grid, cards, tables, `d-*` utilities) | all 13,303 boxes marked exact match; one page fully exact, the rest held back mostly by font vertical metrics. Where a box is `≈` but `check` treats its size as known, the size matches too |
-| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms | all 9,912 boxes marked exact match, every 10px from 320 to 1440px |
+| `conformance:bootstrap` | six Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` (navbar collapse, grid, cards, tables, `d-*` utilities) | all 31,341 of 38,913 boxes are marked exact, and all match; what's left is mostly table contents and percentage margins. Where a box is `≈` but `check` treats its size as known, the size matches too |
+| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms, generated content and runs in another weight, line boxes and text fields | all 30,923 boxes marked exact match, every 10px from 320 to 1440px |
 | `conformance:fonts` | Roboto (variable, from Google Fonts) and Lato (two static faces via `@font-face`) | 5,474 of 5,474, and the line count of all 4,347 text boxes, over 161 widths |
 | `conformance:landing` | grid, text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
@@ -325,7 +325,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `layout.pattern: grid` + `min` | size token | `grid-template-columns: repeat(auto-fill, minmax(min(<min>, 100%), 1fr))` |
 | `layout.pattern: layer` | | one grid cell holding every child: text over a photo, a badge over a card |
 | `layout.pattern: flow` | | ordinary block flow (`display: block`): children stack, vertical margins collapse as in the browser |
-| `layout.gap` | space token | `gap` |
+| `layout.gap` | space token (cluster, grid: or a percentage size token, between columns) | `gap` |
 | `layout.align` | `start`, `center`, `end`, `stretch` | `align-items` (cluster defaults to `center`, grid and layer to `stretch`; not for stack) |
 | `layout.justify` | `start`, `end`, `center`, `between`, `around`, `evenly` | `justify-content` in a cluster, distributed as Chromium does |
 | `layout.wrap` | `false` | a one-line row (`flex-wrap: nowrap`) whose items shrink to fit |
@@ -333,7 +333,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `padding` | space token, or `{ block, inline }` | `padding` (a missing axis is 0) |
 | `margin` | space token (negative allowed), `auto`, `{ block, inline }` or `{ top, right, bottom, left }` | `margin`; collapses between blocks in `flow`, adds to the outer size in stacks, rows and grids |
 | `width` | size token (px, rem or `"50%"`), `fill` or `fit` | fixed width, stretch in a stack, or `fit-content`. Unset: stretch in a stack, sized to its content in a cluster |
-| `height` | size token | `height` |
+| `height` | size token (a percentage: of a stretched or set parent height) | `height` |
 | `maxWidth` | size token | a centered column (`max-width` + `margin-inline: auto`), e.g. content inside a full-bleed band |
 | `measure` | size token | a left-aligned `max-width`: a comfortable line length |
 | `aspect` | `"16:9"` | `aspect-ratio`: the height follows the width |
@@ -350,7 +350,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 
 ## Roadmap
 
-- **Font vertical metrics** (ascent, descent, x-height), so inline-blocks centred on a line of text (most lone buttons) and inline spans become exact. This is the biggest remaining cause of `≈` on Bootstrap pages.
+- **Inline layout beyond one box per line:** several inline-blocks sharing a line, and the rectangle of an inline span (its lines are exact; its own content-area box is `≈`).
 - **Tables, floats,** explicit grid templates and percentage padding, which are reported as `≈` today.
 - **More of Tailwind:** `dark:` and container queries.
 

@@ -58,11 +58,17 @@ describe("text that runs together", () => {
     expect(f.map((x) => x.width)).toEqual([800]);
   });
 
-  it("is inconclusive when generated content may separate them", () => {
-    const f = spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: "" }`);
+  it("is inconclusive when generated content Cadesa can't read may separate them", () => {
+    const f = spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: counter(item) }`);
     expect(f).toHaveLength(1);
     expect(f[0].inconclusive).toBe(true);
-    expect(f[0].message).toMatch(/may run together as "Total42" in #a: t\.css:2 \.sep::after adds content Cadesa doesn't model$/);
+    expect(f[0].message).toMatch(/may run together as "Total42" in #a: \.sep::after \(t\.css:2\) adds content Cadesa doesn't model$/);
+  });
+
+  it("reads generated text and its padding: an empty ::after separates nothing, a \":\" or padding does", () => {
+    expect(spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: "" }`).map((x) => x.inconclusive)).toEqual([undefined]);
+    expect(spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: ":" }`)).toEqual([]);
+    expect(spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: ""; padding-right: 4px }`)).toEqual([]);
   });
 });
 
@@ -130,12 +136,13 @@ describe("lone buttons on their line, and transforms (fixtures/css/inline.html, 
   // Uncertain in size (not just moved by the cases above it).
   const unsure = new Set(imp.uncertain.filter((u) => u.effects.some((e) => e !== "position")).map((u) => u.id));
 
-  it("keeps a button exact when its box contains the line's strut, not when a set height is shorter than the line", () => {
+  it("keeps a button exact when its box contains the line's strut, and when the strut reaches past it (from the font's vertical metrics), not when a set height centers its text", () => {
     expect(unsure.has("same-slot")).toBe(false);
     expect(unsure.has("tall-slot")).toBe(false);
-    // Chromium: the slot is 40px tall (8 + a 24px line + 8), not 8 + 20 + 8.
+    // A shorter line height than the parent's: the strut sticks out above and below, by the font's metrics.
+    expect(unsure.has("tight-slot")).toBe(false);
+    // Chromium: the slot is 40px tall (8 + a 24px line + 8), not 8 + 20 + 8; a button centers its text in its height.
     expect(unsure.has("short-slot")).toBe(true);
-    expect(unsure.has("tight-slot")).toBe(true);
   });
 
   it("marks a transformed box, and keeps a tap-target finding on it inconclusive", () => {

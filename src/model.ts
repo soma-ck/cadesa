@@ -73,6 +73,7 @@ export type TextAlign = "start" | "center" | "end";
 export interface LayoutProp {
   path: string;
   pattern: Pattern;
+  /** A space token, or for a cluster or grid a percentage size token: of its content width, between columns only (rows: rowGap, else 0). */
   gap?: Ref;
   /** Grid and cluster: the gap between rows (lines) when it differs from the gap between columns. */
   rowGap?: Ref;

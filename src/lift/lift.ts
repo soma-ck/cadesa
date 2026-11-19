@@ -515,6 +515,13 @@ export function liftElements(input: LiftInput): LiftResult {
     // A negative value is its own token (a var named for a gutter may hold either sign elsewhere).
     return r.varName && !raw.startsWith("-") ? tokens.named(cat, r.varName, raw) : tokens.literal(cat, raw);
   };
+  /** A percentage size token (a gap between columns: of the container's width). */
+  const pctToken = (value: string): string | undefined => {
+    const r = resolveVar(value);
+    if (r && /^(?:\d+(?:\.\d+)?|\.\d+)%$/.test(r.raw) && parseFloat(r.raw) > 0 && parseFloat(r.raw) <= 100)
+      return r.varName ? tokens.named("size", r.varName, r.raw) : tokens.literal("size", r.raw);
+    return undefined;
+  };
   /** A size token that may be a percentage of the parent's width (width, max-width). */
   const sizeToken = (value: string): string | undefined => {
     const r = resolveVar(value);
@@ -603,8 +610,9 @@ export function liftElements(input: LiftInput): LiftResult {
       const gapDecl = column ? rowGap : colGap;
       const tokenOf = (d: Decl | undefined) => {
         if (!d || isZero(resolveVar(d.value)?.raw ?? "x")) return undefined;
-        const t = lengthToken("space", d.value);
-        if (!t) note(e, s, d, "gap must be a px or rem length", "geometry");
+        // A row's gap between columns may be a percentage of its width.
+        const t = lengthToken("space", d.value) ?? (!column && d === colGap ? pctToken(d.value) : undefined);
+        if (!t) note(e, s, d, !column && d === colGap ? "gap must be a px or rem length, or a percentage" : "gap must be a px or rem length", "geometry");
         return t;
       };
       const gap = tokenOf(gapDecl);
@@ -639,7 +647,7 @@ export function liftElements(input: LiftInput): LiftResult {
       const j = justify ? JI[justify.value.trim()] : "stretch";
       // The column gap, and the row gap when it differs.
       const gapOf = (): Record<string, string> => {
-        const tok = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? lengthToken("space", d.value) : undefined);
+        const tok = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? (lengthToken("space", d.value) ?? (d === colGap ? pctToken(d.value) : undefined)) : undefined);
         const val = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? resolveVar(d.value)?.raw : "0px");
         for (const d of [rowGap, colGap]) if (d && !isZero(resolveVar(d.value)?.raw ?? "x") && !tok(d)) note(e, s, d, "gap must be a px or rem length", "geometry");
         const g = tok(colGap);
@@ -844,7 +852,8 @@ export function liftElements(input: LiftInput): LiftResult {
     // An absolute box's percentage height is of its containing block: kept for the position block below.
     const height = posType && /^(absolute|fixed)$/.test(posType) && /%$/.test(resolveVar(m.get("height")?.value ?? "")?.raw ?? "") ? undefined : take("height");
     if (height && height.value.trim() !== "auto") {
-      const t = lengthToken("size", height.value);
+      // A percentage the page front end kept: of a stretched parent's height.
+      const t = lengthToken("size", height.value) ?? pctToken(height.value);
       if (t) out.height = t;
       else note(e, s, height, "height must be a px or rem length", "geometry");
     }
@@ -924,7 +933,7 @@ export function liftElements(input: LiftInput): LiftResult {
       const missing = [!sizeOk && "font-size (px or rem)", lineHeight === undefined && "line-height", !colorTok && "color", isNaN(weight) && "font-weight"].filter(Boolean);
       if (missing.length) {
         for (const d of [fs, lh, ff, fw, color].filter(Boolean) as Decl[])
-          note(e, s, d, `a text role needs ${missing.join(", ")}${lhRaw === "normal" ? " (line-height: normal depends on the font)" : ""}`, d.prop === "color" ? "paint" : "text");
+          note(e, s, d, `a text role needs ${missing.join(", ")}${lhRaw === "normal" ? " (line-height: normal depends on the font, whose metrics table has no vertical metrics)" : ""}`, d.prop === "color" ? "paint" : "text");
       } else {
         if (!fw) {
           /* weight defaults to 400; impact.ts flags tags whose UA weight differs */

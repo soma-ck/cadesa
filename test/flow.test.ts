@@ -55,9 +55,9 @@ describe("block flow, margins and percentages", () => {
     expect(r.h[2]).toBe(166.65625);
   });
 
-  it("rejects a percentage height, and gap or align on a flow", () => {
+  it("rejects gap or align on a flow; a percentage height is of a definite parent height", () => {
     const ds = validate(loadSource("t.yaml", SRC.replace("half: { width: half, height: w200 }", "half: { width: w200, height: half }").replace("pattern: flow }", "pattern: flow, gap: s8 }"))).diagnostics;
-    expect(ds.map((d) => d.message)).toEqual(expect.arrayContaining([expect.stringMatching(/percentage; a height needs a length/), expect.stringMatching(/a flow has no gap/)]));
+    expect(ds.map((d) => d.message)).toEqual([expect.stringMatching(/a flow has no gap/)]);
   });
 
   it("compiles flow children to blocks and margins to every side", () => {
