@@ -1181,11 +1181,13 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
     natural: LU;
     baseline?: LU;
   }
-  // A doubt about a cell whose content sizes columns (every cell; in fixed layout the first row's)
-  // is about the whole table; one that only changes a row's height (fixed layout's later rows, a
-  // baseline it can't place) is the cell's: its row and what's below move (the engine's spread).
-  const firstRow = g.sections.find((s) => s.rows.length)?.rows[0];
-  const sizesColumns = (cell: Cell) => !g.fixed || cell.row === firstRow || !g.rows[cell.row].k;
+  // A doubt about a cell's content is about the whole table when that content sizes its columns
+  // (auto layout; fixed layout reads only widths) or when one row's height moves others (a rowspan,
+  // a height the rows share); otherwise it's the cell's: its row and what's below move (the
+  // engine's spread). In an anonymous row it's the table's too (its cells have no row box).
+  const shared = cssH !== undefined || g.cells.some((c) => c.rawRowspan > 1) || g.sections.some((s) => s.p?.height);
+  const local = (cell: Cell) => !shared && !!g.rows[cell.row].k;
+  const sizesColumns = (cell: Cell) => !g.fixed || !local(cell);
   const laid: Laid[] = g.cells.map((cell) => {
     const cw = PX(cellW(cell));
     const box = h.measure(cell.k, cw, cw, over(cell));
@@ -1193,7 +1195,7 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
     const d = h.doubtful(box);
     if (d && sizesColumns(cell)) assumptions.push(`its columns depend on #${box.id}, which the engine can't guarantee (${d})`);
     // Doubts about a row's height alone (a cell in an anonymous row: about the table's).
-    const heightDoubt = (why: string) => (g.rows[cell.row].k ? box.assumptions : assumptions).push(why);
+    const heightDoubt = (why: string) => (local(cell) ? box.assumptions : assumptions).push(why);
     let baseline: LU | undefined;
     if (cell.align === "baseline") {
       const bl = firstBaseline(h, box);
