@@ -263,10 +263,10 @@ The engine ([`src/engine/`](src/engine/)) is the spec: its box tree depends only
 
 | Suite | What it covers | Result |
 | --- | --- | --- |
-| `npm run fuzz` | **differential fuzzer**: random pages covering the whole language | 39,597 pages at 148,328 widths: **688,902 boxes, 0 disagreements** (0 again on fresh seeds) |
+| `npm run fuzz` | **differential fuzzer**: random pages covering the whole language, and (one for every four) random pages lifted from their CSS with inline runs in another size, font or vertical-align, atomic inlines taller than their line, rows aligned on their baselines and form controls (`scripts/fuzz-css.ts`) | 39,597 pages at 148,328 widths: **688,902 boxes, 0 disagreements** (0 again on fresh seeds); 425 lifted CSS pages: 8,424 boxes marked exact, **0 disagreements** |
 | `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 19,056 boxes marked exact match (400 left `≈`) |
-| `conformance:bootstrap` | seven Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` (navbar collapse, grid, cards, `.table` and its variants, `d-*` utilities) | all 52,327 of 62,304 boxes are marked exact, and all match; what's left is mostly tables scrolling in `.table-responsive` (a scrollbar that takes space where it isn't overlaid) and percentage margins. Where a box is `≈` but `check` treats its size as known, the size matches too |
-| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms, generated content and runs in another weight, line boxes and text fields, containment, percentages in `min()` and grid row gaps, static positions and inline-blocks sharing lines, tables | all 56,920 boxes marked exact match, every 10px from 320 to 1440px |
+| `conformance:bootstrap` | eight Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` (navbar collapse, grid, cards, `.table` and its variants, `d-*` utilities, `.form-select`, `.form-control-sm/lg`, `.form-check`, `.input-group`) | all 59,490 of 66,485 boxes are marked exact, and all match; what's left is mostly tables scrolling in `.table-responsive` (a scrollbar that takes space where it isn't overlaid) and percentage margins. Where a box is `≈` but `check` treats its size as known, the size matches too |
+| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms, generated content and runs in another weight, line boxes and text fields, containment, percentages in `min()` and grid row gaps, static positions and inline-blocks sharing lines, tables, inline runs in another size, font or vertical-align and rows aligned on their baselines, form controls at their own sizes | all 83,362 boxes marked exact match, every 10px from 320 to 1440px |
 | `conformance:fonts` | Roboto (variable, from Google Fonts) and Lato (two static faces via `@font-face`) | 5,474 of 5,474, and the line count of all 4,347 text boxes, over 161 widths |
 | `conformance:landing` | grid, text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
@@ -331,7 +331,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `layout.pattern: table` + `collapse`, `fixed`, `min` | | `display: table` (`border-collapse: collapse`, `table-layout: fixed`, `min-width`); `gap` and `rowGap` are its `border-spacing`. Columns and rows are sized as Chromium sizes them |
 | `part` | `caption` (`top`, `bottom`), `column`, `column-group`, `header`, `body`, `footer`, `row`, `cell` (`baseline`, `top`, `middle`, `bottom`; `content-box`) | a table's children: `display: table-cell` with `vertical-align`, and so on; cells span the columns and rows of their `colspan` and `rowspan` |
 | `layout.gap` | space token (cluster, grid: or a percentage size token, between columns) | `gap` |
-| `layout.align` | `start`, `center`, `end`, `stretch` | `align-items` (cluster defaults to `center`, grid, layer and stack to `stretch`; a stack aligned otherwise sizes its items to their content) |
+| `layout.align` | `start`, `center`, `end`, `stretch`; a cluster also `baseline` (first baselines on one line) | `align-items` (cluster defaults to `center`, grid, layer and stack to `stretch`; a stack aligned otherwise sizes its items to their content) |
 | `layout.justify` | `start`, `end`, `center`, `between`, `around`, `evenly` | `justify-content` in a cluster, distributed as Chromium does |
 | `layout.wrap` | `false` | a one-line row (`flex-wrap: nowrap`) whose items shrink to fit |
 | `grow` | `{ factor, basis: zero \| auto }` | `flex: <factor> …`: items share a row's free space (Bootstrap's `.col`, Tailwind's `flex-1`) |
@@ -357,7 +357,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 
 ## Roadmap
 
-- **Inline layout beyond one box per line:** inline-blocks of different heights sharing a line, text beside inline-blocks, and the rectangle of an inline span (its lines are exact; its own content-area box is `≈`).
+- **Inline layout beyond one box per line:** inline-blocks with content of their own (not one line of text, not a set size) sharing a line with text or each other, and the rectangle of an inline span (its lines are exact; its own content-area box is `≈`). Runs in another size, font or vertical-align and atomic inlines of set size are measured.
 - **Floats,** 3D transforms and subgrid, which are reported as `≈` today.
 - **More of Tailwind:** `dark:` and container queries.
 
