@@ -18,6 +18,28 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- The window height is an input like the widths: `--height <px>` (MCP `height`), 800 by
+  default. `vh`, `dvh`, `svh` and `lvh`, percentage heights of the root and `min-height` /
+  `max-height` media queries are exact for it, and the coverage line names it ("for an 800px
+  tall window"). Conformance and `--verify` open Chromium at that height.
+- `position: absolute` and `fixed` are laid out: in the padding box of the nearest positioned
+  ancestor (or the window), by px, %, vw offsets and `inset`; as wide as left and right leave,
+  their own width, or their content; as tall as top and bottom leave, their own height (a
+  percentage of the containing block) or their content. Without offsets they sit at their
+  static position, known before any in-flow sibling in block flow (else `≈`). They don't move
+  their siblings, aren't counted as anyone's overflow, and a fixed box never scrolls the page.
+  `position: relative` offsets shift the box and what it holds; sticky is predicted at scroll
+  position 0 and contains absolute children. In a source: `position: { type, top, right, ... }`
+  and `page.windowHeight`.
+- More selectors are decided from the page: `:lang()`, `:dir()`, `:open`, `:placeholder-shown`,
+  `:read-only` / `:read-write`, `:valid` / `:invalid` for required controls, `:in-range`,
+  `:nth-child(An+B of S)`, `:scope`, `:host`; vendor pseudo-classes Chromium rejects match
+  nothing. Still undecided: interactive states (`:hover`, `:focus`..., which don't apply in the
+  default state), `:valid` with a pattern or a typed value, and an argument of `:is()` the
+  matcher can't parse.
+
 ## 0.1.10 (2026-11-19)
 
 Report, `whatif`, `capture` and `--verify` fixes from running 0.1.9 on two real apps:
