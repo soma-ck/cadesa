@@ -484,11 +484,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const ins = insets(p);
     const insX = ins.left + ins.right;
     const unknown = (why: string): Intrinsic => ({ min: 0, max: 0, why });
-    const capOf = (r?: { value: number | { pct: number } }) => (r === undefined ? Infinity : typeof r.value === "number" ? r.value : NaN);
+    // A width or max width with a percentage in it is cyclic here (the box being sized holds this
+    // one): for its intrinsic contribution the whole value counts as auto or none (CSS Sizing §5.2.1).
+    const capOf = (r?: { value: number | { pct: number } }) => (r === undefined ? Infinity : typeof r.value === "number" ? r.value : Infinity);
     // (A content size suggestion: the caller clamps it by the box's own max width, which may be a percentage.)
     const cap = contentOnly ? Infinity : Math.min(capOf(p.maxWidth), capOf(p.measure));
-    if (isNaN(cap)) return unknown(`<${n.tag}> has a percentage max width`);
-    const pw = contentOnly ? undefined : p.width?.value;
+    const pw = contentOnly || (typeof p.width?.value === "object") ? undefined : p.width?.value;
     if (typeof pw === "number") {
       const w = Math.max(insX, Math.min(pw, cap));
       return { min: w, max: w };
@@ -1423,6 +1424,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
 
   const boxes: Box[] = [];
   let unknownOnPage: string | undefined;
+  /** Page-level absolute boxes after in-flow ones: their static position is known once the body's flow is. */
+  const pageAbs: { entry: (typeof absQueue)[number]; before: number }[] = [];
   for (const n of fixture.body) {
     const p = model.prefix;
     const candidates = n.classes.filter((k) => k.startsWith(p) && !k.includes("__")).map((k) => k.slice(p.length));
@@ -1443,7 +1446,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       continue;
     }
     if (outOfFlow(c, undefined)) {
-      absQueue.push({ k: { node: n, comp: c, slot: undefined }, parent: undefined, ...(!boxes.length && { at: { x: 0, y: 0 } }) });
+      const entry: (typeof absQueue)[number] = { k: { node: n, comp: c, slot: undefined }, parent: undefined, ...(!boxes.length && { at: { x: 0, y: 0 } }) };
+      absQueue.push(entry);
+      if (boxes.length && !unknownOnPage) pageAbs.push({ entry, before: boxes.length });
       continue;
     }
     boxes.push(measure(n, c, undefined, pageW, "page"));
@@ -1454,6 +1459,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const through = bodyPad.top === 0;
   const body = flow(boxes, pageW, through, "escape");
   const top = through ? sum(join(strut(bodyMargin.top), body.empty ? body.pending : body.top)) : bodyMargin.top + bodyPad.top;
+  // Below the page-level boxes before it and the margins pending there (as in measure).
+  for (const { entry, before } of pageAbs) {
+    const prior = boxes.slice(0, before);
+    let last = -1;
+    prior.forEach((b, i) => {
+      if (!collapse.get(b)!.empty) last = i;
+    });
+    const empties = prior.slice(last + 1).map((b) => collapse.get(b)!.top);
+    const base = bodyPad.top ? bodyMargin.top + bodyPad.top : 0;
+    if (last >= 0) entry.at = { x: 0, y: top + prior[last].y + prior[last].h + sum(join(collapse.get(prior[last])!.bottom, ...empties)) - base };
+    else if (!through) entry.at = { x: 0, y: top + sum(join(...empties)) - base };
+  }
   for (const b of boxes) {
     b.y += outer.top + top;
     b.x += outer.left + bodyMargin.left + bodyPad.left;

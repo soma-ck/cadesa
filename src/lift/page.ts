@@ -274,7 +274,15 @@ export function longhands(prop: string, value: string): [string, string][] {
     "border-end-start-radius": ["border-bottom-left-radius"],
   };
   if (corner[prop]) return corner[prop].map((p) => [p, value]);
-  if (prop === "text-wrap") return [["text-wrap", value]];
+  if (prop === "text-wrap") {
+    // text-wrap: <mode> || <style> (wrap | nowrap, auto | balance | pretty | stable).
+    const words = value.trim().toLowerCase().split(/\s+/);
+    const mode = words.find((w) => /^(wrap|nowrap)$/.test(w));
+    const style = words.find((w) => /^(auto|balance|pretty|stable)$/.test(w));
+    if (words.length && words.length === (mode ? 1 : 0) + (style ? 1 : 0))
+      return [["text-wrap-mode", mode ?? "wrap"], ["text-wrap-style", style ?? "auto"]];
+    return [["text-wrap", value]];
+  }
   if (prop === "font") {
     const v = value.trim();
     if (/^(inherit|initial|unset|revert)$/.test(v)) return ["font-style", "font-weight", "font-size", "line-height", "font-family"].map((p) => [p, v] as [string, string]);
@@ -852,6 +860,19 @@ export abstract class PageLifter {
    * lines only make it taller around the same baseline or middle); undefined when it can't be told.
    */
   lineReach(el: El, si: number): { top: number; bottom: number } | undefined {
+    const x = this.lineExtents(el, si);
+    if (!x) return undefined;
+    const { a, hm, strut } = x;
+    const eps = 1e-6;
+    return { top: Math.max(0, strut.sa - a > eps ? strut.sa - a : 0), bottom: Math.max(0, strut.sd - (hm - a) > eps ? strut.sd - (hm - a) : 0) };
+  }
+
+  /**
+   * An inline-block on a line of its parent's: how far the parent's baseline is below its margin
+   * box's top (`a`, after its vertical-align), its margin box's height (`hm`) and the parent's
+   * strut; undefined when it can't be told (see lineReach).
+   */
+  lineExtents(el: El, si: number): { a: number; hm: number; strut: { sa: number; sd: number } } | undefined {
     const parent = el.parent!;
     const res = (k: El, p: string) => {
       const o = k.own[si].get(p);
@@ -909,8 +930,7 @@ export abstract class PageLifter {
       const u = (x: number) => Math.round(x * 64);
       a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
     } else if (va !== "baseline") return undefined;
-    const eps = 1e-6;
-    return { top: Math.max(0, strut.sa - a > eps ? strut.sa - a : 0), bottom: Math.max(0, strut.sd - (hm - a) > eps ? strut.sd - (hm - a) : 0) };
+    return { a, hm, strut };
   }
 
   /**
@@ -1934,9 +1954,12 @@ export abstract class PageLifter {
             const v = { left: "start", start: "start", center: "center", right: "end", end: "end" }[o.value];
             if (v && v !== "start") decl("text-align", v, o.utility);
             else if (!v) decl("text-align", o.value, o.utility);
-          } else if (/^text-wrap(-style)?$/.test(p) && o.value === "balance" && !(parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si))) {
-            // Balancing keeps the line count, so a box whose width doesn't depend on its text keeps its size.
-            this.note(el, si, { decl: o.utility, reason: "text-wrap: balance moves line breaks but keeps the line count; the box is exact, the reported lines are not", kind: "none" });
+          } else if (/^text-wrap(-style)?$/.test(p) && /^(balance|pretty)$/.test(o.value) && !(parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si))) {
+            // Chromium's balanced and pretty line breakers keep the greedy line count (they fall
+            // back to it otherwise), so a box whose width doesn't depend on its text keeps its size.
+            this.note(el, si, { decl: o.utility, reason: `text-wrap: ${o.value} moves line breaks but keeps the line count; the box is exact, the reported lines are not`, kind: "none" });
+          } else if (/^text-wrap(-style)?$/.test(p) && o.value === "stable") {
+            // stable: the same breaks as auto when the page is laid out (it only differs while editing).
           } else if (!/^(normal|none|auto|wrap|manual|0|0px|ltr)$/.test(o.value) && !(p === "font-style" && o.value === "normal")) decl(p, o.value, o.utility);
         }
         this.inlineContent(el, si);

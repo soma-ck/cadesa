@@ -45,6 +45,14 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   before it: what follows can't collapse with it), then its own margin; in a flexbox at the start of
   its content box, as if it were the only item; in a grid at its padding box corner. After empty
   blocks whose margins collapse through the parent, or aligned other than at the start, it stays `≈`.
+  A page-level one after the page's content (a router's announcer) sits below it.
+- A width or max-width with a percentage in it counts as `auto` (or `none`) in the intrinsic size
+  of the box that holds it, as CSS Sizing says for a cyclic percentage: a `1fr` column holding
+  `width: min(360px, 100%)` is sized by the card's content.
+- `text-wrap: pretty` and `balance` move line breaks but, in Chromium, never change the line count
+  (both fall back to greedy breaks otherwise), so the boxes are exact (outside a flex row); the
+  reported lines are the greedy ones. The `text-wrap` shorthand is read as its mode and style:
+  `nowrap` is `white-space: nowrap`, `stable` lays out as `auto`.
 - A top or bottom `auto` margin is 0 in block flow and in a column flexbox with no free space. A
   transform that moves nothing (`translateZ(0)`, `scale(1)`) is no longer `≈`.
 

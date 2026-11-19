@@ -129,6 +129,23 @@ describe("containment", () => {
     expect(geo(wide.box("card-rule-4"))).toEqual([17, 2218.188, 48, 3]);
   });
 
+  it("a page-level absolute box after the content sits below it", () => {
+    expect(geo(wide.box("announcer"))).toEqual([0, 2557.188, 1, 1]);
+    expect(wide.approx("announcer")).toBeUndefined();
+  });
+
+  it("a percentage width counts as auto in its grid column's size", () => {
+    expect(geo(wide.box("narrow-card"))).toEqual([40, 2305.188, 320, 72]);
+    expect(wide.approx("narrow-card")).toBeUndefined();
+  });
+
+  it("text-wrap: pretty and balance keep the line count, so their boxes are exact; nowrap is one line", () => {
+    expect(geo(wide.box("pretty"))).toEqual([16, 2393.188, 368, 48]);
+    expect(geo(wide.box("balanced"))).toEqual([16, 2457.188, 368, 60]);
+    expect(geo(wide.box("no-wrap"))).toEqual([16, 2533.188, 368, 24]);
+    for (const id of ["pretty", "balanced", "no-wrap"]) expect(wide.approx(id)).toBeUndefined();
+  });
+
   it("will-change and isolation change nothing, unless will-change makes a fixed box's containing block", () => {
     const c = run(`<div class="a"><p class="t">Text</p></div><div class="b"><p class="t">Text</p><div class="bar"></div></div>`, `p { margin: 0 } .a { will-change: transform; isolation: isolate } .b { will-change: transform } .bar { position: fixed; top: 0; width: 10px; height: 10px }`);
     expect(c.approx("a")).toBeUndefined();

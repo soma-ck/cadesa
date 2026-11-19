@@ -269,3 +269,41 @@ p {
   display: grid;
   gap: 8px;
 }
+
+/* A grid item whose width has a percentage: its column is sized as if its width were auto. */
+.centered-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  margin-top: 16px;
+}
+
+.narrow-card {
+  width: min(320px, 100%);
+  padding: 12px;
+}
+
+/* text-wrap styles keep the greedy line count: the boxes are exact. */
+.pretty {
+  text-wrap: pretty;
+  margin: 16px 0 0;
+}
+
+.balanced {
+  text-wrap: balance;
+  font-size: 24px;
+  line-height: 1.25;
+  margin: 16px 0 0;
+}
+
+.no-wrap {
+  text-wrap: nowrap;
+  margin: 16px 0 0;
+}
+
+/* A page-level box after the page's content, without offsets. */
+.announcer {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+}
