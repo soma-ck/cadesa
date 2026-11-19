@@ -246,3 +246,20 @@ describe("a page that scrolls sideways", () => {
     expect(run(HTML, `${ROW} .content { overflow: hidden }`, [400]).findings.filter((x) => /past the right edge/.test(x.message))).toEqual([]);
   });
 });
+
+describe("align-items: baseline", () => {
+  it("in a row of text in one font, aligning baselines aligns the tops of the content: exact", () => {
+    const r = run(`<div class="r1"><span class="a">Label</span><span class="b">Value with padding</span><span class="c">Bordered</span></div>`, `.r1 { display: flex; align-items: baseline; gap: 8px } .b { padding: 10px 6px 2px } .c { border: 3px solid #333; margin-top: 4px }`, [400]);
+    expect(r.box("r1").children.map(geo)).toEqual([
+      [0, 10, 41.031, 24],
+      [49.031, 0, 156.219, 36],
+      [213.25, 7, 75.828, 30],
+    ]);
+    expect(r.exact()).toBe(true);
+  });
+
+  it("text in different sizes needs the font's vertical metrics: ≈", () => {
+    const r = run(`<div class="r2"><span class="a">Small</span><span class="big">Big heading</span></div>`, `.r2 { display: flex; align-items: baseline; gap: 8px } .big { font-size: 28px }`, [400]);
+    expect(r.approx("a")).toMatch(/baseline/);
+  });
+});

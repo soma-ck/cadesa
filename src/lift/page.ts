@@ -137,6 +137,8 @@ export interface El {
   asBlock: ("block" | "empty" | undefined)[];
   /** An inline-block alone on its line whose line box is exactly its margin box: lifted as a block of its content's width. */
   alone: boolean[];
+  /** A flex row aligns baselines: px its item is pushed down to put its first baseline on the line's (per state). */
+  baselineShift: (number | undefined)[];
   /** A run of text among element children (added after the cascade): its anonymous box. */
   anonymous?: string;
   /** The (shared) slot or root this element's styles are emitted under. */
@@ -502,6 +504,7 @@ export abstract class PageLifter {
       noShrink: [],
       asBlock: [],
       alone: [],
+      baselineShift: [],
     });
     if (htmlEl) {
       const h = mk(htmlEl, undefined, 0, 1);
@@ -867,6 +870,7 @@ export abstract class PageLifter {
               noShrink: [],
               asBlock: [],
               alone: [],
+              baselineShift: [],
               anonymous: text,
             };
             out.push(a);
@@ -1135,6 +1139,17 @@ export abstract class PageLifter {
                 : { decl: `${own.get("align-items")!.utility} on the parent (align-items: ${ai})`, reason: "the item isn't stretched; it's sized by its content, which Cadesa measures only for a single text run", kind: "geometry" });
             }
           }
+          // Baselines in a row that doesn't wrap, of text items in one font, size and line height:
+          // their first lines sit the same distance below their content edges, so aligning baselines
+          // is aligning those edges: items start at the top, each pushed down by the difference.
+          if (dir === "row" && ai && /^(first )?baseline$/.test(ai)) {
+            const shifts = this.baselineShifts(kids, si);
+            if (shifts && wrap === "nowrap") {
+              decl("align-items", "flex-start", `${own.get("align-items")!.utility} (align-items: ${ai}, items in one font: their tops align)`);
+              handled.add("align-items");
+              kids.forEach((c, i) => (c.baselineShift[si] = shifts[i]));
+            }
+          }
         } else if (grid) {
           const cols = res("grid-template-columns");
           const gapOrigin = own.get("row-gap");
@@ -1272,6 +1287,15 @@ export abstract class PageLifter {
         decl(p, v, o.utility);
       }
       this.aspectWithHeight(el, si, out, decl, parentDisplay, parentRole);
+      // Baseline alignment in its row: pushed down by the difference in top insets (see baselineShifts).
+      const shift = el.baselineShift[si];
+      if (shift) {
+        const mt = out.get("margin-top");
+        const base = mt ? lengthExpr(/^var\((--[\w-]+)\)$/.test(mt.value) ? (this.vars.get(/^var\((--[\w-]+)\)$/.exec(mt.value)![1])?.value ?? mt.value) : mt.value) : undefined;
+        const px = mt ? (base && !base.fluid ? base.at(0) : NaN) : 0;
+        if (isNaN(px)) this.note(el, si, { decl: "align-items: baseline on the parent", reason: "baseline alignment with a margin that isn't a length is not modelled", kind: "geometry" });
+        else decl("margin-top", `${fmtNum(px + shift)}px`, `align-items: baseline on the parent (its first line on the row's baseline)`);
+      }
 
       // Without a reset, boxes are content-box: lengths in px take the padding and border in, so the
       // source can stay border-box. Anything else is left content-box (lift notes it).
@@ -1395,6 +1419,38 @@ export abstract class PageLifter {
         kind: /height$/.test(prop) ? "height" : "geometry",
       });
     return f.css;
+  }
+
+  /**
+   * For align-items: baseline in a flex row: how far below the top each item starts, when every
+   * item is a text box in one font, size, weight and line height (so its first baseline is the same
+   * distance below its content edge): the largest top margin + border + padding, less its own.
+   * Undefined when that isn't so (fonts differ, a box inside an item, align-self, a margin that
+   * isn't a length).
+   */
+  baselineShifts(kids: El[], si: number): number[] | undefined {
+    if (!kids.length) return undefined;
+    const t0 = this.textOf(kids[0], si);
+    const same = (t: TextCtx) => t.size === t0.size && t.family.value === t0.family.value && t.weight === t0.weight && JSON.stringify(t.lineHeight) === JSON.stringify(t0.lineHeight) && !t.fluid && !t0.fluid;
+    const tops: number[] = [];
+    for (const k of kids) {
+      if (k.roles[si] !== "text" || !same(this.textOf(k, si))) return undefined;
+      const own = k.own[si];
+      const self = own.get("align-self");
+      if (self && !/^(auto|baseline|first baseline)$/.test(this.resolve(k, si, self.value) ?? "")) return undefined;
+      const len = (p: string) => {
+        const o = own.get(p);
+        const v = o ? this.resolveBox(k, si, o.value) : "0";
+        return v === undefined ? undefined : lengthPx(v, this.textOf(k, si).size);
+      };
+      const style = this.resolve(k, si, own.get("border-top-style")?.value ?? "none") ?? "none";
+      const bw = /^(none|hidden)$/.test(style) ? 0 : len("border-top-width");
+      const [mt, pt] = [len("margin-top"), len("padding-top")];
+      if (mt === undefined || pt === undefined || bw === undefined) return undefined;
+      tops.push(mt + pt + borderPx(bw));
+    }
+    const top = Math.max(...tops);
+    return tops.map((t) => top - t);
   }
 
   /**
