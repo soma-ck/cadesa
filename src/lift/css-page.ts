@@ -68,6 +68,8 @@ interface Simple {
   list?: Complex[];
   /** :has() arguments: relative selectors, each with its leading combinator. */
   relative?: { comb: " " | ">" | "+" | "~"; complex: Complex }[];
+  /** :is() or :where() with an argument this matcher can't read. */
+  unread?: boolean;
 }
 interface Compound {
   simples: Simple[];
@@ -163,8 +165,11 @@ export function parseSelector(text: string): Complex | undefined {
       const simple: Simple = { kind: element ? "pseudo-element" : "pseudo", name, arg };
       if (!element && /^(is|where|not|matches|-webkit-any)$/.test(name)) {
         const list = splitList(arg ?? "").map(parseSelector);
-        if (list.some((x) => !x)) return undefined;
-        simple.list = list as Complex[];
+        // :is() and :where() take a forgiving list (an argument Chromium can't read is dropped); one this
+        // matcher can't read leaves the answer undecided unless another argument matches. :not() is strict.
+        if (name === "not" && list.some((x) => !x)) return undefined;
+        simple.list = list.filter(Boolean) as Complex[];
+        if (list.some((x) => !x)) simple.unread = true;
       }
       // :has(): relative selectors, each anchored at the element (`> .a` is a child, `.a` a descendant, `+ .a` the next sibling).
       if (!element && name === "has") {
@@ -217,7 +222,46 @@ const best = (xs: M[]): M => xs.reduce((a, b) => (RANK[b] > RANK[a] ? b : a), "n
 /** Every part must hold: the weakest result. */
 const all = (xs: M[]): M => (xs.includes("no") ? "no" : xs.includes("unknown") ? "unknown" : xs.includes("state") ? "state" : "yes");
 
-const STATE = /^(hover|focus|focus-visible|active|focus-within|target|target-within|user-invalid|user-valid|autofill|-webkit-autofill|open|popover-open|modal|fullscreen|picture-in-picture|playing|paused)$/;
+const STATE = /^(hover|focus|focus-visible|active|focus-within|target|target-within|user-invalid|user-valid|autofill|-webkit-autofill|popover-open|modal|fullscreen|picture-in-picture|playing|paused)$/;
+
+/** The language of an element: its own lang attribute, or the nearest ancestor's. */
+const langOf = (el: El | undefined): string | undefined => {
+  for (let x = el; x; x = x.parent) {
+    const l = attr(x.node, "lang");
+    if (l !== undefined) return l.toLowerCase();
+  }
+  return undefined;
+};
+/** Its direction: the nearest dir attribute (auto counts as ltr for Latin text), else ltr. */
+const dirOf = (el: El | undefined): string => {
+  for (let x = el; x; x = x.parent) {
+    const d = attr(x.node, "dir")?.toLowerCase();
+    if (d === "rtl" || d === "ltr") return d;
+  }
+  return "ltr";
+};
+/**
+ * Constraint validation from the markup alone: a required control with no value is invalid, and so
+ * is a form or fieldset holding one. Undefined when it can't be told (a pattern, a type's format).
+ */
+function validity(el: El): boolean | undefined {
+  if (el.tag === "form" || el.tag === "fieldset") {
+    const below = (x: El): El[] => x.children.flatMap((k) => [k, ...below(k)]);
+    const vs = below(el).filter((k) => /^(input|select|textarea)$/.test(k.tag)).map(validity);
+    return vs.includes(false) ? false : vs.includes(undefined) ? undefined : true;
+  }
+  if (!/^(input|select|textarea)$/.test(el.tag)) return undefined;
+  if (attr(el.node, "disabled") !== undefined) return true;
+  const type = (attr(el.node, "type") ?? "text").toLowerCase();
+  if (/^(hidden|button|submit|reset|image)$/.test(type)) return undefined;
+  if (attr(el.node, "pattern") !== undefined || attr(el.node, "minlength") !== undefined || /^(email|url|number|date|time|month|week|datetime-local|range|color|file)$/.test(type)) return undefined;
+  if (attr(el.node, "required") === undefined) return true;
+  if (el.tag === "select") return undefined;
+  if (/^(checkbox|radio)$/.test(type)) return attr(el.node, "checked") !== undefined ? true : type === "checkbox" ? false : undefined;
+  return el.tag === "textarea" ? el.ownText : !!attr(el.node, "value");
+}
+
+const TEXT_INPUT = /^(text|search|url|tel|email|password|number|date|month|week|time|datetime-local)$/;
 
 function nthMatches(arg: string, pos: number): boolean | undefined {
   const a = arg.replace(/\s+/g, "").toLowerCase();
@@ -284,7 +328,7 @@ function simpleMatches(s: Simple, el: El): M {
       if (n === ANCHOR) return el === anchors.at(-1) ? "yes" : "no";
       if (s.relative) return hasMatches(s.relative, el);
       if (s.list) {
-        const r = best(s.list.map((c) => matchComplex(c, el)));
+        const r = best([...s.list.map((c) => matchComplex(c, el)), ...(s.unread ? (["unknown"] as M[]) : [])]);
         // :not(): in the default state, an interactive-state selector doesn't hold.
         if (n === "not") return r === "yes" ? "no" : r === "unknown" ? "unknown" : "yes";
         return r;
@@ -314,9 +358,20 @@ function simpleMatches(s: Simple, el: El): M {
         case "only-of-type":
           return same.length === 1 ? "yes" : "no";
         case "nth-child":
-          return /\bof\b/.test(s.arg ?? "") ? "unknown" : nth(i + 1);
-        case "nth-last-child":
-          return /\bof\b/.test(s.arg ?? "") ? "unknown" : nth(sibs.length - i);
+        case "nth-last-child": {
+          // An+B of S: counted among the siblings that match S.
+          const of = /^(.*?)\s+of\s+(.+)$/s.exec(s.arg ?? "");
+          if (!of) return nth(n === "nth-child" ? i + 1 : sibs.length - i);
+          const list = splitList(of[2]).map(parseSelector);
+          if (list.some((x) => !x)) return "unknown";
+          const ms = sibs.map((x) => best(list.map((c) => matchComplex(c!, x))));
+          if (ms.some((m) => m === "unknown")) return "unknown";
+          const among = sibs.filter((_, k) => ms[k] === "yes");
+          const at = among.indexOf(el);
+          if (at < 0) return "no";
+          const r = nthMatches(of[1], n === "nth-child" ? at + 1 : among.length - at);
+          return r === undefined ? "unknown" : r ? "yes" : "no";
+        }
         case "nth-of-type":
           return nth(j + 1);
         case "nth-last-of-type":
@@ -340,8 +395,55 @@ function simpleMatches(s: Simple, el: El): M {
           return /^(input|select|textarea)$/.test(el.tag) && attr(el.node, "required") === undefined ? "yes" : "no";
         case "defined":
           return "yes";
+        // Decided from the markup: the page is static.
+        case "scope":
+          return el.tag === "html" ? "yes" : "no";
+        case "-webkit-any-link":
+          return /^(a|area)$/.test(el.tag) && attr(el.node, "href") !== undefined ? "yes" : "no";
+        case "lang": {
+          const want = (s.arg ?? "").split(",").map((x) => x.trim().replace(/^["']|["']$/g, "").toLowerCase());
+          const l = langOf(el);
+          return l !== undefined && want.some((w) => w === "*" || l === w || l.startsWith(`${w}-`)) ? "yes" : "no";
+        }
+        case "dir":
+          return dirOf(el) === (s.arg ?? "").trim().toLowerCase() ? "yes" : "no";
+        case "open":
+          return /^(details|dialog)$/.test(el.tag) && attr(el.node, "open") !== undefined ? "yes" : "no";
+        case "placeholder-shown":
+          return (el.tag === "textarea" ? !el.ownText : el.tag === "input" && TEXT_INPUT.test((attr(el.node, "type") ?? "text").toLowerCase()) && !attr(el.node, "value")) && attr(el.node, "placeholder") !== undefined ? "yes" : "no";
+        case "read-only":
+        case "read-write": {
+          const type = (attr(el.node, "type") ?? "text").toLowerCase();
+          const editable =
+            (el.tag === "textarea" || (el.tag === "input" && TEXT_INPUT.test(type))) && attr(el.node, "readonly") === undefined && attr(el.node, "disabled") === undefined
+              ? true
+              : attr(el.node, "contenteditable") !== undefined && attr(el.node, "contenteditable") !== "false";
+          return editable === (n === "read-write") ? "yes" : "no";
+        }
+        case "indeterminate":
+          return el.tag === "progress" && attr(el.node, "value") === undefined ? "yes" : "no";
+        case "host":
+        case "host-context":
+          // No shadow roots in a static page.
+          return "no";
+        case "blank":
+          return !el.children.length && !el.ownText ? "yes" : "no";
+        case "valid":
+        case "invalid": {
+          const v = validity(el);
+          return v === undefined ? "unknown" : v === (n === "valid") ? "yes" : "no";
+        }
+        case "in-range":
+        case "out-of-range": {
+          if (el.tag !== "input" || !/^(number|range)$/.test((attr(el.node, "type") ?? "").toLowerCase())) return "no";
+          const [v, lo, hi] = ["value", "min", "max"].map((a) => parseFloat(attr(el.node, a) ?? ""));
+          if (isNaN(lo) && isNaN(hi)) return "no";
+          const inside = isNaN(v) || ((isNaN(lo) || v >= lo) && (isNaN(hi) || v <= hi));
+          return inside === (n === "in-range") ? "yes" : "no";
+        }
         default:
-          return "unknown";
+          // A vendor-prefixed pseudo-class Chromium doesn't know makes the selector invalid: it matches nothing.
+          return /^-(moz|ms|o)-/.test(n) ? "no" : "unknown";
       }
     }
   }

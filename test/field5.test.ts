@@ -223,6 +223,25 @@ describe("the page", () => {
 });
 
 describe("approximate only where it matters", () => {
+  it("decides :is(), :where(), :not() and pseudo-classes the markup settles", () => {
+    const css = `p { margin: 0 } :is(.page, .other) :where(.lead):not(.x) { padding-top: 4px } .page :is(p):lang(fr) { padding-top: 8px } :where(:dir(rtl)) .lead { padding-top: 40px }
+      .item:nth-child(2 of .on) { padding-left: 6px } .f:placeholder-shown { padding-left: 3px } .f:read-write { padding-right: 5px } .f:-moz-focusring { padding: 90px }
+      details:open .d { padding-left: 7px } .f:invalid { margin-left: 2px } .v:valid { margin-left: 1px }`;
+    const r = run(
+      `<main class="page" lang="fr"><p class="lead">Lead</p><p class="item">a</p><p class="item on">b</p><p class="item on">c</p><details open><summary>S</summary><p class="d">D</p></details><input class="f" placeholder="Name" required style="width: 100px; height: 20px"><input class="v" style="width: 100px; height: 20px"></main>`,
+      css,
+      [400],
+    );
+    const pad = (id: string) => r.box(id).props.padding?.value;
+    expect(pad("lead")).toMatchObject({ top: 8 });
+    expect(pad("item-3")).toMatchObject({ left: 6 });
+    expect(pad("item-2")).toMatchObject({ left: 0 });
+    expect(pad("f")).toMatchObject({ left: 3, right: 5, top: 1 });
+    expect(r.box("f").props.margin?.value.left).toBe(2);
+    expect(r.box("v").props.margin?.value.left).toBe(1);
+    expect(r.t.lifted.unlifted.filter((u) => /may match/.test(u.reason))).toEqual([]);
+  });
+
   it("decides :has() against the page", () => {
     const css = `.page { padding: 16px } p, h1 { margin: 0 } body:has(.app-shell) { overflow: hidden } .page:has(> .lead) { padding: 24px } .page:has(.missing) { padding: 40px }`;
     const r = run(`<main class="page"><h1 class="title">Hello</h1><p class="lead">Lead</p></main>`, css, [400]);
