@@ -27,7 +27,8 @@ describe("source pointers on --css pages", () => {
     expect(color).toContainEqual(expect.objectContaining({ property: "--bs-success-rgb", selector: ":root", value: "25, 135, 84" }));
     const bg = delta.source!.find((s) => s.what.startsWith("background"))!.rules;
     expect(bg).toContainEqual(expect.objectContaining({ property: "--bs-body-bg", file: "fixtures/bootstrap/app.css", line: 8, value: "#f4f6f9" }));
-    expect(r.text).toContain("element: fixtures/bootstrap/dashboard.html:55 <span class=\"stat-delta text-success\"> \"+4.2% on last week\"");
+    expect(r.text).toContain("elements: fixtures/bootstrap/dashboard.html:55 <span class=\"stat-delta text-success\"> \"+4.2% on last week\"");
+    expect(r.text).toMatch(/· on 2 elements/);
     expect(r.text).toContain("fixtures/bootstrap/bootstrap.css:8503 .text-success { color: rgba(var(--bs-success-rgb), var(--bs-text-opacity)); --bs-text-opacity: 1 }");
     expect(r.text).not.toMatch(/edit: (styles|text)\./);
   });

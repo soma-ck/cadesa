@@ -15,7 +15,7 @@ import type { Model } from "./model.js";
 import { liftTailwind, type TailwindLift } from "./tailwind/lift.js";
 import { liftCssPage } from "./lift/css-page.js";
 import type { PageLift } from "./lift/page.js";
-import { coverage, formatCoverage, formatCheck, shortenPaths, formatExplain, formatImpact, formatLift, formatRender, formatWhatif } from "./report.js";
+import { type Coverage, coverage, formatCoverage, formatCheck, shortenPaths, formatExplain, formatImpact, formatLift, formatRender, formatWhatif } from "./report.js";
 import { impact, type WidthImpact } from "./lift/impact.js";
 import { lift, type LiftResult } from "./lift/lift.js";
 import { readFileSync } from "node:fs";
@@ -141,6 +141,12 @@ function pageOf(s: SourceInput & { fixture: string }): Page {
   return { label: s.css ? `${s.css} (lifted)` : s.source!, fixture: f, at: () => f };
 }
 
+/** The page lift's notes for the reader, shown under the coverage line. */
+function withNotes(c: Coverage, p: Page): Coverage {
+  if (p.tw?.notes.length) c.notes = p.tw.notes;
+  return c;
+}
+
 function renderPage(model: Model, p: Page, widths: number[]): Layout[] {
   return p.tw ? widths.map((w) => render(model, p.at(w), [w])[0]) : render(model, p.fixture, widths);
 }
@@ -209,7 +215,7 @@ export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; 
   const fonts = fontsOf(s, layouts);
   return {
     text: shortenPaths(
-      formatCoverage(coverage(layouts, imp?.impacts)) +
+      formatCoverage(withNotes(coverage(layouts, imp?.impacts), p)) +
       formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts }) +
       (imp ? "\n" + formatImpact(imp.impacts) : "") +
       (written.length ? `\nwireframe: ${written.join(", ")}\n` : "") +
@@ -263,7 +269,7 @@ export function whatifCmd(
   };
   const [a, b] = [approx(result.before!), approx(result.after!)];
   result.widths.forEach((w, i) => (w.approximate = [...new Set([...a[i], ...b[i]])]));
-  const cov = coverage(result.after!, impactFor(s, result.after!)?.impacts);
+  const cov = withNotes(coverage(result.after!, impactFor(s, result.after!)?.impacts), p);
   return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
 }
 
@@ -320,7 +326,7 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
       return d;
     }),
   };
-  const cov = coverage(after, ia);
+  const cov = withNotes(coverage(after, ia), pa);
   return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
 }
 
@@ -338,7 +344,7 @@ function runCheck(s: SourceInput & { fixture: string; widths: number[] }) {
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
   const findings = check(layouts, imp?.impacts, p.tw);
-  const cov = coverage(layouts, imp?.impacts);
+  const cov = withNotes(coverage(layouts, imp?.impacts), p);
   return { p, layouts, impacts: imp?.impacts, findings, cov };
 }
 
@@ -441,7 +447,7 @@ export async function fontsCmd(
       ? `system fonts (and fonts the page doesn't load) differ by machine; to measure what this machine's browser uses anyway (machine-specific metrics): ${how(" --system")}`
       : undefined
     : measurable
-      ? `measure them (needs Playwright and Chrome/Chromium; Google Fonts are downloaded): ${how("")}`
+      ? `measure them (needs Chrome or Chromium; Google Fonts are downloaded): ${how("")}`
       : system
         ? `system fonts (and fonts the page doesn't load) differ by machine; to measure what this machine's browser uses anyway (machine-specific metrics): ${how(" --system")}`
         : undefined;

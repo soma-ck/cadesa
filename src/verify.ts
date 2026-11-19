@@ -34,7 +34,7 @@ export interface VerifyReport {
 /** What to measure in Chromium for one finding, read from the finding the engine produced. */
 type Probe =
   | { kind: "tap"; id: string }
-  | { kind: "contrast"; id: string }
+  | { kind: "contrast"; id: string; run?: { tag: string; text: string } }
   | { kind: "overflow"; id: string; child: string }
   | { kind: "wrap"; id: string }
   | { kind: "height"; id: string }
@@ -42,8 +42,11 @@ type Probe =
 
 export function probeOf(f: Finding): Probe | undefined {
   if (f.check === "tap-target") return { kind: "tap", id: f.id };
-  // An inline run's contrast (`"late" (<span> in #p)`) is about an element without an id: not measured.
-  if (f.check === "contrast") return /^"/.test(f.message) ? undefined : { kind: "contrast", id: f.id };
+  if (f.check === "contrast") {
+    // An inline run (`"Apply now" (<a> in #card)`): found in Chromium by its tag and text inside the text box.
+    const m = /^"(.*?)(…)?" \(<([\w-]+)> in /.exec(f.message);
+    return m ? { kind: "contrast", id: f.id, run: { tag: m[3], text: m[1] } } : { kind: "contrast", id: f.id };
+  }
   if (f.check === "clipped") return /^the text of #[\w-]+ is cut off/.test(f.message) ? { kind: "clip", id: f.id, axis: /cut off at the bottom/.test(f.message) ? "y" : "x" } : undefined;
   if (f.check !== "layout") return undefined;
   if (/^the text of #[\w-]+ doesn't wrap/.test(f.message)) return { kind: "wrap", id: f.id };
@@ -88,8 +91,14 @@ const PROBE_SCRIPT = `(probes) => {
     const r = e.getBoundingClientRect(), cs = getComputedStyle(e);
     return { right: r.right - parseFloat(cs.borderRightWidth) - parseFloat(cs.paddingRight), r };
   };
+  const norm = (t) => t.replace(/[ \\t\\n\\r\\f]+/g, " ").trim();
+  const runIn = (box, run) => {
+    if (!box || !run) return box;
+    for (const c of box.querySelectorAll(run.tag)) if (norm(c.textContent).startsWith(run.text)) return c;
+    return null;
+  };
   return probes.map((p) => {
-    const e = el(p.id);
+    const e = runIn(el(p.id), p.run);
     if (!e) return { displayed: false, w: 0, h: 0 };
     const r = e.getBoundingClientRect();
     const out = { displayed: e.getClientRects().length > 0, w: r.width, h: r.height };
@@ -181,20 +190,35 @@ function spread(ws: number[], n: number): number[] {
 export function pageForBrowser(html: string, page: string, cssFiles: string[]): string {
   const dir = dirname(resolve(page));
   const rel = (f: string) => relative(dir, resolve(f)).split(sep).join("/");
+  const isSheet = (tag: string) => /\brel\s*=\s*["']?[^"'>]*\bstylesheet/i.test(tag) && !/\balternate\b/i.test(tag);
+  const hrefOf = (tag: string) => /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
+  const urlOf = (tag: string) => {
+    const h = hrefOf(tag);
+    return h?.[1] ?? h?.[2] ?? h?.[3];
+  };
+  // As in the lift: each link to the given file of the same name; then, when as many links match
+  // no file as files match no link, they're the same stylesheets under other names, in order.
+  const tags = [...html.matchAll(/<link\b[^>]*>/gi)].map((m) => m[0]).filter((t) => isSheet(t) && urlOf(t));
+  const byTag = new Map<number, string>();
+  tags.forEach((t, i) => {
+    const name = basename(urlOf(t)!.split(/[?#]/)[0]);
+    const given = cssFiles.find((f) => basename(f) === name && ![...byTag.values()].includes(f));
+    if (given) byTag.set(i, given);
+  });
+  const looseFiles = cssFiles.filter((f) => ![...byTag.values()].includes(f));
+  const looseTags = tags.map((_, i) => i).filter((i) => !byTag.has(i));
+  if (looseFiles.length && looseFiles.length === looseTags.length) looseTags.forEach((i, k) => byTag.set(i, looseFiles[k]));
   const linked = new Set<string>();
+  let n = -1;
   let out = html
     .replace(/<script\b[^>]*>[\s\S]*?<\/script\s*>/gi, "")
     .replace(/<script\b[^>]*\/>/gi, "")
     .replace(/<link\b[^>]*>/gi, (tag) => {
-      if (!/\brel\s*=\s*["']?stylesheet/i.test(tag)) return tag;
-      const href = /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(tag);
-      const url = href?.[1] ?? href?.[2] ?? href?.[3];
-      if (!url) return tag;
-      const name = basename(url.split(/[?#]/)[0]);
-      const given = cssFiles.find((f) => basename(f) === name);
+      if (!isSheet(tag) || !urlOf(tag)) return tag;
+      const given = byTag.get(++n);
       if (!given) return tag;
       linked.add(given);
-      return tag.replace(href![0], `href="${rel(given)}"`);
+      return tag.replace(hrefOf(tag)![0], `href="${rel(given)}"`);
     });
   const missing = cssFiles.filter((f) => !linked.has(f));
   if (missing.length) {

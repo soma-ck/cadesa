@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.8 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.8 mcp
+npx -y cadesa@0.1.9 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.9 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -17,6 +17,24 @@ ask for `metrics --google` or a page loads its fonts from there, and the ones `c
 to load the URL you give it; your pages are never sent anywhere. `metrics --measure`,
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
+
+## 0.1.9 (2026-11-19)
+
+Fixes from running 0.1.8 on a captured Angular + Bootstrap app:
+
+- CSS values written over several lines (Bootstrap's unminified `font-family` lists) no
+  longer break the lift with "Implicit keys need to be on a single line".
+- Stylesheets given under other names than the page links (an edited copy) are used in the
+  linked places, in order, with a note under the coverage line; `--verify` loads them the same
+  way. Before, every box became ≈ with the reason "the page links , which isn't lifted" (the
+  file name was dropped from the summary). A linked stylesheet that really is missing is now
+  named.
+- `--verify` measures the contrast of links and other inline elements inside a text box.
+- `capture`, `--verify` and `metrics` work under `npx`: Cadesa depends on `playwright-core`
+  (no browser download) and drives the installed Chrome, Chromium or Edge, or
+  `$CADESA_CHROME`. Installing Playwright is no longer needed.
+- The same issue on several elements (one rule, one colour, six step numbers) is one entry
+  listing the elements: "· on 6 elements".
 
 ## 0.1.8 (2026-11-18)
 

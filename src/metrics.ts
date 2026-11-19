@@ -1,6 +1,6 @@
 /**
  * Generate a Cadesa metrics table for a font: glyph advances and pair kerning, measured once in
- * Chromium. Requires Playwright (an optional peer dependency) and a Chrome/Chromium.
+ * Chromium, driven through playwright-core (a dependency) on an installed Chrome or Chromium.
  *
  * Variable fonts are sampled every 100 weight units and interpolated. Static faces are stored at
  * their own weight; running the command again for another face of the same family merges it in.
@@ -104,8 +104,13 @@ export function findChrome(): string | undefined {
       "/usr/bin/chromium-browser",
       "/usr/bin/google-chrome-stable",
       "/usr/bin/google-chrome",
+      "/snap/bin/chromium",
       "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      "/Applications/Chromium.app/Contents/MacOS/Chromium",
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
       "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+      "C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe",
     ].find(existsSync)
   );
 }
@@ -120,19 +125,17 @@ export function readMetrics(file: string): MetricsFile {
 }
 
 export const NEEDS_PLAYWRIGHT =
-  "measuring a font needs Playwright and a Chrome or Chromium: run `npm i -D playwright` and then " +
-  "`npx playwright install chromium` (or point $CADESA_CHROME at an installed Chrome/Chromium)";
+  "this needs a Chrome, Chromium or Edge: install one, or point $CADESA_CHROME at its executable " +
+  "(or run `npx playwright install chromium` once)";
 
-export type Browser = import("playwright").Browser;
+export type Browser = import("playwright-core").Browser;
 
-/** Launch Chromium through Playwright, or throw an error that says exactly what to install. */
+/**
+ * Launch Chromium through playwright-core (a dependency, so it works under npx): the installed
+ * Chrome or Chromium ($CADESA_CHROME first), or else a browser `npx playwright install` downloaded.
+ */
 export async function launchChromium(): Promise<Browser> {
-  let chromium: typeof import("playwright").chromium;
-  try {
-    ({ chromium } = await import("playwright"));
-  } catch {
-    throw new Error(`Playwright is not installed; ${NEEDS_PLAYWRIGHT}`);
-  }
+  const { chromium } = await import("playwright-core");
   try {
     return await chromium.launch({ executablePath: findChrome() });
   } catch (e) {

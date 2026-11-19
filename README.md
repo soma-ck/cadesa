@@ -135,7 +135,7 @@ verified in Chromium 153.0.8010.52 at 2 widths (2 with findings, 0 without)
   boxes marked exact: 10 of 12 match Chromium within 0.5px · boxes marked ≈: 2 of 2 match
 ```
 
-Inconclusive findings are decided by what Chromium measures: on `fixtures/bootstrap/orders.html` both inconclusive contrast findings come back confirmed. Tap targets, contrast, horizontal overflow, unbreakable words and text taller than a fixed height are measured; other findings stay as predicted. The last lines compare every box the engine laid out with Chromium's at those widths. `--verify` needs Playwright and a Chrome or Chromium, like `metrics --measure`.
+Inconclusive findings are decided by what Chromium measures: on `fixtures/bootstrap/orders.html` both inconclusive contrast findings come back confirmed. Tap targets, contrast, horizontal overflow, unbreakable words and text taller than a fixed height are measured; other findings stay as predicted. The last lines compare every box the engine laid out with Chromium's at those widths. `--verify` needs a Chrome, Chromium or Edge on the machine (or `$CADESA_CHROME` pointing at one), like `metrics --measure`.
 
 **Or try the examples:**
 
@@ -151,7 +151,7 @@ npx cadesa render examples/landing/landing.html --source examples/landing/landin
 - In a project: `npm i -D cadesa`, then `npx cadesa ...`.
 - The latest commit: `npx -y --allow-git=all github:soma-ck/cadesa ...` (npm 12 needs `--allow-git` for git installs).
 - From a checkout: `npm run build:ts && claude mcp add --scope user cadesa -- node /path/to/cadesa/lib/cli.js mcp`.
-- A browser is only needed for `cadesa capture`, `check --verify`, `cadesa metrics` and the conformance suites: `npm i -D playwright`, then `npx playwright install chromium` or set `$CADESA_CHROME` to an installed Chrome or Chromium.
+- A browser is only needed for `cadesa capture`, `check --verify`, `cadesa metrics` and the conformance suites. Cadesa drives the Chrome, Chromium or Edge already on the machine (or the one `$CADESA_CHROME` points at) through `playwright-core`, which it installs; nothing else to add. With no browser installed, `npx playwright install chromium` downloads one.
 
 </details>
 
@@ -268,7 +268,7 @@ Real use has caught Cadesa wrong before: the site rebuild above found seven case
 
 ```sh
 cadesa fonts page.html --css styles.css            # which fonts the text uses, and where each comes from
-cadesa fonts page.html --css styles.css --measure  # measure them all (needs Playwright + Chrome/Chromium)
+cadesa fonts page.html --css styles.css --measure  # measure them all (needs Chrome or Chromium)
 cadesa metrics --google "Work Sans"                # or a Google font by name
 ```
 

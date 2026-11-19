@@ -37,7 +37,7 @@ Usage:
                     classes, text) and the CSS rules behind it (stylesheet file:line, selector).
                     --verify then loads the page in Chromium at the widths with findings (and a
                     few others) and marks each finding confirmed or not reproduced; inconclusive
-                    findings are decided by what Chromium shows (Playwright + Chrome)
+                    findings are decided by what Chromium shows (needs Chrome or Chromium)
   cadesa capture  <url> [--out capture] [--login-script login.mjs] [--wait <selector>] [--width 1280]
                     load a page in Chromium and save what it rendered: page.html (scripts
                     removed), its stylesheets in cascade order (including CSS-in-JS) and the fonts
@@ -50,7 +50,7 @@ Usage:
   cadesa fonts    <page.html> --css <file.css> | --tailwind <compiled.css> | --source <src.yaml> [--measure]
                     every font the page's text is set in, whether Cadesa has metrics for it, and
                     where it comes from (@font-face file, Google Fonts, system font). --measure
-                    measures each one it can (Playwright + Chrome; Google Fonts are downloaded);
+                    measures each one it can (Chrome or Chromium; Google Fonts are downloaded);
                     add --system to also measure installed system fonts (machine-specific)
   cadesa metrics  <font-file> --family <name> [--weight <n>] [--out .cadesa/metrics]
                     measure a font once in Chromium so the engine can measure text set in it

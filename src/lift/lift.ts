@@ -1036,7 +1036,8 @@ export function emitYaml(data: Record<string, unknown>, file: string, unlifted: 
   const head = `# Lifted from ${file} by cadesa lift. Edit freely; this file is now the source.\n`;
   const tail = unlifted.length
     ? `\n# Not lifted (${unlifted.length}):\n${unlifted
-        .map((u) => `#   ${u.line ? `${file}:${u.line}` : file} ${u.selector}${u.decl ? ` { ${u.decl} }` : ""}\n#     ${u.kind}: ${u.reason}${u.when ? ` (${u.when.raw})` : ""}`)
+        // A comment is one line: anything carried over from the CSS is flattened, never a YAML line of its own.
+        .map((u) => `#   ${u.line ? `${file}:${u.line}` : file} ${u.selector}${u.decl ? ` { ${u.decl} }` : ""}`.replace(/\s*\n\s*/g, " ") + `\n#     ${`${u.kind}: ${u.reason}${u.when ? ` (${u.when.raw})` : ""}`.replace(/\s*\n\s*/g, " ")}`)
         .join("\n")}\n`
     : "";
   return head + doc.toString({ lineWidth: 0 }) + tail;

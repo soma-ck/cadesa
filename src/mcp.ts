@@ -47,7 +47,7 @@ A page rendered by JavaScript (Angular, React, CSS-in-JS): cadesa_capture saves 
 then cadesa_check them. cadesa_check with verify=true confirms each finding in Chromium.
 Fonts: text is measured from per-font metrics (Inter is bundled). If a report says a font "has no Cadesa metrics"
 (text assumed to be one line), call cadesa_fonts on the page: it says where each font comes from, and with
-measure=true measures them (once; needs Playwright + Chrome) so every box can be predicted.
+measure=true measures them (once; needs Chrome or Chromium) so every box can be predicted.
 
 Language: tokens.{space,size,color,radius,font}, text roles {font,size,weight,lineHeight,color}, breakpoints
 (max-width, desktop-first), styles.<component> with layout {pattern: stack|cluster|grid|layer|flow, gap}
@@ -182,7 +182,7 @@ export function createServer(): McpServer {
     {
       title: "Check design rules",
       description:
-        "Check the layout at each width for overflow (horizontal, unbreakable words, text taller than a fixed height), tap targets (WCAG 2.5.8/2.5.5) and text contrast (WCAG AA). With a Cadesa source, each finding names the YAML path to edit. With css or tailwind, each names the element in the page (file:line, tag, classes, text) and the CSS rules that set the property behind it (stylesheet file:line and selector, following var() to where the variable is set); the generated Cadesa path stays in `path` in json. Findings on boxes Cadesa can't predict exactly are marked inconclusive. With verify=true (css or tailwind only; needs Playwright and Chrome/Chromium), the page is then loaded in Chromium at the widths with findings and a few others, and each finding is marked confirmed, not reproduced, or left as predicted; inconclusive findings are decided by what Chromium shows.",
+        "Check the layout at each width for overflow (horizontal, unbreakable words, text taller than a fixed height), tap targets (WCAG 2.5.8/2.5.5) and text contrast (WCAG AA). With a Cadesa source, each finding names the YAML path to edit. With css or tailwind, each names the element in the page (file:line, tag, classes, text) and the CSS rules that set the property behind it (stylesheet file:line and selector, following var() to where the variable is set); the generated Cadesa path stays in `path` in json. Findings on boxes Cadesa can't predict exactly are marked inconclusive. With verify=true (css or tailwind only; needs Chrome or Chromium), the page is then loaded in Chromium at the widths with findings and a few others, and each finding is marked confirmed, not reproduced, or left as predicted; inconclusive findings are decided by what Chromium shows.",
       inputSchema: {
         ...pageShape,
         widths: sweepWidths,
@@ -198,7 +198,7 @@ export function createServer(): McpServer {
     {
       title: "Capture a page from a browser",
       description:
-        "Load a URL (or a local HTML file) in Chromium, wait for it to render, and save what it rendered for cadesa_check: page.html (the rendered DOM, scripts removed), every stylesheet in cascade order as files (linked, @import-ed, <style> blocks, and CSS-in-JS rules read back from the CSSOM) and the font files the page loaded. Cookies, storage and password or hidden form values are not saved. Returns the exact check command (pass its page as fixture and its stylesheets as css). Needs Playwright and Chrome/Chromium. Pages behind a login: use the CLI, `cadesa capture <url> --login-script login.mjs`.",
+        "Load a URL (or a local HTML file) in Chromium, wait for it to render, and save what it rendered for cadesa_check: page.html (the rendered DOM, scripts removed), every stylesheet in cascade order as files (linked, @import-ed, <style> blocks, and CSS-in-JS rules read back from the CSSOM) and the font files the page loaded. Cookies, storage and password or hidden form values are not saved. Returns the exact check command (pass its page as fixture and its stylesheets as css). Needs Chrome or Chromium. Pages behind a login: use the CLI, `cadesa capture <url> --login-script login.mjs`.",
       inputSchema: {
         url: z.string().describe("The page: an http(s) URL (e.g. a local dev server) or a path to an HTML file"),
         out: z.string().default("capture").describe("Directory to write page.html, css/ and fonts/ into"),
@@ -247,7 +247,7 @@ export function createServer(): McpServer {
     {
       title: "Find and measure the page's fonts",
       description:
-        "List every font family the page's text is set in (the first family of each font stack), whether Cadesa has metrics for it (and which file they came from), and where each one without metrics comes from: an @font-face with a local file, a Google Fonts link, or a system font (which differs by machine). Text in a font without metrics is assumed to be one line and flagged, so content-sized boxes can't be sized: run this first when render or check reports that. With measure=true, measures every font it can, once, in Chromium (needs Playwright and Chrome/Chromium; Google Fonts and remote @font-face files are downloaded into .cadesa/fonts/) and writes .cadesa/metrics/<family>.metrics.json, which every later command uses.",
+        "List every font family the page's text is set in (the first family of each font stack), whether Cadesa has metrics for it (and which file they came from), and where each one without metrics comes from: an @font-face with a local file, a Google Fonts link, or a system font (which differs by machine). Text in a font without metrics is assumed to be one line and flagged, so content-sized boxes can't be sized: run this first when render or check reports that. With measure=true, measures every font it can, once, in Chromium (needs Chrome or Chromium; Google Fonts and remote @font-face files are downloaded into .cadesa/fonts/) and writes .cadesa/metrics/<family>.metrics.json, which every later command uses.",
       inputSchema: {
         ...pageShape,
         widths: sweepWidths,
@@ -268,7 +268,7 @@ export function createServer(): McpServer {
     {
       title: "Measure one font",
       description:
-        "Measure one font once in Chromium and write .cadesa/metrics/<family>.metrics.json: a font file (font + family, and weight for a static face), a Google font by name (google; its variable wght axis when it has one, else its static weights), or the font installed on this machine under a name (system + family; machine-specific). Needs Playwright and Chrome/Chromium. To measure everything a page uses, use cadesa_fonts with measure=true instead.",
+        "Measure one font once in Chromium and write .cadesa/metrics/<family>.metrics.json: a font file (font + family, and weight for a static face), a Google font by name (google; its variable wght axis when it has one, else its static weights), or the font installed on this machine under a name (system + family; machine-specific). Needs Chrome or Chromium. To measure everything a page uses, use cadesa_fonts with measure=true instead.",
       inputSchema: {
         font: z.string().optional().describe("Path to a .woff2/.woff/.ttf/.otf file"),
         family: z.string().optional().describe("The font-family name the CSS uses"),

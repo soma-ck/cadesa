@@ -232,13 +232,15 @@ export interface Coverage {
   approximate: number;
   /** Causes of approximate boxes, most common first (count = box × width). */
   reasons: { reason: string; count: number }[];
+  /** How the page was read, when the reader should know (a stylesheet used under another name). */
+  notes?: string[];
 }
 
 /** Normalize a ≈ reason to its root cause, so the same cause groups across boxes and widths. */
 function rootCause(r: string): string {
   return shortenPaths(r)
     .replace(/^(?:moved|resized) by #[\w-]+: /, "")
-    .replace(/(?:\(\S+\.(?:css|html)(?::\d+)?\)|\S+\.(?:css|html|ya?ml)(?::\d+)?)\s*/g, "")
+    .replace(/(?:\(\S+\.(?:css|html)(?::\d+)?\)|\S+\.(?:css|html|ya?ml):\d+)\s*/g, "")
     .replace(/\s+/g, " ")
     .replace(/ at \d+(?:\.\d+)?px/g, "")
     .trim()
@@ -285,6 +287,7 @@ export function formatCoverage(c: Coverage): string {
   ];
   if (c.reasons.length)
     out.push(`  ≈ because: ${c.reasons.slice(0, 3).map((r) => `${r.reason} (×${r.count})`).join(" · ")}${c.reasons.length > 3 ? ` · +${c.reasons.length - 3} more causes` : ""}`);
+  for (const n of c.notes ?? []) out.push(`  note: ${n}`);
   if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat what follows as leads and confirm it in a browser");
   return out.join("\n") + "\n";
 }
@@ -305,7 +308,23 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
   }
   const notReproduced = (f: Finding) => f.verified?.status === "not reproduced";
   const rank = (f: Finding) => (notReproduced(f) ? 3 : f.inconclusive ? 2 : f.severity === "error" ? 0 : 1);
-  const sorted = [...groups.values()].sort((a, b) => rank(a.first) - rank(b.first));
+  // The same issue on several elements (six step numbers in one color, set by one rule) is one
+  // entry: same check, state, widths and rules, and the same message apart from quoted text and
+  // which element it names.
+  type Group = { first: Finding; all: Finding[]; widths: number[]; others: Finding[] };
+  const clusters = new Map<string, Group>();
+  for (const g of groups.values()) {
+    const f = g.first;
+    const rules = (f.source ?? []).map((x) => [x.what, x.rules.map((r) => `${r.file}:${r.line}`)]);
+    const shape = f.message.replace(/"[^"]*"/g, '""').replace(/<[^>\s]+>/g, "<>").replace(/#[\w-]+/g, "#").replace(/\d+(?:\.\d+)?px/g, "px");
+    const key = f.check === "spacing" || (!rules.length && !f.path) ? `solo|${f.check}|${f.id}|${f.message}` : JSON.stringify([f.check, rank(f), g.widths, rules, f.path ?? "", shape]);
+    const c = clusters.get(key);
+    if (c && f.element) {
+      c.others.push(f);
+      c.all.push(...g.all);
+    } else clusters.set(key, { ...g, others: [] });
+  }
+  const sorted = [...clusters.values()].sort((a, b) => rank(a.first) - rank(b.first));
   const out: string[] = [];
   let section = -1;
   for (const g of sorted) {
@@ -321,8 +340,13 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
     section = r;
     const icon = notReproduced(f) ? "○" : f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠";
     const msg = f.message.replace(/ \(inconclusive: this box isn't exactly predicted for the original CSS\)/, "");
-    out.push(`${icon} [${f.check}] ${msg} · at ${widthRanges(g.widths, widths)}`);
-    if (f.element) out.push(`    element: ${describeElement(f.element)}`);
+    const many = g.others.length ? ` · on ${g.others.length + 1} elements` : "";
+    out.push(`${icon} [${f.check}] ${msg} · at ${widthRanges(g.widths, widths)}${many}`);
+    if (f.element) {
+      const els = [f, ...g.others].map((x) => describeElement(x.element!));
+      out.push(`    element${els.length > 1 ? "s" : ""}: ${els[0]}`, ...els.slice(1, 6).map((e) => `              ${e}`));
+      if (els.length > 6) out.push(`              +${els.length - 6} more`);
+    }
     for (const s of f.source ?? []) {
       const [first, ...rest] = describeRules(s.rules);
       out.push(`    ${s.what}: ${first}`, ...rest.map((x) => `    ${" ".repeat(s.what.length + 2)}${x}`));

@@ -1,14 +1,14 @@
 /**
  * What Cadesa does with a real browser, shared by `check --verify`, `capture` and the conformance
  * scripts: serve files to Chromium and measure the boxes of elements tagged `data-fixture`.
- * Playwright stays optional: callers launch Chromium with launchChromium() (metrics.ts).
+ * Callers launch Chromium with launchChromium() (metrics.ts), through playwright-core.
  */
 import { createHash } from "node:crypto";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createServer } from "node:http";
 import { extname, relative, resolve, sep } from "node:path";
 
-export type Page = import("playwright").Page;
+export type Page = import("playwright-core").Page;
 
 export interface Rect {
   x: number;

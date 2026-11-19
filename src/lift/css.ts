@@ -1,6 +1,28 @@
 /** Parse CSS into flat rules with media context, specificity and source lines. */
 import postcss, { type AtRule, type ChildNode, type Rule } from "postcss";
 
+/**
+ * A declaration value on one line: unminified CSS (Bootstrap's own) breaks long values such as
+ * font-family lists over several lines, which means the same as one space. Text inside quotes
+ * is kept as written.
+ */
+export function cssValue(v: string): string {
+  let out = "";
+  let quote = "";
+  for (const ch of v.trim()) {
+    if (quote) {
+      if (ch === quote) quote = "";
+      out += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      out += ch;
+    } else if (/\s/.test(ch)) {
+      if (!out.endsWith(" ")) out += " ";
+    } else out += ch;
+  }
+  return out;
+}
+
 export interface Decl {
   prop: string;
   value: string;
@@ -91,7 +113,7 @@ export function parseCss(file: string, text: string): ParsedCss {
           skipped.push({ line: n.source?.start?.line ?? 0, text: n.toString().split("\n")[0], reason: "nested rules are not supported" });
         return;
       }
-      const d = { prop: n.prop.toLowerCase(), value: n.value.trim(), important: n.important, line: n.source?.start?.line ?? 0 };
+      const d = { prop: n.prop.toLowerCase(), value: cssValue(n.value), important: n.important, line: n.source?.start?.line ?? 0 };
       if (d.prop.startsWith("--")) vars.set(n.prop, d);
       else decls.push(d);
     });

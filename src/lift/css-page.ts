@@ -17,6 +17,7 @@
  */
 import postcss, { type AtRule, type ChildNode, type Container, type Rule } from "postcss";
 import { parseMediaQuery, type MediaInfo } from "../tailwind/css.js";
+import { cssValue } from "./css.js";
 import { kindOf, worst, type ImpactKind } from "./lift.js";
 import { attr, PageLifter, round, type El, type Origin, type PageLift, type State } from "./page.js";
 
@@ -363,7 +364,7 @@ function readSheet(file: string, text: string, origin: Origin3, start: number, l
   const declsOf = (r: Container) => {
     const out: CssRuleIn["decls"] = [];
     r.each((n) => {
-      if (n.type === "decl") out.push({ prop: n.prop.startsWith("--") ? n.prop : n.prop.toLowerCase(), value: n.value.trim(), important: n.important });
+      if (n.type === "decl") out.push({ prop: n.prop.startsWith("--") ? n.prop : n.prop.toLowerCase(), value: cssValue(n.value), important: n.important });
       else if (n.type === "rule") skipped.push({ file, line: (n.source?.start?.line ?? 0) + lineOffset, text: n.selector, reason: "nested rules are not supported" });
     });
     return out;
@@ -430,20 +431,46 @@ class CssLifter extends PageLifter {
     const ua = readSheet("browser default", UA_CSS, "ua", 0);
     const styleBlocks = [...html.matchAll(/<(link)\b([^>]*)>|<(style)\b[^>]*>([\s\S]*?)<\/style>/gi)];
     const baseOf = (f: string) => f.replace(/[?#].*$/, "").replace(/^.*[\\/]/, "");
+    const hrefOf = (attrs: string) => {
+      const m = /(?:^|\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i.exec(attrs);
+      return (m?.[1] ?? m?.[2] ?? m?.[3] ?? "").trim();
+    };
+    const links = styleBlocks
+      .filter((m) => m[1] && /(?:^|\s)rel\s*=\s*["']?[^"'>]*\bstylesheet\b/i.test(m[2]) && !/\balternate\b/i.test(/rel\s*=\s*["']?([^"'>]*)/i.exec(m[2])?.[1] ?? ""))
+      .map((m) => ({ m, href: hrefOf(m[2]) }));
+    const byLink = new Map<RegExpMatchArray, SheetFile>();
+    for (const l of links) {
+      const given = files.find((f) => baseOf(f.file) === baseOf(l.href) && ![...byLink.values()].includes(f));
+      if (given) byLink.set(l.m, given);
+    }
+    // Given files the page doesn't link, and links no given file matches: when there are as many
+    // of each, they're the same stylesheets saved under other names (an edited copy), in order.
+    const looseFiles = files.filter((f) => ![...byLink.values()].includes(f));
+    const looseLinks = links.filter((l) => !byLink.has(l.m) && l.href);
+    if (looseFiles.length && looseFiles.length === looseLinks.length)
+      looseLinks.forEach((l, i) => {
+        byLink.set(l.m, looseFiles[i]);
+        this.readerNotes.push(`used ${looseFiles[i].file} where the page links ${l.href} (no --css file has that name; given in the same order)`);
+      });
     const placed = new Set<SheetFile>();
     /** In cascade order: a given file, or a <style> block (its text and line offset). */
     const sources: ({ sheet: SheetFile } | { style: string; line: number })[] = [];
     for (const m of styleBlocks) {
       if (m[1]) {
-        if (!/rel\s*=\s*["']?stylesheet/i.test(m[2])) continue;
-        const href = /href\s*=\s*["']?([^"'\s>]+)/i.exec(m[2])?.[1] ?? "";
-        const given = files.find((f) => baseOf(f.file) === baseOf(href));
+        const link = links.find((l) => l.m === m);
+        if (!link) continue;
+        const given = byLink.get(m);
         if (given && !placed.has(given)) {
           placed.add(given);
           sources.push({ sheet: given });
         } else if (!given) {
-          const names = files.map((f) => f.file).join(", ");
-          this.skipped.push({ file: page, line: lineAt(html, m.index!), text: `<link href="${href}">`, reason: `the page links ${href}, which isn't lifted; only ${names} ${files.length > 1 ? "are" : "is"} (give every stylesheet: --css a.css,b.css)` });
+          const names = files.map((f) => baseOf(f.file)).join(", ");
+          this.skipped.push({
+            file: page,
+            line: lineAt(html, m.index!),
+            text: `<link href="${link.href || "(empty)"}">`,
+            reason: `${link.href ? "this stylesheet" : "a stylesheet with an empty href"} isn't among the --css files, so its rules are unknown and every box may differ (given: ${names}). Pass every stylesheet the page links, in order`,
+          });
         }
       } else sources.push({ style: m[4] ?? "", line: lineAt(html, m.index!) - 1 });
     }

@@ -1,6 +1,6 @@
 {
   "name": "cadesa",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Predict what a style edit will do before you make it. Cadesa computes layout without a browser and ships plain CSS.",
   "keywords": [
     "css",
@@ -75,17 +75,10 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.32.2",
     "parse5": "8.1.1",
+    "playwright-core": "1.65.0",
     "postcss": "8.5.32",
     "yaml": "2.9.1",
     "zod": "4.6.7"
-  },
-  "peerDependencies": {
-    "playwright": ">=1.40"
-  },
-  "peerDependenciesMeta": {
-    "playwright": {
-      "optional": true
-    }
   },
   "devDependencies": {
     "@tailwindcss/cli": "4.3.4",

@@ -361,6 +361,8 @@ export interface PageLift {
   states: State[];
   /** Data-fixture ids of elements hidden at some widths but not others. */
   responsive: string[];
+  /** Things the reader should know about how the page was read (e.g. a stylesheet used under another name). */
+  notes: string[];
   /** The cascade per element (for pointing findings at the rule that set a property). */
   elements: { els: El[]; html?: El; body?: El };
   /**
@@ -392,6 +394,8 @@ export interface InlineRun {
  * (`evaluate`), the ranges (`computeStates`) and the root text style (`computeRootText`).
  */
 export abstract class PageLifter {
+  /** Page-level notes for the reader, returned as PageLift.notes. */
+  readerNotes: string[] = [];
   els: El[] = [];
   roots: El[] = [];
   states: State[] = [];
@@ -1679,6 +1683,7 @@ export abstract class PageLifter {
       dynamic,
       states: this.states,
       responsive,
+      notes: this.readerNotes,
       spacing: (w: number) => {
         const si = this.states.indexOf(stateAt(this.states, w));
         return (spacingAt[si] ??= this.runTogether(si));
