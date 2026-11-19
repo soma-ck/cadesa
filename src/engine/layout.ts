@@ -225,6 +225,8 @@ interface Intrinsic {
   why?: string;
   /** A row of several items inside, whose max-content the browser takes from its wrapped lines when the box is narrower. */
   wraps?: boolean;
+  /** With `why`: the min-content width is known all the same (a compressible form field inside), only the max-content one isn't. */
+  minKnown?: boolean;
 }
 
 export function layout(model: Model, fixture: Fixture, width: number): Layout {
@@ -516,6 +518,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const v = Math.max(insX, Math.min(cap, pw === "max-content" ? it.max : it.min));
       return { min: v, max: v };
     }
+    // A form field or replaced element with a percentage width or max-width is compressible: its
+    // min-content contribution is its padding and border; its max-content one, its intrinsic size, isn't known.
+    if (!contentOnly && /^(input|select|textarea|img|svg|video|canvas|iframe|object|embed)$/.test(n.tag) && (typeof p.width?.value === "object" || p.width?.value === "fill" || typeof p.maxWidth?.value === "object"))
+      return { min: insX, max: insX, why: `<${n.tag}> has an intrinsic size of its own`, minKnown: true };
     if (pw !== undefined && pw !== "fit") return unknown(`<${n.tag}> has a ${pw === "fill" ? "fill" : "percentage"} width, which depends on the box being sized`);
     if (p.aspect && !contentOnly) return unknown(`<${n.tag}> has an aspect ratio`);
     // Size containment (size or inline-size): as wide as if it were empty.
@@ -567,9 +573,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       }
       let row = 0;
       let rowMin = 0;
+      // Content whose min-content width alone is known (a compressible field): this box's is too.
+      let partial: string | undefined;
       for (const k of kids) {
         const ki = intrinsic(k.node, k.comp!, k.slot);
-        if (ki.why) return ki;
+        if (ki.why && !ki.minKnown) return ki;
+        if (ki.why) partial ??= ki.why;
         const km = marginOf(resolveElement(model, k.comp!, k.slot, width));
         const mm = km.left + km.right;
         min = Math.max(min, ki.min + mm);
@@ -588,6 +597,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       }
       // A layer's one column is minmax(0, 1fr): under a min-content constraint it's 0 wide.
       if (pat === "layer") min = 0;
+      if (partial) {
+        const m = Math.max(insX, Math.min(cap, Math.max(0, min) + insX));
+        return { min: m, max: m, why: partial, minKnown: true };
+      }
     } else if (MEDIA.has(n.tag) || CONTROLS.has(n.tag)) return unknown(`<${n.tag}> has an intrinsic size of its own`);
     min = Math.max(0, min);
     max = Math.max(max, min);
@@ -784,7 +797,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         // A scroll container's automatic minimum is 0.
         if (scrolls(kp.overflow?.value)) continue;
         const it = intrinsic(k.node, k.comp, k.slot);
-        if (it.why) {
+        if (it.why && !it.minKnown) {
           notes.push(`a ${t.fr}fr column is at least as wide as its items' min-content width, which can't be measured here (${it.why})`);
           continue;
         }
@@ -880,16 +893,16 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     });
 
   /** An item's column contributions (outer: margins in; percentages of the grid area count as 0 here). */
-  function colContribution(k: Kid, a: number, b: number): Contribution & { why?: string } {
+  function colContribution(k: Kid, a: number, b: number): Contribution & { why?: string; minOnly?: boolean } {
     const kp = resolveElement(model, k.comp, k.slot, width);
     const m = marginOf(kp);
     const it = intrinsic(k.node, k.comp, k.slot);
-    if (it.why) return { a, b, minContent: 0, maxContent: 0, minimum: 0, why: it.why };
+    if (it.why && !it.minKnown) return { a, b, minContent: 0, maxContent: 0, minimum: 0, why: it.why };
     const ins = insets(kp);
     const mx = m.left + m.right;
     // A scroll container's automatic minimum width is 0 (its padding and border remain).
     const minimum = scrolls(kp.overflow?.value) ? ins.left + ins.right : it.min;
-    return { a, b, minContent: it.min + mx, maxContent: it.max + mx, minimum: minimum + mx };
+    return { a, b, minContent: it.min + mx, maxContent: it.max + mx, minimum: minimum + mx, ...(it.why && { why: it.why, minOnly: true }) };
   }
 
   /** A grid's own min-content and max-content widths (its columns sized under that constraint). */
@@ -944,7 +957,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Columns.
     const colItems = kids.map((k, i) => colContribution(k, areas[i].c0, areas[i].c1));
     colItems.forEach((it, i) => {
-      if (it.why && colTracks.slice(it.a, it.b).some((t) => !fixed(t) && !(typeof t.max === "object" && "fr" in t.max && typeof t.min === "object" && "len" in t.min)))
+      // (An item whose min-content width alone is known only matters to tracks sized up to its max-content.)
+      const needsMax = (t: TrackSize) => t.max === "auto" || t.max === "max-content" || t.fit !== undefined;
+      if (it.why && colTracks.slice(it.a, it.b).some((t) => (it.minOnly ? needsMax(t) : !fixed(t) && !(typeof t.max === "object" && "fr" in t.max && typeof t.min === "object" && "len" in t.min))))
         notes.push(`a grid column sized by its items is as wide as their content, which can't be measured here (${it.why})`);
     });
     const colW = sizeTracks(colTracks, colItems, colGap, innerW, /^(normal|stretch)$/.test(spec.justifyContent));

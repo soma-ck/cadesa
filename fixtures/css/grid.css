@@ -269,6 +269,27 @@ p {
   padding: 16px;
 }
 
+.signup {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 16px;
+}
+
+.signup-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.signup-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 8px;
+  border: 1px solid #9ca3af;
+  font: inherit;
+}
+
 .widths-max {
   width: max-content;
   padding: 4px 8px;
