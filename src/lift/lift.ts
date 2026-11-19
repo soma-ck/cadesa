@@ -852,7 +852,8 @@ export function liftElements(input: LiftInput): LiftResult {
     // An absolute box's percentage height is of its containing block: kept for the position block below.
     const height = posType && /^(absolute|fixed)$/.test(posType) && /%$/.test(resolveVar(m.get("height")?.value ?? "")?.raw ?? "") ? undefined : take("height");
     if (height && height.value.trim() !== "auto") {
-      const t = lengthToken("size", height.value);
+      // A percentage the page front end kept: of a stretched parent's height.
+      const t = lengthToken("size", height.value) ?? pctToken(height.value);
       if (t) out.height = t;
       else note(e, s, height, "height must be a px or rem length", "geometry");
     }

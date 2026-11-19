@@ -1203,6 +1203,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         message: `content of #${id} needs ${fmtPx(contentH + insY)}px but its height is ${fmtPx(props.height.value)}px at ${width}px${lines ? ` (${lines.length} lines)` : ""}`,
       });
     }
+    // A height of its own is definite: percentages of it resolve.
+    if (props.height) fillPct(box);
     return box;
   }
 
@@ -1234,6 +1236,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
             c.h = Math.max(target, insets(c.props).top + insets(c.props).bottom);
             arrange(c);
           } else grow(c, target);
+          // A stretched item's height is definite: percentages of it resolve.
+          fillPct(c);
         }
         const space = rowH - outerH(c);
         c.y = y + m.top + (a.align === "center" ? space / 2 : a.align === "end" ? space : 0);
@@ -1275,6 +1279,30 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (newH <= b.h) return;
     b.h = newH;
     arrange(b);
+  }
+
+  /**
+   * Children whose height is a percentage of this box's content height, once that height is
+   * definite (the box is stretched by its row, or has a height of its own): they take it, taller
+   * or shorter than their content, never shorter than their padding and border. In a stack, a
+   * flex item never gets shorter than its content.
+   */
+  function fillPct(b: Box) {
+    const ib = insets(b.props);
+    const inner = Math.max(0, b.h - ib.top - ib.bottom);
+    for (const c of b.children) {
+      const hp = c.props.heightPct?.value;
+      if (hp === undefined || absInfo.has(c)) continue;
+      const ic = insets(c.props);
+      let h = Math.max(sizeAt(hp, inner), ic.top + ic.bottom);
+      if (b.props.pattern?.value === "stack") h = Math.max(h, c.h);
+      if (h > c.h) grow(c, h);
+      else if (h < c.h) {
+        c.h = h;
+        arrange(c);
+      }
+      fillPct(c);
+    }
   }
 
   /**

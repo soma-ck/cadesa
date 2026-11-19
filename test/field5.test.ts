@@ -194,8 +194,14 @@ describe("heights", () => {
     expect(r.exact()).toBe(true);
   });
 
-  it("height: 100% inside a flex item, whose height may be stretched, is ≈", () => {
-    const r = run(`<div class="row"><div class="col"><div class="h-100"><p>In a column</p></div></div></div>`, `p { margin: 0 } .row { display: flex } .h-100 { height: 100% }`, [400]);
+  it("height: 100% inside a stretched flex item is of the item's stretched height", () => {
+    const r = run(`<div class="row"><div class="col"><div class="h-100"><p>In a column</p></div></div><p class="tall">Two<br>lines</p></div>`, `p { margin: 0 } .row { display: flex } .h-100 { height: 100% }`, [400]);
+    expect(r.approx("h-100")).toBeUndefined();
+    expect(r.box("h-100").h).toBe(48);
+  });
+
+  it("height: 100% inside a flex item that isn't stretched is ≈", () => {
+    const r = run(`<div class="row"><div class="col"><div class="h-100"><p>In a column</p></div></div></div>`, `p { margin: 0 } .row { display: flex; align-items: center } .h-100 { height: 100% }`, [400]);
     expect(r.approx("h-100")).toMatch(/may be stretched/);
   });
 });

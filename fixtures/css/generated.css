@@ -227,6 +227,40 @@ ul {
   flex: 1;
 }
 
+/* Cards as tall as their stretched column (height: 100% of a flex item's stretched height). */
+.deck {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 16px -8px 0;
+}
+
+.deck-col {
+  flex: 1 0 0%;
+  padding: 0 8px 16px;
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  padding: 12px;
+  border: 1px solid #cbd2d9;
+}
+
+.panel-title {
+  font-size: 16px;
+}
+
+.panel-text {
+  flex: 1 1 auto;
+  font-size: 14px;
+}
+
+.panel-foot {
+  font-size: 12px;
+  color: #616e7c;
+}
+
 /* A percentage row gap of an auto height is 0. */
 .stacked {
   display: flex;
@@ -242,5 +276,10 @@ ul {
 
   .crumbs {
     font-size: 13px;
+  }
+
+  .deck-col {
+    flex: 0 0 auto;
+    width: 100%;
   }
 }

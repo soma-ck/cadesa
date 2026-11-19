@@ -587,7 +587,8 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           out.measure = ref(v, p, "size");
           break;
         case "height":
-          out.height = fixedRef(v, p, "a height");
+          // A percentage: of the parent's content height once that is definite (it is stretched in a cluster or grid row, or set).
+          out.height = ref(v, p, "size");
           break;
         case "minHeight":
           out.minHeight = fixedRef(v, p, "a minimum height");

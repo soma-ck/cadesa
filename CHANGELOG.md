@@ -49,6 +49,11 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   0 in intrinsic sizes, as in Chromium). A percentage row gap of a flex container whose height is
   auto is 0; a grid's percentage row gap stays `≈`. In a source: a cluster or grid `gap` may name
   a percentage size token.
+- `height: 100%` (any percentage) inside a flex or grid item that its row stretches is of the
+  item's stretched height, as Chromium resolves it once the row is laid out (Bootstrap's `.h-100`
+  card in a `.col`): the only in-flow child of a block or column-flex item, border-box or without
+  vertical padding and border. In a source, `height` may name a percentage size token: of the
+  parent's content height once that is definite (stretched, or set), auto until then.
 - More selectors are decided from the page: `:lang()`, `:dir()`, `:open`, `:placeholder-shown`,
   `:read-only` / `:read-write`, `:valid` / `:invalid` for required controls, `:in-range`,
   `:nth-child(An+B of S)`, `:scope`, `:host`; vendor pseudo-classes Chromium rejects match

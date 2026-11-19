@@ -961,6 +961,39 @@ export abstract class PageLifter {
     return isFinite(open) && isFinite(close) ? { open, close } : undefined;
   }
 
+  /**
+   * A percentage height the engine resolves: the element is the only in-flow child of a block or
+   * column flex container that a flex row or grid stretches (align-self stretch, no height or
+   * min/max-height of its own), and its padding and border are inside its height (border-box, or none).
+   */
+  ofStretched(el: El, si: number): boolean {
+    const parent = el.parent;
+    const gp = parent?.parent;
+    if (!parent || !gp || parent === this.bodyEl || this.positioned(el, si)) return false;
+    const res = (k: El, p: string) => {
+      const o = k.own[si]?.get(p);
+      return o ? this.resolve(k, si, o.value) : undefined;
+    };
+    const shown = parent.children.filter((k) => k.roles[si] && k.roles[si] !== "hidden" && k.roles[si] !== "out");
+    if (shown.length !== 1 || shown[0] !== el || parent.roles[si] !== "container") return false;
+    const pd = this.displayOf(parent, si);
+    if (!(/^(block|flow-root)$/.test(pd) || (/^flex$/.test(pd) && this.isColumn(parent, si)))) return false;
+    const gd = this.displayOf(gp, si);
+    const row = /^(inline-)?flex$/.test(gd) && !this.isColumn(gp, si);
+    if (!row && !/^(inline-)?grid$/.test(gd)) return false;
+    if (gp.roles[si] !== "container" || this.positioned(parent, si)) return false;
+    const self = res(parent, "align-self") ?? "auto";
+    const items = res(gp, "align-items") ?? "normal";
+    if (!(/^(auto|normal|stretch)$/.test(self) && (self === "stretch" || /^(normal|stretch)$/.test(items)))) return false;
+    if (["height", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(parent, p) ?? ""))) return false;
+    if (["margin-top", "margin-bottom"].some((p) => res(parent, p) === "auto")) return false;
+    // In a stretched grid row only (a flex row's line is as tall as its tallest item either way).
+    const size = this.textOf(el, si).size;
+    const px = (p: string) => lengthPx(res(el, p) ?? "0", size) ?? NaN;
+    const edges = ["top", "bottom"].reduce((t, s) => t + px(`padding-${s}`) + (/^(none|hidden)$/.test(res(el, `border-${s}-style`) ?? "none") ? 0 : borderPx(px(`border-${s}-width`))), 0);
+    return res(el, "box-sizing") === "border-box" || edges === 0;
+  }
+
   /** Whether the element's text is italic (or oblique): its own font-style, its tag's default (em, i...), or its parent's. */
   italic(el: El | undefined, si: number): boolean {
     if (!el) return false;
@@ -1475,6 +1508,11 @@ export abstract class PageLifter {
           const of = this.definiteHeight(el.parent, si);
           if (of === "auto") continue;
           if (of === "unknown") {
+            // A stretched flex or grid item's height is definite once its row is laid out (Cadesa's engine resolves it then).
+            if (p === "height" && this.ofStretched(el, si)) {
+              decl(p, v, o.utility);
+              continue;
+            }
             this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: `a percentage ${p} of a parent whose height may be stretched (a flex or grid item) is not decided`, kind: "height" });
             continue;
           }

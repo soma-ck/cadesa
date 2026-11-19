@@ -114,6 +114,8 @@ export interface ResolvedProps {
   width?: Resolved<number | "fill" | "fit" | Pct>;
   height?: Resolved<number>;
   minHeight?: Resolved<number>;
+  /** A height that is a percentage of the parent's content height, once that is definite (stretched or set); auto until then. */
+  heightPct?: Resolved<number | Pct>;
   text?: Resolved<ResolvedText>;
 }
 
@@ -297,9 +299,14 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "maxWidth":
         out[key] = sizeOf(p[key]!);
         break;
+      case "height": {
+        const t = model.tokens.get(tokenKey(p.height!.kind, p.height!.name))!;
+        if (t.pct !== undefined) out.heightPct = sizeOf(p.height!);
+        else out.height = lengthOf(p.height!);
+        break;
+      }
       case "radius":
       case "minHeight":
-      case "height":
         out[key] = lengthOf(p[key]!);
         break;
       case "background":
