@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: form controls at their own sizes</title>
+    <link rel="stylesheet" href="forms.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="sheet">
+      <h1 class="title">Berth booking</h1>
+      <form class="form">
+        <div class="field"><label class="label" for="name">Vessel name</label><input class="text" id="name" type="text" /></div>
+        <div class="field"><label class="label" for="call">Call sign</label><input class="text" id="call" type="text" size="8" /></div>
+        <div class="field"><label class="label" for="mail">Contact</label><input class="text" id="mail" type="email" size="30" /></div>
+        <div class="field"><label class="label" for="len">Length</label><input class="text" id="len" type="number" /></div>
+        <div class="field"><label class="label" for="notes">Notes</label><textarea class="area" id="notes" rows="3" cols="32"></textarea></div>
+        <div class="field"><textarea class="area inline" rows="2"></textarea></div>
+        <div class="field">
+          <select class="choice">
+            <option>Outer pontoon</option>
+            <option>Inner basin, east side</option>
+          </select>
+        </div>
+        <div class="checks"><input type="checkbox" id="power" /> <label for="power">Shore power</label> <input type="radio" name="w" id="water" /> <label for="water">Water</label></div>
+        <div class="field"><input type="range" /></div>
+        <div class="row">
+          <select class="native">
+            <option>Arrival</option>
+            <option>Departure today</option>
+          </select>
+          <input class="text" type="text" size="6" />
+          <button class="action" type="button">Check</button>
+        </div>
+        <div class="row center">
+          <input type="checkbox" />
+          <span class="hint">Send a confirmation</span>
+          <input class="small-field" type="text" size="12" />
+        </div>
+        <div class="group">
+          <span class="addon">Berth</span>
+          <input class="grow" type="text" />
+          <button class="addon-button" type="button">Find</button>
+        </div>
+        <ul class="menu">
+          <li class="menu-item"><select class="flat"><option>English</option><option>Español</option></select></li>
+          <li class="menu-item"><a class="link" href="#">Sign in</a></li>
+        </ul>
+        <div class="buttons"><input type="submit" /> <input type="reset" /> <input type="button" value="Print slip" /></div>
+        <div class="field"><button class="tall" type="button">Book berth</button></div>
+        <div class="field"><button class="short" type="button">Cancel</button></div>
+      </form>
+    </main>
+  </body>
+</html>

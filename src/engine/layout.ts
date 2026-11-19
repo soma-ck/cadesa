@@ -1321,6 +1321,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
       // A table without a width is as wide as its columns want (fit-content), unless a flex column or grid stretches it.
       else if (grid && pw === undefined && parent !== "stack" && parent !== "grid" && parent !== "layer") w = fit(Math.max(0, avail - m.left - m.right), "is a table as wide as its content");
+      // A form control of known intrinsic width in block flow isn't stretched: it is that wide (and may overflow).
+      else if ((parent === "flow" || parent === "page") && pw === undefined && CONTROLS.has(n.tag) && n.controlWidth !== undefined && !m.autoLeft && !m.autoRight) w = n.controlWidth + insX;
       else w = Math.max(0, avail - m.left - m.right); // page, flow, stack, grid cell, layer: stretch inside the margins
       if (w > maxW) w = maxW;
       // box-sizing: border-box never makes a box narrower than its padding and border.
@@ -1550,7 +1552,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       else if (parent === "page" || parent === "flow") assumptions.push(`${parent === "page" ? "at the page level" : "in block flow"} its width follows the image file; ${say("add aspect or a width token", "give it a width or an aspect-ratio")}`);
     }
     // A form control is as wide as its content unless something sets its width.
-    if ((parent === "page" || parent === "flow") && CONTROLS.has(n.tag) && (pw === undefined || pw === "fill") && !props.maxWidth)
+    if ((parent === "page" || parent === "flow") && CONTROLS.has(n.tag) && (pw === "fill" || (pw === undefined && n.controlWidth === undefined)) && !props.maxWidth)
       assumptions.push(`a <${n.tag}> ${parent === "page" ? "at the page level" : "in block flow"} is as wide as its content; ${say("give it a width token or maxWidth", "give it a width")}`);
     if (media && !props.aspect && !props.height)
       issues.push({

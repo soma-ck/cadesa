@@ -1,0 +1,200 @@
+/*
+ * Inline runs in another size, font, line height or vertical-align (small, .small, sup, sub,
+ * spans in em and px, text in another family), atomic inlines taller than their line, and flex rows
+ * aligned on their items' first baselines. Each line box is the union of its strut and the inline
+ * boxes on it around the baseline, from the fonts' vertical metrics.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+.masthead {
+  padding: 16px 20px;
+  border-bottom: 1px solid #d9dee3;
+}
+
+.title {
+  margin: 0;
+  font-size: 28px;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.title small {
+  font-size: 0.6em;
+  font-weight: 400;
+  color: #52606d;
+}
+
+.byline {
+  margin: 4px 0 0;
+  font-size: 14px;
+}
+
+.small {
+  font-size: 0.875em;
+}
+
+.sheet {
+  padding: 16px 20px;
+  max-width: 760px;
+}
+
+.lede {
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.em {
+  font-family: Roboto, sans-serif;
+  font-size: 1.1em;
+}
+
+.tag {
+  font-size: 12px;
+  line-height: 1;
+  vertical-align: middle;
+  color: #8a1c1c;
+}
+
+.alt {
+  font-family: Roboto, sans-serif;
+}
+
+.big {
+  font-size: 26px;
+}
+
+.mixed {
+  line-height: 1.4;
+}
+
+.time {
+  font-family: Roboto, sans-serif;
+  font-size: 0.9em;
+  letter-spacing: 0;
+}
+
+.raised {
+  vertical-align: 6px;
+}
+
+.lowered {
+  vertical-align: -0.4em;
+  font-size: 14px;
+}
+
+.mid {
+  vertical-align: middle;
+  font-size: 20px;
+}
+
+.top {
+  vertical-align: text-top;
+  font-size: 22px;
+}
+
+.pct {
+  vertical-align: 40%;
+}
+
+.icons {
+  line-height: 1.5;
+}
+
+.dot,
+.flag,
+.pin {
+  display: inline-block;
+  background: #5a7d9a;
+}
+
+.dot {
+  width: 10px;
+  height: 10px;
+  vertical-align: middle;
+}
+
+.flag {
+  width: 14px;
+  height: 30px;
+  vertical-align: -4px;
+}
+
+.pin {
+  width: 12px;
+  height: 22px;
+  margin: 0 2px;
+  vertical-align: text-bottom;
+}
+
+.tight {
+  line-height: 1.1;
+}
+
+.list {
+  margin: 0 0 12px;
+  padding-left: 24px;
+}
+
+.stats {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  margin-bottom: 12px;
+  padding: 8px;
+  border: 1px solid #d9dee3;
+}
+
+.wrap {
+  flex-wrap: wrap;
+}
+
+.stat {
+  font-size: 14px;
+}
+
+.value {
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.label {
+  font-family: Roboto, sans-serif;
+  font-size: 20px;
+}
+
+.boxed {
+  padding: 10px 12px;
+  border: 2px solid #9aa5b1;
+}
+
+.head {
+  margin: 0;
+  padding-top: 6px;
+  font-size: 22px;
+}
+
+.swatch {
+  width: 24px;
+  height: 36px;
+  background: #cbd2d9;
+}
+
+.foot {
+  font-size: 13px;
+}

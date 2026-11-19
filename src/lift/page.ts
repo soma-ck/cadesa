@@ -2574,7 +2574,21 @@ export abstract class PageLifter {
       // field, select or textarea drawn without native appearance: one line (rows lines) of its
       // line height, plus its padding and border.
       const controlH = CONTROL.has(el.tag) && !own.has("height") ? this.controlHeight(el, si) : undefined;
-      if (controlH !== undefined) decl("height", `${fmtNum(controlH)}px`, `<${el.tag}>: ${/^(checkbox|radio|range)$/.test((attr(el.node, "type") ?? "").toLowerCase()) && el.tag === "input" ? "the theme's size" : `its line height${el.tag === "textarea" ? " × rows" : ""}, padding and border`}`);
+      // Stretched across a flex row or a grid row (align-items: normal or stretch), it is at least that tall, not that tall.
+      const ptype = (attr(el.node, "type") ?? "").toLowerCase();
+      const pd = el.parent && el.parent !== this.bodyEl ? this.displayOf(el.parent, si) : "block";
+      const selfA = this.resolve(el, si, own.get("align-self")?.value ?? "auto") ?? "auto";
+      const itemsA = el.parent && el.parent !== this.bodyEl ? this.resolve(el.parent, si, el.parent.own[si].get("align-items")?.value ?? "normal") ?? "normal" : "normal";
+      const crossStretched = parentRole === "container" && ((/flex/.test(pd) && !this.isColumn(el.parent!, si)) || /grid/.test(pd)) && /^(auto|normal|stretch)$/.test(selfA) && (selfA === "stretch" || /^(normal|stretch)$/.test(itemsA)) && !(el.tag === "input" && /^(checkbox|radio)$/.test(ptype));
+      if (controlH !== undefined && crossStretched && !own.has("min-height")) {
+        // (In CSS terms: of its content box unless box-sizing says border-box.)
+        const sz = this.textOf(el, si).size;
+        const pxY = (p: string) => lengthPx(this.resolve(el, si, own.get(p)?.value ?? "0") ?? "0", sz) ?? 0;
+        const bY = (side: string) => (/^(none|hidden)$/.test(this.resolve(el, si, own.get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(pxY(`border-${side}-width`)));
+        const insY = this.resolve(el, si, own.get("box-sizing")?.value ?? "content-box") === "border-box" ? 0 : pxY("padding-top") + pxY("padding-bottom") + bY("top") + bY("bottom");
+        decl("min-height", `${fmtNum(Math.max(0, controlH - insY))}px`, `<${el.tag}>: its own height, stretched across its row`);
+      }
+      else if (controlH !== undefined) decl("height", `${fmtNum(controlH)}px`, `<${el.tag}>: ${/^(checkbox|radio|range)$/.test((attr(el.node, "type") ?? "").toLowerCase()) && el.tag === "input" ? "the theme's size" : `its line height${el.tag === "textarea" ? " × rows" : ""}, padding and border`}`);
       else if (CONTROL.has(el.tag) && !own.has("height"))
         this.note(el, si, { decl: `<${el.tag}>`, reason: `a form control's height comes from its font and the browser's internals; give it a height${this.uaInCascade ? "" : " (h-*)"} to predict it`, kind: "geometry" });
       // Replaced elements and controls have an intrinsic width (the file, 300×150 for svg, ~20ch for inputs).
