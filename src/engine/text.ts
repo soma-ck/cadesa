@@ -51,9 +51,25 @@ export interface FontMetrics {
    * x-height (px); undefined for a table measured before vertical metrics were recorded.
    */
   vertical(sizePx: number, weight: number): { ascent: number; descent: number; lineGap: number; xHeight: number; avgChar?: number; maxChar?: number } | undefined;
+  /**
+   * What a table measured by an older Cadesa lacks ("vertical metrics", "character widths"), so
+   * that `cadesa fonts --measure` measures it again; undefined for a complete table.
+   */
+  outdated?: string;
 }
 
 const registry = new Map<string, FontMetrics | undefined>();
+
+/** What a metrics table from an older Cadesa lacks: vertical metrics, or a text field's character widths. */
+function outdatedTable(m: { kind: string; weights: number[]; vertical?: { byWeight: Record<string, { avgChar?: number; maxChar?: number }> } }): string | undefined {
+  const faces = m.vertical ? Object.values(m.vertical.byWeight) : [];
+  if (!faces.length) return "vertical metrics and character widths";
+  // Every static face has its own (a face merged in from an older table has none).
+  const lacking = m.kind === "static" ? m.weights.filter((w) => !m.vertical!.byWeight[w]) : [];
+  if (lacking.length) return `vertical metrics and character widths for weight${lacking.length > 1 ? "s" : ""} ${lacking.join(", ")}`;
+  if (faces.some((f) => f.avgChar === undefined || f.maxChar === undefined)) return "average and maximum character widths";
+  return undefined;
+}
 
 /** Forget loaded (and missing) metrics, after new tables were written. */
 export function clearMetricsCache() {
@@ -192,6 +208,7 @@ function load(file: string): FontMetrics {
       ...(m.machineSpecific && { machineSpecific: m.machineSpecific }),
       ...(m.contextualIncomplete && { contextualIncomplete: true }),
     },
+    ...(outdatedTable(m) && { outdated: outdatedTable(m) }),
     unsupported: (text) => [...new Set([...text].filter((c) => !index.has(c)))],
     ligatureIn(text) {
       if (!ligRuns.length) return undefined;

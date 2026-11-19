@@ -82,6 +82,54 @@ describe("custom font metrics", () => {
   });
 });
 
+describe("tables measured by an older Cadesa", () => {
+  const saved = process.env.CADESA_METRICS;
+  afterEach(() => {
+    process.env.CADESA_METRICS = saved;
+    clearMetricsCache();
+  });
+  const face = { ascent: 1900, descent: 500, lineGap: 0, xHeight: 1100, avgChar: 1100, maxChar: 4000 };
+  const complete = (weights: number[]): MetricsFile => ({ ...fake(weights), vertical: { size: 2048, byWeight: Object.fromEntries(weights.map((w) => [w, face])) } });
+
+  it("says what a table lacks, face by face", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-"));
+    process.env.CADESA_METRICS = dir;
+    writeMetrics({ ...fake([400, 700]), family: "Old Sans" }, dir);
+    writeMetrics({ ...complete([400]), family: "Half Sans", vertical: { size: 2048, byWeight: { 400: { ...face, avgChar: undefined, maxChar: undefined } } } }, dir);
+    writeMetrics({ ...complete([400, 700]), family: "New Sans" }, dir);
+    clearMetricsCache();
+    expect(metricsFor("Old Sans")!.outdated).toBe("vertical metrics and character widths");
+    expect(metricsFor("Half Sans")!.outdated).toBe("average and maximum character widths");
+    expect(metricsFor("New Sans")!.outdated).toBeUndefined();
+  });
+
+  it("keeps a face measured again complete, and flags the faces still from the older table", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-"));
+    process.env.CADESA_METRICS = dir;
+    writeMetrics(fake([400, 700]), dir);
+    writeMetrics(complete([400]), dir);
+    const m = readMetrics(join(dir, metricsFileName("Brand Sans")));
+    expect(m.weights).toEqual([400, 700]);
+    expect(Object.keys(m.vertical!.byWeight)).toEqual(["400"]);
+    clearMetricsCache();
+    expect(metricsFor("Brand Sans")!.outdated).toBe("vertical metrics and character widths for weight 700");
+    writeMetrics(complete([700]), dir);
+    clearMetricsCache();
+    expect(metricsFor("Brand Sans")!.outdated).toBeUndefined();
+  });
+
+  it("names the command that measures it again where a box needs what it lacks", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-"));
+    process.env.CADESA_METRICS = dir;
+    writeMetrics({ ...fake([400, 700]), family: "Old Sans" }, dir);
+    clearMetricsCache();
+    const r = run(`<p><input data-fixture="i"></p>`, `body { font-family: "Old Sans" } input { font: inherit }`);
+    expect(r.approx("i")).toMatch(/re-measure: cadesa fonts … --measure/);
+    const report = fontReport([{ family: "Old Sans", stack: '"Old Sans"', weights: [400], sizes: [16], boxes: ["p"] }], { faces: [], google: [], declared: [] });
+    expect(report[0].remeasure).toMatch(/older Cadesa and has no vertical metrics/);
+  });
+});
+
 describe("metrics from other fonts", () => {
   const saved = process.env.CADESA_METRICS;
   afterEach(() => {

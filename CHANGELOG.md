@@ -24,6 +24,12 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   in lengths, `calc()`, `clamp()`, custom properties and font sizes, per width range when a media
   query changes the root's size, and following the viewport width when the root's size does. Such
   pages were `≈` throughout; they are laid out exactly.
+- Metrics tables measured by an older Cadesa, without vertical metrics or a text field's character
+  widths (a face merged into a table from before them counts too), are measured again by `cadesa
+  fonts --measure` (machine-specific ones with `--system`), and a measured face is merged into such a
+  table without losing what it has. Where a box is `≈` because of what its table lacks, the
+  coverage line says `re-measure: cadesa fonts <page> --css <files> --measure`, as does `check`'s
+  fonts note.
 - A line height in px with a font size that isn't a whole number of 1/64 px (`40px` at `16.8px`) is
   exactly that many px (it came out 1/64 px short).
 - A table given its width by a grid track or a stretching flex container is never narrower than its

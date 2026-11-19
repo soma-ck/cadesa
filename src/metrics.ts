@@ -509,6 +509,11 @@ function restrictChars(m: MetricsFile, keep: Set<string>): MetricsFile {
   };
 }
 
+/** The faces whose vertical metrics include a text field's character widths (tables from before them don't). */
+function completeFaces(byWeight: Record<string, VerticalMetrics>): Record<string, VerticalMetrics> {
+  return Object.fromEntries(Object.entries(byWeight).filter(([, f]) => f.avgChar !== undefined && f.maxChar !== undefined));
+}
+
 /**
  * Write metrics into `dir`, merging a static face into an existing static file for the family
  * (a face measured again replaces the old one). With `gzip`, writes `.metrics.json.gz`.
@@ -540,9 +545,10 @@ export function writeMetrics(m: MetricsFile, dir: string, opts: { gzip?: boolean
         kerning: { ...prev.kerning, ...cur.kerning },
         ...((prev.kerningSpaced || cur.kerningSpaced) && { kerningSpaced: { ...prev.kerningSpaced, ...cur.kerningSpaced } }),
         ...((prev.contextual || cur.contextual) && { contextual: { ...prev.contextual, ...cur.contextual } }),
-        // Each face's vertical metrics, when every face has them at one size.
-        ...(prev.vertical && cur.vertical && prev.vertical.size === cur.vertical.size
-          ? { vertical: { size: cur.vertical.size, byWeight: { ...prev.vertical.byWeight, ...cur.vertical.byWeight } } }
+        // Each face's vertical metrics (at one size). A face measured by an older Cadesa, without
+        // them or without character widths, keeps none: the table then says which faces to measure again.
+        ...(cur.vertical
+          ? { vertical: { size: cur.vertical.size, byWeight: { ...(prev.vertical?.size === cur.vertical.size ? completeFaces(prev.vertical.byWeight) : {}), ...cur.vertical.byWeight } } }
           : { vertical: undefined }),
         ...(files.length && { files }),
         ...(missing && { missing }),

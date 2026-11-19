@@ -165,11 +165,13 @@ interface Page {
   fixture: Fixture;
   at(width: number): Fixture;
   tw?: PageLift;
+  /** The page and stylesheet arguments, as `cadesa fonts` takes them. */
+  flags?: string;
 }
 
 function pageOf(s: SourceInput & { fixture: string }): Page {
   const tw = pageLiftOf(s);
-  if (tw) return { label: `${s.fixture} (${s.tailwind ? `Tailwind, ${s.tailwind}` : `CSS, ${s.css}`})`, fixture: tw.fixture, at: tw.fixtureAt, tw };
+  if (tw) return { label: `${s.fixture} (${s.tailwind ? `Tailwind, ${s.tailwind}` : `CSS, ${s.css}`})`, fixture: tw.fixture, at: tw.fixtureAt, tw, flags: flags(s) };
   const f = parseFixture(s.fixture);
   return { label: s.css ? `${s.css} (lifted)` : s.source!, fixture: f, at: () => f };
 }
@@ -181,6 +183,8 @@ function withNotes(c: Coverage, p: Page, layouts: Layout[]): Coverage {
   // Elements a browser shows that no box covers: nothing is checked there.
   const missing = p.tw && notLaidOut(p.tw, layouts);
   if (missing?.count) c.notLaidOut = missing;
+  // A font whose metrics table is outdated: the command that measures it again, for this page.
+  if (p.flags) for (const r of c.reasons) r.reason = r.reason.replace("cadesa fonts … --measure", `cadesa fonts ${p.flags} --measure`);
   return c;
 }
 
@@ -523,10 +527,12 @@ const flags = (s: SourceInput & { fixture: string }) =>
 function fontsNote(r: FontReport[], s: SourceInput & { fixture: string }, always: boolean): string {
   const missing = r.filter((f) => f.status !== "measured" && f.boxes.length);
   const machine = r.filter((f) => f.metrics?.machineSpecific);
-  if (!always && !missing.length && !machine.length) return "";
+  const stale = r.filter((f) => f.status === "measured" && f.remeasure && f.boxes.length);
+  if (!always && !missing.length && !machine.length && !stale.length) return "";
   const out = ["", always ? "text measured with:" : "fonts:"];
   for (const f of r.filter((f) => f.status === "measured")) if (always || f.metrics!.machineSpecific) out.push(`  ✓ ${f.family}: ${describeMetrics(f.metrics!)}`);
   for (const f of machine) out.push(`    ! ${f.metrics!.machineSpecific}`);
+  for (const f of stale) out.push(`  ! ${f.family}: ${f.remeasure}; re-measure: cadesa fonts ${flags(s)} --measure${f.metrics?.machineSpecific ? " --system" : ""}`);
   for (const f of missing)
     out.push(
       `  ✗ ${f.family}: no metrics (${f.boxes.length} text box${f.boxes.length === 1 ? "" : "es"} assumed to be one line) · ${
@@ -560,14 +566,16 @@ export async function fontsCmd(
     report = fontsOf(s, renderPage(model, p, s.widths));
   }
   const measurable = report.some((f) => f.status === "file" || f.status === "google" || !!f.remeasure);
-  const system = report.some((f) => (f.status === "system" || f.status === "unknown") && !!f.stack);
+  // An outdated table measured from this machine's installed font: measured again with --system.
+  const staleSystem = report.some((f) => !!f.remeasure && !!f.metrics?.machineSpecific);
+  const system = staleSystem || report.some((f) => (f.status === "system" || f.status === "unknown") && !!f.stack);
   const how = (extra: string) => (s.via === "mcp" ? `call cadesa_fonts again with measure: true${extra ? ", system: true" : ""}` : `cadesa fonts ${flags(s)} --measure${extra}`);
   const hint = s.measure
     ? system && !s.system
       ? `system fonts (and fonts the page doesn't load) differ by machine; to measure what this machine's browser uses anyway (machine-specific metrics): ${how(" --system")}`
       : undefined
     : measurable
-      ? `measure them (needs Chrome or Chromium; Google Fonts are downloaded): ${how("")}`
+      ? `measure them (needs Chrome or Chromium; Google Fonts are downloaded): ${how(staleSystem ? " --system" : "")}`
       : system
         ? `system fonts (and fonts the page doesn't load) differ by machine; to measure what this machine's browser uses anyway (machine-specific metrics): ${how(" --system")}`
         : undefined;

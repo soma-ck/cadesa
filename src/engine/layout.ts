@@ -389,7 +389,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let strut: { above: number; below: number } | undefined;
     if (n.runMeta.some((r) => r.spans?.some((sp) => sp.above !== undefined || sp.below !== undefined))) {
       const v = m!.vertical(t.sizePx, t.weight);
-      if (!v) assumptions.push(`line heights assume the strut (font "${m!.family}" has no vertical metrics; measure it again)`);
+      if (!v) assumptions.push(`font-family: ${m!.family}: re-measure: cadesa fonts … --measure${m!.info.machineSpecific ? " --system" : ""}; its metrics table has no vertical metrics, so its line heights assume the strut`);
       else {
         const lh = lineHeightPx(t.sizePx, t.lineHeight);
         const leading = Math.round((lh - v.ascent - v.descent) * 64);

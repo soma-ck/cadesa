@@ -963,6 +963,21 @@ export abstract class PageLifter {
     return BLOCK_TAGS.has(el.tag) || el === this.bodyEl || el === this.htmlEl ? "block" : "inline";
   }
 
+  /**
+   * A note for an element whose text (or its parent's) is set in a font with a metrics table from
+   * an older Cadesa, which lacks what this box needs (vertical metrics, character widths): the
+   * command that measures it again, instead of the generic cause.
+   */
+  staleFont(els: (El | undefined)[], si: number): Note | undefined {
+    for (const e of els) {
+      const t = this.textOf(e, si);
+      const m = metricsFor(t.family.value);
+      if (m?.outdated)
+        return { decl: `font-family: ${m.family}`, reason: `re-measure: cadesa fonts … --measure${m.info.machineSpecific ? " --system" : ""}; its metrics table is from an older Cadesa, without ${m.outdated}`, kind: "text" };
+    }
+    return undefined;
+  }
+
   /** line-height: normal in px: the font's ascent, descent and line gap as Chromium rounds them (undefined without vertical metrics, or for a font size that follows the viewport). */
   normalLine(t: TextCtx): number | undefined {
     if (t.fluid) return undefined;
@@ -2427,7 +2442,7 @@ export abstract class PageLifter {
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline box's own rectangle is its text's content area; Cadesa lays out its lines (exact), not that rectangle", kind: "visual" });
         if (!own.has("width")) decl("width", "fit-content", "an inline element alone between blocks");
       } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && !el.rowLine?.[si] && el.anonymous === undefined)
-        this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
+        this.note(el, si, this.staleFont([el, el.parent], si) ?? { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
       // An empty inline (zero size where the next block starts) or a lone inline-block: as wide as its content.
       if (((el.asBlock[si] === "empty" && !inFlexOrGrid) || el.alone[si]) && !own.has("width")) decl("width", "fit-content", el.alone[si] ? "inline-block (alone on its line)" : "empty inline element");
       const lineAlign = el.alone[si] ? el.lineAlign?.[si] : undefined;
@@ -2683,12 +2698,12 @@ export abstract class PageLifter {
       }
       else if (controlH !== undefined) decl("height", `${fmtNum(controlH)}px`, `<${el.tag}>: ${/^(checkbox|radio|range)$/.test((attr(el.node, "type") ?? "").toLowerCase()) && el.tag === "input" ? "the theme's size" : `its line height${el.tag === "textarea" ? " × rows" : ""}, padding and border`}`);
       else if (CONTROL.has(el.tag) && !own.has("height"))
-        this.note(el, si, { decl: `<${el.tag}>`, reason: `a form control's height comes from its font and the browser's internals; give it a height${this.uaInCascade ? "" : " (h-*)"} to predict it`, kind: "geometry" });
+        this.note(el, si, this.staleFont([el], si) ?? { decl: `<${el.tag}>`, reason: `a form control's height comes from its font and the browser's internals; give it a height${this.uaInCascade ? "" : " (h-*)"} to predict it`, kind: "geometry" });
       // Replaced elements and controls have an intrinsic width (the file, 300×150 for svg, ~20ch for inputs).
       const parentAlign = el.parent && el.parent !== this.bodyEl ? this.resolve(el.parent, si, el.parent.own[si].get("align-items")?.value ?? "normal") ?? "normal" : "normal";
       const stretched = parentRole === "container" && /flex/.test(parentDisplay) && el.parent && this.isColumn(el.parent, si) && !own.has("align-self") && /^(normal|stretch)$/.test(parentAlign);
       if ((CONTROL.has(el.tag) || REPLACED_BLOCK.has(el.tag)) && !own.has("width") && !stretched && this.controlWidth(el, si) === undefined)
-        this.note(el, si, { decl: `<${el.tag}>`, reason: `<${el.tag}> without a width${this.uaInCascade ? "" : " (w-*)"} takes its intrinsic width, which Cadesa doesn't know`, kind: "geometry" });
+        this.note(el, si, (CONTROL.has(el.tag) && this.staleFont([el], si)) || { decl: `<${el.tag}>`, reason: `<${el.tag}> without a width${this.uaInCascade ? "" : " (w-*)"} takes its intrinsic width, which Cadesa doesn't know`, kind: "geometry" });
 
       // Borders: preflight makes every side `0 solid currentcolor`.
       const bw = SIDES.map((s) => own.get(`border-${s}-width`));
@@ -3294,13 +3309,13 @@ export abstract class PageLifter {
       if (ua === "is italic" && (!this.italic(k, si) || synthetic)) {
         /* measured upright */
       } else if (ua && k.tag !== "strong" && k.tag !== "b" && !textChanges.some((c) => c.prop === "font-weight" || c.prop === "font-style" || c.prop === "font-family" || c.prop === "font-size"))
-        this.note(el, si, { decl: `<${k.tag}>`, reason: `inline <${k.tag}> ${ua}; text runs in another style aren't measured`, kind: "text" });
+        this.note(el, si, this.staleFont([k, el], si) ?? { decl: `<${k.tag}>`, reason: `inline <${k.tag}> ${ua}; text runs in another style aren't measured`, kind: "text" });
       // Text in another font family (an icon font) or size sits on the line with its own metrics.
       const famDiff = kt.family.value !== pt.family.value;
       // An inline box whose font, size, line height and vertical-align are measured (runStyle).
       const modelled = inline && !lead && this.runModelled(k, si);
       if (famDiff && changes.some((c) => c.prop === "font-family") === false && k.pseudo && !modelled)
-        this.note(el, si, { decl: `${where} (font-family: ${kt.family.value})`, reason: "inline runs in another style aren't measured", kind: "text" });
+        this.note(el, si, this.staleFont([k, el], si) ?? { decl: `${where} (font-family: ${kt.family.value})`, reason: "inline runs in another style aren't measured", kind: "text" });
       // box-sizing changes nothing on a box with no width, height, padding or border.
       const boxy = ["width", "height", "min-width", "min-height", "max-width", "max-height"].some((p) => own.has(p)) || SIDES.some((s) => own.has(`padding-${s}`) || own.has(`border-${s}-width`) || own.has(`margin-${s}`));
       // An inline-block that is all the text box holds, with no box of its own and the same text
@@ -3331,7 +3346,7 @@ export abstract class PageLifter {
         if (c.prop === "font-family" && !famDiff) continue;
         if (c.prop === "font-style" && (synthetic || this.italic(k, si) === this.italic(k.parent!, si))) continue;
         if (c.prop === "line-height" && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight)) continue;
-        this.note(el, si, { decl: `${c.utility} on ${where} (${c.prop})`, reason: "inline runs in another style aren't measured", kind: c.kind === "visual" ? "visual" : c.kind === "geometry" ? "geometry" : "text" });
+        this.note(el, si, this.staleFont([k, el], si) ?? { decl: `${c.utility} on ${where} (${c.prop})`, reason: "inline runs in another style aren't measured", kind: c.kind === "visual" ? "visual" : c.kind === "geometry" ? "geometry" : "text" });
       }
       for (const n of k.notes.values()) if (n.states.has(si)) this.note(el, si, n.note);
       k.children.forEach(visit);

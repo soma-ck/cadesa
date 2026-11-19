@@ -331,10 +331,12 @@ export function fontReport(uses: FontUse[], sources: PageFontSources): FontRepor
       const declared = faces.length ? faces.filter((f) => f.style === "normal").map((f) => f.weight) : google ? googleWeights(google.url, u.family) : [];
       if (!r.remeasure && m.info.kind === "variable" && declared.length && declared.every((w) => !w.includes(" ")) && u.weights.some((w) => !declared.includes(String(w))))
         r.remeasure = `the page declares only weights ${declared.join(", ")} (text at ${u.weights.filter((w) => !declared.includes(String(w))).join(", ")} uses the nearest of them), but the table is variable`;
-      if (r.remeasure) r.note = `${r.remeasure}: --measure measures what the page loads`;
+      // A table measured by an older Cadesa, without what it measures now: measured again.
+      if (!r.remeasure && m.outdated) r.remeasure = `the table was measured by an older Cadesa and has no ${m.outdated}`;
+      if (r.remeasure) r.note = `${r.remeasure}: --measure${m.info.machineSpecific ? " --system" : ""} measures ${m.info.machineSpecific ? "it again" : "what the page loads"}`;
       else if (m.info.bundled && !faces.length && !google)
         r.note = "the page doesn't load this font (no @font-face or Google Fonts link in the files given): the browser uses it only where it is installed, and the bundled metrics fit the Google Fonts files";
-      if (m.info.machineSpecific) r.note = m.info.machineSpecific;
+      if (m.info.machineSpecific && !r.remeasure) r.note = m.info.machineSpecific;
       return r;
     }
     if (faces.some((f) => f.src.length)) return { ...base, status: "file" };
@@ -585,7 +587,12 @@ export async function measureReport(report: FontReport[], opts: MeasureOptions =
   // Only fonts that laid-out text is set in: a stylesheet can declare many more (KaTeX's dozen faces).
   report = report.filter((r) => r.boxes.length > 0);
   const todo = report.filter(
-    (r) => r.status === "file" || r.status === "google" || (r.status === "measured" && !!r.remeasure) || ((r.status === "system" || r.status === "unknown") && opts.system && !!r.stack),
+    (r) =>
+      r.status === "file" ||
+      r.status === "google" ||
+      // (A machine-specific table is measured again only with --system: it is this machine's font.)
+      (r.status === "measured" && !!r.remeasure && (r.faces.length > 0 || !!r.google || (!!r.metrics?.machineSpecific && !!opts.system && !!r.stack))) ||
+      ((r.status === "system" || r.status === "unknown") && opts.system && !!r.stack),
   );
   const done: Measured[] = [];
   // A measured font the page loads from Google Fonts: measured again when the page's link now

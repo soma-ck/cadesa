@@ -17,6 +17,7 @@ import { parseContain } from "../model.js";
 import { originOf, transformList } from "../engine/transform.js";
 import { parseAreas, parseLinePair, parseTrackList } from "../engine/grid.js";
 import { lineHeightRatio } from "../engine/layout.js";
+import { metricsFor } from "../engine/text.js";
 
 /**
  * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
@@ -1054,8 +1055,13 @@ export function liftElements(input: LiftInput): LiftResult {
       })() : undefined;
       const missing = [!sizeOk && "font-size (px or rem)", lineHeight === undefined && "line-height", !colorTok && "color", isNaN(weight) && "font-weight"].filter(Boolean);
       if (missing.length) {
-        for (const d of [fs, lh, ff, fw, color].filter(Boolean) as Decl[])
-          note(e, s, d, `a text role needs ${missing.join(", ")}${lhRaw === "normal" ? " (line-height: normal depends on the font, whose metrics table has no vertical metrics)" : ""}`, d.prop === "color" ? "paint" : "text");
+        // line-height: normal in a font whose table, from an older Cadesa, has no vertical metrics: measure it again.
+        const fam = ff ? resolveVar(ff.value)?.raw : undefined;
+        const stale = lhRaw === "normal" && fam ? metricsFor(fam) : undefined;
+        const why = stale?.outdated
+          ? `re-measure: cadesa fonts … --measure${stale.info.machineSpecific ? " --system" : ""}; line-height: normal depends on the font's vertical metrics, which its metrics table (from an older Cadesa) doesn't have`
+          : `a text role needs ${missing.join(", ")}${lhRaw === "normal" ? " (line-height: normal depends on the font, whose metrics table has no vertical metrics)" : ""}`;
+        for (const d of [fs, lh, ff, fw, color].filter(Boolean) as Decl[]) note(e, s, d, why, d.prop === "color" ? "paint" : "text");
       } else {
         if (!fw) {
           /* weight defaults to 400; impact.ts flags tags whose UA weight differs */
