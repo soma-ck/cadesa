@@ -594,9 +594,10 @@ export abstract class PageLifter {
 
   /**
    * The width and height attributes of <svg>, <img>, <video> and <canvas> are presentational
-   * hints: their CSS width and height unless a stylesheet sets them (and on <img>, <video> and
-   * <canvas> their aspect ratio, `auto w / h`). An <svg>'s viewBox gives its aspect ratio. Its
-   * contents (paths, groups, text) are drawn, not laid out: they never move a box.
+   * hints: their CSS width and height unless a stylesheet sets them. (An image's aspect ratio from
+   * them, `auto w / h`, gives way to the file's own once loaded: not used.) An inline <svg>'s
+   * viewBox gives its aspect ratio. Its contents (paths, groups, text) are drawn, not laid out: they
+   * never move a box.
    */
   presentationalHints() {
     const num = (v: string | undefined) => (v !== undefined && /^\s*\d*\.?\d+(px)?\s*$/.test(v) ? parseFloat(v) : undefined);
@@ -615,7 +616,6 @@ export abstract class PageLifter {
         if (w !== undefined) hint("width", `${w}px`, `width="${attr(el.node, "width")}" attribute`);
         else if (pct(attr(el.node, "width"))) hint("width", pct(attr(el.node, "width"))!, `width="${attr(el.node, "width")}" attribute`);
         if (h !== undefined) hint("height", `${h}px`, `height="${attr(el.node, "height")}" attribute`);
-        if (el.tag !== "svg" && w && h) hint("aspect-ratio", `${w} / ${h}`, "width and height attributes");
         if (vb && vb.length === 4 && vb[2] > 0 && vb[3] > 0 && vb.every(isFinite)) hint("aspect-ratio", `${vb[2]} / ${vb[3]}`, "viewBox attribute");
       });
     }
