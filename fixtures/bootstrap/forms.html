@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: Bootstrap forms (form-select, form-control sizes, form-check, input-group)</title>
+    <link rel="stylesheet" href="bootstrap.css" />
+    <link rel="stylesheet" href="app.css" />
+  </head>
+  <body>
+    <div class="container py-3">
+      <h1 class="page-title mb-3">New delivery <small class="text-body-secondary">draft</small></h1>
+      <form class="row g-3">
+        <div class="col-md-6"><label for="contact" class="form-label">Contact</label><input type="email" class="form-control" id="contact" placeholder="name.example.com" /></div>
+        <div class="col-md-6">
+          <label class="form-label" for="region">Region</label>
+          <select class="form-select" id="region"><option>North</option><option>South coast</option></select>
+        </div>
+        <div class="col-md-4"><input class="form-control form-control-sm" type="text" placeholder="Small" /></div>
+        <div class="col-md-4"><input class="form-control form-control-lg" type="text" placeholder="Large" /></div>
+        <div class="col-md-4"><select class="form-select form-select-sm"><option>Small select</option></select></div>
+        <div class="col-12">
+          <div class="form-check"><input class="form-check-input" type="checkbox" id="keep" /><label class="form-check-label" for="keep">Keep a copy of this order</label></div>
+          <div class="form-check"><input class="form-check-input" type="radio" name="when" id="now" /><label class="form-check-label" for="now">Ship today</label></div>
+        </div>
+        <div class="col-12"><div class="input-group"><span class="input-group-text">No.</span><input type="text" class="form-control" placeholder="Order number" /></div></div>
+        <div class="col-12"><div class="input-group"><input type="text" class="form-control" placeholder="Search orders" /><button class="btn btn-outline-secondary" type="button">Find</button></div></div>
+        <div class="col-12"><textarea class="form-control" rows="3"></textarea></div>
+        <div class="col-12"><button type="submit" class="btn btn-primary">Save delivery</button></div>
+      </form>
+      <ul class="navbar-nav flex-row mt-3">
+        <li class="nav-item pe-1"><select class="form-select form-select-sm"><option>English</option><option>Español</option></select></li>
+        <li class="nav-item"><a class="nav-link" href="#">Sign in</a></li>
+      </ul>
+    </div>
+  </body>
+</html>
