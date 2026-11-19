@@ -819,8 +819,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       if (p.aspect) notes.push("an absolutely positioned box with an aspect ratio isn't modelled");
       const box = measure(a.k.node, a.k.comp, a.k.slot, w, "abs", w);
       box.assumptions.push(...notes);
-      // Height: stretched between top and bottom when it has none of its own.
-      if (!p.height && !p.aspect && t !== undefined && b !== undefined) {
+      // Height: a percentage of the containing block's, or stretched between top and bottom when it has none of its own.
+      if (pos.height !== undefined && !p.height) {
+        box.h = Math.max(ins.top + ins.bottom, sizeAt(pos.height, cb.h));
+        arrange(box);
+      } else if (!p.height && !p.aspect && t !== undefined && b !== undefined) {
         const target = Math.max(ins.top + ins.bottom, cb.h - t - b - m.top - m.bottom);
         if (target > box.h) grow(box, target);
         else if (target < box.h) {

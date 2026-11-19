@@ -93,7 +93,7 @@ export interface ResolvedProps {
   aspect?: Resolved<number>;
   overflow?: Resolved<{ x: Overflow; y: Overflow }>;
   /** Positioning and its offsets (px, or a percentage of the containing block). */
-  position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct }>;
+  position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct; height?: number | Pct }>;
   fit?: Resolved<"cover" | "contain">;
   backdrop?: Resolved<string>;
   shadow?: Resolved<string>;
@@ -246,7 +246,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "position": {
         const ps = p.position!;
         const off = (r?: Ref) => (r ? (r.kind === "size" ? sizeOf(r).value : lengthOf(r).value) : undefined);
-        const value = { type: ps.type, ...Object.fromEntries((["top", "right", "bottom", "left"] as const).flatMap((k) => (ps[k] ? [[k, off(ps[k])]] : []))) };
+        const value = { type: ps.type, ...Object.fromEntries((["top", "right", "bottom", "left", "height"] as const).flatMap((k) => (ps[k] ? [[k, k === "height" ? sizeOf(ps[k]!).value : off(ps[k])]] : []))) };
         const shown = (["top", "right", "bottom", "left"] as const).filter((k) => ps[k]).map((k) => `${k} ${ps[k]!.name}`);
         out.position = { value, display: [ps.type, ...shown].join(", "), steps: [...pre, src(ps.path)] };
         break;

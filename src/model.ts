@@ -178,9 +178,10 @@ export interface Props {
    * Positioning. relative: in flow, shifted by its offsets (its siblings don't move); absolute: out
    * of flow, placed by its offsets in the padding box of its nearest positioned ancestor (else the
    * window); fixed: in the window. Offsets are space tokens (may be negative) or percentage size
-   * tokens (of the containing block's width for left/right, its height for top/bottom).
+   * tokens (of the containing block's width for left/right, its height for top/bottom). height: an
+   * absolute box's height as a percentage size token of its containing block's height.
    */
-  position?: { type: PositionType; top?: Ref; right?: Ref; bottom?: Ref; left?: Ref; path: string };
+  position?: { type: PositionType; top?: Ref; right?: Ref; bottom?: Ref; left?: Ref; height?: Ref; path: string };
   /** Removed by this override (`maxWidth: none`), with the YAML path. */
   unset?: Partial<Record<Unsettable, string>>;
 }

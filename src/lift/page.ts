@@ -1292,7 +1292,7 @@ export abstract class PageLifter {
           v = `${fmtNum((parseFloat(v) / 100) * of.px)}px`;
         }
         // A percentage height: of the parent's height when that is definite, else as if auto.
-        if ((p === "height" || p === "min-height") && /^[\d.]+%$/.test(v)) {
+        if ((p === "height" || p === "min-height") && /^[\d.]+%$/.test(v) && !(p === "height" && abs)) {
           const of = this.definiteHeight(el.parent, si);
           if (of === "auto") continue;
           if (of === "unknown") {

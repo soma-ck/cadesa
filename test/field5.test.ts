@@ -312,3 +312,29 @@ describe("advice on a lifted page is in CSS terms", () => {
     expect(r.m.css).toBe(true);
   });
 });
+
+describe("positioned boxes", () => {
+  const HTML = `<header class="bar"><span class="bar-title">Fixed bar</span></header><section class="hero"><div class="hero-bg"></div><p class="hero-text">Hero text sits over a background layer</p><span class="hero-tag">New</span></section><div class="row"><p class="row-a">Row item</p><span class="dot"></span><p class="row-b">Another</p></div><div class="shift"><p class="moved">Shifted</p><p class="after">Not moved</p></div><span class="loose">In the window</span>`;
+  const CSS = `p { margin: 0 } .bar { position: fixed; top: 0; left: 0; right: 0; height: 48px; padding: 0 16px } .bar-title { display: block; padding-top: 12px } .hero { position: relative; padding: 80px 24px 40px; border: 4px solid #333 } .hero-bg { position: absolute; inset: 0 } .hero-text { position: relative; font-size: 20px } .hero-tag { position: absolute; right: 5%; bottom: 10%; padding: 2px 6px } .row { display: flex; gap: 8px; position: relative } .dot { position: absolute; left: 2vw; top: 4px; width: 8px; height: 8px } .shift { padding: 8px } .moved { position: relative; top: 10px; left: 20px } .loose { position: absolute; top: 100px; left: 50%; width: 120px }`;
+  it("places absolute, fixed and relative boxes as Chromium does, exactly", () => {
+    const r = run(HTML, CSS, [400, 1000]);
+    expect(geo(r.box("hero-bg", 400))).toEqual([4, 4, 392, 180]);
+    expect(geo(r.box("hero-tag", 400))).toEqual([330.219, 138, 46.188, 28]);
+    expect(geo(r.box("bar", 1000))).toEqual([0, 0, 1000, 48]);
+    expect(geo(r.box("dot", 1000))).toEqual([20, 162, 8, 8]);
+    expect(geo(r.box("moved", 400))).toEqual([28, 230, 384, 24]);
+    expect(geo(r.box("after", 400))).toEqual([8, 244, 384, 24]);
+    expect(geo(r.box("loose", 1000))).toEqual([500, 100, 120, 24]);
+    expect(r.exact(400) && r.exact(1000)).toBe(true);
+  });
+
+  it("an absolute box is neither its parent's overflow nor a reason to scroll the page when fixed", () => {
+    const r = run(`<div class="box"><span class="wide">Wide</span></div><div class="fx">Fixed and wide</div>`, `.box { position: relative; width: 100px } .wide { position: absolute; left: 0; top: 0; width: 300px } .fx { position: fixed; left: 300px; top: 0; width: 300px }`, [400]);
+    expect(r.findings.filter((f) => f.check === "layout").map((f) => f.message)).toEqual([]);
+  });
+
+  it("an in-flow sibling's uncertainty doesn't make an absolute box ≈", () => {
+    const r = run(`<div class="card"><p class="body">Text</p><span class="badge">Pro</span></div>`, `.card { position: relative; padding: 16px } .body { margin: 0; transform: scale(2) } .badge { position: absolute; top: 4px; right: 4px }`, [400]);
+    expect(r.approx("badge")).toBeUndefined();
+  });
+});

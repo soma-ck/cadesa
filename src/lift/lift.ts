@@ -840,7 +840,9 @@ export function liftElements(input: LiftInput): LiftResult {
       const r = resolveVar(sh.value);
       if (r) out.shadow = r.varName ? tokens.named("shadow", r.varName, r.raw) : tokens.literal("shadow", r.raw);
     }
-    const height = take("height");
+    const posType = m.get("position")?.value.trim();
+    // An absolute box's percentage height is of its containing block: kept for the position block below.
+    const height = posType && /^(absolute|fixed)$/.test(posType) && /%$/.test(resolveVar(m.get("height")?.value ?? "")?.raw ?? "") ? undefined : take("height");
     if (height && height.value.trim() !== "auto") {
       const t = lengthToken("size", height.value);
       if (t) out.height = t;
@@ -882,6 +884,14 @@ export function liftElements(input: LiftInput): LiftResult {
         if (t) ps[k] = t;
         else note(e, s, d, `${k} must be a px or rem length, a percentage or auto`, pv === "relative" ? "visual" : "geometry");
       });
+      // An absolute box's percentage height is of its containing block, known only once laid out.
+      const h = m.get("height");
+      if (h && /%$/.test(resolveVar(h.value)?.raw ?? "") && (pv === "absolute" || pv === "fixed")) {
+        m.delete("height");
+        const t = sizeToken(h.value);
+        if (t) ps.height = t;
+        else note(e, s, h, "height must be a px or rem length, or a percentage", "geometry");
+      }
       out.position = Object.keys(ps).length ? { type: pv, ...ps } : pv;
     } else if (pos && pv && pv !== "static") note(e, s, pos, `position: ${pv} is not modelled`, "geometry");
 

@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: positioned boxes</title>
+    <link rel="stylesheet" href="positioned.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <header class="topbar">
+      <span class="topbar-title">Harbour Freight</span>
+      <span class="topbar-count">12</span>
+    </header>
+    <main class="page">
+      <section class="hero">
+        <div class="hero-backdrop"></div>
+        <div class="hero-glow"></div>
+        <h1 class="hero-title">Shipments tracked from quay to warehouse</h1>
+        <p class="hero-lead">Every container, every customs step, and the documents that go with them.</p>
+        <span class="hero-tag">Beta</span>
+      </section>
+      <div class="cards">
+        <article class="card">
+          <span class="card-ribbon">New</span>
+          <h2 class="card-title">Customs</h2>
+          <p class="card-body">Declarations filed and cleared, with the broker who signed them.</p>
+          <div class="card-edge"></div>
+        </article>
+        <article class="card">
+          <h2 class="card-title">Storage</h2>
+          <p class="card-body">Bays, temperatures and the dates each pallet came in.</p>
+          <div class="card-edge"></div>
+        </article>
+      </div>
+      <ul class="steps">
+        <li class="step"><span class="step-dot"></span><p class="step-text">Booked</p></li>
+        <li class="step"><span class="step-dot"></span><p class="step-text">At sea, expected on Thursday</p></li>
+        <li class="step"><span class="step-dot"></span><p class="step-text">Unloaded</p></li>
+      </ul>
+      <div class="nudge">
+        <p class="nudged">Moved by its own offsets</p>
+        <p class="unmoved">Its sibling stays put</p>
+      </div>
+      <div class="media">
+        <div class="media-frame"><div class="media-fill"></div></div>
+        <p class="media-caption">A frame whose picture fills it from edge to edge</p>
+      </div>
+      <div class="pinned">
+        <p class="pinned-title">Pinned summary</p>
+        <span class="pinned-count">4 open</span>
+      </div>
+    </main>
+    <aside class="toast">Saved</aside>
+  </body>
+</html>

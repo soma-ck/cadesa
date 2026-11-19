@@ -623,7 +623,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "position": {
           // position: absolute, or { type: absolute, top: <token>, left: <token> }.
           const o = isObj(v) ? v : { type: v };
-          if (isObj(v)) keys(v, p, ["type", "top", "right", "bottom", "left"]);
+          if (isObj(v)) keys(v, p, ["type", "top", "right", "bottom", "left", "height"]);
           if (!["relative", "absolute", "fixed", "sticky"].includes(o.type as string)) {
             err(isObj(v) ? [...p, "type"] : p, "invalid position", { expected: "relative, absolute, fixed or sticky", got: o.type });
             break;
@@ -635,7 +635,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           };
           const sides = { top: side("top"), right: side("right"), bottom: side("bottom"), left: side("left") };
           if ((["top", "right", "bottom", "left"] as const).some((k) => o[k] !== undefined && !sides[k])) break;
-          out.position = { type: o.type as PositionType, path: p.join("."), ...Object.fromEntries(Object.entries(sides).filter(([, r]) => r)) };
+          const height = o.height === undefined ? undefined : ref(o.height, [...p, "height"], "size");
+          if (o.height !== undefined && !height) break;
+          out.position = { type: o.type as PositionType, path: p.join("."), ...Object.fromEntries(Object.entries(sides).filter(([, r]) => r)), ...(height && { height }) };
           break;
         }
         case "overflow": {
