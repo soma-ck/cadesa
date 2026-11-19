@@ -577,6 +577,57 @@ function readSheet(file: string, text: string, origin: Origin3, start: number, l
   return { rules, skipped, faces };
 }
 
+/**
+ * What a table element's presentational attributes declare (HTML's rendering rules for tables):
+ * width and height, valign and align, nowrap, and the table's cellspacing, cellpadding and border.
+ */
+function presentationalHints(el: El): CssRuleIn["decls"] {
+  const out: CssRuleIn["decls"] = [];
+  const d = (prop: string, value: string) => out.push({ prop, value, important: false });
+  const a = (name: string) => attr(el.node, name)?.trim();
+  const dim = (v: string | undefined, zeroOk = false) => {
+    const m = v === undefined ? null : /^(\d+(?:\.\d+)?)(%?)/.exec(v);
+    if (!m || (!zeroOk && parseFloat(m[1]) === 0)) return undefined;
+    return `${parseFloat(m[1])}${m[2] || "px"}`;
+  };
+  const tag = el.tag;
+  const table = (() => {
+    for (let x = el.parent; x; x = x.parent) if (x.tag === "table") return x;
+    return undefined;
+  })();
+  if (/^(table|td|th|col|colgroup)$/.test(tag)) {
+    const w = dim(a("width"));
+    if (w) d("width", w);
+  }
+  if (/^(table|td|th|tr)$/.test(tag)) {
+    const h = dim(a("height"));
+    if (h) d("height", h);
+  }
+  if (/^(td|th|tr|thead|tbody|tfoot|col|colgroup)$/.test(tag)) {
+    const v = a("valign")?.toLowerCase();
+    if (v && /^(top|middle|bottom|baseline)$/.test(v)) d("vertical-align", v);
+    const h = a("align")?.toLowerCase();
+    if (h && /^(left|center|right|justify)$/.test(h)) d("text-align", h);
+  }
+  if ((tag === "td" || tag === "th") && a("nowrap") !== undefined) d("white-space", "nowrap");
+  if (tag === "table") {
+    const sp = dim(a("cellspacing"), true);
+    if (sp && !sp.endsWith("%")) d("border-spacing", sp);
+    const b = a("border");
+    if (b !== undefined) {
+      const n = /^\d+/.test(b) ? parseInt(b, 10) : 1;
+      if (n > 0) for (const s of ["top", "right", "bottom", "left"]) (d(`border-${s}-width`, `${n}px`), d(`border-${s}-style`, "outset"));
+    }
+  }
+  if ((tag === "td" || tag === "th") && table) {
+    const pad = dim(attr(table.node, "cellpadding")?.trim(), true);
+    if (pad && !pad.endsWith("%")) for (const s of ["top", "right", "bottom", "left"]) d(`padding-${s}`, pad);
+    const b = attr(table.node, "border")?.trim();
+    if (b !== undefined && (/^\d+/.test(b) ? parseInt(b, 10) : 1) > 0) for (const s of ["top", "right", "bottom", "left"]) (d(`border-${s}-width`, "1px"), d(`border-${s}-style`, "inset"));
+  }
+  return out;
+}
+
 // ---------------------------------------------------------------- the lifter
 
 const sanitize = (s: string) =>
@@ -767,7 +818,11 @@ class CssLifter extends PageLifter {
         /* unparsable inline style: ignored by the browser too */
       }
     }
-    const tier = (r: CssRuleIn, important: boolean) => (r.origin === "ua" ? 0 : important ? (r.origin === "inline" ? 4 : 3) : r.origin === "inline" ? 2 : 1);
+    // Presentational attributes (<td width="120" valign="top">, <table cellpadding="4">): author
+    // declarations of no specificity, before every stylesheet's.
+    const hints = presentationalHints(el);
+    if (hints.length) matched.push({ rule: { selector: `presentational attributes of <${el.tag}>`, spec: [0, 0, 0], decls: hints, media: [], order: -1, line: el.line, file: this.page, origin: "author" }, m: "yes" });
+    const tier = (r: CssRuleIn, important: boolean) => (r.origin === "ua" ? 0 : r.order === -1 ? 0.5 : important ? (r.origin === "inline" ? 4 : 3) : r.origin === "inline" ? 2 : 1);
     this.states.forEach((st, si) => {
       const own = new Map<string, Origin>();
       el.own[si] = own;

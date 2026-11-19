@@ -2130,10 +2130,10 @@ export abstract class PageLifter {
         else decl("margin-top", `${fmtNum(px + shift)}px`, `align-items: baseline on the parent (its first line on the row's baseline)`);
       }
 
-      // A content-box cell in a table with collapsed borders: its width and height don't include the
-      // padding and the half borders it gets, which table.ts adds.
+      // A content-box cell: its width and height don't include its padding and the borders it gets (its
+      // own, or in a table with collapsed borders its half of theirs); table.ts adds them.
       const cellContentBox =
-        tpart === "cell" && (res("box-sizing") ?? "content-box") === "content-box" && this.tableProp(el, si, "border-collapse") === "collapse" && (out.has("width") || out.has("height"));
+        tpart === "cell" && (res("box-sizing") ?? "content-box") === "content-box" && (out.has("width") || out.has("height"));
       if (tpart) {
         const va = res("vertical-align");
         const align = tpart === "cell" ? (va === "top" || va === "middle" || va === "bottom" ? va : "baseline") : undefined;
@@ -2162,9 +2162,9 @@ export abstract class PageLifter {
         const extraX = [expr("padding-left"), expr("padding-right"), border("left"), border("right")];
         const extraY = [expr("padding-top"), expr("padding-bottom"), border("top"), border("bottom")];
         let ok = true;
-        // A table's rows, row groups and columns take their sizes as they are; a cell in a table with
-        // collapsed borders adds the borders it gets there (table.ts), not its own.
-        const tableTable = tpart !== undefined && tpart !== "caption" && (tpart !== "cell" || cellContentBox);
+        // A table's rows, row groups and columns take their sizes as they are; a cell's are converted
+        // in table.ts (see cellContentBox).
+        const tableTable = tpart !== undefined && tpart !== "caption";
         if (sizing !== "border-box" && !tableTable)
           for (const [p, extra] of [["width", extraX], ["max-width", extraX], ["height", extraY], ["min-height", extraY], ["max-height", extraY], ["min-width", extraX]] as const) {
             const d = out.get(p);
