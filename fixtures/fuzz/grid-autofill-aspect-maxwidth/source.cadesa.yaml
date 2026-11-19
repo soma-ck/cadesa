@@ -1,0 +1,15 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: grid
+      template:
+        columns: repeat(auto-fill, minmax(120px, 1fr))
+    slots:
+      s1:
+        maxWidth: p1
+        aspect: 1:1
+tokens:
+  size:
+    p1: 20%
+text: {}

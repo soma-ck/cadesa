@@ -1,0 +1,19 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: layer
+    slots:
+      s1:
+        layout:
+          pattern: grid
+          min: z5
+      s2:
+        place:
+          column: "1"
+          justify: start
+        aspect: 1:1
+tokens:
+  size:
+    z5: 14rem
+text: {}

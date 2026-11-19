@@ -1,0 +1,17 @@
+version: 1
+styles:
+  c1:
+    layout:
+      pattern: grid
+      min: z7
+    slots:
+      s1:
+        maxWidth: z1
+        place:
+          column: 1 / -1
+          align: stretch
+tokens:
+  size:
+    z1: 7rem
+    z7: 234px
+text: {}

@@ -126,11 +126,6 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   else if (unset("shadow")) out.push("box-shadow: none");
   if (p.radius) out.push(`border-radius: ${v(p.radius)}`);
   else if (unset("radius")) out.push("border-radius: 0");
-  if (p.place) {
-    const pl = p.place;
-    const SELF: Record<string, string> = { start: "start", center: "center", end: "end", stretch: "stretch" };
-    out.push(`grid-row: ${pl.row ?? "auto"}`, `grid-column: ${pl.column ?? "auto"}`, ...(pl.align ? [`align-self: ${SELF[pl.align]}`] : []), ...(pl.justify ? [`justify-self: ${SELF[pl.justify]}`] : []));
-  }
   if (p.transform) out.push(`transform: ${p.transform.value}`, `transform-origin: ${p.transform.origin ?? "50% 50%"}`);
   else if (unset("transform")) out.push("transform: none");
   // max-width + auto margins. width: 100% so a flex or grid parent doesn't shrink-wrap the box
@@ -203,6 +198,12 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     if (role.decoration) out.push(`text-decoration: ${role.decoration}`);
   }
   if (p.textAlign) out.push(`text-align: ${p.textAlign.value}`);
+  // Last: its own alignment wins over the align-self: auto a width emits.
+  if (p.place) {
+    const pl = p.place;
+    const SELF: Record<string, string> = { start: "start", center: "center", end: "end", stretch: "stretch" };
+    out.push(`grid-row: ${pl.row ?? "auto"}`, `grid-column: ${pl.column ?? "auto"}`, ...(pl.align ? [`align-self: ${SELF[pl.align]}`] : []), ...(pl.justify ? [`justify-self: ${SELF[pl.justify]}`] : []));
+  }
   return out;
 }
 

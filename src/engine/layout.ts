@@ -81,10 +81,14 @@ const CONTROLS = new Set(["button", "input", "select", "textarea"]);
  * of them; otherwise it starts after its left margin. A box as wide as the cell (or wider) starts
  * at its left margin.
  */
-function offsetX(b: Box, cell: number): number {
+function offsetX(b: Box, cell: number, flow = false): number {
   const m = marginOf(b.props);
   const free = cell - b.w - m.left - m.right;
   if (b.props.maxWidth && b.w < cell) return (cell - b.w) / 2;
+  // In block flow, justify-self places a block that doesn't fill its line (overflowing at either end).
+  const js = flow && !m.autoLeft && !m.autoRight ? b.props.place?.value.justify : undefined;
+  if (js === "center") return m.left + Math.trunc((free * 64) / 2) / 64;
+  if (js === "end") return m.left + free;
   if (free <= 0) return m.left;
   if (m.autoLeft && m.autoRight) return m.left + Math.trunc((free * 64) / 2) / 64;
   if (m.autoLeft) return m.left + free;
@@ -248,7 +252,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let top: Strut = NONE;
     for (const b of boxes) {
       const c = collapse.get(b)!;
-      b.x = offsetX(b, cell);
+      b.x = offsetX(b, cell, true);
       if (c.empty) {
         b.y = atTop && throughTop ? 0 : cursor + sum(join(pending, c.at));
         pending = join(pending, c.top);
@@ -908,6 +912,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   /** A grid's own min-content and max-content widths (its columns sized under that constraint). */
   function gridIntrinsic(p: ResolvedProps, kids: Kid[]): { min: number; max: number } | { why: string } {
     const gap = p.gap?.pct !== undefined ? 0 : (p.gap?.value ?? 0);
+    // (Auto-filled columns of min(<min>, 100%): a percentage of a size being found; not modelled.)
+    if (p.min) return { why: "a grid's width from its content isn't modelled (repeat(auto-fill))" };
     const g = gridSetup(p, kids, undefined, gap, 0, undefined);
     if ("why" in g.placed) return { why: g.placed.why };
     const { placed, spec } = g;
@@ -952,6 +958,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       }
     }
     const rowTracks = axisTracks(g.rowsT.tracks, placed.rows, placed.rowOffset, spec.autoRows);
+    if (p.min && colTracks.length > g.cols.tracks.length) notes.push("items placed past auto-filled columns (in implicit columns) aren't modelled");
     const fixed = (t: TrackSize) => typeof t.min === "object" && "len" in t.min && typeof t.max === "object" && "len" in t.max;
 
     // Columns.
@@ -976,7 +983,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const j = justify(i);
       const own = kp.width?.value !== undefined && kp.width.value !== "fit";
       let b: Box;
-      if ((j === "stretch" && !km.autoLeft && !km.autoRight && !kp.aspect) || own || kp.maxWidth) b = measure(k.node, k.comp, k.slot, cw, "grid");
+      // Stretched; or width: 100% (an aspect ratio, a maxWidth: compiled so); or a width of its own.
+      if ((j === "stretch" && !km.autoLeft && !km.autoRight) || kp.aspect || own || kp.maxWidth) b = measure(k.node, k.comp, k.slot, cw, "grid");
       else {
         const raw = resolveElement(model, k.comp, k.slot, width);
         const it = withOwnPct(intrinsic(k.node, k.comp, k.slot, true), raw, kp);
@@ -993,7 +1001,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // Across its area: auto margins, else justify-self.
       const m = marginOf(b.props);
       const free = U(cw) - U(b.w) - U(m.left) - U(m.right);
-      const autos = (m.autoLeft ? 1 : 0) + (m.autoRight ? 1 : 0);
+      // (maxWidth is centered by auto inline margins.)
+      const autos = b.props.maxWidth && !m.left && !m.right ? 2 : (m.autoLeft ? 1 : 0) + (m.autoRight ? 1 : 0);
       const off = autos ? (free > 0 ? (autos === 2 ? Math.trunc(free / 2) : m.autoLeft ? free : 0) : 0) : j === "center" ? Math.trunc(free / 2) : j === "end" ? free : 0;
       b.x = colX[a.c0] + m.left + PX(off);
       return b;
@@ -1033,7 +1042,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           b.y = rowY[a.r0] + m.top + PX(m.autoTop && m.autoBottom ? Math.trunc(space / 2) : m.autoTop ? space : 0);
           return;
         }
-        if (al === "stretch" && !b.props.height && !b.props.aspect) {
+        // (An item with an aspect ratio stretches too, as in the other grids.)
+        if (al === "stretch" && !b.props.height) {
           const target = areaH - m.top - m.bottom;
           // In tracks with no auto minimum an item may be stretched shorter than its content (which overflows).
           const autoMin = rowTracks.slice(a.r0, a.r1).some((t) => t.min === "auto");
@@ -1184,6 +1194,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // Auto margins across a stack (a column flexbox) switch off stretching: it's as wide as its content.
       else if (parent === "stack" && pw === undefined && (m.autoLeft || m.autoRight) && !props.maxWidth && !props.aspect)
         w = fit(Math.max(0, avail - m.left - m.right), "has an auto margin in a stack, which sizes it to its content");
+      // In block flow, justify-self other than stretch: fit-content, placed by offsetX.
+      else if ((parent === "flow" || parent === "page") && pw === undefined && props.place?.value.justify && props.place.value.justify !== "stretch" && !props.maxWidth && !props.aspect && !m.autoLeft && !m.autoRight)
+        w = fit(Math.max(0, avail - m.left - m.right), `is aligned ${props.place.value.justify} in block flow (justify-self), which sizes it to its content`);
       // A stack that doesn't stretch its children (align-items: center, start, end): fit-content.
       else if (parent === "stack" && pw === undefined && stackAlign && stackAlign !== "stretch" && !props.maxWidth && !props.aspect)
         w = fit(Math.max(0, avail - m.left - m.right), `sits in a stack aligned ${stackAlign}, which sizes it to its content`);
@@ -1299,11 +1312,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       let y = 0;
       const align = props.align?.value ?? "stretch";
       kids.forEach((k, i) => {
-        const b = measure(k.node, k.comp, k.slot, innerW, "stack", undefined, undefined, align);
+        // Its own alignment (align-self) wins over the stack's.
+        const own = resolveElement(model, k.comp, k.slot, width).place?.value.align ?? align;
+        const b = measure(k.node, k.comp, k.slot, innerW, "stack", undefined, undefined, own);
         const km = marginOf(b.props);
         // Aligned across the stack by its margin box (auto inline margins win over align-items).
         const free = U(innerW) - U(b.w) - U(km.left) - U(km.right);
-        b.x = align === "stretch" || km.autoLeft || km.autoRight || b.props.maxWidth ? offsetX(b, innerW) : km.left + PX(align === "center" ? Math.trunc(free / 2) : align === "end" ? free : 0);
+        b.x = own === "stretch" || km.autoLeft || km.autoRight || b.props.maxWidth ? offsetX(b, innerW) : km.left + PX(own === "center" ? Math.trunc(free / 2) : own === "end" ? free : 0);
         b.y = y + km.top;
         y += km.top + b.h + km.bottom + (i < kids.length - 1 ? gap : 0);
         children.push(b);
@@ -1360,6 +1375,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       h = media ? ratioH : Math.max(ratioH, contentMin);
       // A one-line cluster with an aspect ratio whose content is taller: Chromium sometimes keeps the ratio.
       if (!media && pattern === "cluster" && props.wrap?.value === false && contentMin > ratioH + EPS) assumptions.push("a one-line cluster with an aspect ratio whose content is taller than the ratio: its height isn't modelled");
+      // A grid sized by its aspect ratio whose rows need more: Chromium sizes the rows within the ratio's height (not modelled).
+      if (gridArr && contentMin > ratioH + EPS) assumptions.push("a grid with an aspect ratio whose content is taller than the ratio: its height isn't modelled");
     }
     // min-height: never shorter (border-box; content taller than it makes the box taller as usual).
     if (props.minHeight) h = Math.max(h, props.minHeight.value);
@@ -1560,8 +1577,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           c.y = y + m.top + PX(m.autoTop && m.autoBottom ? Math.trunc(space / 2) : m.autoTop ? space : 0);
           continue;
         }
+        // Its own alignment (align-self) wins over the container's.
+        const al = c.props.place?.value.align ?? a.align;
         // stretch grows every item without a fixed height, aspect ratio or not.
-        if (a.align === "stretch" && !c.props.height) {
+        if (al === "stretch" && !c.props.height) {
           // In a one-line cluster the line may be shorter than the item: stretching then shrinks it (its content overflows).
           const target = rowH - m.top - m.bottom;
           if (a.oneLine && target < c.h) {
@@ -1572,7 +1591,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           fillPct(c);
         }
         const space = rowH - outerH(c);
-        c.y = y + m.top + (a.align === "center" ? space / 2 : a.align === "end" ? space : 0);
+        c.y = y + m.top + (al === "center" ? space / 2 : al === "end" ? space : 0);
       }
       y += rowH + gap;
     });

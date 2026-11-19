@@ -246,7 +246,23 @@ function genLayout(g: Gen, parentDepth: number): Obj {
   const { r } = g;
   const pattern = r.weighted([["stack", 4], ["cluster", 3], ["grid", 2], ["layer", 1.5], ["flow", 3.5]] as [string, number][]);
   const l: Obj = { pattern };
-  if (pattern === "grid") l.min = r.pick(g.sizes);
+  // A grid: auto-filled columns of a minimum width, or (sometimes) CSS's template, sized by the grid algorithm.
+  if (pattern === "grid" && r.chance(0.4)) {
+    const t: Obj = {
+      columns: r.pick([
+        "1fr auto 1fr", "minmax(100px, 1fr) 2fr", "auto auto", "repeat(3, minmax(0, 1fr))", "max-content 1fr", "fit-content(200px) 1fr",
+        "[a] 1fr [b] 2fr [c]", "repeat(auto-fill, minmax(120px, 1fr))", "120px 1fr", "min-content auto", "repeat(2, 1fr)", "25% 1fr", "auto",
+      ]),
+    };
+    if (r.chance(0.3)) t.rows = r.pick(["auto 1fr", "minmax(40px, auto)", "60px auto", "auto auto auto"]);
+    if (r.chance(0.2)) t.autoRows = r.pick(["minmax(32px, auto)", "48px", "auto"]);
+    if (r.chance(0.15)) t.dense = true;
+    if (r.chance(0.15)) t.justifyContent = r.pick(["start", "center", "end", "space-between"]);
+    if (r.chance(0.1)) t.alignContent = r.pick(["start", "center", "end"]);
+    l.template = t;
+  } else if (pattern === "grid") l.min = r.pick(g.sizes);
+  // A stack that doesn't stretch its children: they are as wide as their content.
+  if (pattern === "stack" && r.chance(0.2)) l.align = r.pick(["start", "center", "end"]);
   if (pattern !== "flow" && r.chance(0.7)) l.gap = r.pick(g.spaces);
   if (pattern !== "stack" && pattern !== "flow" && r.chance(0.5)) l.align = r.pick(["start", "center", "end", "stretch"]);
   if (pattern === "cluster" && r.chance(0.45)) l.justify = r.pick(["start", "end", "center", "between", "around", "evenly"]);
@@ -265,7 +281,8 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
   if (kind === "box") p.layout = genLayout(g, 0);
   if (kind === "text") p.text = r.pick(g.roles);
   if (kind === "box" && r.chance(0.04)) p.text = r.pick(g.roles);
-  const sp = () => r.pick(g.spaces);
+  // Sometimes a percentage of the containing block's width.
+  const sp = () => (g.pcts.length && r.chance(0.12) ? r.pick(g.pcts) : r.pick(g.spaces));
   if (r.chance(0.4 * s))
     p.padding = r.weighted<Obj | string>([
       [sp(), 6],
@@ -294,7 +311,7 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
   const wantWidth = parent === "cluster" && kind !== "text" ? (kind === "media" ? 0.97 : 0.6) : 0.2;
   // A width, maxWidth or measure: sometimes a percentage of the parent's width.
   const size = () => (g.pcts.length && r.chance(0.3) ? r.pick(g.pcts) : r.pick(g.sizes));
-  if (r.chance(wantWidth * s)) p.width = r.chance(parent === "stack" ? 0.4 : parent === "cluster" ? 0.01 : 0.1) ? "fill" : r.chance(0.08) ? "fit" : size();
+  if (r.chance(wantWidth * s)) p.width = r.chance(parent === "stack" ? 0.4 : parent === "cluster" ? 0.01 : 0.1) ? "fill" : r.chance(0.08) ? "fit" : kind === "text" && r.chance(0.05) ? r.pick(["max-content", "min-content"]) : size();
   if (r.chance((parent === "page" ? 0.35 : parent === "cluster" ? 0.06 : 0.12) * s)) p.maxWidth = size();
   // grow: in a cluster (shares the line) or a stack (its extra height).
   if ((parent === "cluster" || parent === "stack") && kind !== "media" && r.chance((parent === "cluster" ? 0.3 : 0.15) * s))
@@ -302,9 +319,9 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
   if (r.chance(0.12 * s)) p.measure = size();
   // Margins: common in block flow (where they collapse), sometimes anywhere else.
   if (r.chance((parent === "flow" || parent === "page" ? 0.5 : 0.2) * s)) {
-    // Sometimes negative (pulls the box outward), sometimes auto left and right (not in a grid or layer).
+    // Sometimes negative (pulls the box outward), sometimes auto left and right (not in a layer).
     const ms = () => (g.negs.length && r.chance(0.2) ? r.pick(g.negs) : sp());
-    const auto = parent !== "grid" && parent !== "layer" && r.chance(0.12);
+    const auto = parent !== "layer" && r.chance(0.12);
     const block = !!p.maxWidth || r.chance(0.5);
     p.margin = block
       ? r.weighted<Obj>([[{ block: ms() }, 3], [{ top: ms() }, 2], [{ bottom: ms() }, 2], [{ top: ms(), bottom: ms() }, 2]])
@@ -312,6 +329,24 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
         ? r.weighted<Obj>([[{ inline: "auto" }, 2], [{ left: "auto" }, 2], [{ right: "auto", left: ms() }, 1], [{ block: ms(), left: "auto" }, 1]])
         : r.weighted<Obj | string>([[ms(), 2], [{ block: ms(), inline: ms() }, 2], [{ inline: ms() }, 1], [{ left: ms() }, 1], [{ top: ms(), right: ms(), bottom: ms(), left: ms() }, 1], [{ inline: ms(), top: ms() }, 1]]);
   }
+  // Auto top and bottom margins: free space in a stack, cluster or grid.
+  if ((parent === "stack" || parent === "cluster" || parent === "grid") && !p.margin && r.chance(0.08 * s))
+    p.margin = r.weighted<Obj>([[{ top: "auto" }, 2], [{ block: "auto" }, 2], [{ bottom: "auto" }, 1], [{ top: "auto", inline: "auto" }, 1]]);
+  // A grid item placed on lines, or aligned in its area.
+  if (parent === "grid" && r.chance(0.3 * s)) {
+    const pl: Obj = {};
+    if (r.chance(0.6)) pl.column = r.pick(["1 / -1", "2", "span 2", "-1", "1 / 3", "1"]);
+    if (r.chance(0.4)) pl.row = r.pick(["1", "span 2", "2", "1 / 3"]);
+    if (r.chance(0.3)) pl.align = r.pick(["start", "center", "end", "stretch"]);
+    if (r.chance(0.3)) pl.justify = r.pick(["start", "center", "end", "stretch"]);
+    if (Object.keys(pl).length) p.place = pl;
+  }
+  // A 2D transform: drawn mapped, moving nothing else.
+  if (kind !== "media" && r.chance(0.06 * s))
+    p.transform = r.weighted<Obj | string>([
+      [r.pick(["rotate(3deg)", "rotate(-7deg)", "translate(10px, -4px)", "scale(1.1)", "translateX(-50%)", "rotate(-2deg) scale(0.9)", "skewX(10deg)", "rotate(90deg)"]), 4],
+      [{ value: r.pick(["scale(1.2)", "rotate(5deg)"]), origin: r.pick(["left top", "0 0", "right bottom", "25% 75%"]) }, 1],
+    ]);
   if (kind === "media") {
     if (r.chance(0.85)) p.aspect = r.pick(["16:9", "4:3", "1:1", "3:2", "2:3", "21:9", 1.5, 0.75, "1.91:1"]);
     else if (r.chance(0.8)) p.height = r.pick(g.sizes);
@@ -442,7 +477,12 @@ function genOverrides(g: Gen) {
       if (r.chance(0.6)) Object.assign(o, genProps(g, c.kind, "stack", true));
       // Usually an override keeps the pattern and changes its details (switching a box to a
       // cluster leaves children without widths, which the engine flags).
-      if (o.layout && style.layout && r.chance(0.6)) o.layout = { ...o.layout, pattern: style.layout.pattern, ...(style.layout.pattern === "grid" ? { min: o.layout.min ?? style.layout.min } : {}) };
+      if (o.layout && style.layout && r.chance(0.6)) {
+        const grid = style.layout.pattern === "grid" ? (o.layout.template ?? style.layout.template ? { template: o.layout.template ?? style.layout.template } : { min: o.layout.min ?? style.layout.min }) : {};
+        o.layout = { ...o.layout, pattern: style.layout.pattern, ...grid };
+      }
+      if (o.layout?.template) delete o.layout.min;
+      if (o.layout && o.layout.pattern !== "grid") delete o.layout.template;
       if (o.layout && o.layout.pattern !== "grid") delete o.layout.min;
       if (o.layout && o.layout.pattern !== "cluster") {
         delete o.layout.justify;
