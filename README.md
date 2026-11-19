@@ -100,7 +100,7 @@ $ cadesa check fixtures/bootstrap/dashboard.html --css fixtures/bootstrap/bootst
 
 Each finding names the element (its line in the page, tag, classes and the start of its text) and the rules in your stylesheets that set the property behind it, following `var()` to where the variable is set. `--json` has the same, plus the path in the generated Cadesa source (`path`).
 
-`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. It also understands what Bootstrap 5 and Angular pages are built from: the grid (negative gutters, `.col` growth, `col-*` and `row-cols-*` widths), `.container` max-widths that disappear on phones, `d-flex` rows with `justify-content` and auto margins, per-side padding and borders, form controls, and Angular's component elements. Anything it can't model (tables' heights, floats, and buttons aligned to a line of text, which need font vertical metrics) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
+`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. It also understands what Bootstrap 5 and Angular pages are built from: the grid (negative gutters, `.col` growth, `col-*` and `row-cols-*` widths), `.container` max-widths that disappear on phones, `d-flex` rows with `justify-content` and auto margins, per-side padding and borders, form controls, and Angular's component elements. Anything it can't model (tables' heights, floats, and buttons aligned to a line of text in a font without vertical metrics) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
 
 ### Pages rendered by JavaScript: `capture`
 
@@ -266,13 +266,13 @@ The engine ([`src/engine/`](src/engine/)) is the spec: its box tree depends only
 | `npm run fuzz` | **differential fuzzer**: random pages covering the whole language | 39,597 pages at 148,328 widths: **688,902 boxes, 0 disagreements** (0 again on fresh seeds) |
 | `conformance:tailwind` | three Tailwind pages through `--tailwind` | all 19,056 boxes marked exact match (400 left `≈`) |
 | `conformance:bootstrap` | six Angular + Bootstrap 5.3.8 pages, with the real `bootstrap.css` (navbar collapse, grid, cards, tables, `d-*` utilities) | all 31,341 of 38,913 boxes are marked exact, and all match; what's left is mostly table contents and percentage margins. Where a box is `≈` but `check` treats its size as known, the size matches too |
-| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms, generated content and runs in another weight, line boxes and text fields | all 30,923 boxes marked exact match, every 10px from 320 to 1440px |
+| `conformance:css` | plain CSS through `--css`: an app side panel, an article, a dashboard, scroll and clip containers, lone buttons and transforms, generated content and runs in another weight, line boxes and text fields, containment, percentages in `min()` and grid row gaps, static positions and inline-blocks sharing lines | all 42,449 boxes marked exact match, every 10px from 320 to 1440px |
 | `conformance:fonts` | Roboto (variable, from Google Fonts) and Lato (two static faces via `@font-face`) | 5,474 of 5,474, and the line count of all 4,347 text boxes, over 161 widths |
 | `conformance:landing` | grid, text over images, aspect ratios, gradients | 5,412 of 5,412 over 123 widths |
 | `conformance:pricing` | nested components | 4,290 of 4,290 over 143 widths |
 | `conformance:field2` | every divergence found in real use, kept fixed | 2,576 of 2,576 over 161 widths |
 | `conformance:sweep` | long copy every 3px, to land on line-break boundaries | 1,482 of 1,482 over 247 widths |
-| `conformance:lift` | a hand-written BEM stylesheet vs the original | all 28 boxes match, none left uncertain |
+| `conformance:lift` | a hand-written BEM stylesheet vs the original | all 32 boxes match, none left uncertain |
 
 Real use has caught Cadesa wrong before: the site rebuild above found seven cases where it said "fine" and Chromium disagreed. Each was fixed and kept as a regression test, and the fuzzer then found and fixed the next ones, mostly in exactly how Chromium rounds text widths and picks line breaks (59 regression cases in [`fixtures/fuzz`](fixtures/fuzz)). Where Chromium's choice hinges on a fraction of a pixel, the box is flagged rather than guessed. Testing on Bootstrap pages also caught one released bug: 0.1.6 predicted an empty Angular `<router-outlet>` as full width instead of 0×0, and every box after it was off. 0.1.7 fixes it, and the Bootstrap suite keeps it fixed.
 
@@ -284,7 +284,7 @@ cadesa fonts page.html --css styles.css --measure  # measure the ones text is se
 cadesa metrics --google "Work Sans"                # or a Google font by name
 ```
 
-`cadesa fonts` finds each family's `@font-face` file or Google Fonts link, measures the exact files the page loads, and writes `.cadesa/metrics/<family>.metrics.json`; commit it. Agents can do the same with the `cadesa_fonts` MCP tool. System fonts (Arial, Segoe UI, `system-ui`) differ by machine: reports say so, and `--system` measures this machine's, marked machine-specific. Text in a font without metrics, or with characters outside the measured Latin set, falls back to a one-line assumption, and every report flags that box. No hyphenation, `text-wrap: balance` or bidirectional text yet.
+`cadesa fonts` finds each family's `@font-face` file or Google Fonts link, measures the exact files the page loads, and writes `.cadesa/metrics/<family>.metrics.json`; commit it. Agents can do the same with the `cadesa_fonts` MCP tool. System fonts (Arial, Segoe UI, `system-ui`) differ by machine: reports say so, and `--system` measures this machine's, marked machine-specific. Text in a font without metrics, or with characters outside the measured Latin set, falls back to a one-line assumption, and every report flags that box. `text-wrap: balance` and `pretty` keep the line count, so their boxes are exact, but the lines reported are the greedy ones. No hyphenation or bidirectional text yet.
 
 ## Why a language
 
@@ -351,7 +351,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 
 ## Roadmap
 
-- **Inline layout beyond one box per line:** several inline-blocks sharing a line, and the rectangle of an inline span (its lines are exact; its own content-area box is `≈`).
+- **Inline layout beyond one box per line:** inline-blocks of different heights sharing a line, text beside inline-blocks, and the rectangle of an inline span (its lines are exact; its own content-area box is `≈`).
 - **Tables, floats,** explicit grid templates and percentage padding, which are reported as `≈` today.
 - **More of Tailwind:** `dark:` and container queries.
 
