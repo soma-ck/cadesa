@@ -1,0 +1,191 @@
+/*
+ * Inline-blocks with content of their own on lines shared with text and with each other (badges,
+ * two-line stops, tiles, a box of blocks), vertical-align top, bottom and middle on atomic inlines,
+ * runs in a larger font aligned middle, text-top and text-bottom, and an inline element made a
+ * flex item (blockified) that holds a block.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1d2329;
+  background: #ffffff;
+}
+
+.sheet {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+p {
+  margin: 0 0 14px;
+}
+
+.badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 10px;
+  background: #e6f0e8;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.badge--big {
+  font-size: 20px;
+  line-height: 28px;
+  padding: 4px 10px;
+}
+
+.stop {
+  display: inline-block;
+  padding: 4px 8px;
+  border: 1px solid #c4ccd4;
+  line-height: 1.25;
+}
+
+.stop__time {
+  font-size: 13px;
+  color: #56606a;
+}
+
+.chip {
+  display: inline-block;
+  height: 34px;
+  padding: 0 8px;
+  background: #f2e6d6;
+  line-height: 34px;
+  font-size: 13px;
+}
+
+.chip--top {
+  vertical-align: top;
+}
+
+.chip--bottom {
+  vertical-align: bottom;
+  height: 44px;
+}
+
+.chip--middle {
+  vertical-align: middle;
+}
+
+.big-mid,
+.big-tt,
+.big-tb {
+  font-size: 30px;
+  font-family: Roboto, sans-serif;
+}
+
+.big-mid {
+  vertical-align: middle;
+}
+
+.big-tt {
+  vertical-align: text-top;
+}
+
+.big-tb {
+  vertical-align: text-bottom;
+}
+
+.tiles {
+  margin-bottom: 14px;
+}
+
+.tile {
+  display: inline-block;
+  width: 150px;
+  padding: 8px;
+  border: 1px solid #c4ccd4;
+  font-size: 14px;
+}
+
+.tile--tall {
+  background: #eef2f6;
+}
+
+.scale {
+  display: inline-block;
+  width: 140px;
+  border: 1px solid #c4ccd4;
+}
+
+.scale__head {
+  display: block;
+  padding: 2px 6px;
+  background: #1d2329;
+  color: #ffffff;
+  font-size: 12px;
+}
+
+.scale__body {
+  display: block;
+  padding: 4px 6px;
+  font-size: 13px;
+  line-height: 1.3;
+}
+
+.planner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-right: 4px;
+}
+
+.planner__eyebrow {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.planner__heading {
+  margin: 0;
+  font-size: 22px;
+}
+
+.planner__time {
+  padding-top: 8px;
+  font-size: 28px;
+  line-height: 1;
+}
+
+.planner__unit {
+  display: block;
+  margin-top: 5px;
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.narrow {
+  width: 180px;
+}
+
+.grown__mid {
+  vertical-align: middle;
+}
+
+.grown__tt {
+  vertical-align: text-top;
+}
+
+.grown__tb {
+  vertical-align: text-bottom;
+}
+
+.grown__big {
+  font-size: 28px;
+}
+
+.grown__icon {
+  display: inline-block;
+  width: 20px;
+  height: 36px;
+  background: #d0a040;
+}

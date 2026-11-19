@@ -84,6 +84,11 @@ export interface RunStyle {
    */
   above?: number;
   below?: number;
+  /**
+   * vertical-align: top or bottom: the box (`above` + `below` tall) is placed against the line box's
+   * top or bottom once the rest of the line is, growing the line box below or above if it is taller.
+   */
+  align?: "top" | "bottom";
 }
 
 /** Whether a run style changes anything. */
@@ -217,6 +222,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     ...(sp.italic !== undefined && { italic: sp.italic }),
     ...(sp.above !== undefined && { above: sp.above }),
     ...(sp.below !== undefined && { below: sp.below }),
+    ...(sp.align !== undefined && { align: sp.align }),
   });
   const live: number[] = [];
   let lead: RunMeta["lead"];
@@ -275,7 +281,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   const generated = (g: Generated | undefined) => {
     if (!g) return;
     if (g.float) lead = { text: collapse(g.text), ...(g.weight !== undefined && { weight: g.weight }), extra: (g.open ?? 0) + (g.close ?? 0) };
-    else if (g.atomic !== undefined) span({ open: g.atomic, ...(g.above !== undefined && { above: g.above, below: g.below }) }, () => (cur += "\uFFFC"));
+    else if (g.atomic !== undefined) span({ open: g.atomic, ...(g.above !== undefined && { above: g.above, below: g.below }), ...(g.align && { align: g.align }) }, () => (cur += "\uFFFC"));
     else span(g, () => (cur += g.text));
   };
   const walk = (k: P5Node, u: boolean) => {
@@ -287,7 +293,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     else if (inline?.(k)?.atomic !== undefined) {
       const info = inline!(k)!;
       const a = info.atomic!;
-      const v = info.above !== undefined ? { above: info.above, below: info.below } : {};
+      const v = info.above !== undefined ? { above: info.above, below: info.below, ...(info.align && { align: info.align }) } : {};
       span(typeof a === "number" ? { open: a, ...v } : { open: 1, openAt: a, ...v }, () => (cur += "\uFFFC"));
     }
     else if (k.tagName && BLOCK.has(k.tagName)) {

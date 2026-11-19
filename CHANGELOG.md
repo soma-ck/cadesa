@@ -37,6 +37,17 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   `<i>`, `<cite>`, `font-style: italic`) are measured with it, vertical metrics too. Italic text in a
   family without an italic face is the upright one slanted, and measured upright. In a source: a text
   role's `style: italic`.
+- Inline-blocks with content of their own on lines of text and on lines they share with each other
+  are laid out as LayoutNG's line box algorithm places them: an inline-block of several lines (runs
+  in other fonts, sizes and weights, `<br>`s) sits on its last line's baseline, as wide as its
+  longest line (flagged at widths where that doesn't fit and its content would wrap); a chip of set
+  height keeps its line at its top; inline-blocks of different line counts side by side align on
+  their last baselines. `vertical-align: top` and `bottom`, on inline-blocks and on runs, are placed
+  once the rest of the line is, growing the line box below or above. A run aligned `middle`,
+  `text-top`, `text-bottom`, `top` or `bottom` whose content reaches past its strut is measured when
+  it can't be split across lines (no break opportunity in it). An inline element made a flex or grid
+  item that holds text and a block is blockified. Still `≈`: an inline-block holding blocks on a line
+  of text, and such a run that can be split across lines (each line's piece has its own extent).
 - A line height in px with a font size that isn't a whole number of 1/64 px (`40px` at `16.8px`) is
   exactly that many px (it came out 1/64 px short).
 

@@ -691,11 +691,22 @@ export function layoutText(
       const b = lines[i + 1]?.at ?? all.length;
       let above = opts.strut!.above;
       let below = opts.strut!.below;
+      const pending: typeof spans = [];
       for (const sp of spans) {
         const on = sp.from === sp.to ? sp.from >= a && (sp.from < b || (b === all.length && sp.from === b)) : sp.from < b && sp.to > a;
         if (!on) continue;
-        if (sp.above !== undefined) above = Math.max(above, sp.above);
-        if (sp.below !== undefined) below = Math.max(below, sp.below);
+        if (sp.align) pending.push(sp);
+        else {
+          if (sp.above !== undefined) above = Math.max(above, sp.above);
+          if (sp.below !== undefined) below = Math.max(below, sp.below);
+        }
+      }
+      // vertical-align: top and bottom, in order, once the rest of the line is placed (LayoutNG's
+      // pending descendants): a taller box grows the line box below (top) or above (bottom).
+      for (const sp of pending) {
+        const h = (sp.above ?? 0) + (sp.below ?? 0);
+        if (sp.align === "top") below = Math.max(below, h - above);
+        else above = Math.max(above, h - below);
       }
       l.h = above + below;
       l.base = above;

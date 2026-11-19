@@ -78,7 +78,7 @@ export function genCssCase(seed: number): CssCase {
   const attr = (c: string) => (c ? ` class="${c}"` : "");
   const size = () => r.pick(["10px", "12px", "13px", "14px", "18px", "20px", "24px", "28px", "0.875em", "0.75em", "1.25em", "80%", "smaller", "larger", "11.5px", "13.6px", ...(remRoot ? ["0.75rem", "1.2rem", "clamp(1rem, 0.5rem + 1vw, 1.5rem)"] : [])]);
   const lineHeight = () => r.pick(["1", "1.2", "1.5", "2", "normal", "0", "16px", "30px", "1.75em"]);
-  const valign = () => r.pick(["baseline", "sub", "super", "middle", "text-top", "text-bottom", "-0.125em", "2px", "-3px", "0.3em", "20%", "-50%"]);
+  const valign = () => r.pick(["baseline", "sub", "super", "middle", "text-top", "text-bottom", "-0.125em", "2px", "-3px", "0.3em", "20%", "-50%", "top", "bottom"]);
   /** An inline run: a tag with text, maybe styled, maybe nested. */
   const run = (depth: number): string => {
     const tag = r.pick(["span", "span", "span", "small", "sup", "sub", "b", "strong", "a", "em", "i"]);
@@ -89,15 +89,36 @@ export function genCssCase(seed: number): CssCase {
     if (r.chance(0.25)) decls.push(`font-family: ${r.pick(["Roboto", "Inter", "Lato"])}`);
     if (r.chance(0.15)) decls.push(`font-weight: ${r.pick(["300", "600", "700"])}`);
     if (r.chance(0.12)) decls.push(`font-style: ${r.pick(["italic", "normal"])}`);
-    const inner = depth < 2 && r.chance(0.25) ? `${words(r, 0, 2)} ${run(depth + 1)} ${words(r, 0, 2)}` : words(r, 1, 4);
+    // Sometimes with no break opportunity in it (a box never split across lines).
+    const inner = depth < 2 && r.chance(0.25) ? (r.chance(0.3) ? `${r.pick(WORDS)}${run(depth + 1).replace(/>([^<]*)</, (_, t: string) => `>${t.replace(/ /g, "")}<`)}` : `${words(r, 0, 2)} ${run(depth + 1)} ${words(r, 0, 2)}`) : words(r, 1, 4);
     return `<${tag}${tag === "a" ? ' href="#"' : ""}${attr(cls(decls))}>${inner}</${tag}>`;
   };
   /** An atomic inline: an inline-block of set size, or an image-like box, placed by its vertical-align. */
   const atomic = () => {
+    // An inline-block with content of its own: one line, or lines broken by <br>s with runs in them,
+    // padded and bordered, maybe of set height.
+    if (r.chance(0.4)) {
+      const d = ["display: inline-block", `padding: ${r.int(0, 6)}px ${r.int(0, 10)}px`, "background: #dde"];
+      if (r.chance(0.4)) d.push(`border: ${r.int(1, 3)}px solid #889`);
+      if (r.chance(0.3)) d.push(`font-size: ${r.pick(["12px", "13px", "18px"])}`);
+      if (r.chance(0.3)) d.push(`line-height: ${r.pick(["1", "1.25", "20px", "normal"])}`);
+      if (r.chance(0.2)) d.push(`height: ${r.int(16, 40)}px`);
+      if (r.chance(0.4)) d.push(`vertical-align: ${r.pick(["middle", "top", "bottom", "-3px", "text-top"])}`);
+      const lines = Array.from({ length: r.int(1, 3) }, () => (r.chance(0.3) ? `${words(r, 1, 2)} ${run(1)}` : words(r, 1, 3)));
+      return `<span${attr(cls(d))}>${lines.join("<br>")}</span>`;
+    }
     const decls = ["display: inline-block", `width: ${r.int(4, 40)}px`, `height: ${r.int(4, 48)}px`, "background: #9ab"];
-    if (r.chance(0.5)) decls.push(`vertical-align: ${r.pick(["baseline", "middle", "-4px", "2px", "-0.25em", "text-top", "text-bottom", "sub", "super"])}`);
+    if (r.chance(0.5)) decls.push(`vertical-align: ${r.pick(["baseline", "middle", "-4px", "2px", "-0.25em", "text-top", "text-bottom", "sub", "super", "top", "bottom"])}`);
     if (r.chance(0.3)) decls.push(`margin: ${r.int(0, 6)}px ${r.int(0, 6)}px`);
     return `<span${attr(cls(decls))}></span>`;
+  };
+  /** Inline-blocks sharing their lines with each other: tiles of one or more lines (<br>s). */
+  const tiles = () => {
+    const d = ["display: inline-block", `width: ${r.int(60, 220)}px`, `padding: ${r.int(0, 8)}px`, "border: 1px solid #ccc"];
+    if (r.chance(0.4)) d.push(`font-size: ${r.pick(["13px", "14px", "18px"])}`);
+    const c = cls(d);
+    const items = Array.from({ length: r.int(2, 5) }, () => `<span${attr(c)}>${Array.from({ length: r.int(1, 3) }, () => words(r, 1, 2)).join("<br>")}</span>`);
+    return `<div>${items.join(r.chance(0.8) ? " " : "")}</div>`;
   };
   const blocks: string[] = [];
   /** A flex row of items aligned on their first baselines: text in other sizes and fonts, padding, nested blocks, boxes with no baseline. */
@@ -161,6 +182,10 @@ export function genCssCase(seed: number): CssCase {
     }
     if (r.chance(0.3)) {
       blocks.push(formBlock());
+      continue;
+    }
+    if (r.chance(0.15)) {
+      blocks.push(tiles());
       continue;
     }
     const decls: string[] = [];
