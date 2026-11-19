@@ -6,6 +6,7 @@ import type { Explanation } from "./explain.js";
 import type { WidthImpact } from "./lift/impact.js";
 import type { LiftResult } from "./lift/lift.js";
 import type { WhatIf, WidthDiff } from "./project.js";
+import type { AddedCssReport, FindingChange } from "./whatif-check.js";
 import { fmtPx, type Resolved } from "./resolve.js";
 
 const pad = (s: string, n: number) => (s.length >= n ? s + " " : s + " ".repeat(n - s.length));
@@ -83,20 +84,29 @@ const list = (ids: string[], n = 6) => ids.slice(0, n).map((id) => `#${id}`).joi
  * whatif, grouped: widths where the edit does the same thing share one block (boxes, property
  * changes and geometry deltas), and "unchanged" is only claimed for boxes predicted exactly.
  */
-export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage; defaulted?: boolean }): string {
+export function formatWhatif(
+  r: WhatIf,
+  meta: { ms: number; coverage?: Coverage; defaulted?: boolean; findings?: FindingChange[]; addedCss?: AddedCssReport; css?: boolean },
+): string {
   const all = r.widths.map((w) => w.width);
   const out = r.changes.map((c) => `whatif ${c.path}: ${show(c.from)} → ${show(c.to)}`);
   const swept = all.length > 2 ? `${all.length} widths from ${all[0]} to ${all[all.length - 1]}px${meta.defaulted ? " (every 20px, plus both sides of each breakpoint)" : ""}` : `${all.join(", ")}px`;
   out.push(`(in memory, nothing written · ${swept} · ${meta.ms}ms, no browser)`);
   if (meta.coverage) out.push(formatCoverage(meta.coverage).trimEnd());
   out.push("");
+  if (meta.addedCss) out.push(...formatAddedCss(meta.addedCss));
+  if (meta.findings) out.push(...formatFindingChanges(meta.findings, all), "");
+  // With check's findings compared above, the engine's own issues aren't repeated per width.
+  const issues = !meta.findings;
+  // A property the edit removes (or adds) on plain CSS: its initial value, not "unset".
+  const unset = (prop: string) => (meta.css ? (CSS_INITIAL[prop] ?? "its initial value") : "unset");
 
   type Group = { key: string; widths: number[]; w: WidthDiff[] };
   const groups = new Map<string, Group>();
   const unchanged: WidthDiff[] = [];
   for (const w of r.widths) {
-    const fresh = w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message)).map((i) => i.message);
-    const fixed = w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message)).map((i) => i.message);
+    const fresh = issues ? w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message)).map((i) => i.message) : [];
+    const fixed = issues ? w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message)).map((i) => i.message) : [];
     if (!w.elements.length && !w.added.length && !w.removed.length && !fresh.length && !fixed.length) {
       unchanged.push(w);
       continue;
@@ -145,7 +155,7 @@ export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage;
         first = false;
       };
       for (const p of e.props) {
-        line(`${p.prop} ${p.from?.display ?? "unset"} → ${p.to?.display ?? "unset"}`);
+        line(`${p.prop} ${p.from?.display ?? unset(p.prop)} → ${p.to?.display ?? unset(p.prop)}`);
         // The breakpoint step names one width ("390px ≤ 576px"); for a range, name the condition.
         if (p.to?.steps.length) out.push(blank + "  ← " + p.to.steps.map((s) => (one ? s.label : s.label.replace(/\(\d+(?:\.\d+)?px ≤ /, "(≤ "))).join(" ← "));
       }
@@ -160,8 +170,8 @@ export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage;
         }
     if (w.added.length) out.push(`  + shown after the edit: ${list(w.added)}`);
     if (w.removed.length) out.push(`  − hidden after the edit: ${list(w.removed)}`);
-    const fresh = w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message));
-    const fixed = w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message));
+    const fresh = issues ? w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message)) : [];
+    const fixed = issues ? w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message)) : [];
     for (const i of fresh) out.push(issueLine(i).replace(/^ {2}/, "  new "));
     for (const i of fixed) out.push(`  ✓ fixed: ${i.message}`);
     const moved = w.elements.filter((e) => approx.has(e.id)).length;
@@ -180,6 +190,64 @@ export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage;
       );
   } else if (!groups.size) out.push("✓ unchanged: no box moved, no property changed");
   return out.join("\n").trimEnd() + "\n";
+}
+
+/** What a Cadesa property is when no CSS sets it, in CSS terms (whatif on plain CSS). */
+const CSS_INITIAL: Record<string, string> = {
+  padding: "0px",
+  margin: "0px",
+  gap: "0px",
+  radius: "0px",
+  border: "none",
+  shadow: "none",
+  backdrop: "none",
+  background: "transparent",
+  maxWidth: "none",
+  measure: "none",
+  aspect: "auto",
+  width: "auto",
+  height: "auto",
+  min: "auto",
+  grow: "0",
+  overflow: "visible",
+  textAlign: "start",
+  justify: "start",
+  align: "stretch",
+  wrap: "nowrap",
+  pattern: "block",
+  fit: "fill",
+};
+
+/** Rules added with --add-css that matched nothing, or lost to a rule already in the cascade. */
+function formatAddedCss(a: AddedCssReport): string[] {
+  const out: string[] = [];
+  for (const r of a.unmatched) out.push(`✖ your rule didn't apply: ${clip(r, 100)} matches no element on the page`);
+  for (const l of a.lost) {
+    const els = l.elements.slice(0, 3).join(", ") + (l.elements.length > 3 ? ` +${l.elements.length - 3} more` : "");
+    out.push(
+      `✖ your rule didn't apply${l.at ? ` at ${l.at}` : ""}: ${l.winner} ${l.why}`,
+      `    ${clip(l.rule, 100)} loses ${l.props.join(", ")} on ${els}`,
+    );
+  }
+  if (out.length) out.push("");
+  return out;
+}
+
+/** check's findings before and after the edit: fixed, still there, new; one line per issue with its widths. */
+export function formatFindingChanges(changes: FindingChange[], all: number[]): string[] {
+  if (!changes.length) return ["check: no findings before or after the edit"];
+  const n = (s: FindingChange["status"]) => changes.filter((c) => c.status === s).length;
+  const out = [`check, before → after the edit: ${n("fixed")} fixed, ${n("still")} still there, ${n("new")} new`];
+  const icon = (f: Finding) => (f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠");
+  const msg = (f: Finding) => f.message.replace(/ \(inconclusive: this box isn't exactly predicted for the original CSS\)/, "");
+  for (const c of changes) {
+    const f = c.finding;
+    const label = c.status === "fixed" ? "✓ fixed" : `${icon(f)} ${c.status === "still" ? "still" : "new"}`;
+    out.push(`  ${pad(label, 8)}[${f.check}] ${msg(f)} · at ${widthRanges(c.widths, all)}${c.status !== "fixed" && f.inconclusive ? " (inconclusive)" : ""}`);
+    if (c.was) out.push(`            before the edit: ${msg(c.was)}`);
+    if (f.element && c.status !== "fixed") out.push(`            element: ${describeElement(f.element)}`);
+  }
+  return out;
 }
 
 export function formatExplain(e: Explanation): string {

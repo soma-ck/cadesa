@@ -36,6 +36,7 @@ import { generateMetrics, launchChromium, writeMetrics } from "./metrics.js";
 import { pointFindings, Pointers } from "./pointers.js";
 import { verifyFindings, type VerifyReport } from "./verify.js";
 import { capture, formatCapture } from "./capture.js";
+import { checkAddedCss, compareFindings, type FindingChange } from "./whatif-check.js";
 import { existsSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -269,8 +270,68 @@ export function whatifCmd(
   };
   const [a, b] = [approx(result.before!), approx(result.after!)];
   result.widths.forEach((w, i) => (w.approximate = [...new Set([...a[i], ...b[i]])]));
-  const cov = withNotes(coverage(result.after!, impactFor(s, result.after!)?.impacts), p);
-  return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
+  const ia = impactFor(s, result.after!)?.impacts;
+  const cov = withNotes(coverage(result.after!, ia), p);
+  const findings = findingChanges(result.before!, impactFor(s, result.before!)?.impacts, p.tw, result.after!, ia, p.tw);
+  return {
+    text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length, findings })),
+    data: { coverage: cov, findings: findingsData(findings), ...result },
+    ok: true,
+  };
+}
+
+/** check before and after an edit, compared: what it fixes, what it leaves, what it adds. */
+function findingChanges(before: Layout[], ib: WidthImpact[] | undefined, pb: PageLift | undefined, after: Layout[], ia: WidthImpact[] | undefined, pa: PageLift | undefined): FindingChange[] {
+  const fb = check(before, ib, pb);
+  const fa = check(after, ia, pa);
+  const changes = compareFindings(fb, fa);
+  // Compared by generated id first; then named as check names them (element, rules).
+  if (pb) pointFindings(fb, pb);
+  if (pa) pointFindings(fa, pa);
+  return changes;
+}
+
+const findingsData = (cs: FindingChange[]) =>
+  cs.map((c) => ({
+    status: c.status,
+    check: c.check,
+    severity: c.finding.severity,
+    ...(c.finding.inconclusive && { inconclusive: true }),
+    id: c.finding.id,
+    message: c.finding.message,
+    ...(c.was && { before: c.was.message }),
+    widths: c.widths,
+    ...(c.finding.element && { element: c.finding.element }),
+    ...(c.finding.source && { source: c.finding.source }),
+  }));
+
+/**
+ * The --css file whose rules come last in the page's cascade (where --add-css rules go): the
+ * page links its stylesheets in its own order, and given files it doesn't link come first.
+ */
+export function lastInCascade(html: string, files: string[]): number {
+  const base = (f: string) => f.replace(/[?#].*$/, "").replace(/^.*[\\/]/, "");
+  const links = [...html.matchAll(/<link\b[^>]*>/gi)]
+    .map((m) => m[0])
+    .filter((t) => /\brel\s*=\s*["']?[^"'>]*\bstylesheet/i.test(t) && !/\balternate\b/i.test(t))
+    .map((t) => /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(t))
+    .map((h) => base(h?.[1] ?? h?.[2] ?? h?.[3] ?? ""));
+  // Each file's place in the cascade: the link it's matched to by name, -1 when the page doesn't link it.
+  const pos = files.map(() => -1);
+  const taken = new Set<number>();
+  links.forEach((name, at) => {
+    const i = files.findIndex((f, k) => pos[k] < 0 && base(f) === name);
+    if (i >= 0) (pos[i] = at), taken.add(at);
+  });
+  // As many unmatched files as unmatched links: the same stylesheets under other names, in order.
+  const looseFiles = files.map((_, k) => k).filter((k) => pos[k] < 0);
+  const looseLinks = links.map((_, at) => at).filter((at) => !taken.has(at));
+  if (looseFiles.length && looseFiles.length === looseLinks.length) looseFiles.forEach((k, j) => (pos[k] = looseLinks[j]));
+  let last = files.length - 1;
+  pos.forEach((p, k) => {
+    if (p > pos[last] || (p === pos[last] && k > last)) last = k;
+  });
+  return last;
 }
 
 /**
@@ -293,9 +354,13 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
     // Rules keep pointing at the file the page links, so the cascade order is unchanged.
     afterFiles = afterFiles.map((f, i) => ({ file: beforeFiles[i].file, text: f.text }));
   }
+  // Added rules go at the end of the stylesheet that comes last in the page's cascade.
+  let added: { file: string; firstLine: number } | undefined;
   if (s.addCss) {
-    const last = afterFiles[afterFiles.length - 1];
-    afterFiles = [...afterFiles.slice(0, -1), { file: last.file, text: `${last.text}\n${s.addCss}\n` }];
+    const i = lastInCascade(html, afterFiles.map((f) => f.file));
+    const last = afterFiles[i];
+    added = { file: last.file, firstLine: last.text.split("\n").length + 1 };
+    afterFiles = afterFiles.map((f, k) => (k === i ? { file: f.file, text: `${f.text}\n${s.addCss}\n` } : f));
   }
   const lb = liftCssPage(s.fixture, html, beforeFiles);
   const la = liftCssPage(s.fixture, html, afterFiles);
@@ -316,7 +381,7 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
   const result: WhatIf = {
     changes: [
       ...(s.after ? split(s.css).map((f, i) => ({ path: f, from: "as is", to: split(s.after!)[i] })).filter((c) => c.path !== c.to) : []),
-      ...(s.addCss ? [{ path: split(s.css).pop()!, from: "as is", to: `+ ${s.addCss.replace(/\s+/g, " ").trim()}` }] : []),
+      ...(s.addCss ? [{ path: added!.file, from: "as is", to: `+ ${s.addCss.replace(/\s+/g, " ").trim()}` }] : []),
     ],
     widths: widths.map((w, i) => {
       const d = diffLayouts(before[i], after[i], { valuesOnly: true });
@@ -327,7 +392,14 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
     }),
   };
   const cov = withNotes(coverage(after, ia), pa);
-  return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
+  const findings = findingChanges(before, ib, lb, after, ia, la);
+  const texts = new Map(afterFiles.map((f) => [f.file, f.text]));
+  const addedCss = added && checkAddedCss(la, s.addCss!, added.file, added.firstLine, (f) => texts.get(f));
+  return {
+    text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length, findings, addedCss, css: true })),
+    data: { coverage: cov, findings: findingsData(findings), ...(addedCss && { addedCss }), ...result },
+    ok: true,
+  };
 }
 
 export function explainCmd(s: SourceInput & { fixture: string; widths: number[]; id: string }): Result {

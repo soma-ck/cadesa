@@ -186,6 +186,8 @@ Add `--json` to any command for machine-readable output.
 $ cadesa whatif fixtures/settings.html --source settings.cadesa.yaml --set styles.settings-panel.when.narrow.padding=panel
 coverage: 6 boxes × 59 widths · 100% exact · 0% approximate (≈)
 
+check: no findings before or after the edit
+
 at 320–576px
    #panel        padding 16px → 32px
                    ← space.panel = 2rem ← when.narrow (≤ 576px) ← styles.settings-panel.when.narrow.padding
@@ -195,12 +197,22 @@ at 320–576px
 ✓ unchanged at 577–1440px: no box moved, no property changed
 ```
 
-On plain CSS, preview rules before adding them (`--add-css`), or compare an edited copy of a stylesheet (`--after`, one file per `--css` file):
+Every `whatif` also runs `check` before and after the edit and lists the findings it fixes, the ones still there (with their new numbers: a button that grows from 20 to 23.98px is still under 24px) and the ones it adds.
+
+On plain CSS, preview rules before adding them (`--add-css`, appended to the stylesheet that comes last in the page's cascade), or compare an edited copy of a stylesheet (`--after`, one file per `--css` file). A removed declaration shows its initial value (`margin 0px -12px → 0px`). An added rule that matches nothing, or loses to a rule already in your CSS, is reported before anything else:
+
+```console
+✖ your rule didn't apply: .bar .y { … } at app.css:4 is more specific (0,2,0 vs your 0,1,0)
+    .y { padding: 8px } loses padding-top, padding-right, padding-bottom, padding-left on <button.y>
+```
 
 ```console
 $ cadesa whatif fixtures/css/panel.html --css fixtures/css/panel.css --add-css ".icon-button { width: 44px; height: 44px }"
 coverage: 28 boxes × 58 widths · 88% exact · 12% approximate (≈)
   ≈ because: row-gap: 4px: the row wraps and its row gap differs from its column gap (×189)
+
+check, before → after the edit: 1 fixed, 0 still there, 0 new
+  ✓ fixed [tap-target] <button.icon-button> is 32×32px; 44×44px is recommended for touch (WCAG 2.5.5) · at all 58 widths
 
 at all 58 widths
   ≈#panel   h +12

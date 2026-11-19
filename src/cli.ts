@@ -30,6 +30,7 @@ Usage:
   cadesa render   <fixture.html> --source <source.cadesa.yaml> [--widths 390,1280] [--lines]
   cadesa whatif   <fixture.html> --source <source.cadesa.yaml> --set <path=value> [--set ...]
   cadesa whatif   <page.html> --css <a.css,b.css> (--after <a.css,b.new.css> | --add-css "<rules>")
+                    every whatif also runs check before and after: findings fixed, still there, new
   cadesa explain  <fixture.html> --source <source.cadesa.yaml> --id <fixture-id>
   cadesa check    <fixture.html> --source <source.cadesa.yaml>
   cadesa check    <page.html> --css <a.css,b.css> [--verify]
@@ -79,8 +80,9 @@ Options:
   --verify   check: confirm each finding in Chromium (with --css or --tailwind)
   --after f  whatif with --css: preview the page with these stylesheets instead (one per --css
              file, same order), e.g. --css bootstrap.css,app.css --after bootstrap.css,app.new.css
-  --add-css  whatif with --css: preview the page with these rules appended to the last
-             stylesheet, e.g. --add-css ".card { padding: 24px }"
+  --add-css  whatif with --css: preview the page with these rules appended to the stylesheet
+             that comes last in the page's cascade, e.g. --add-css ".card { padding: 24px }";
+             a rule that matches nothing or loses to a more specific one is reported
   -h, --help show this help
 `;
 
