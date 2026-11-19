@@ -309,7 +309,7 @@
             },
             "min": {
               "$ref": "#/$defs/ref",
-              "description": "grid only: minimum column width (size token)"
+              "description": "grid: minimum column width; table: its min-width (size token)"
             },
             "justify": {
               "enum": [

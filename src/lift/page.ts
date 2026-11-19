@@ -1538,7 +1538,23 @@ export abstract class PageLifter {
       if (v === "initial") return undefined;
       if (v && !/^(inherit|unset)$/.test(v)) return v;
     }
+    // Tailwind: its preflight collapses a table's borders (the browser's defaults aren't in that cascade).
+    if (!this.uaInCascade && p === "border-collapse" && this.preflight) return "collapse";
     return undefined;
+  }
+
+  /** A cell's vertical-align: its own, else (where the browser's defaults aren't in the cascade) its row's or row group's, else middle. */
+  cellAlign(el: El, si: number): string | undefined {
+    const own = (k: El | undefined) => {
+      const o = k?.own[si]?.get("vertical-align");
+      const v = o ? this.resolve(k!, si, o.value)?.trim() : undefined;
+      return v && v !== "inherit" ? v : undefined;
+    };
+    if (this.uaInCascade) return own(el);
+    if (el.tag !== "td" && el.tag !== "th") return own(el);
+    const row = el.parent;
+    const group = row?.parent && /^(thead|tbody|tfoot)$/.test(row.parent.tag) ? row.parent : undefined;
+    return own(el) ?? own(row) ?? own(group) ?? "middle";
   }
 
   tableWhys = new Map<El, string | undefined>();
@@ -1559,6 +1575,7 @@ export abstract class PageLifter {
       const d = this.ownDisplay(table, si);
       if (this.displayOf(table, si) === "none" || !this.isTable(table, si)) continue;
       if (d === "inline-table") return "display: inline-table (a table on a line of text) isn't modelled";
+      if (!this.uaInCascade && !this.preflight) return "a table without Tailwind's preflight keeps the browser's defaults for tables (cell padding, border spacing), which aren't read here";
       const res = (k: El, p: string) => {
         const o = k.own[si]?.get(p);
         return o ? this.resolve(k, si, o.value)?.trim() : undefined;
@@ -1924,6 +1941,8 @@ export abstract class PageLifter {
         } else if (display === "table" && !this.tableWhy(el)) {
           // A table laid out as one (engine/table.ts): its children are table parts.
           decl("display", "table", own.get("display")?.utility ?? "browser default (<table>)");
+          // Without a width, as wide as its columns want (in block flow; a flex column or grid stretches it).
+          if (!own.has("width") && !inFlexOrGrid) decl("width", "fit-content", "a table is as wide as its content");
           const collapse = this.tableProp(el, si, "border-collapse") === "collapse";
           if (collapse) decl("border-collapse", "collapse", own.get("border-collapse")?.utility ?? "border-collapse: collapse (inherited)");
           else {
@@ -2133,9 +2152,9 @@ export abstract class PageLifter {
       // A content-box cell: its width and height don't include its padding and the borders it gets (its
       // own, or in a table with collapsed borders its half of theirs); table.ts adds them.
       const cellContentBox =
-        tpart === "cell" && (res("box-sizing") ?? "content-box") === "content-box" && (out.has("width") || out.has("height"));
+        tpart === "cell" && !this.preflight && (res("box-sizing") ?? "content-box") === "content-box" && (out.has("width") || out.has("height"));
       if (tpart) {
-        const va = res("vertical-align");
+        const va = this.cellAlign(el, si);
         const align = tpart === "cell" ? (va === "top" || va === "middle" || va === "bottom" ? va : "baseline") : undefined;
         const side = tpart === "caption" && this.tableProp(el, si, "caption-side") === "bottom" ? "bottom" : undefined;
         const value = [tpart, align, side, cellContentBox ? "content-box" : undefined].filter(Boolean).join(" ");

@@ -1404,6 +1404,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   /** A box stretched taller after its own layout: its rows (if any) are placed again. */
   function grow(b: Box, newH: number) {
     if (newH <= b.h) return;
+    // A table stretched taller shares the height between its rows, which isn't modelled.
+    if (b.props.pattern?.value === "table" && newH > b.h + EPS) b.assumptions.push("a table stretched taller than its rows (by a flex or grid container) shares the extra height between them, which isn't modelled");
     b.h = newH;
     arrange(b);
   }

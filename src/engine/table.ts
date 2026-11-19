@@ -1240,7 +1240,8 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
       return a.start - b.start;
     });
     for (const sp of spans) distributeRows(rowsC, sp.start, sp.span, sp.min, true, spacingY);
-    total = s.rows.reduce((t, ri) => t + rowsC[ri].size, 0) + spacingY * Math.max(0, s.rows.length - 1);
+    // (The section's size is its rows' before the rowspans grew them, as Chromium sums it.)
+    total += spacingY * Math.max(0, s.rows.length - 1);
     const sh = s.p?.height?.value;
     if (sh !== undefined && U(sh) > total) {
       if (s.rows.length) distributeRows(rowsC, s.rows[0], s.rows.length, U(sh), false, spacingY);

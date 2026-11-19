@@ -48,6 +48,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
         `border-collapse: ${l.collapse ? "collapse" : "separate"}`,
         `border-spacing: ${l.gap ? v(l.gap) : "0"} ${l.rowGap ? v(l.rowGap) : l.gap ? v(l.gap) : "0"}`,
         `table-layout: ${l.fixed ? "fixed" : "auto"}`,
+        `min-width: ${l.min ? v(l.min) : "0"}`,
       );
     else if (l.pattern === "stack" || l.pattern === "cluster") {
       const stack = l.pattern === "stack";
