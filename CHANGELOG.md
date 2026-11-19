@@ -42,7 +42,8 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   spans the rows left in its row group. A table in a flex row is never narrower than its columns,
   and inside a flex or grid container or a table cell its column percentages don't size it. Under
   Tailwind's preflight a table's borders collapse, its cells sit in the middle of their rows and a
-  `<th>` is bold.
+  `<th>` is bold. In a column flexbox a table is laid out again at the height the flexbox gives it,
+  as Chromium does (rows a rowspan grew may then get taller).
 - What stays `≈`: a table with something the browser wraps in an anonymous cell or row (text
   straight in a row, a `<div>` among rows, `display: contents` in it), `visibility: collapse`,
   `border-style: hidden` in a collapsed table, percentage heights on cells, rows and row groups,
@@ -52,8 +53,9 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   layout), but only its row and what's below with `table-layout: fixed`, which reads widths only;
   likewise a cell aligned to its row's baseline whose first line Cadesa can't place, or a percentage
   height inside a cell. A rowspan or a height the rows share makes such a doubt the whole table's. Also
-  `≈`: a table stretched taller by a flex or grid container, a content-box table with collapsed
-  borders and a size, a cell width in `calc()` with a percentage.
+  `≈`: a table stretched by a flex row or a grid when that would move its rows, a table's minimum
+  contribution to a grid column, a content-box table with collapsed borders and a size, a cell width
+  in `calc()` with a percentage, the baseline of a wrapped inline-block alone in a cell.
 - `npm run fuzz:tables` compares random tables (structure, borders, spacing, widths, spans,
   alignment, fixed layout, attributes, `<div>` tables, flex and grid parents) with Chromium.
   `conformance:css` gains `fixtures/css/tables.html` and `tables-edge.html` (what the fuzzer
