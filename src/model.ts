@@ -243,6 +243,8 @@ export interface Model {
    * separates them); outer: the root element's margin, border and padding, outside the body.
    * clipX: the page clips what is past its right edge (overflow-x: hidden or clip on html or body) instead of scrolling.
    */
+  /** Lifted on the fly from a page's CSS (or Tailwind): findings give their advice in CSS terms. */
+  css?: boolean;
   page?: { background?: Ref; path: string; margin?: PageSides; padding?: PageSides; outer?: PageSides; clipX?: boolean };
 }
 

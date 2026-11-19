@@ -277,3 +277,14 @@ describe("elements not laid out are counted", () => {
     ]);
   });
 });
+
+describe("advice on a lifted page is in CSS terms", () => {
+  it("no layout: { pattern }, text roles or size tokens", () => {
+    const r = run(`<section class="g"><p>One</p></section><p class="n">Normal</p><img class="i" src="x.png">`, `p { margin: 0 } .g { display: grid; grid-template-columns: minmax(200px, 1fr) auto } .n { line-height: normal }`, [400]);
+    const text = r.findings.map((f) => f.message).join("\\n");
+    expect(text).not.toMatch(/pattern:|text: <role>|size token|add aspect/);
+    expect(text).toMatch(/the children of #g aren.t laid out: its display \(or grid template\) has no Cadesa equivalent/);
+    expect(text).toMatch(/the text of #n can.t be measured/);
+    expect(r.m.css).toBe(true);
+  });
+});

@@ -785,5 +785,8 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
 
   const prefix = typeof top.prefix === "string" ? top.prefix : DEFAULT_PREFIX;
   if (diagnostics.length) return { diagnostics };
-  return { model: { file: src.file, prefix, tokens, text, breakpoints, components, page }, diagnostics };
+  // A source lifted on the fly from a page and its CSS or Tailwind (its header says so): advice is
+  // given in CSS terms, since the reader edits the CSS, not this source.
+  const css = /^# Lifted from .* \((?:CSS|Tailwind), /.test(src.text);
+  return { model: { file: src.file, prefix, tokens, text, breakpoints, components, page, ...(css && { css }) }, diagnostics };
 }

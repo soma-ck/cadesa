@@ -215,6 +215,8 @@ interface Intrinsic {
 
 export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const issues: Issue[] = [];
+  /** Advice in Cadesa's terms, or in CSS terms on a page lifted from its CSS. */
+  const say = (cadesa: string, css: string) => (model.css ? css : cadesa);
   const arrangement = new WeakMap<Box, Arrangement>();
   const collapse = new WeakMap<Box, Collapse>();
 
@@ -559,12 +561,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // The content's own sizes: the item's max width (maybe a percentage of this line) is applied below.
       const content = () => (intr ??= intrinsic(k.node, k.comp, k.slot, true));
       const cannot = (why: string) => {
-        errors.push({ path: kpath, message: (id) => (g?.basis === "zero" && pw !== undefined ? `#${id} grows from zero in a cluster, and the minimum width of its content can't be measured (${why})` : `#${id} sits in a cluster without a width, and its content can't be measured (${why}); give it a size token width`) });
+        errors.push({ path: kpath, message: (id) => (g?.basis === "zero" && pw !== undefined ? `#${id} grows from zero in a cluster, and the minimum width of its content can't be measured (${why})` : `#${id} sits in a cluster without a width, and its content can't be measured (${why}); ${say("give it a size token width", "give it a width in px or rem")}`) });
       };
       if (typeof pw === "number") base = pw;
       else if (pw !== undefined && typeof pw === "object") base = sizeAt(pw, innerW);
       else if (pw === "fill") {
-        if (p.width) errors.push({ path: p.width.steps.at(-1)!.path, message: (id) => `#${id} has width: fill inside a cluster; fill only stretches inside a stack` });
+        if (p.width) errors.push({ path: p.width.steps.at(-1)!.path, message: (id) => say(`#${id} has width: fill inside a cluster; fill only stretches inside a stack`, `#${id} is as wide as its flex row (width: 100%) next to other items`) });
         base = innerW;
       } else if (pw === "fit") {
         const it = content();
@@ -777,7 +779,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         severity: "error",
         id,
         path: props.margin!.steps.at(-1)!.path,
-        message: `#${id} has maxWidth (centered by auto inline margins) and a left or right margin; keep one of them`,
+        message: say(`#${id} has maxWidth (centered by auto inline margins) and a left or right margin; keep one of them`, `#${id} has a max-width centered by auto margins and a left or right margin, which Cadesa doesn't combine`),
       });
     if ((parent === "grid" || parent === "layer") && (m.autoLeft || m.autoRight))
       issues.push({ severity: "error", id, path: props.margin!.steps.at(-1)!.path, message: `#${id} has an auto margin in a ${parent}; auto margins are modelled in block flow, stacks and clusters` });
@@ -835,7 +837,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         severity: "error",
         id,
         path: sourcePath,
-        message: `#${id} has loose text ("${n.ownText.slice(0, 40)}") next to its child elements; the engine doesn't lay it out. Wrap it in a slot element`,
+        message: `#${id} has loose text ("${n.ownText.slice(0, 40)}") next to its child elements; the engine doesn't lay it out${say(". Wrap it in a slot element", "")}`,
       });
     }
     if (!isText && n.text && !n.children.length) {
@@ -843,7 +845,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         severity: "error",
         id,
         path: sourcePath,
-        message: `#${id} contains text but has no text role; add text: <role> so it can be measured`,
+        message: say(`#${id} contains text but has no text role; add text: <role> so it can be measured`, `the text of #${id} can't be measured: its font-size, line-height (a number or a length, not normal), font-weight or color isn't one Cadesa reads`),
       });
     }
 
@@ -852,7 +854,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         severity: "error",
         id,
         path: sourcePath,
-        message: `#${id} has child slots but no layout; add layout: { pattern: stack | cluster | grid | layer }`,
+        message: say(`#${id} has child slots but no layout; add layout: { pattern: stack | cluster | grid | layer }`, `the children of #${id} aren't laid out: its display (or grid template) has no Cadesa equivalent`),
       });
     }
     for (const k of [...skipped, ...(pattern ? [] : kids.map((k) => k.node))]) notLaidOut(k);
@@ -977,18 +979,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Without aspect (whose width: 100% wins), a media element with only a height takes its width
     // from its width attribute, or at the page level from the file's own ratio, instead of stretching.
     if (media && props.height && !props.aspect && (pw === undefined || pw === "fill") && !props.maxWidth && parent !== "cluster") {
-      if (n.attrs.width) assumptions.push(`its width comes from the width="${n.attrs.width}" attribute, not the layout; add aspect or a width token`);
-      else if (parent === "page" || parent === "flow") assumptions.push(`${parent === "page" ? "at the page level" : "in block flow"} its width follows the image file; add aspect or a width token`);
+      if (n.attrs.width) assumptions.push(`its width comes from the width="${n.attrs.width}" attribute, not the layout; ${say("add aspect or a width token", "give it a width or an aspect-ratio")}`);
+      else if (parent === "page" || parent === "flow") assumptions.push(`${parent === "page" ? "at the page level" : "in block flow"} its width follows the image file; ${say("add aspect or a width token", "give it a width or an aspect-ratio")}`);
     }
     // A form control is as wide as its content unless something sets its width.
     if ((parent === "page" || parent === "flow") && CONTROLS.has(n.tag) && (pw === undefined || pw === "fill") && !props.maxWidth)
-      assumptions.push(`a <${n.tag}> ${parent === "page" ? "at the page level" : "in block flow"} is as wide as its content; give it a width token or maxWidth`);
+      assumptions.push(`a <${n.tag}> ${parent === "page" ? "at the page level" : "in block flow"} is as wide as its content; ${say("give it a width token or maxWidth", "give it a width")}`);
     if (media && !props.aspect && !props.height)
       issues.push({
         severity: "warning",
         id,
         path: sourcePath,
-        message: `<${n.tag}> #${id} has no aspect or height, so its size depends on ${n.attrs.width || n.attrs.height ? "its width/height attributes and the file" : "the file"} and can't be predicted; add aspect: "16:9" (or height)`,
+        message: `<${n.tag}> #${id} has no aspect or height, so its size depends on ${n.attrs.width || n.attrs.height ? "its width/height attributes and the file" : "the file"} and can't be predicted; ${say(`add aspect: "16:9" (or height)`, "give it an aspect-ratio (or a height)")}`,
       });
     if (media && !props.aspect && !props.height) assumptions.push("its size depends on the image file (no aspect or height)");
     const box: Box = {

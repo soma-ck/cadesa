@@ -1227,11 +1227,11 @@ export abstract class PageLifter {
       const controlH = CONTROL.has(el.tag) && !own.has("height") ? this.controlHeight(el, si) : undefined;
       if (controlH !== undefined) decl("height", `${fmtNum(controlH)}px`, `<${el.tag}>: its line height${el.tag === "textarea" ? " × rows" : ""}, padding and border`);
       else if (CONTROL.has(el.tag) && !own.has("height"))
-        this.note(el, si, { decl: `<${el.tag}>`, reason: `a form control's height comes from its font and the browser's internals; give it a height (h-*) to predict it`, kind: "geometry" });
+        this.note(el, si, { decl: `<${el.tag}>`, reason: `a form control's height comes from its font and the browser's internals; give it a height${this.uaInCascade ? "" : " (h-*)"} to predict it`, kind: "geometry" });
       // Replaced elements and controls have an intrinsic width (the file, 300×150 for svg, ~20ch for inputs).
       const stretched = parentRole === "container" && /flex/.test(parentDisplay) && el.parent && this.isColumn(el.parent, si) && !own.has("align-self");
       if ((CONTROL.has(el.tag) || REPLACED_BLOCK.has(el.tag)) && !own.has("width") && !stretched)
-        this.note(el, si, { decl: `<${el.tag}>`, reason: `<${el.tag}> without a width (w-*) takes its intrinsic width, which Cadesa doesn't know`, kind: "geometry" });
+        this.note(el, si, { decl: `<${el.tag}>`, reason: `<${el.tag}> without a width${this.uaInCascade ? "" : " (w-*)"} takes its intrinsic width, which Cadesa doesn't know`, kind: "geometry" });
 
       // Borders: preflight makes every side `0 solid currentcolor`.
       const bw = SIDES.map((s) => own.get(`border-${s}-width`));
