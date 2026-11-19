@@ -236,17 +236,51 @@ export interface Coverage {
   notes?: string[];
 }
 
-/** Normalize a ≈ reason to its root cause, so the same cause groups across boxes and widths. */
-function rootCause(r: string): string {
-  return shortenPaths(r)
-    .replace(/^(?:moved|resized) by #[\w-]+: /, "")
+/** Cut `s` to at most `n` characters at a word boundary, marking the cut with "…". */
+export function clip(s: string, n: number): string {
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n);
+  const at = Math.max(cut.lastIndexOf(" "), cut.lastIndexOf(", "));
+  return (at > n / 2 ? cut.slice(0, at) : cut).replace(/[\s,;:(]+$/, "") + "…";
+}
+
+/** The reason without its explanation: no parentheticals, up to the first "; ", at most `n` chars, never mid-word. */
+function shortReason(reason: string, n = 80): string {
+  let s = reason;
+  // Nested parentheses, innermost first.
+  for (let prev = ""; prev !== s; ) (prev = s), (s = s.replace(/\s*\([^()]*\)/g, ""));
+  s = s.split(/; /)[0].replace(/\bis not modelled\b/g, "isn't modelled").replace(/\bare not modelled\b/g, "aren't modelled").trim();
+  return clip(s, n);
+}
+
+/**
+ * Normalize a ≈ reason to its root cause, so the same cause groups across boxes, selectors and
+ * widths: "property: value: short reason", e.g. "min-height: 100vh: min-height isn't modelled".
+ */
+export function rootCause(r: string): string {
+  let s = shortenPaths(r)
+    .replace(/^(?:(?:moved|resized) by|stretched with|geometry depends on) #[\w-]+: /, "")
     .replace(/(?:\(\S+\.(?:css|html)(?::\d+)?\)|\S+\.(?:css|html|ya?ml):\d+)\s*/g, "")
     .replace(/\s+/g, " ")
     .replace(/ at \d+(?:\.\d+)?px/g, "")
-    .trim()
-    // Keep the cause, drop the explanation: "display: inline-block: an inline-level box in block flow".
-    .replace(/^(.{24,}?)(?:;| \().*$/, "$1")
-    .slice(0, 90);
+    .trim();
+  // A rule the lift couldn't apply: "sel { a: 1; b: 2 } [on <body>]: reason".
+  const rule = /^(.*?) \{ ([^{}]*) \}(?: on <[\w-]+>)?: (.*)$/.exec(s);
+  if (rule) {
+    const [, selector, decls, reason] = rule;
+    const first = decls.split(/; /)[0].trim();
+    const decl = first ? `${first}${decls.includes("; ") ? " …" : ""}` : selector;
+    if (/may match; Cadesa can't decide it/.test(reason)) return `${decl}: Cadesa can't decide whether ${clip(selector, 48)} matches`;
+    return `${decl}: ${shortReason(reason)}`;
+  }
+  // "sel (prop: value) → prop: value: reason" (a rule's declaration): the last "prop: value: reason".
+  if (s.includes(" → ")) s = s.slice(s.lastIndexOf(" → ") + 3);
+  // The declaration named in a parenthesis, "min-h-screen (min-height: 100vh): reason", becomes the cause.
+  const paren = /^[^:()]*?\(([\w-]+: [^()]*)\)(?: on <[\w-]+>)?: (.*)$/.exec(s);
+  if (paren) return `${paren[1]}: ${shortReason(paren[2])}`;
+  const head = /^(<[\w-]+>|[\w-]+: [^:]+?|[\w-]+)(?: on <[\w-]+>)?: (.*)$/.exec(s);
+  if (head) return `${head[1]}: ${shortReason(head[2])}`;
+  return shortReason(s, 90);
 }
 
 export function coverage(layouts: Layout[], impacts?: WidthImpact[]): Coverage {

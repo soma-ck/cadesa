@@ -19,7 +19,7 @@ What "matches Chromium" means here: every box Cadesa marks as exact matches Chro
 ```console
 $ cadesa check fixtures/verify/page.html --css fixtures/verify/page.css --widths 400,800
 coverage: 7 boxes × 2 widths · 86% exact · 14% approximate (≈)
-  ≈ because: .zoomed → transform: scale(3): transform is not modelled (×2)
+  ≈ because: transform: scale(3): transform isn't modelled (×2)
 
 ✖ [contrast] <p.note> text #999999 on #ffffff is 2.85:1; WCAG AA needs 4.5:1 · at 400, 800px
     element: fixtures/verify/page.html:11 <p class="note"> "Muted text, too light to read."
@@ -200,7 +200,7 @@ On plain CSS, preview rules before adding them (`--add-css`), or compare an edit
 ```console
 $ cadesa whatif fixtures/css/panel.html --css fixtures/css/panel.css --add-css ".icon-button { width: 44px; height: 44px }"
 coverage: 28 boxes × 58 widths · 88% exact · 12% approximate (≈)
-  ≈ because: .detail-row (row-gap: 4px): the row wraps and its row gap differs from its column gap (×189)
+  ≈ because: row-gap: 4px: the row wraps and its row gap differs from its column gap (×189)
 
 at all 58 widths
   ≈#panel   h +12
