@@ -173,7 +173,7 @@ export interface MarginProp {
 }
 
 /** Props an override can remove (`maxWidth: none`): the element is then as if it never had them. */
-export const UNSETTABLE = ["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow", "transform"] as const;
+export const UNSETTABLE = ["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow", "transform", "text"] as const;
 export type Unsettable = (typeof UNSETTABLE)[number];
 
 export interface Props {

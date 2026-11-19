@@ -55,6 +55,8 @@ export interface Span {
   weight?: number;
   open?: number;
   close?: number;
+  /** An atomic inline whose width follows the font size (em): its width at a font size, instead of `open`. */
+  openAt?: (sizePx: number) => number;
 }
 
 /** What an inline element adds to the text it is part of (see textAndRuns). */
@@ -64,6 +66,8 @@ export interface InlineInfo {
   close?: number;
   /** Generated content at its start and end (::before, ::after), laid out as inline boxes. */
   before?: Generated;
+  /** An atomic inline (an inline-block, an icon <svg>) of this margin-box width (or its width at a font size): one unbreakable object on the line. */
+  atomic?: number | ((sizePx: number) => number);
   after?: Generated;
 }
 
@@ -107,6 +111,7 @@ const BLOCK = new Set([
 function textOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) => InlineInfo | undefined): string {
   if (n.nodeName === "#text") return n.value ?? "";
   const info = inline?.(n);
+  if (info?.atomic !== undefined) return "\uFFFC";
   const inner = (n.childNodes ?? []).filter((c) => !skip?.(c)).map((c) => textOf(c, skip, inline)).join("");
   return `${info?.before && !info.before.float ? info.before.text : ""}${inner}${info?.after ? info.after.text : ""}`;
 }
@@ -168,7 +173,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   let underlined = false;
   let depth = 0;
   /** Spans with something of their own, by id; `live`: open ones (carried into the next run when a <br> splits them). */
-  const spans: { weight?: number; open?: number; close?: number }[] = [];
+  const spans: { weight?: number; open?: number; close?: number; openAt?: (sizePx: number) => number }[] = [];
   const live: number[] = [];
   let lead: RunMeta["lead"];
   /** Spans open when a run starts (split from the run before by a <br>): they start at 0, with no open edge. */
@@ -186,7 +191,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
           const f = from.get(m.id) ?? { at: 0, opened: false };
           from.delete(m.id);
           const sp = spans[m.id];
-          out.push({ from: f.at, to: m.at, ...(sp.weight !== undefined && { weight: sp.weight }), ...(f.opened && sp.open && { open: sp.open }), ...(sp.close && { close: sp.close }) });
+          out.push({ from: f.at, to: m.at, ...(sp.weight !== undefined && { weight: sp.weight }), ...(f.opened && sp.open && { open: sp.open }), ...(f.opened && sp.openAt && { openAt: sp.openAt }), ...(sp.close && { close: sp.close }) });
         }
       }
       const len = [...t].length;
@@ -202,7 +207,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     underlined = false;
   };
   /** Text in an inline box of its own (an element, or generated content). */
-  const span = (info: { weight?: number; open?: number; close?: number } | undefined, body: () => void) => {
+  const span = (info: { weight?: number; open?: number; close?: number; openAt?: (sizePx: number) => number } | undefined, body: () => void) => {
     if (!info || (info.weight === undefined && !info.open && !info.close)) {
       cur += EDGE;
       body();
@@ -228,6 +233,10 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
       cur += k.value ?? "";
       if (u && /\S/.test(k.value ?? "")) underlined = true;
     } else if (k.tagName === "br") flush();
+    else if (inline?.(k)?.atomic !== undefined) {
+      const a = inline!(k)!.atomic!;
+      span(typeof a === "number" ? { open: a } : { open: 1, openAt: a }, () => (cur += "\uFFFC"));
+    }
     else if (k.tagName && BLOCK.has(k.tagName)) {
       flush();
       depth++;

@@ -1,0 +1,91 @@
+/*
+ * Atomic inlines in text: an icon <svg> sized in em with an aspect ratio and a lowered
+ * vertical-align inside a heading, an inline-block dot of set size between words, and a
+ * fixed-size image in a paragraph. Each is one unbreakable object on its line, and the line box
+ * stays the strut's (the font's vertical metrics). Text in a font size of 0 (an icon button's
+ * hidden label) has no width and one line of its line height.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+h1,
+p {
+  margin: 0;
+}
+
+.title {
+  padding: 16px;
+  font-size: 40px;
+  line-height: 1.1;
+  letter-spacing: -0.02em;
+}
+
+.title-icon {
+  display: inline-block;
+  height: 0.68em;
+  width: auto;
+  aspect-ratio: 470 / 262;
+  vertical-align: -0.04em;
+  margin: 0 0.03em 0 0.06em;
+}
+
+.status {
+  padding: 0 16px;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: #16a34a;
+}
+
+.photo {
+  padding: 8px 16px;
+}
+
+.photo-thumb {
+  width: 24px;
+  height: 12px;
+  vertical-align: middle;
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  line-height: 22px;
+}
+
+.toolbar-button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  background: #eef2ff;
+}
+
+.toolbar-glyph {
+  width: 16px;
+  height: 16px;
+  background: #4f46e5;
+}
+
+@media (max-width: 600px) {
+  .toolbar-button {
+    font-size: 0;
+  }
+}

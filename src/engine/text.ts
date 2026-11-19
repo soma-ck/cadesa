@@ -341,12 +341,19 @@ const LETTER = /\p{L}/u;
 
 const SHY = "­";
 
+/** An atomic inline (an inline-block, an icon <svg>) in a run of text: no glyph, its width is its inline box's (a span's open edge). */
+export const OBJ = "\uFFFC";
+
 const breakIndex = new Map([...BREAK_CHARS].map((c, i) => [c, i]));
 const breakBits = Buffer.from(BREAKS, "base64");
 const N = breakIndex.size;
 
 /** Whether Chromium may break between two non-space characters, given the character before `a`. */
 function canBreak(before: string | undefined, a: string, b: string): boolean {
+  // An atomic inline: a break before and after it (UAX #14 CB), except before closing punctuation
+  // and after opening punctuation.
+  if (a === OBJ) return !/[)\]}.,:;!?\/%»”’]/.test(b);
+  if (b === OBJ) return !/[([{«“‘]/.test(a);
   const i = breakIndex.get(a);
   const j = breakIndex.get(b);
   // Outside the measured set the text is flagged anyway; keep to the plain rules.
@@ -417,7 +424,7 @@ export function layoutText(
   };
   // Letter-spaced text is shaped without contextual alternates. Text at another weight is another
   // font: measured on its own, with no kerning across the edge.
-  const measure = (s: string, at?: number) => m.measure(s, sizePx, weightAt(at), ls !== 0) ?? 0;
+  const measure = (s: string, at?: number) => m.measure(s.includes(OBJ) ? s.replaceAll(OBJ, "") : s, sizePx, weightAt(at), ls !== 0) ?? 0;
   /**
    * Whether kerning applies between the characters before and at `at`: both in one font, with no
    * margin, border or padding of an inline box between them (Chromium shapes them apart then).

@@ -304,7 +304,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const m = metricsFor(t.font);
     const raw = n.runs.length ? n.runs : [n.text];
     const runs = raw.map((r) => (t.uppercase ? r.toUpperCase() : r));
-    const shown = [...runs, ...n.runMeta.flatMap((r) => (r.lead ? [r.lead.text] : []))].join(" ");
+    const shown = [...runs, ...n.runMeta.flatMap((r) => (r.lead ? [r.lead.text] : []))].join(" ").replaceAll("\uFFFC", "");
     const why = !m
       ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`
       : m.unsupported(shown).length
@@ -335,7 +335,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Inline element edges, moved for uppercasing that changes lengths ("ß" is "SS").
     const moved = (r: string, b: number) => (t.uppercase ? [...[...r].slice(0, b).join("").toUpperCase()].length : b);
     const items = raw.map((r, i) => meta[i].items.map((b) => moved(r, b)));
-    const spans = raw.map((r, i) => meta[i].spans?.map((sp) => ({ ...sp, from: moved(r, sp.from), to: moved(r, sp.to) })));
+    // (An atomic inline sized in em: its width at this font size.)
+    const spans = raw.map((r, i) => meta[i].spans?.map(({ openAt, ...sp }) => ({ ...sp, ...(openAt && { open: openAt(t.sizePx) }), from: moved(r, sp.from), to: moved(r, sp.to) })));
     // A float at the start of a run: as wide as its text (rounded up to a layout unit) plus its edges.
     const leads = meta.map((r) => {
       if (!r.lead) return undefined;

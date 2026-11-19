@@ -273,7 +273,7 @@ export function parseFlex(v: string): { grow: number; shrink: number; basis: str
   return undefined;
 }
 
-const UNSETTABLE_PROPS = new Set(["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow", "transform"]);
+const UNSETTABLE_PROPS = new Set(["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow", "transform", "text"]);
 
 // ---------------------------------------------------------------- the lift
 

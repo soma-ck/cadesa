@@ -95,6 +95,8 @@ export interface TextCtx {
   weight: number;
   color: { hex: string; hint?: string };
   letterSpacing: number;
+  /** letter-spacing set in em of this fluid font size (its px follow the viewport width with it). */
+  lsFluid?: string;
   /** Other inherited properties, with the utility that set them. */
   inherited: Map<string, Origin>;
 }
@@ -155,6 +157,8 @@ export interface El {
   rowLine?: ({ top: number; bottom: number } | undefined)[];
   /** A flex row aligns baselines: px its item is pushed down to put its first baseline on the line's (per state). */
   baselineShift: (number | undefined)[];
+  /** Text in a font size of 0 (per state): the px of its one line (its line height in px, else 0). */
+  zeroText?: (number | undefined)[];
   /** A run of text among element children (added after the cascade): its anonymous box. */
   anonymous?: string;
   /** The (shared) slot or root this element's styles are emitted under. */
@@ -755,7 +759,11 @@ export abstract class PageLifter {
     const ls = val("letter-spacing");
     if (ls) {
       const px = ls === "normal" ? 0 : lengthPx(ls, t.size);
-      if (px !== undefined) t.letterSpacing = px;
+      if (px !== undefined) {
+        t.letterSpacing = px;
+        // In em of a font size that follows the viewport: it follows it too (as long as the size is this one).
+        t.lsFluid = /em$/.test(ls) ? t.fluid : undefined;
+      }
     }
     for (const p of [...INHERITED_OTHER, ...INHERITED_PAINT]) {
       const o = own.get(p);
@@ -1348,9 +1356,95 @@ export abstract class PageLifter {
     return this.italic(el.parent, si);
   }
 
+  /**
+   * An atomic inline in a text box (an inline-block or replaced element: an icon <svg>, a badge of
+   * set size): its margin-box width, when it is known (a height in px, a width in px or from its
+   * aspect ratio, px margins) and the line box doesn't change around it (its margin box stays
+   * within the strut of the line, from the font's vertical metrics). Then it is one unbreakable
+   * object on its line. undefined otherwise.
+   */
+  atomicInline(k: El, si: number): number | ((sizePx: number) => number) | undefined {
+    if (k.pseudo || k.anonymous !== undefined || !k.parent || this.outOfFlow(k, si)) return undefined;
+    const d = this.displayOf(k, si);
+    if (!(d === "inline-block" || (d === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
+    if (!REPLACED_BLOCK.has(k.tag) && (k.ownText || k.children.length)) return undefined;
+    const own = k.own[si];
+    const t = this.textOf(k, si);
+    const pt = this.textOf(k.parent, si);
+    // A font size that follows the viewport: its em lengths follow it too (the same size as its line's).
+    if ((t.fluid || pt.fluid) && (t.fluid !== pt.fluid || t.size !== pt.size)) return undefined;
+    // Values with em kept (resolved at each font size), other units in px.
+    const raw = (p: string) => {
+      const o = own.get(p);
+      const v = o ? this.resolve(k, si, o.value) : undefined;
+      return v === undefined ? undefined : v.replace(/(-?\d*\.?\d+)rem\b/g, (_, n) => `${parseFloat(n) * 16}px`);
+    };
+    const lu = (x: number) => Math.floor(x * 64 + 1e-6) / 64;
+    const border = raw("box-sizing") === "border-box";
+    const hv = raw("height");
+    const wv = raw("width") ?? "auto";
+    if (!hv || hv === "auto") return undefined;
+    if (["min-width", "max-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(raw(p) ?? ""))) return undefined;
+    const ar = raw("aspect-ratio");
+    const arm = ar ? /^(?:auto\s+)?([\d.]+)\s*(?:\/\s*([\d.]+))?$/.exec(ar) : null;
+    const ratio = arm ? parseFloat(arm[1]) / (arm[2] ? parseFloat(arm[2]) : 1) : NaN;
+    const va = raw("vertical-align") ?? "baseline";
+    /** Its margin-box width and how far it reaches above and below the baseline, at a font size. */
+    const at = (size: number): { width: number; above: number; below: number; strut: { sa: number; sd: number; xh2: number } } | undefined => {
+      const px = (p: string, def = "0") => lengthPx(raw(p) ?? def, size) ?? NaN;
+      const bdr = (side: string) => (/^(none|hidden)$/.test(raw(`border-${side}-style`) ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+      const insX = px("padding-left") + px("padding-right") + bdr("left") + bdr("right");
+      const insY = px("padding-top") + px("padding-bottom") + bdr("top") + bdr("bottom");
+      const h = lu(lengthPx(hv, size) ?? NaN);
+      if (!(h >= 0)) return undefined;
+      const bh = border ? Math.max(h, insY) : h + insY;
+      let bw: number;
+      if (wv !== "auto") {
+        const w = lu(lengthPx(wv, size) ?? NaN);
+        if (!(w >= 0)) return undefined;
+        bw = border ? Math.max(w, insX) : w + insX;
+      } else {
+        if (!(ratio > 0) || !isFinite(ratio) || insX || insY) return undefined;
+        bw = h * ratio;
+      }
+      const [ml, mr, mt, mb] = ["margin-left", "margin-right", "margin-top", "margin-bottom"].map((p) => px(p));
+      if (![ml, mr, mt, mb, bw, bh].every(isFinite)) return undefined;
+      // The line's strut at this size, from the font's vertical metrics.
+      const v = metricsFor(pt.family.value)?.vertical(size, pt.weight);
+      if (!v) return undefined;
+      const lh = pt.lineHeight === "normal" ? v.ascent + v.descent + v.lineGap : "num" in pt.lineHeight ? lineHeightPx(size, pt.lineHeight.num) : lu(pt.lineHeight.px);
+      const leading = Math.round((lh - v.ascent - v.descent) * 64);
+      const above0 = Math.floor(Math.trunc(leading / 2) / 64);
+      const strut = { sa: v.ascent + above0, sd: v.descent + leading / 64 - above0, xh2: Math.round((v.xHeight / 2) * 64) / 64 };
+      // Vertically: its margin box's bottom edge on the baseline (raised by a vertical-align length, or its middle on the x-height's).
+      const hm = mt + bh + mb;
+      let a = hm;
+      if (va === "middle") {
+        const u = (x: number) => Math.round(x * 64);
+        a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
+      } else if (va !== "baseline") {
+        const r = lengthPx(va, size);
+        if (r === undefined) return undefined;
+        a = hm - r;
+      }
+      return { width: ml + bw + mr, above: a, below: hm - a, strut };
+    };
+    const inside = (x: ReturnType<typeof at>) => !!x && x.above <= x.strut.sa + 1e-6 && x.below <= x.strut.sd + 1e-6;
+    if (!t.fluid) {
+      const x = at(t.size);
+      return inside(x) ? x!.width : undefined;
+    }
+    // Every size the viewport can give it must keep the line box (checked every 10px of viewport width).
+    const f = lengthExpr(t.fluid);
+    if (!f) return undefined;
+    for (let vw = 200; vw <= 3000; vw += 10) if (!inside(at(f.at(vw)))) return undefined;
+    return (size: number) => at(size)?.width ?? 0;
+  }
+
   /** Whether a text box has inline elements with a weight or edges of their own (its text is then measured run by run). */
   styledInline(el: El, si: number): boolean {
     const visit = (k: El): boolean => {
+      if (this.atomicInline(k, si) !== undefined) return true;
       if (k.pseudo || k.anonymous !== undefined || k.tag === "br" || this.displayOf(k, si) === "none" || this.outOfFlow(k, si) || this.displayOf(k, si) !== "inline") return false;
       if (this.textOf(k, si).weight !== this.textOf(k.parent, si).weight) return true;
       const e = this.inlineEdges(k, si);
@@ -1369,6 +1463,8 @@ export abstract class PageLifter {
       const el = byNode.get(n as unknown as P5);
       if (!el) return undefined;
       const out: InlineInfo = {};
+      const atomic = el !== root ? this.atomicInline(el, si) : undefined;
+      if (atomic !== undefined) return { atomic };
       if (el !== root && this.displayOf(el, si) === "inline") {
         if (this.textOf(el, si).weight !== this.textOf(el.parent, si).weight) out.weight = this.textOf(el, si).weight;
         const e = this.inlineEdges(el, si);
@@ -1561,7 +1657,9 @@ export abstract class PageLifter {
    */
   inlineChild(el: El): boolean {
     if (el.tag === "br" || this.ignorable(el)) return true;
-    return this.states.every((_, si) => this.displayOf(el, si) === "none" || (this.isInlineLevel(el, si) && !this.outOfFlow(el, si))) && !REPLACED_BLOCK.has(el.tag) && !INLINE_BLOCK.has(el.tag);
+    // A replaced element or control is inline content only as an atomic inline of known size (see atomicInline).
+    if (REPLACED_BLOCK.has(el.tag) || INLINE_BLOCK.has(el.tag)) return this.states.some((_, si) => this.displayOf(el, si) !== "none") && this.states.every((_, si) => this.displayOf(el, si) === "none" || this.atomicInline(el, si) !== undefined);
+    return this.states.every((_, si) => this.displayOf(el, si) === "none" || (this.isInlineLevel(el, si) && !this.outOfFlow(el, si)));
   }
 
   /** Never displayed: hidden or out of flow at every width. */
@@ -1586,7 +1684,15 @@ export abstract class PageLifter {
     if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length === 0) return;
     if (el.anonymous !== undefined) {
       // A text run beside element children: an anonymous text box (or, in a text box, part of its text).
-      this.states.forEach((_, si) => (el.roles[si] = !el.parent || el.parent.roles[si] === "hidden" ? "hidden" : "text"));
+      this.states.forEach((_, si) => {
+        if (!el.parent || el.parent.roles[si] === "hidden") el.roles[si] = "hidden";
+        else if (this.textOf(el, si).size === 0) {
+          // In a font size of 0: no width, one line of its line height (see zeroText).
+          const t = this.textOf(el, si);
+          (el.zeroText ??= [])[si] = t.lineHeight !== "normal" && "px" in t.lineHeight ? t.lineHeight.px : 0;
+          el.roles[si] = "leaf";
+        } else el.roles[si] = "text";
+      });
       return;
     }
     // Children of a flex or grid container are blockified: never inline content.
@@ -1603,7 +1709,12 @@ export abstract class PageLifter {
       if (d === "none" || (el.parent && el.parent.roles[si] === "hidden")) role = "hidden";
       else if (this.asideFloat(el, si)) role = "out";
       else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || this.isTable(el, si)) role = "leaf";
-      else if (hasText && (el.children.length === 0 || allInline)) role = "text";
+      else if (hasText && el.children.length === 0 && this.textOf(el, si).size === 0 && !CONTROL.has(el.tag)) {
+        // Text in a font size of 0 (an icon button hiding its label): no width, one line of its line height.
+        const t = this.textOf(el, si);
+        (el.zeroText ??= [])[si] = t.lineHeight !== "normal" && "px" in t.lineHeight ? t.lineHeight.px : 0;
+        role = "leaf";
+      } else if (hasText && (el.children.length === 0 || allInline)) role = "text";
       else if (el.children.length) role = "container";
       else role = "leaf";
       el.roles[si] = role;
@@ -1994,6 +2105,12 @@ export abstract class PageLifter {
         decl(p, v, o.utility);
       }
       this.aspectWithHeight(el, si, out, decl, parentDisplay, parentRole);
+      const zt = el.zeroText?.[si];
+      if (zt !== undefined && !out.has("height")) {
+        const flat = ["top", "bottom"].every((side) => /^(0|0px)?$/.test(res(`padding-${side}`) ?? "") && (/^(none|hidden)?$/.test(res(`border-${side}-style`) ?? "") || /^(0|0px)?$/.test(res(`border-${side}-width`) ?? "")));
+        if (flat) decl("height", `${fmtNum(zt)}px`, "text in a font size of 0: one line of its line height");
+        else this.note(el, si, { decl: "font-size: 0", reason: "text in a font size of 0 with vertical padding or a border isn't modelled", kind: "geometry" });
+      }
       // flex: 0 0 <length> in a row: neither grows nor shrinks, so it is that wide (the basis beats a width).
       if (parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si)) {
         const fl = res("flex") ? parseFlex(res("flex")!) : undefined;
@@ -2066,7 +2183,7 @@ export abstract class PageLifter {
         if (unionLine !== undefined && !(parentRole === "container" && /flex|grid/.test(parentDisplay))) decl("line-height", fmtNum(unionLine / text.size), `its lines (${fmtNum(unionLine)}px: the parent's strut and its own, on one baseline)`);
         decl("color", this.colorValue(text.color.hex, text.color.hint), "inherited color");
         if (text.letterSpacing) decl("letter-spacing", `${fmtNum(text.letterSpacing / text.size)}em`, "inherited tracking");
-        if (text.fluid && text.letterSpacing) this.note(el, si, { decl: "letter-spacing", reason: "letter spacing with a font size that follows the viewport width is not modelled", kind: "text" });
+        if (text.fluid && text.letterSpacing && text.lsFluid !== text.fluid) this.note(el, si, { decl: "letter-spacing", reason: "letter spacing with a font size that follows the viewport width is not modelled", kind: "text" });
         for (const [p, o] of text.inherited) {
           if (INHERITED_PAINT.has(p)) continue;
           if (p === "text-align") {
@@ -2379,6 +2496,8 @@ export abstract class PageLifter {
     const lh = (x: TextCtx) => (x.lineHeight === "normal" ? NaN : "num" in x.lineHeight ? lineHeightPx(x.size, x.lineHeight.num) : x.lineHeight.px);
     const visit = (k: El) => {
       if (k.tag === "br" || this.outOfFlow(k, si) || this.displayOf(k, si) === "none") return;
+      // An atomic inline of known size whose line box stays the same: one object on the line, measured.
+      if (this.atomicInline(k, si) !== undefined) return;
       const own = k.own[si];
       const ua = UA_TEXT[k.tag];
       const where = k.pseudo ? `::${k.pseudo}` : `<${k.tag}>`;
@@ -2668,10 +2787,12 @@ export abstract class PageLifter {
     // Per width range: also what display: none hides there (inline content of a text box hidden at some widths).
     const hiddenAt = this.states.map((_, si) => new Set(this.els.filter((e) => e.anonymous === undefined && (hiddenNodes.has(e.node) || this.displayOf(e, si) === "none")).map((e) => e.node)));
     /** An anonymous text run's node: a text box of the run's text, with the class lift gave it. */
-    const anonNode = (k: El, si: number | undefined): FixtureNode | undefined =>
-      k.className && (si === undefined || k.roles[si] === "text")
-        ? { tag: "#text", classes: [k.className], attrs: {}, fixtureId: k.id, line: k.line, text: k.anonymous!, ownText: k.anonymous!, runs: [k.anonymous!], runMeta: [{ inBlock: false, underlined: false, items: [] }], children: [], anonymous: true }
-        : undefined;
+    const anonNode = (k: El, si: number | undefined): FixtureNode | undefined => {
+      if (!k.className || (si !== undefined && k.roles[si] !== "text" && k.roles[si] !== "leaf")) return undefined;
+      // Text in a font size of 0 lays out as an empty box of its line height.
+      const t = si !== undefined && k.roles[si] === "leaf" ? "" : k.anonymous!;
+      return { tag: "#text", classes: [k.className], attrs: {}, fixtureId: k.id, line: k.line, text: t, ownText: t, runs: t ? [t] : [], runMeta: t ? [{ inBlock: false, underlined: false, items: [] }] : [], children: [], anonymous: true };
+    };
     /** A ::before / ::after laid out as a box of its own: a text box of its content, or an empty box. */
     const pseudoNode = (k: El, si: number | undefined): FixtureNode | undefined => {
       if (!k.className || (si !== undefined && (k.roles[si] === "hidden" || k.roles[si] === "out"))) return undefined;
@@ -2696,7 +2817,8 @@ export abstract class PageLifter {
             : (el.children.map((k) => (k.anonymous !== undefined ? anonNode(k, si) : k.pseudo ? pseudoNode(k, si) : byEl.has(k) ? keep(byEl.get(k)!) : undefined)).filter(Boolean) as FixtureNode[]);
         if (!isText && el.children.some((k) => k.anonymous !== undefined)) return { ...n, children, ownText: "" };
         // A replaced element or form control has no text box (a textarea's text is its value).
-        if (el.roles.every((r) => r !== "text" && r !== "container") && n.text) return { ...n, children, text: "", runs: [] };
+        const textless = si === undefined ? el.roles.every((r) => r !== "text" && r !== "container") : el.roles[si] !== "text" && el.roles[si] !== "container";
+        if (textless && n.text) return { ...n, children, text: "", runs: [] };
         const hidden = si === undefined ? hiddenNodes : hiddenAt[si];
         // Inline boxes with a weight or edges of their own, and generated content, are part of the text.
         const inline = this.inlineInfo(el, si ?? 0, byNodeAll);
