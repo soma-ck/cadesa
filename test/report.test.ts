@@ -18,6 +18,8 @@ describe("rootCause: one readable cause per ≈ reason", () => {
     ["/x/d.html:3 .detail-row (row-gap: 4px): the row wraps at 400px and its row gap differs from its column gap; a cluster has one gap", "row-gap: 4px: the row wraps and its row gap differs from its column gap"],
     ["/x/p.html:0 min-h-screen (min-height: 100vh) on <body>: page-level min-height is not modelled", "min-height: 100vh: page-level min-height isn't modelled"],
     ["/x/p.html:4 <select>: <select> without a width (w-*) takes its intrinsic width, which Cadesa doesn't know", "<select>: <select> without a width takes its intrinsic width, which Cadesa doesn't know"],
+    ["/x/a.html:3 /x/b.css:9 .crumb + .crumb::before { float: left; padding-right: 8px; content: var(--divi: ::before content is not modelled", "::before content isn't modelled"],
+    ["/x/a.html:1 @import url(theme.css): @import is not followed; lift the imported file too", "@import: @import is not followed"],
   ];
   for (const [raw, want] of cases) it(want, () => expect(rootCause(raw)).toBe(want));
 

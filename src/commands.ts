@@ -36,6 +36,7 @@ import { generateMetrics, launchChromium, writeMetrics } from "./metrics.js";
 import { pointFindings, Pointers } from "./pointers.js";
 import { verifyFindings, type VerifyReport } from "./verify.js";
 import { capture, formatCapture } from "./capture.js";
+import { notLaidOut } from "./laidout.js";
 import { checkAddedCss, compareFindings, type FindingChange } from "./whatif-check.js";
 import { existsSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
@@ -172,8 +173,11 @@ function pageOf(s: SourceInput & { fixture: string }): Page {
 }
 
 /** The page lift's notes for the reader, shown under the coverage line. */
-function withNotes(c: Coverage, p: Page): Coverage {
+function withNotes(c: Coverage, p: Page, layouts: Layout[]): Coverage {
   if (p.tw?.notes.length) c.notes = p.tw.notes;
+  // Elements a browser shows that no box covers: nothing is checked there.
+  const missing = p.tw && notLaidOut(p.tw, layouts);
+  if (missing?.count) c.notLaidOut = missing;
   return c;
 }
 
@@ -246,7 +250,7 @@ export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; 
   const fonts = fontsOf(s, layouts);
   return {
     text: shortenPaths(
-      formatCoverage(withNotes(coverage(layouts, imp?.impacts), p)) +
+      formatCoverage(withNotes(coverage(layouts, imp?.impacts), p, layouts)) +
       formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts, css: !!p.tw }) +
       (imp ? "\n" + formatImpact(imp.impacts) : "") +
       (written.length ? `\nwireframe: ${written.join(", ")}\n` : "") +
@@ -302,7 +306,7 @@ export function whatifCmd(
   const [a, b] = [approx(result.before!), approx(result.after!)];
   result.widths.forEach((w, i) => (w.approximate = [...new Set([...a[i], ...b[i]])]));
   const ia = impactFor(s, result.after!)?.impacts;
-  const cov = withNotes(coverage(result.after!, ia), p);
+  const cov = withNotes(coverage(result.after!, ia), p, result.after!);
   const findings = findingChanges(result.before!, impactFor(s, result.before!)?.impacts, p.tw, result.after!, ia, p.tw);
   return {
     text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length, findings })),
@@ -426,7 +430,7 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
       return d;
     }),
   };
-  const cov = withNotes(coverage(after, ia), pa);
+  const cov = withNotes(coverage(after, ia), pa, after);
   const findings = findingChanges(before, ib, lb, after, ia, la);
   const texts = new Map(afterFiles.map((f) => [f.file, f.text]));
   const addedCss = added && checkAddedCss(la, s.addCss!, added.file, added.firstLine, (f) => texts.get(f));
@@ -452,7 +456,7 @@ function runCheck(s: SourceInput & { fixture: string; widths: number[] }) {
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
   const findings = check(onWhite(layouts), imp?.impacts, p.tw);
-  const cov = withNotes(coverage(layouts, imp?.impacts), p);
+  const cov = withNotes(coverage(layouts, imp?.impacts), p, layouts);
   return { p, layouts, impacts: imp?.impacts, findings, cov };
 }
 

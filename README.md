@@ -38,7 +38,7 @@ inconclusive (Cadesa can't decide these without a browser: confirm in one, or ru
 
 How to read it:
 
-- **The coverage line comes first.** It says how much of the page Cadesa predicted exactly, and why the rest is `≈`. When most of a page is `≈`, it says so, and you should treat the report as leads.
+- **The coverage line comes first.** It says how much of the page Cadesa predicted exactly, and why the rest is `≈`. When most of a page is `≈`, it says so, and you should treat the report as leads. Elements a browser shows that Cadesa doesn't lay out at all (the rows of a table, which is one box; anything absolutely positioned or floated) are counted under it, `! 31 of 77 elements not laid out: inside a table, laid out as one box (×31)`: nothing is checked there.
 - **`✖` and `⚠` are definite.** Act on them: each names the element, the widths and the rule to change. Contrast, text that runs together and other checks that don't depend on exact positions stay definite even on a mostly `≈` page.
 - **`?` is inconclusive.** The finding depends on a box Cadesa can't predict exactly. Here `.zoomed` is drawn at `scale(3)`, so it is really 60×60px. Confirm it in a browser, or add `--verify` and Chromium decides.
 - **`whatif` follows the same rule.** It only says "unchanged" for boxes predicted exactly.

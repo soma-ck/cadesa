@@ -7,6 +7,7 @@ import type { WidthImpact } from "./lift/impact.js";
 import type { LiftResult } from "./lift/lift.js";
 import type { WhatIf, WidthDiff } from "./project.js";
 import type { AddedCssReport, FindingChange } from "./whatif-check.js";
+import type { NotLaidOut } from "./laidout.js";
 import { fmtPx, type Resolved } from "./resolve.js";
 
 const pad = (s: string, n: number) => (s.length >= n ? s + " " : s + " ".repeat(n - s.length));
@@ -304,6 +305,8 @@ export interface Coverage {
   reasons: { reason: string; count: number }[];
   /** How the page was read, when the reader should know (a stylesheet used under another name). */
   notes?: string[];
+  /** Elements a browser shows that Cadesa didn't lay out (no box, so no finding, covers them). */
+  notLaidOut?: NotLaidOut;
 }
 
 /** Cut `s` to at most `n` characters at a word boundary, marking the cut with "…". */
@@ -334,6 +337,12 @@ export function rootCause(r: string): string {
     .replace(/\s+/g, " ")
     .replace(/ at \d+(?:\.\d+)?px/g, "")
     .trim();
+  // Generated content (the rule's text may be cut short): the reason is the cause.
+  const pseudo = /: (::[\w-]+ (?:content|styles) (?:is|are) not modelled)$/.exec(s);
+  if (pseudo) return shortReason(pseudo[1]);
+  // An at-rule: "@import url(x): @import is not followed; …".
+  const at = /^@([\w-]+)[^:]*: (.*)$/.exec(s);
+  if (at) return `@${at[1]}: ${shortReason(at[2])}`;
   // A rule the lift couldn't apply: "sel { a: 1; b: 2 } [on <body>]: reason".
   const rule = /^(.*?) \{ ([^{}]*) \}(?: on <[\w-]+>)?: (.*)$/.exec(s);
   if (rule) {
@@ -391,8 +400,14 @@ export function formatCoverage(c: Coverage): string {
   ];
   if (c.reasons.length)
     out.push(`  ≈ because: ${c.reasons.slice(0, 3).map((r) => `${r.reason} (×${r.count})`).join(" · ")}${c.reasons.length > 3 ? ` · +${c.reasons.length - 3} more causes` : ""}`);
+  const nl = c.notLaidOut;
+  if (nl?.count)
+    out.push(
+      `  ! ${nl.count} of ${nl.total} elements not laid out${c.widths > 1 ? ` (at ${nl.width}px)` : ""}: ${nl.causes.slice(0, 3).map((x) => `${x.cause} (×${x.count})`).join(" · ")}; nothing is checked there`,
+    );
   for (const n of c.notes ?? []) out.push(`  note: ${n}`);
-  if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat what follows as leads and confirm it in a browser");
+  if (nl && nl.count > nl.total / 2) out.push("  → most of this page's elements aren't laid out: the findings below cover only part of it; check the rest in a browser");
+  else if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat what follows as leads and confirm it in a browser");
   return out.join("\n") + "\n";
 }
 
