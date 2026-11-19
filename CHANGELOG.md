@@ -18,7 +18,7 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## 0.1.15 (2026-11-19)
+## Unreleased
 
 - Inline runs in another size, font, line height or vertical-align are measured: `<small>`,
   `.small` and `font-size: .875em` spans, `<sup>` and `<sub>`, text in another family, nested
@@ -52,6 +52,9 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   as Google Fonts serves it) instead of failing with "Set maximum size exceeded": the search for
   runs the font shapes in context is bounded, and a table where it stopped short says so; text in
   that font is then marked `≈`.
+
+## 0.1.15 (2026-11-19)
+
 - Percentage padding and margins are laid out: of the containing block's width on every side, also
   inside `calc()`, `min()`, `max()` and `clamp()` (`padding: 4% 7% 6%`, `margin: 0 auto 5%`). In
   intrinsic sizes they count as 0, as in Chromium; a flex item or an absolutely positioned box adds
