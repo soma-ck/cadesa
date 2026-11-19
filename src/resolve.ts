@@ -172,6 +172,11 @@ export interface ResolvedProps {
   /** A grid's or cluster's gap between rows, when it differs from `gap`. */
   rowGap?: Resolved<number> & { pct?: number };
   padding?: Resolved<Sides> & { pct?: PctSides };
+  /**
+   * Classic scrollbars a scroll container shows (px): `x` a horizontal one along its bottom, `y` a
+   * vertical one along its right side, between its padding box and its border (set by the engine).
+   */
+  scrollbar?: Resolved<{ x: number; y: number }>;
   background?: Resolved<string>;
   /** The color, and each side's width as Chromium draws it. */
   border?: Resolved<{ color: string; widths: Sides; styled?: Record<keyof Sides, boolean> }>;
@@ -202,11 +207,21 @@ export const fmtPx = (n: number) => `${Math.round(n * 100) / 100}`;
 export const borderPx = (px: number) => (px <= 0 ? 0 : px < 1 ? 1 : Math.floor(px));
 
 const ZERO: Sides = { top: 0, right: 0, bottom: 0, left: 0 };
-/** Padding plus border, per side: how far the content box sits inside the border box. */
+/** Padding plus border (and a classic scrollbar), per side: how far the content box sits inside the border box. */
 export function insets(p: ResolvedProps): Sides {
   const pad = p.padding?.value ?? ZERO;
   const b = p.border?.value.widths ?? ZERO;
-  return { top: pad.top + b.top, right: pad.right + b.right, bottom: pad.bottom + b.bottom, left: pad.left + b.left };
+  const sb = p.scrollbar?.value;
+  return { top: pad.top + b.top, right: pad.right + b.right + (sb?.y ?? 0), bottom: pad.bottom + b.bottom + (sb?.x ?? 0), left: pad.left + b.left };
+}
+
+/**
+ * How thick a scrollbar is where it takes space: 0 for overlay scrollbars (macOS, phones, and the
+ * headless Chromium Cadesa checks against, which hides them), 15px for classic ones (Chromium on
+ * Windows and Linux desktops), with CADESA_SCROLLBARS=classic (`--scrollbars classic`).
+ */
+export function scrollbarPx(): number {
+  return process.env.CADESA_SCROLLBARS === "classic" ? 15 : 0;
 }
 
 /** Four side values (CSS order), as short as CSS would write them. */

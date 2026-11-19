@@ -79,6 +79,9 @@ Options:
              default: every 20px from 320 to 1440 for check and critique, and for whatif
              also both sides of every breakpoint; 390,1280 otherwise
   --height   window height in px for vh units and other heights of the viewport (default 800)
+  --scrollbars overlay | classic: scrollbars that take no space (default: macOS, phones, headless
+             Chromium) or 15px (Chromium on Windows and Linux desktops), in scroll containers and
+             the page's own; --verify then shows Chromium's
   --json     machine-readable output (for agents)
   --lines    render: print each wrapped line with its width
   --svg f    render: also draw the predicted boxes as an SVG wireframe (f-<width>.svg per width)
@@ -105,6 +108,7 @@ async function main(argv: string[]) {
       fixture: { type: "string" },
       widths: { type: "string" },
       height: { type: "string" },
+      scrollbars: { type: "string" },
       set: { type: "string", multiple: true },
       after: { type: "string" },
       "add-css": { type: "string" },
@@ -185,6 +189,11 @@ async function main(argv: string[]) {
     if (!(h > 0) || !isFinite(h)) throw new InputError(`invalid height "${values.height}"`);
     return h;
   };
+  // Scrollbars that take space (classic) or none (overlay, the default): for the engine and for --verify's Chromium.
+  if (values.scrollbars !== undefined) {
+    if (!/^(classic|overlay)$/.test(values.scrollbars)) throw new InputError(`invalid --scrollbars "${values.scrollbars}": classic or overlay`);
+    process.env.CADESA_SCROLLBARS = values.scrollbars;
+  }
   const page = () => ({
     source: values.css || values.tailwind ? undefined : need(values.source, "--source <source.cadesa.yaml>, --css <file.css> or --tailwind <compiled.css>"),
     css: values.tailwind ? undefined : values.css,

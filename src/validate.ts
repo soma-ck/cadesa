@@ -977,7 +977,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   if (top.page !== undefined) {
     const po = obj(top.page, ["page"], "page settings");
     if (po) {
-      keys(po, ["page"], ["background", "margin", "padding", "outer", "overflow", "windowHeight"]);
+      keys(po, ["page"], ["background", "margin", "padding", "outer", "overflow", "overflowY", "windowHeight"]);
       page = { path: "page", background: po.background === undefined ? undefined : ref(po.background, ["page", "background"], "color") };
       // The window's height (px) the source was laid out for: fixed boxes and absolute ones with no positioned ancestor are placed in it.
       if (po.windowHeight !== undefined) {
@@ -988,6 +988,11 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
       if (po.overflow !== undefined) {
         if (!OVERFLOWS.includes(po.overflow as Overflow)) err(["page", "overflow"], "invalid overflow", { expected: "visible, hidden, clip, auto or scroll", got: po.overflow });
         else if (po.overflow === "hidden" || po.overflow === "clip") page.clipX = true;
+      }
+      // overflowY: hidden (or clip): the page doesn't scroll vertically (no scrollbar where scrollbars take space).
+      if (po.overflowY !== undefined) {
+        if (!OVERFLOWS.includes(po.overflowY as Overflow)) err(["page", "overflowY"], "invalid overflow", { expected: "visible, hidden, clip, auto or scroll", got: po.overflowY });
+        else if (po.overflowY === "hidden" || po.overflowY === "clip") page.clipY = true;
       }
       // The body's margin (may be negative) and padding, and the root element's insets: a space token, or per side.
       for (const k of ["margin", "padding", "outer"] as const) {

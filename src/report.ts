@@ -309,6 +309,8 @@ export interface Coverage {
   notLaidOut?: NotLaidOut;
   /** The window height (px) the page was laid out for, when some box depends on it (vh). */
   height?: number;
+  /** Scroll containers showing a scrollbar (box × width), and the thickness scrollbars were taken to be (0: overlay). */
+  scrollbars?: { boxes: number; px: number };
 }
 
 /** Cut `s` to at most `n` characters at a word boundary, marking the cut with "…". */
@@ -367,6 +369,7 @@ export function rootCause(r: string): string {
 export function coverage(layouts: Layout[], impacts?: WidthImpact[]): Coverage {
   let boxes = 0;
   let approximate = 0;
+  let scrollers = 0;
   const reasons = new Map<string, number>();
   const add = (r: string) => reasons.set(rootCause(r), (reasons.get(rootCause(r)) ?? 0) + 1);
   for (const l of layouts) {
@@ -375,6 +378,7 @@ export function coverage(layouts: Layout[], impacts?: WidthImpact[]): Coverage {
     const imp = impacts?.find((i) => i.width === l.width);
     const uncertain = new Map((imp?.uncertain ?? []).map((u) => [u.id, u]));
     for (const b of all) {
+      if (b.scrollbar) scrollers++;
       const u = uncertain.get(b.id);
       if (u || b.assumptions.length) {
         approximate++;
@@ -389,6 +393,7 @@ export function coverage(layouts: Layout[], impacts?: WidthImpact[]): Coverage {
     exact: boxes - approximate,
     approximate,
     reasons: [...reasons].sort((a, b) => b[1] - a[1]).map(([reason, count]) => ({ reason, count })),
+    ...((scrollers || layouts.some((l) => l.scrollbar)) && { scrollbars: { boxes: scrollers, px: layouts[0]?.scrollbar ?? 0 } }),
   };
 }
 
@@ -408,6 +413,12 @@ export function formatCoverage(c: Coverage): string {
       `  ! ${nl.count} of ${nl.total} elements not laid out${c.widths > 1 ? ` (at ${nl.width}px)` : ""}: ${nl.causes.slice(0, 3).map((x) => `${x.cause} (×${x.count})`).join(" · ")}; nothing is checked there`,
     );
   for (const n of c.notes ?? []) out.push(`  note: ${n}`);
+  // Scrollbar widths are platform-specific: say which ones the prediction assumes, where they matter.
+  const sb = c.scrollbars;
+  if (sb && sb.px)
+    out.push(`  scrollbars: classic, ${sb.px}px (Chromium on Windows and Linux desktops)${sb.boxes ? `, in ${sb.boxes} scroll container${sb.boxes === 1 ? "" : "s"} (box × width)` : ""}; overlay scrollbars (macOS, phones) take 0, and those boxes differ there`);
+  else if (sb?.boxes)
+    out.push(`  scrollbars: ${sb.boxes} scroll container${sb.boxes === 1 ? "" : "s"} (box × width) predicted with overlay scrollbars, 0px (macOS, phones, headless Chromium); classic ones take 15px (Windows, Linux desktops): --scrollbars classic`);
   if (nl && nl.count > nl.total / 2) out.push("  → most of this page's elements aren't laid out: the findings below cover only part of it; check the rest in a browser");
   else if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat what follows as leads and confirm it in a browser");
   return out.join("\n") + "\n";

@@ -74,19 +74,38 @@ describe("overflow in layout (Chromium's boxes)", () => {
     expect(rect(b.price)).toEqual([251, 341.5, 96, 22.5]);
   });
 
-  it("lets content scroll inside a scroll container: no overflow finding, but a scrollbar may add height", () => {
+  it("lets content scroll inside a scroll container: no overflow finding; overlay scrollbars take no space", () => {
     const { l, b } = at(375);
     expect(rect(b.scroller)).toEqual([16, 388, 343, 62.5]);
     expect(rect(b.wide)).toEqual([16, 400, 880, 38.5]);
     expect(l.issues.filter((i) => i.id === "scroller")).toEqual([]);
-    expect(b.scroller.assumptions[0]).toMatch(/horizontal scrollbar adds height where scrollbars aren't overlaid/);
-    // Its content doesn't move for a scrollbar at the bottom.
-    expect(b.wide.assumptions.some((a) => /scrollbar/.test(a))).toBe(false);
-    // A vertical scrollbar narrows the list's content, not the list (which only moves with the scroller above it).
-    expect(b.list.assumptions.some((a) => /#list's scrollbar/.test(a))).toBe(false);
-    expect(b["item-1"].assumptions[0]).toMatch(/its width depends on #list's scrollbar/);
-    // Wide enough: nothing scrolls sideways, nothing assumed.
-    expect(at(1280).b.scroller.assumptions).toEqual([]);
+    expect(l.scrollbar).toBe(0);
+    // Exact (as in headless Chromium, macOS and phones), and known to show a scrollbar where they take space.
+    for (const k of ["scroller", "wide", "list", "item-1"]) expect(b[k].assumptions).toEqual([]);
+    expect([b.scroller.scrollbar, b.list.scrollbar, b.wide.scrollbar]).toEqual([true, true, undefined]);
+    // Wide enough: nothing scrolls sideways.
+    expect(at(1280).b.scroller.scrollbar).toBeUndefined();
+  });
+
+  it("lays out classic scrollbars (15px) where content overflows, and the content beside them", () => {
+    const saved = process.env.CADESA_SCROLLBARS;
+    process.env.CADESA_SCROLLBARS = "classic";
+    try {
+      const { l, b } = at(375);
+      expect(l.scrollbar).toBe(15);
+      // A horizontal scrollbar under the wide row: the scroller is 15px taller, its content doesn't move.
+      expect(rect(b.scroller)).toEqual([16, 388, 343, 77.5]);
+      expect(rect(b.wide)).toEqual([16, 400, 880, 38.5]);
+      // The list's content overflows its 120px: a vertical scrollbar narrows its content by 15px.
+      expect(b.list.w).toBe(343);
+      expect(b["item-1"].w).toBe(343 - 24 - 15);
+      for (const k of ["scroller", "wide", "list", "item-1"]) expect(b[k].assumptions).toEqual([]);
+      // Wide enough: no horizontal scrollbar.
+      expect(at(1280).b.scroller.h).toBe(62.5);
+    } finally {
+      if (saved === undefined) delete process.env.CADESA_SCROLLBARS;
+      else process.env.CADESA_SCROLLBARS = saved;
+    }
   });
 });
 

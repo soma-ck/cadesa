@@ -11,7 +11,7 @@
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
-import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type GridSpec, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
+import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, scrollbarPx, sizeAt, type GridSpec, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 import { boxMatrix4, multiply4, originOf, perspective4, projectRect, translate4, type Matrix4 } from "./transform.js";
 import { expandTracks, placeFlow as gridPlace, sizeTracks, trackStarts, type Contribution, type Explicit, type TrackList, type TrackSize } from "./grid.js";
@@ -51,6 +51,8 @@ export interface Box {
   anonymous?: boolean;
   /** A cluster item on a line its items overfill (by their flex base sizes): they shrink, or overflow. */
   overfull?: boolean;
+  /** A scroll container that shows a scrollbar where scrollbars take space (overflow: scroll, or auto with its content overflowing). */
+  scrollbar?: boolean;
 }
 
 export interface Issue {
@@ -73,6 +75,8 @@ export interface Layout {
   notLaidOut?: { id: string; tag: string; line?: number }[];
   /** The page background from the source, if declared. */
   page?: { background: string; path: string };
+  /** How thick its scrollbars were taken to be (0: overlay; 15: classic, --scrollbars classic). */
+  scrollbar?: number;
 }
 
 /** "abs": an absolutely positioned or fixed box, placed in its containing block. */
@@ -269,7 +273,34 @@ interface Intrinsic {
   minKnown?: boolean;
 }
 
+/**
+ * Lay out a page at a viewport width. Where scrollbars take space (classic, --scrollbars classic),
+ * the page's own appear as Chromium shows them: a vertical one when the page is taller than the
+ * window by half a pixel or more, a horizontal one when it is wider than its layout width; each
+ * takes 15px from the window (the page is laid out again, narrower). Media queries and vw units
+ * keep the whole window's width.
+ */
 export function layout(model: Model, fixture: Fixture, width: number): Layout {
+  const SB = scrollbarPx();
+  const bars = { x: false, y: false };
+  for (;;) {
+    const l = layoutWith(model, fixture, width, bars);
+    if (!SB) return l;
+    const windowH = model.page?.windowHeight ?? 800;
+    const layoutW = width - (bars.y ? SB : 0);
+    const x = !model.page?.clipX && l.extent.w - layoutW >= 0.5 - EPS;
+    const y = !model.page?.clipY && l.extent.h - (windowH - (bars.x || x ? SB : 0)) >= 0.5 - EPS;
+    if ((x && !bars.x) || (y && !bars.y)) {
+      bars.x ||= x;
+      bars.y ||= y;
+      continue;
+    }
+    const { extent: _, ...out } = l;
+    return out;
+  }
+}
+
+function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x: boolean; y: boolean }): Layout & { extent: { w: number; h: number } } {
   const issues: Issue[] = [];
   /** Advice in Cadesa's terms, or in CSS terms on a page lifted from its CSS. */
   const say = (cadesa: string, css: string) => (model.css ? css : cadesa);
@@ -319,8 +350,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   }[] = [];
   /** Each placed out-of-flow box: its containing block (undefined: the window) and whether it sits at its static position. */
   const absInfo = new Map<Box, { cb?: Box; parent?: Box; staticPos: boolean }>();
-  /** The window's height: fixed boxes, and absolute ones with no positioned ancestor, are placed in it. */
-  const windowH = model.page?.windowHeight ?? 800;
+  /** A classic scrollbar's thickness (0 where scrollbars are overlaid). */
+  const SB = scrollbarPx();
+  /** The window (fixed boxes, and absolute ones with no positioned ancestor, are placed in it): its height, and the part of it the page is laid out in (less its own scrollbars). */
+  const windowH = (model.page?.windowHeight ?? 800) - (rootBars.x ? SB : 0);
+  const layoutW = width - (rootBars.y ? SB : 0);
 
   /** Elements of the fixture (component roots and slots) that aren't laid out at all, with their descendants. */
   const skippedEls = new Map<FixtureNode, { id: string; tag: string; line?: number }>();
@@ -331,12 +365,6 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   };
   /** Boxes the engine can't guarantee beyond their own assumptions and errors, and why. */
   const sources = new Map<Box, string>();
-  /**
-   * Scrollbars that take space where they aren't overlaid (Windows, many Linux setups; Cadesa
-   * predicts overlay scrollbars, as on macOS and phones): a horizontal one makes its box taller (the
-   * box and what's around it may move, not its content), a vertical one narrows its content.
-   */
-  const scrollbars = new Map<Box, { taller?: string; narrower?: string }>();
   let auto = 0;
   const idOf = (n: FixtureNode) => n.fixtureId ?? `${n.tag}#${++auto}`;
 
@@ -617,7 +645,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   }
   /** contentOnly: the content's own sizes, whatever width the box sets (a flex item's content size suggestion). */
   function intrinsicOf(n: FixtureNode, c: Component, slot: string | undefined, contentOnly: boolean): Intrinsic {
-    const p = resolveElement(model, c, slot, width);
+    const raw = resolveElement(model, c, slot, width);
+    // A vertical scrollbar that is always there (overflow-y: scroll) takes width next to the content.
+    const p = SB && raw.overflow?.value.y === "scroll" ? { ...raw, scrollbar: { value: { x: 0, y: SB }, display: `${SB}px`, steps: raw.overflow.steps } } : raw;
     const ins = insets(p);
     const insX = ins.left + ins.right;
     const unknown = (why: string): Intrinsic => ({ min: 0, max: 0, why });
@@ -1257,7 +1287,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           break;
         }
       const bw = (b: Box) => b.props.border?.value.widths ?? { top: 0, right: 0, bottom: 0, left: 0 };
-      const cb = cbBox ? { x: cbBox.x + bw(cbBox).left, y: cbBox.y + bw(cbBox).top, w: cbBox.w - bw(cbBox).left - bw(cbBox).right, h: cbBox.h - bw(cbBox).top - bw(cbBox).bottom } : { x: 0, y: 0, w: width, h: windowH };
+      const cb = cbBox ? { x: cbBox.x + bw(cbBox).left, y: cbBox.y + bw(cbBox).top, w: cbBox.w - bw(cbBox).left - bw(cbBox).right, h: cbBox.h - bw(cbBox).top - bw(cbBox).bottom } : { x: 0, y: 0, w: layoutW, h: windowH };
       const at = (v: number | { pct: number } | undefined, base: number) => (v === undefined ? undefined : sizeAt(v, base));
       const [l, r, t, b] = [at(pos.left, cb.w), at(pos.right, cb.w), at(pos.top, cb.h), at(pos.bottom, cb.h)];
       // Percentage padding and margins: of the containing block's width.
@@ -1319,7 +1349,20 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
   }
 
-  function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind, forcedW?: number, over?: Partial<ResolvedProps>, cbW?: number, stackAlign?: "start" | "center" | "end" | "stretch"): Box {
+  function measure(
+    n: FixtureNode,
+    c: Component,
+    slot: string | undefined,
+    avail: number,
+    parent: ParentKind,
+    forcedW?: number,
+    over?: Partial<ResolvedProps>,
+    cbW?: number,
+    stackAlign?: "start" | "center" | "end" | "stretch",
+    bars?: { x: boolean; y: boolean },
+  ): Box {
+    // (What a pass leaves behind, undone when the box is laid out again with its scrollbars.)
+    const undo = { auto, issues: issues.length, abs: absQueue.length };
     const id = idOf(n);
     let rawProps = resolveElement(model, c, slot, width);
     // A table cell's border as its table lays it out (table.ts); a collapsed table's own border and padding.
@@ -1334,6 +1377,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     const sourcePath = slot ? `${c.path}.slots.${slot}` : c.path;
     const assumptions: string[] = [];
+    // Classic scrollbars: overflow: scroll always shows one; auto shows one when its content
+    // overflows on that axis, found once its content is laid out (then it is laid out again with it).
+    const ovs = props.overflow?.value;
+    const barX = SB && (ovs?.x === "scroll" || bars?.x) ? SB : 0;
+    const barY = SB && (ovs?.y === "scroll" || bars?.y) ? SB : 0;
+    if (barX || barY) props = { ...props, scrollbar: { value: { x: barX, y: barY }, display: `${SB}px`, steps: props.overflow!.steps } };
     const ins = insets(props);
     const insX = ins.left + ins.right;
     const insY = ins.top + ins.bottom;
@@ -1358,9 +1407,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const pw = props.width?.value;
     const maxW = Math.min(props.maxWidth ? sizeAt(props.maxWidth.value, avail) : Infinity, props.measure ? sizeAt(props.measure.value, avail) : Infinity);
     /** fit-content in `room`: the content's max-content width, at most the room, at least its min-content. */
+    let fromContent = false;
     const fit = (room: number, what: string): number => {
+      fromContent = true;
       // (Only the percentage padding resolved here: a collapsed table's own border is in its intrinsic widths already.)
-      const it = withOwnPct(intrinsic(n, c, slot, true), rawProps, pctProps);
+      const it0 = withOwnPct(intrinsic(n, c, slot, true), rawProps, pctProps);
+      // A vertical scrollbar that appeared (overflow-y: auto) is next to the content: it adds to its width.
+      const it = barY && ovs?.y !== "scroll" ? { ...it0, min: it0.min + barY, max: it0.max + barY } : it0;
       if (it.why) {
         issues.push({ severity: "error", id, path: props.width?.steps.at(-1)?.path ?? sourcePath, message: `#${id} ${what}, and its content can't be measured (${it.why})` });
         return room;
@@ -1613,6 +1666,38 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       for (const k of rows ? rows.flat() : children)
         if (k.tag === "hr") k.assumptions.push("an <hr> in a box with a set height may shrink (it clips its overflow)");
         else if (scrolls(k.props.overflow?.value) && pattern === "stack") k.assumptions.push(`a box with overflow: ${k.props.overflow!.display} in a stack with a set height may shrink (its minimum height is 0)`);
+    // A scroll container's content overflowing it: by its children's border and margin boxes (the
+    // padding at its end included, so past its content box), and their own overflow. Chromium shows
+    // a scrollbar for overflow of half a pixel or more (its scroll size is pixel-snapped).
+    let scrollbar = !!(barX || barY) || (!!ovs && (ovs.x === "scroll" || ovs.y === "scroll"));
+    if (ovs && (ovs.x === "auto" || ovs.y === "auto")) {
+      const kidRight = (b: Box) => {
+        const kov = b.props.overflow?.value;
+        const spill = b.overflowX && (!kov || kov.x === "visible") && !b.props.contain?.value.paint ? b.x + b.w - insets(b.props).right + b.overflowX : -Infinity;
+        return Math.max(b.x + b.w, b.x + b.w + marginOf(b.props).right, spill);
+      };
+      const extentX = Math.max(lines ? contentW : 0, ...children.map(kidRight));
+      const roomY = props.height && tableH === undefined ? props.height.value - insY : undefined;
+      const overX = ovs.x === "auto" && extentX - innerW >= 0.5 - EPS;
+      const overY = ovs.y === "auto" && roomY !== undefined && contentH - roomY >= 0.5 - EPS;
+      if (SB && ((overX && !barX) || (overY && !barY))) {
+        if (formatsKids) flexAncestors--;
+        auto = undo.auto;
+        issues.length = undo.issues;
+        absQueue.length = undo.abs;
+        return measure(n, c, slot, avail, parent, forcedW, over, cbW, stackAlign, { x: !!barX || overX, y: !!barY || overY });
+      }
+      if (overX || overY) scrollbar = true;
+      if (SB) {
+        // Where Chromium's choice hinges on a fraction of a pixel, or on what isn't laid out here.
+        if ((ovs.x === "auto" && Math.abs(extentX - innerW - 0.5) < 1 / 64) || (roomY !== undefined && ovs.y === "auto" && Math.abs(contentH - roomY - 0.5) < 1 / 64))
+          assumptions.push("its content overflows it by about half a pixel: whether a scrollbar appears isn't known");
+        if (children.some((b) => b.props.transform || b.props.position?.value.type === "relative") || outKids.length)
+          assumptions.push("a scroll container with a positioned or transformed child: what it scrolls (and so its scrollbars) isn't modelled");
+        // A width from its content (fit-content) grows by the scrollbar; one given by a flex or grid container's sizing would too.
+        if (barY && ovs.y !== "scroll" && !fromContent && forcedW !== undefined) assumptions.push("its vertical scrollbar adds to its width, as its flex or grid container sizes it: not modelled");
+      }
+    }
     // Without aspect (whose width: 100% wins), a media element with only a height takes its width
     // from its width attribute, or at the page level from the file's own ratio, instead of stretching.
     if (media && props.height && !props.aspect && (pw === undefined || pw === "fill") && !props.maxWidth && parent !== "cluster") {
@@ -1650,6 +1735,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       assumptions,
       children,
       ...(n.anonymous && { anonymous: true }),
+      ...(scrollbar && { scrollbar: true }),
     };
     // A block with nothing in it (no height, padding, border, lines or non-empty child) lets its
     // own top and bottom margins collapse through it (an aspect-ratio box that comes out 0 tall too).
@@ -1724,13 +1810,6 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // it doesn't spill out (check reports clipped text). Scrollbars take space only where they
     // aren't overlaid (Windows, many Linux setups); Cadesa predicts overlay scrollbars.
     const clipsX = (!!ov && ov.x !== "visible") || !!props.contain?.value.paint;
-    const where = "where scrollbars aren't overlaid (Windows, many Linux setups)";
-    const sb: { taller?: string; narrower?: string } = {};
-    if (!props.height && !props.aspect && (ov?.x === "scroll" || (ov?.x === "auto" && widest > innerW + 0.5)))
-      sb.taller = ov.x === "scroll" ? `overflow-x: scroll always shows a horizontal scrollbar, which adds height ${where}` : `its content is wider than it at ${width}px and scrolls (overflow-x: auto): a horizontal scrollbar adds height ${where}`;
-    if (ov?.y === "scroll" || (ov?.y === "auto" && props.height && contentH > props.height.value - insY + 0.5))
-      sb.narrower = ov.y === "scroll" ? `overflow-y: scroll always shows a vertical scrollbar, which takes width from its content ${where}` : `its content is taller than its height at ${width}px and scrolls (overflow-y: auto): a vertical scrollbar takes width from its content ${where}`;
-    if (sb.taller || sb.narrower) scrollbars.set(box, sb);
     if (clipsX && widest > innerW + 0.5) box.overflowX = widest - innerW;
     else if (widest > innerW + 0.5 && children.length) {
       box.overflowX = widest - innerW;
@@ -1997,7 +2076,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   };
   const sidesOf = (s?: PageSides) => ({ top: tokenPx(s?.top), right: tokenPx(s?.right), bottom: tokenPx(s?.bottom), left: tokenPx(s?.left) });
   const [outer, bodyMargin, bodyPad] = [sidesOf(pg?.outer), sidesOf(pg?.margin), sidesOf(pg?.padding)];
-  const pageW = Math.max(0, width - outer.left - outer.right - bodyMargin.left - bodyMargin.right - bodyPad.left - bodyPad.right);
+  const pageW = Math.max(0, layoutW - outer.left - outer.right - bodyMargin.left - bodyMargin.right - bodyPad.left - bodyPad.right);
 
   const boxes: Box[] = [];
   let unknownOnPage: string | undefined;
@@ -2119,8 +2198,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (!flagged.has(b)) flagged.set(b, why);
     if (deep) for (const k of b.children) flag(k, why, true);
   };
-  for (const [src, sb] of scrollbars) if (sb.narrower) for (const k of src.children) flag(k, `its width depends on #${src.id}'s scrollbar (${sb.narrower})`, true);
-  const spread: [Box, string, boolean][] = [...[...sources].map(([b, r]) => [b, r, true] as [Box, string, boolean]), ...[...scrollbars].filter(([, sb]) => sb.taller).map(([b, sb]) => [b, sb.taller!, false] as [Box, string, boolean])];
+  const spread: [Box, string, boolean][] = [...sources].map(([b, r]) => [b, r, true] as [Box, string, boolean]);
   for (const [src, reason, deep] of spread) {
     const why = `geometry depends on #${src.id}, which the engine can't guarantee (${reason})`;
     flag(src, `${reason}`, deep);
@@ -2163,7 +2241,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   // A box past the right edge of the viewport makes the page scroll sideways, unless a box around
   // it (or the page itself) clips or scrolls what doesn't fit. Reported once, on the outermost.
   if (!pg?.clipX) {
-    const past = (b: Box) => b.x + b.w > width + 0.5;
+    const past = (b: Box) => b.x + b.w > layoutW + 0.5;
     // A box already reported as overflowing its parent isn't reported again.
     const overflowing = new Set(issues.flatMap((i) => /^#(\S+) overflows #/.exec(i.message)?.[1] ?? []));
     const visit = (b: Box) => {
@@ -2177,12 +2255,29 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           severity: "warning",
           id: b.id,
           path,
-          message: `#${b.id} extends ${fmtPx(b.x + b.w - width)}px past the right edge of the viewport at ${width}px (to ${fmtPx(b.x + b.w)}px): the page scrolls sideways`,
+          message: `#${b.id} extends ${fmtPx(b.x + b.w - layoutW)}px past the right edge of the viewport at ${width}px (to ${fmtPx(b.x + b.w)}px): the page scrolls sideways`,
         });
         return;
       }
       const ov = b.props.overflow?.value;
       if (ov && ov.x !== "visible") return;
+      b.children.forEach(visit);
+    };
+    boxes.forEach(visit);
+  }
+
+  // What the page scrolls (its scrollable overflow): the root's box, its bottom margin included, and
+  // every box in it a box around it doesn't clip or scroll (fixed boxes stay in the window).
+  const extent = { w: 0, h: 0 };
+  if (SB) {
+    const pageEnd = bodyPad.bottom ? bodyPad.bottom + bodyMargin.bottom : sum(join(strut(bodyMargin.bottom), body.empty ? NONE : body.bottom));
+    extent.h = outer.top + top + body.contentH + pageEnd + outer.bottom;
+    const visit = (b: Box) => {
+      if (b.props.position?.value.type === "fixed") return;
+      extent.w = Math.max(extent.w, b.x + b.w);
+      extent.h = Math.max(extent.h, b.y + b.h);
+      const ov = b.props.overflow?.value;
+      if ((ov && ov.x !== "visible") || b.props.contain?.value.paint) return;
       b.children.forEach(visit);
     };
     boxes.forEach(visit);
@@ -2196,6 +2291,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     issues,
     page: pageBg ? { background: model.tokens.get(`color.${pageBg.name}`)!.raw, path: pageBg.path } : undefined,
     notLaidOut: [...skippedEls.values()],
+    scrollbar: SB,
+    extent,
   };
 }
 

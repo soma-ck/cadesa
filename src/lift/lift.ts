@@ -446,7 +446,7 @@ export interface LiftInput {
   layerChildren: Map<string, Map<number, boolean>>;
   pageBackground?: Decl;
   /** The page's insets per side, as CSS lengths: the body's margin and padding, and the root element's (outer). */
-  pageSides?: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string; windowHeight?: number };
+  pageSides?: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string; overflowY?: string; windowHeight?: number };
   /** Records found before mapping (more are added). */
   unlifted: Unlifted[];
   resets: Map<string, Set<string>>;
@@ -1249,9 +1249,10 @@ export function liftElements(input: LiftInput): LiftResult {
   }
   // The body's margin and padding and the root element's insets: space tokens per side.
   const pageInsets: Record<string, unknown> = {};
-  const { overflow: pageOverflow, windowHeight, ...pageSides } = input.pageSides ?? {};
+  const { overflow: pageOverflow, overflowY: pageOverflowY, windowHeight, ...pageSides } = input.pageSides ?? {};
   if (windowHeight) pageInsets.windowHeight = windowHeight;
   if (pageOverflow) pageInsets.overflow = pageOverflow;
+  if (pageOverflowY) pageInsets.overflowY = pageOverflowY;
   for (const [k, sides] of Object.entries(pageSides)) {
     if (!sides || sides.every((v) => isZero(v))) continue;
     const t = sides.map((v) => (isZero(v) ? undefined : lengthToken("space", v, k === "margin")));

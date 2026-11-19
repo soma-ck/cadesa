@@ -25,6 +25,19 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   matching picks, and is as wide and as tall as that face's text. Chromium on Linux emboldens the
   outlines only (probed from 8 to 100px: advances and vertical metrics don't change), so such boxes,
   `≈` before ("weight 700 would be synthesized"), are exact.
+- Scroll containers (`overflow: auto` and `scroll`, `.table-responsive`) are exact. Scrollbar widths
+  are platform-specific, and the coverage line says which ones the prediction assumes wherever a box
+  shows one: by default overlay scrollbars, which take no space (macOS, phones, and the headless
+  Chromium `--verify` and the conformance suites run, which hides them), and with `--scrollbars
+  classic` (or `CADESA_SCROLLBARS=classic`) the 15px classic scrollbars of Chromium on Windows and
+  Linux desktops, which `--verify` then shows too. Classic scrollbars are laid out as Chromium does:
+  `scroll` always shows one; `auto` shows one when the content overflows that axis by half a pixel or
+  more (its children's border and margin boxes, the end padding and their own overflow), and the box
+  is laid out again with it (a vertical one narrows the content, which may then overflow sideways
+  and show a horizontal one too); a box sized by its content grows by it; the page's own scrollbars
+  narrow the window the page is laid out in (media queries and `vw` keep the whole window), unless
+  `html` or `body` hides the overflow. `conformance:bootstrap` goes from 62,315 to 68,858 exact boxes
+  of 69,310, all matching, with either kind of scrollbar.
 
 ## 0.1.18 (2026-11-19)
 

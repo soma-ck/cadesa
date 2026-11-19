@@ -165,10 +165,10 @@ function genCase(seed: number): { html: string; css: string; widths: number[] } 
     if (r.chance(0.2)) h += section("tbody", r.int(1, 2), false);
     if (r.chance(0.2)) h += section("tfoot", 1, false);
     h += `</${tag("table")}>`;
-    // Around it: nothing, a narrower or padded block, a flex row or column, or a grid.
-    const around = r.pick(["none", "none", "none", "width", "padding", "flex", "column", "grid"] as const);
+    // Around it: nothing, a narrower or padded block, a box it scrolls in (as .table-responsive), a flex row or column, or a grid.
+    const around = r.pick(["none", "none", "none", "width", "padding", "scroll", "flex", "column", "grid"] as const);
     const wrap =
-      around === "width" ? cls([`width: ${px(150, 600)}`]) : around === "padding" ? cls([`padding: ${px(0, 20)}`]) : around === "flex" ? cls(["display: flex", "gap: 8px"]) : around === "column" ? cls(["display: flex", "flex-direction: column"]) : around === "grid" ? cls(["display: grid", `grid-template-columns: ${r.pick(["1fr", "200px 1fr", "1fr 1fr"])}`, "gap: 8px"]) : "";
+      around === "width" ? cls([`width: ${px(150, 600)}`]) : around === "padding" ? cls([`padding: ${px(0, 20)}`]) : around === "scroll" ? cls(["overflow-x: auto", ...(r.chance(0.5) ? [`width: ${px(150, 500)}`] : []), ...(r.chance(0.3) ? [`height: ${px(40, 200)}`] : [])]) : around === "flex" ? cls(["display: flex", "gap: 8px"]) : around === "column" ? cls(["display: flex", "flex-direction: column"]) : around === "grid" ? cls(["display: grid", `grid-template-columns: ${r.pick(["1fr", "200px 1fr", "1fr 1fr"])}`, "gap: 8px"]) : "";
     const sibling = around === "flex" || around === "grid" ? `<div>${words(r, 1, 5)}</div>` : "";
     tables.push(wrap ? `<div class="${wrap}">${h}${sibling}</div>` : h);
   }

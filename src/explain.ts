@@ -56,6 +56,7 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   wrap: "layout",
   grow: "grow",
   overflow: "overflow",
+  scrollbar: "overflow",
   contain: "contain",
   position: "position",
   table: "layout",

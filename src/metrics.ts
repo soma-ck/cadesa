@@ -215,7 +215,9 @@ export type Browser = import("playwright-core").Browser;
 export async function launchChromium(): Promise<Browser> {
   const { chromium } = await import("playwright-core");
   try {
-    return await chromium.launch({ executablePath: findChrome() });
+    // Headless Chromium hides scrollbars (they take no space, as overlay ones); with classic ones they take 15px.
+    const classic = process.env.CADESA_SCROLLBARS === "classic";
+    return await chromium.launch({ executablePath: findChrome(), ...(classic && { ignoreDefaultArgs: ["--hide-scrollbars"] }) });
   } catch (e) {
     throw new Error(`could not start Chromium (${(e as Error).message.split("\n")[0]}); ${NEEDS_PLAYWRIGHT}`);
   }

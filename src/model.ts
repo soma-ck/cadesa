@@ -391,7 +391,7 @@ export interface Model {
    */
   /** Lifted on the fly from a page's CSS (or Tailwind): findings give their advice in CSS terms. */
   css?: boolean;
-  page?: { background?: Ref; path: string; margin?: PageSides; padding?: PageSides; outer?: PageSides; clipX?: boolean; windowHeight?: number };
+  page?: { background?: Ref; path: string; margin?: PageSides; padding?: PageSides; outer?: PageSides; clipX?: boolean; clipY?: boolean; windowHeight?: number };
 }
 
 /** Space tokens per side of the page (a missing side is 0). */
