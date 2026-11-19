@@ -299,7 +299,8 @@ describe("align-items: baseline", () => {
 describe("elements not laid out are counted", () => {
   it("children of a grid Cadesa has no pattern for, and the rows of a table", async () => {
     const { notLaidOut } = await import("../src/laidout.js");
-    const r = run(`<section class="g"><p>One</p><p>Two</p></section><table class="t"><tr><td>Cell</td></tr></table><p class="after">After</p>`, `p { margin: 0 } .g { display: grid; grid-template-columns: minmax(200px, 1fr) auto }`, [400]);
+    // (A collapsed row isn't modelled: the table is one box.)
+    const r = run(`<section class="g"><p>One</p><p>Two</p></section><table class="t"><tr><td>Cell</td></tr></table><p class="after">After</p>`, `p { margin: 0 } .g { display: grid; grid-template-columns: minmax(200px, 1fr) auto } .t tr { visibility: collapse }`, [400]);
     expect(r.layout().notLaidOut!.map((x) => x.tag)).toEqual(["p", "p"]);
     const c = notLaidOut(r.t, r.layouts)!;
     expect(c.count).toBe(5);

@@ -26,13 +26,14 @@ writeFileSync(
 </html>
 `,
 );
-writeFileSync(css, `body { margin: 0; font-family: Inter; font-size: 16px; line-height: 24px; background: #fff; color: #222 }\np { margin: 0 }\n.t { width: 200px }\n.pop { position: absolute; top: 0 }\n.gone { display: none }\n`);
+writeFileSync(css, `body { margin: 0; font-family: Inter; font-size: 16px; line-height: 24px; background: #fff; color: #222 }\np { margin: 0 }\n.t { width: 200px }\n.t tr + tr { visibility: collapse }\n.pop { position: absolute; top: 0 }\n.gone { display: none }\n`);
 
 describe("elements not laid out", () => {
   it("counts table contents and out-of-flow elements, not inline text, form internals or hidden ones", () => {
     const r = checkCmd({ fixture: page, css, widths: [400] });
     const nl = (r.data as { coverage: Coverage }).coverage.notLaidOut!;
-    // tbody, 2 tr, 4 td inside the table (the absolute panel is laid out in the window).
+    // tbody, 2 tr, 4 td inside the table, which is one box (a collapsed row isn't modelled); the
+    // absolute panel is laid out in the window.
     expect(nl.causes).toEqual([{ cause: "inside a table, laid out as one box", count: 7 }]);
     expect(nl.count).toBe(7);
     expect(r.text).toMatch(/! 7 of \d+ elements not laid out: inside a table, laid out as one box \(×7\);/);

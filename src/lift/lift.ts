@@ -677,9 +677,21 @@ export function liftElements(input: LiftInput): LiftResult {
           out.layout = { pattern: "grid", columns: all ? tracks.length : tracks, ...gapOf(), ...(a && a !== "stretch" && { align: a }), ...(j && j !== "stretch" && { justify: j }) };
         }
       }
+    } else if (display && display.value.trim() === "table") {
+      // A table: its border spacing is its gap (and row gap, when it differs).
+      const collapse = take("border-collapse")?.value.trim() === "collapse";
+      const sp = take("border-spacing");
+      const fixed = take("table-layout")?.value.trim() === "fixed";
+      const [h, v] = (sp ? sp.value.trim().split(/\s+/) : []).concat(sp ? [sp.value.trim().split(/\s+/)[0]] : []);
+      const tok = (x?: string) => (x && !isZero(x) ? lengthToken("space", x) : undefined);
+      const gap = tok(h);
+      const rowGap = v !== h ? (tok(v) ?? (gap ? lengthToken("space", "0px") : undefined)) : undefined;
+      out.layout = { pattern: "table", ...(gap && { gap }), ...(rowGap && { rowGap }), ...(collapse && { collapse: true }), ...(fixed && { fixed: true }) };
     } else if (display && !["block", "flow-root"].includes(display.value.trim())) {
       note(e, s, display, `display: ${display.value.trim()} has no Cadesa pattern`, "geometry");
     }
+    const part = take("table-part");
+    if (part) out.part = part.value.trim();
     for (const p of ["flex-direction", "flex-wrap", "align-items", "justify-content", "row-gap", "column-gap"]) {
       const d = take(p);
       // On a block container (Bootstrap's .navbar-collapse once .show makes it display: block) they do nothing.

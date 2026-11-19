@@ -136,12 +136,17 @@ describe("Angular + Bootstrap pages through --css", () => {
     expect([ro.w, ro.h]).toEqual([0, 0]);
   });
 
-  it("gives a list-group item's text its anonymous flex item, and a table one box of unknown height", () => {
+  it("gives a list-group item's text its anonymous flex item, and lays a .table out as a table", () => {
     const l = render(modelOf(loadSource("d.yaml", dash.yaml)), dash.fixtureAt(1280), [1280])[0];
     const all = [...walk(l.boxes)];
     expect(all.find((b) => b.id === "text")?.anonymous).toBe(true);
-    expect(all.find((b) => b.id === "table")!.children).toEqual([]);
-    expect(dash.lifted.unlifted.find((u) => u.decl === "display: table")?.kind).toBe("height");
+    const table = all.find((b) => b.id === "table")!;
+    expect(table.props.pattern?.value).toBe("table");
+    expect(table.props.table?.value.collapse).toBe(true);
+    // thead and tbody, their rows and cells.
+    expect(table.children.map((b) => b.tag)).toEqual(["thead", "tbody"]);
+    expect(table.children[1].children.map((r) => r.children.length)).toEqual([4, 4, 4]);
+    expect(dash.lifted.unlifted.some((u) => u.decl === "display: table")).toBe(false);
   });
 
   it("predicts Bootstrap's form controls: one line of line-height plus padding and border", () => {

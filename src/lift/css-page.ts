@@ -42,7 +42,12 @@ h3 { font-size: 1.17em; margin-top: 1em; margin-bottom: 1em; font-weight: bold }
 h4 { margin-top: 1.33em; margin-bottom: 1.33em; font-weight: bold }
 h5 { font-size: 0.83em; margin-top: 1.67em; margin-bottom: 1.67em; font-weight: bold }
 h6 { font-size: 0.67em; margin-top: 2.33em; margin-bottom: 2.33em; font-weight: bold }
-th { font-weight: bold }
+table { border-collapse: separate; border-spacing: 2px; box-sizing: border-box }
+thead, tbody, tfoot { vertical-align: middle }
+tr, td, th { vertical-align: inherit }
+td, th { padding: 1px }
+th { font-weight: bold; text-align: center }
+caption { text-align: center }
 hr { margin: 0.5em auto; border-width: 1px; border-style: inset; color: #808080; overflow: hidden }
 a:any-link { color: #0000ee; text-decoration: underline }
 pre, code, kbd, samp, tt { font-family: monospace }
