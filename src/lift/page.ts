@@ -25,6 +25,7 @@ import { lineHeightPx } from "../engine/layout.js";
 import { metricsFor } from "../engine/text.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
 import { containsLayout, parseContain, type Contain } from "../model.js";
+import { individual, originOf, transformList } from "../engine/transform.js";
 import { firstFamily } from "../fonts.js";
 import type { Decl } from "./css.js";
 import { linesOf } from "./impact.js";
@@ -1899,6 +1900,7 @@ export abstract class PageLifter {
       // positioned box, which Cadesa places by its positioned (or contained) ancestor or the window.
       const trap = abs ? this.transformedContainer(el, si) : undefined;
       if (trap) this.note(el, si, { decl: trap, reason: "a transform, filter or will-change on an ancestor makes it this box's containing block, which isn't modelled", kind: "geometry" });
+      this.transformDecls(el, si, decl, handled);
       // Everything else the element sets on itself.
       for (const [p, o] of own) {
         if (handled.has(p) || skipProp(p)) continue;
@@ -2051,6 +2053,48 @@ export abstract class PageLifter {
         this.inlineContent(el, si);
       }
     });
+  }
+
+  /**
+   * transform, translate, rotate, scale and transform-origin as one 2D transform (the individual
+   * properties first, in that order, then transform), with em in px. They don't apply to a
+   * non-atomic inline box. What isn't a 2D map Cadesa can draw (3D rotations, perspective, math
+   * it can't resolve) is left to the generic path, which notes it.
+   */
+  transformDecls(el: El, si: number, decl: (p: string, v: string, u: string) => void, handled: Set<string>) {
+    const own = el.own[si];
+    const PROPS = ["translate", "rotate", "scale", "transform"] as const;
+    const set = PROPS.filter((p) => own.has(p));
+    if (!set.length && !own.has("transform-origin")) return;
+    const val = (p: string) => {
+      const o = own.get(p);
+      if (!o) return undefined;
+      const v = this.resolveBox(el, si, o.value);
+      return v === undefined ? undefined : absolute(v.replace(/(^|[\s(,*/+-])(-?\d*\.?\d+)rem\b/g, (_, pre, n) => `${pre}${fmtNum(parseFloat(n) * 16)}px`));
+    };
+    if (this.displayOf(el, si) === "inline" && !el.asBlock[si] && el.inlineLine?.[si] === undefined) {
+      for (const p of [...PROPS, "transform-origin"]) handled.add(p);
+      return;
+    }
+    const parts: string[] = [];
+    for (const p of set) {
+      const v = val(p);
+      if (v === undefined || v === "") continue;
+      if (identityTransform(p, v)) continue;
+      const fn = p === "transform" ? v : individual(p, v);
+      if (fn === undefined || (fn && !transformList(fn, 100, 100))) return;
+      if (fn) parts.push(fn);
+    }
+    const origin = val("transform-origin");
+    if (origin !== undefined && !originOf(origin, 100, 100)) {
+      if (!parts.length) for (const p of [...PROPS, "transform-origin"]) handled.add(p);
+      return;
+    }
+    for (const p of [...PROPS, "transform-origin"]) handled.add(p);
+    if (!parts.length) return;
+    const utility = (own.get("transform") ?? own.get("rotate") ?? own.get("translate") ?? own.get("scale"))!.utility;
+    decl("transform", parts.join(" "), utility);
+    if (origin) decl("transform-origin", origin, own.get("transform-origin")!.utility);
   }
 
   /**

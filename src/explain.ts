@@ -25,6 +25,7 @@ export interface Explanation {
 
 const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   pattern: "layout",
+  transform: "transform",
   gap: "layout",
   align: "layout",
   min: "layout",

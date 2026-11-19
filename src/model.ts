@@ -143,7 +143,7 @@ export interface MarginProp {
 }
 
 /** Props an override can remove (`maxWidth: none`): the element is then as if it never had them. */
-export const UNSETTABLE = ["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow"] as const;
+export const UNSETTABLE = ["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow", "transform"] as const;
 export type Unsettable = (typeof UNSETTABLE)[number];
 
 export interface Props {
@@ -199,6 +199,12 @@ export interface Props {
    * widths). style never moves a box. none: in a breakpoint override, no containment.
    */
   contain?: Contain & { raw: string; path: string };
+  /**
+   * A 2D transform (CSS transform functions; translate, rotate and scale first) about `origin`
+   * (transform-origin, default its center). It moves nothing else: the box and what is inside it
+   * are drawn mapped by it.
+   */
+  transform?: { value: string; origin?: string; path: string };
   /** Removed by this override (`maxWidth: none`), with the YAML path. */
   unset?: Partial<Record<Unsettable, string>>;
 }
@@ -261,6 +267,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "overflow",
   "position",
   "contain",
+  "transform",
 ];
 
 export interface Slot {

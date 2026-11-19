@@ -127,6 +127,8 @@ export interface ResolvedProps {
   overflow?: Resolved<{ x: Overflow; y: Overflow }>;
   /** Containment (see Props.contain). */
   contain?: Resolved<Contain>;
+  /** A 2D transform about its origin (CSS transform and transform-origin): where the box and its content are drawn. */
+  transform?: Resolved<{ list: string; origin?: string }>;
   /** Positioning and its offsets (px, or a percentage of the containing block). */
   position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct; height?: number | Pct }>;
   fit?: Resolved<"cover" | "contain">;
@@ -314,6 +316,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "overflow": {
         const o = p.overflow!;
         out.overflow = { value: { x: o.x, y: o.y }, display: o.raw, steps: [...pre, src(o.path)] };
+        break;
+      }
+      case "transform": {
+        const t = p.transform!;
+        out.transform = { value: { list: t.value, ...(t.origin && { origin: t.origin }) }, display: `${t.value}${t.origin ? ` about ${t.origin}` : ""}`, steps: [...pre, src(t.path)] };
         break;
       }
       case "contain": {

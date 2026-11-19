@@ -145,13 +145,13 @@ describe("lone buttons on their line, and transforms (fixtures/css/inline.html, 
     expect(unsure.has("short-slot")).toBe(true);
   });
 
-  it("marks a transformed box, and keeps a tap-target finding on it inconclusive", () => {
-    expect(imp.uncertain.find((u) => u.id === "nudged")?.reasons.find((r) => !r.startsWith("moved by"))).toMatch(/transform: translateY\(6px\): transform is not modelled/);
+  it("draws a transformed box where Chromium does, so a tap-target finding on it is definite", () => {
+    expect(imp.uncertain.find((u) => u.id === "nudged")?.reasons.find((r) => !r.startsWith("moved by"))).toBeUndefined();
     // Two elements of a tag on one source line: each gets its own records.
     expect(unsure.has("plain")).toBe(false);
     const tap = check([l], [imp]).filter((x) => x.check === "tap-target" && x.id === "nudged");
     expect(tap.length).toBe(1);
-    expect(tap[0].inconclusive).toBe(true);
+    expect(tap[0].inconclusive).toBeFalsy();
   });
 });
 

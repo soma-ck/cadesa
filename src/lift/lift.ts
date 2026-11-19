@@ -14,6 +14,7 @@ import { classify } from "./selectors.js";
 import { validate } from "../validate.js";
 import { lengthExpr } from "../fluid.js";
 import { parseContain } from "../model.js";
+import { originOf, transformList } from "../engine/transform.js";
 
 /**
  * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
@@ -271,7 +272,7 @@ export function parseFlex(v: string): { grow: number; shrink: number; basis: str
   return undefined;
 }
 
-const UNSETTABLE_PROPS = new Set(["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow"]);
+const UNSETTABLE_PROPS = new Set(["padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "minHeight", "aspect", "grow", "transform"]);
 
 // ---------------------------------------------------------------- the lift
 
@@ -852,6 +853,16 @@ export function liftElements(input: LiftInput): LiftResult {
       const ok = (v?: string) => !!v && ["visible", "hidden", "clip", "auto", "scroll"].includes(v);
       if (!ok(x) || !ok(y)) note(e, s, (!ok(x) ? ox : oy)!, "overflow must be visible, hidden, clip, auto or scroll", "geometry");
       else if (x !== "visible" || y !== "visible") out.overflow = x === y ? x : { x, y };
+    }
+    // A 2D transform about its origin: where the box and its content are drawn (nothing else moves).
+    const tf = take("transform");
+    const to = take("transform-origin");
+    if (tf) {
+      const list = resolveVar(tf.value)?.raw.trim();
+      const origin = to ? resolveVar(to.value)?.raw.trim() : undefined;
+      if (list && list !== "none" && transformList(list, 100, 100) && (origin === undefined || originOf(origin, 100, 100)))
+        out.transform = origin && !/^(50%|center)(\s+(50%|center))?$/.test(origin) ? { value: list, origin } : list;
+      else if (list !== "none") note(e, s, tf, "only 2D transforms (in px or %) are modelled", "visual");
     }
     // contain: layout and paint make an independent formatting context, size sizes the box as if empty.
     const ct = take("contain");

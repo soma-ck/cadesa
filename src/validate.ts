@@ -1,5 +1,6 @@
 import { closest, type Diagnostic } from "./diagnostics.js";
 import { lengthExpr } from "./fluid.js";
+import { originOf, transformList } from "./engine/transform.js";
 import type { PathSeg, Source } from "./load.js";
 import {
   DEFAULT_PREFIX,
@@ -692,6 +693,23 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const fix = (a: Overflow, other: Overflow): Overflow => (scrolling(other) && !scrolling(a) ? (a === "visible" ? "auto" : "hidden") : a);
           [x, y] = [fix(x, y), fix(y, x)];
           out.overflow = { x, y, raw: x === y ? x : `x ${x}, y ${y}`, path: p.join(".") };
+          break;
+        }
+        case "transform": {
+          // transform: "rotate(3deg)", or { value: "translate(-50%, 0) scale(1.2)", origin: "left top" }.
+          const o = isObj(v) ? v : { value: v };
+          if (isObj(v)) keys(v, p, ["value", "origin"]);
+          const list = typeof o.value === "string" ? o.value.trim() : undefined;
+          const origin = typeof o.origin === "string" ? o.origin.trim() : o.origin === undefined ? undefined : null;
+          if (!list || !transformList(list, 100, 100)) {
+            err(isObj(v) ? [...p, "value"] : p, "invalid transform", { expected: 'CSS 2D transform functions in px or %, e.g. "rotate(3deg)" or "translate(-50%, 0) scale(1.2)"', got: o.value });
+            break;
+          }
+          if (origin === null || (origin !== undefined && !originOf(origin, 100, 100))) {
+            err([...p, "origin"], "invalid transform origin", { expected: 'a transform-origin in keywords, px or %, e.g. "left top" or "50% 0"', got: o.origin });
+            break;
+          }
+          out.transform = { value: list, ...(origin && { origin }), path: p.join(".") };
           break;
         }
         case "contain": {

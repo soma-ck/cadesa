@@ -13,6 +13,7 @@ import type { Fixture, FixtureNode } from "../fixture.js";
 import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
 import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
+import { boxMatrix, mapRect, multiply, type Matrix } from "./transform.js";
 
 const EPS = 0.001;
 
@@ -1540,6 +1541,21 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const parentOf = new Map<Box, Box>();
   for (const b of walk(boxes)) for (const k of b.children) parentOf.set(k, b);
   placeAbsolute(parentOf, pageX, outer.top + (bodyPad.top ? bodyMargin.top + bodyPad.top : 0));
+
+  // Transforms: each transformed box, and everything inside it, is drawn mapped by its matrix (and
+  // its ancestors'); its rectangle is the bounding box of its mapped corners. Nothing else moves.
+  const drawTransformed = (b: Box, acc: Matrix | undefined) => {
+    const t = b.props.transform?.value;
+    let m = acc;
+    const own = t ? boxMatrix(t.list, t.origin, b.w, b.h) : undefined;
+    if (own) {
+      const local = multiply(multiply([1, 0, 0, 1, b.x, b.y], own), [1, 0, 0, 1, -b.x, -b.y]);
+      m = acc ? multiply(acc, local) : local;
+    }
+    for (const k of b.children) drawTransformed(k, m);
+    if (m) Object.assign(b, (({ x, y, w, h }) => ({ x, y, w, h }))(mapRect(m, b.x, b.y, b.w, b.h)));
+  };
+  for (const b of boxes) drawTransformed(b, undefined);
 
   // Uncertainty spreads: a box the engine can't guarantee (an assumption, an error, an element it
   // skipped) may have a different size, which moves its later siblings (every sibling in a cluster,

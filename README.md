@@ -19,7 +19,7 @@ What "matches Chromium" means here: every box Cadesa marks as exact matches Chro
 ```console
 $ cadesa check fixtures/verify/page.html --css fixtures/verify/page.css --widths 400,800
 coverage: 7 boxes × 2 widths · 86% exact · 14% approximate (≈)
-  ≈ because: transform: scale(3): transform isn't modelled (×2)
+  ≈ because: transform: perspective(100px) translateZ(60px): only 2D transforms (in px or %) are modelled (×2)
 
 ✖ [contrast] <p.note> text #999999 on #ffffff is 2.85:1; WCAG AA needs 4.5:1 · at 400, 800px
     element: fixtures/verify/page.html:11 <p class="note"> "Muted text, too light to read."
@@ -40,7 +40,7 @@ How to read it:
 
 - **The coverage line comes first.** It says how much of the page Cadesa predicted exactly, and why the rest is `≈`. When most of a page is `≈`, it says so, and you should treat the report as leads. Elements a browser shows that Cadesa doesn't lay out at all (the rows of a table, which is one box; anything absolutely positioned or floated) are counted under it, `! 31 of 77 elements not laid out: inside a table, laid out as one box (×31)`: nothing is checked there.
 - **`✖` and `⚠` are definite.** Act on them: each names the element, the widths and the rule to change. Contrast, text that runs together and other checks that don't depend on exact positions stay definite even on a mostly `≈` page.
-- **`?` is inconclusive.** The finding depends on a box Cadesa can't predict exactly. Here `.zoomed` is drawn at `scale(3)`, so it is really 60×60px. Confirm it in a browser, or add `--verify` and Chromium decides.
+- **`?` is inconclusive.** The finding depends on a box Cadesa can't predict exactly. Here `.zoomed` is drawn 2.5 times its size by a 3D transform (`perspective(100px) translateZ(60px)`), so it is really 50×50px. Confirm it in a browser, or add `--verify` and Chromium decides.
 - **`whatif` follows the same rule.** It only says "unchanged" for boxes predicted exactly.
 
 ## What Cadesa sees
@@ -128,7 +128,7 @@ not reproduced in Chromium (no problem there at the widths it loaded):
 ○ [tap-target] <button.zoomed> is 20×20px; WCAG 2.5.8 needs at least 24×24px · at 400, 800px
     element: fixtures/verify/page.html:10 <button class="zoomed"> "+"
     size: fixtures/verify/page.css:33 .zoomed { width: 20px; height: 20px }
-    chromium: not reproduced at 400, 800px (60×60px)
+    chromium: not reproduced at 400, 800px (50×50px)
 
 2 errors, 1 warning, 1 not reproduced in Chromium (distinct issues across 400, 800px)
 verified in Chromium 153.0.8010.52 at 2 widths (2 with findings, 0 without)
