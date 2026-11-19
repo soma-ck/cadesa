@@ -85,6 +85,7 @@ function genCase(seed: number): { html: string; css: string; widths: number[] } 
     if (r.chance(0.2)) out.push(`text-align: ${r.pick(["center", "right", "left"])}`);
     return out;
   };
+  css.push(".blk { height: 18px; background: #ddd }");
   css.push(".pill { display: inline-block; padding: 2px 6px; font-size: 12px; line-height: 1.5; border-radius: 4px; background: #eee }");
   css.push(".dt { display: table } .dcap { display: table-caption } .dhead { display: table-header-group } .dbody { display: table-row-group } .dfoot { display: table-footer-group } .drow { display: table-row } .dcell { display: table-cell }");
   const tables: string[] = [];
@@ -150,7 +151,7 @@ function genCase(seed: number): { html: string; css: string; widths: number[] } 
           if (r.chance(0.05)) decls.push(r.chance(0.5) ? "max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" : `max-width: ${px(20, 160)}`);
           const cc = dcls("td", cls(decls));
           const t = tag(th ? "th" : "td");
-          const content = r.chance(0.08) ? "" : r.chance(0.15) ? `<div>${words(r, 1, 6)}</div><div>${words(r, 1, 6)}</div>` : r.chance(0.06) ? `<span class="pill">${words(r, 1, 2)}</span>` : words(r, 0, r.chance(0.3) ? 14 : 4) || "x";
+          const content = r.chance(0.08) ? "" : r.chance(0.15) ? `<div>${words(r, 1, 6)}</div><div>${words(r, 1, 6)}</div>` : r.chance(0.06) ? `<span class="pill">${words(r, 1, 2)}</span>` : r.chance(0.04) ? `<div class="blk"></div>` : words(r, 0, r.chance(0.3) ? 14 : 4) || "x";
           const ca = attrs("td", [r.chance(0.05) ? ` width="${r.chance(0.7) ? r.int(20, 150) : `${r.int(5, 40)}%`}"` : "", r.chance(0.05) ? ` valign="${r.pick(["top", "bottom", "middle", "baseline"])}"` : "", r.chance(0.04) ? " nowrap" : ""].join(""));
           s += `<${t}${cc ? ` class="${cc}"` : ""}${colspan > 1 ? ` colspan="${colspan}"` : ""}${rowspan !== 1 ? ` rowspan="${rowspan}"` : ""}${ca}>${content}</${t}>`;
           c += colspan;

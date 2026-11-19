@@ -1200,7 +1200,8 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
     if (cell.align === "baseline") {
       const bl = firstBaseline(h, box);
       if (bl === "unknown") heightDoubt(`a cell aligned to its row's baseline whose first line's baseline isn't known (<${cell.k.node.tag}> #${box.id})`);
-      else baseline = bl;
+      // No line inside: its baseline is its content box's bottom (FinalizeTableCellLayout), if it has content at all.
+      else baseline = bl ?? (hasContent(box) ? natural - U(insets(box.props).bottom) : undefined);
     }
     if (box.props.heightPct || box.children.some((k) => k.props.heightPct)) heightDoubt(`a percentage height inside a table cell isn't modelled (#${box.id})`);
     return { cell, box, natural, ...(baseline !== undefined && { baseline }) };
