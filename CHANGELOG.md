@@ -20,6 +20,10 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
 ## Unreleased
 
+- `cadesa metrics` measures fonts with contextual alternates almost everywhere (Caveat, and Inter 4
+  as Google Fonts serves it) instead of failing with "Set maximum size exceeded": the search for
+  runs the font shapes in context is bounded, and a table where it stopped short says so; text in
+  that font is then marked `≈`.
 - Percentage padding and margins are laid out: of the containing block's width on every side, also
   inside `calc()`, `min()`, `max()` and `clamp()` (`padding: 4% 7% 6%`, `margin: 0 auto 5%`). In
   intrinsic sizes they count as 0, as in Chromium; a flex item or an absolutely positioned box adds

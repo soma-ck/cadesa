@@ -336,6 +336,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // "*" and "@" differently between capitals, and "x" between digits as "×".
     const contextual = /[*@<>\\]/.test(shown) ? shown.match(/[*@<>\\]/)![0] : /\d ?[xX] ?\d/.test(shown) ? "x between digits" : undefined;
     if (contextual) assumptions.push(`text width is approximate: "${contextual}" has contextual forms that Cadesa doesn't measure`);
+    else if (m!.info.contextualIncomplete && /\S/.test(shown))
+      assumptions.push(`text width is approximate: font "${m!.family}" shapes more runs in context (contextual alternates) than were measured`);
     // Whether a hanging space's kerning counts at a line end depends on the block that holds the
     // line: not when it paints a background, border or shadow (the text box itself; a <p> inside it
     // is its own, unpainted block) or its text is underlined. Under an underlined inline element

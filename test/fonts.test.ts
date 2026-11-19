@@ -9,6 +9,7 @@ import { fontFileInfo } from "../src/fontfile.js";
 import { fontReport, fontUses, googleFamilies, googleWeights, pageFontSources } from "../src/fonts.js";
 import { loadSourceFile } from "../src/load.js";
 import { parseFixture } from "../src/fixture.js";
+import { run } from "./lift-page.js";
 import { CHARS, metricsFileName, readMetrics, writeMetrics, type MetricsFile } from "../src/metrics.js";
 import { modelOf, render } from "../src/project.js";
 
@@ -60,6 +61,17 @@ describe("custom font metrics", () => {
     writeMetrics(f, dir);
     process.env.CADESA_METRICS = dir;
     expect(metricsFor("Only Regular")!.weightIssue(700)).toMatch(/synthesized from the 400 face/);
+  });
+
+  it("measures text as approximate in a font whose contextual forms weren't all measured", () => {
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-"));
+    writeMetrics({ ...fake([400]), family: "Hand Script", contextualIncomplete: true }, dir);
+    writeMetrics({ ...fake([400]), family: "Plain Script" }, dir);
+    process.env.CADESA_METRICS = dir;
+    expect(metricsFor("Hand Script")!.info.contextualIncomplete).toBe(true);
+    const r = run(`<p id="b" style="font-family: 'Plain Script'">Printed note</p><p id="a" style="font-family: 'Hand Script'">Handwritten note</p>`, `p { margin: 0 }`);
+    expect(r.approx("a")).toMatch(/shapes more runs in context/);
+    expect(r.approx("b")).toBeUndefined();
   });
 
   it("ignores a metrics file whose family doesn't match", () => {

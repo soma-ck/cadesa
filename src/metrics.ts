@@ -77,6 +77,12 @@ export interface MetricsFile {
    */
   contextual?: Record<string, Record<string, number>>;
   /**
+   * Set when the font shapes more runs in context than the measurement looked at (a handwriting
+   * font's contextual alternates): `contextual` is left empty, and text in the font is measured
+   * as approximate.
+   */
+  contextualIncomplete?: boolean;
+  /**
    * Vertical metrics as Chromium uses them (its font's ascent, descent, line gap and x-height),
    * measured at a font size of `size` px (the units per em, so they are whole font units), per
    * face weight (a variable font: at 400). Chromium rounds the ascent, descent and line gap to
@@ -127,6 +133,14 @@ export interface MetricsFace {
 
 const UNITS = 1_000_000;
 const SIZE = 1000;
+/**
+ * How many runs of one length the contextual-forms search measures per weight, at most (a Set
+ * holds 2^24). Fonts with a few contextual forms stay well below it. A handwriting font with
+ * contextual alternates on almost every pair (Caveat) would need billions, and so does Inter 4 from
+ * Google Fonts (21,816 runs of three characters differ at weight 100, 46,200 of four, 85,299 of
+ * five, past 34 million candidates of six): their tables say they are incomplete.
+ */
+const RUN_BUDGET = 4_000_000;
 const range = (a: number, b: number) => Array.from({ length: b - a + 1 }, (_, i) => String.fromCodePoint(a + i));
 const EXTRA = ["\u2018", "\u2019", "\u201C", "\u201D", "\u2013", "\u2014", "\u2026", "\u2022", "\u20AC", "\u2122", "\u202F", "\u2009", "\u2007"];
 export const CHARS = [...range(0x20, 0x7e), ...range(0xa0, 0xff), ...EXTRA].join("");
@@ -228,7 +242,7 @@ export async function generateMetrics(opts: {
         `@font-face{font-family:"__cadesa_fb";font-weight:100 900;src:url(data:font/woff2;base64,${fb}) format("woff2")}</style>`,
     );
     // Passed as a string so bundlers/transpilers can't inject helpers that don't exist in the page.
-    const result = (await page.evaluate(`(async ({ ALL, STD, WEIGHTS, SIZE, UNITS, FAMILY, FAMS }) => {
+    const result = (await page.evaluate(`(async ({ ALL, STD, WEIGHTS, SIZE, UNITS, RUN_BUDGET, FAMILY, FAMS }) => {
       const ctx = document.createElement("canvas").getContext("2d");
       ctx.fontKerning = "normal";
       const W0 = WEIGHTS[0];
@@ -246,6 +260,7 @@ export async function generateMetrics(opts: {
       const small = widthIn(W0 + " 12px " + FAMILY, sample) * (SIZE / 12);
       const scales = Math.abs(big - small) / big < 2e-4;
       const advances = {}, kerning = {}, kerningSpaced = {}, contextual = {};
+      let incomplete = false;
       for (const w of WEIGHTS) {
         await document.fonts.load(w + " " + SIZE + "px " + FAMILY);
         ctx.font = w + " " + SIZE + "px " + FAMILY;
@@ -284,22 +299,39 @@ export async function generateMetrics(opts: {
           for (let n = 3; n < cs.length; n++) for (let i = 0; i + n <= cs.length; i++) u += cx[cs.slice(i, i + n).join("")] ?? 0;
           return u;
         };
+        // The search is bounded: a font that shapes almost every run in context (a handwriting
+        // font's contextual alternates) would otherwise grow it past what a Set can hold. Past the
+        // budget the table says it is incomplete, keeps no runs, and text in it is measured as
+        // approximate.
+        let budget = RUN_BUDGET;
+        let over = false;
+        const grow = (into, s) => {
+          for (const c of kc) {
+            if (budget <= 0) return void (over = true);
+            if (!into.has(s + c)) (into.add(s + c), budget--);
+            if (!into.has(c + s)) (into.add(c + s), budget--);
+          }
+        };
         let frontier = new Set();
-        for (const p of Object.keys(ks)) for (const c of kc) (frontier.add(p + c), frontier.add(c + p));
-        for (let n = 3; n <= 6 && frontier.size; n++) {
+        if (!incomplete) for (const p of Object.keys(ks)) grow(frontier, p);
+        for (let n = 3; n <= 6 && frontier.size && !over; n++) {
           const next = new Set();
+          budget = RUN_BUDGET;
           for (const s of frontier) {
             const d = units(s) - model(s);
             // Ten millionths of an em: well above rounding, well below any real difference.
             if (Math.abs(d) > 10) {
               cx[s] = d;
-              for (const c of kc) (next.add(s + c), next.add(c + s));
+              if (n < 6) grow(next, s);
             }
           }
           frontier = next;
         }
+        if (over) incomplete = true;
         contextual[w] = cx;
       }
+      // An incomplete search measures nothing exactly: keep no runs (they would only make the table large).
+      if (incomplete) for (const w of WEIGHTS) contextual[w] = {};
       let fine;
       if (WEIGHTS.length > 1 && FAMILY === "__cadesa") {
         const from = WEIGHTS[0], to = WEIGHTS[WEIGHTS.length - 1];
@@ -357,8 +389,8 @@ export async function generateMetrics(opts: {
         }
       }
       const loaded = FAMILY === "__cadesa" ? document.fonts.check(W0 + " 16px __cadesa") : resolved !== undefined;
-      return { chars: CHARS, missing: missing.join(""), scales, advances, kerning, kerningSpaced, contextual, fine, loaded, resolved };
-    })(${JSON.stringify({ ALL: [...new Set([...CHARS, ...[...(opts.extra ?? "")].slice(0, 512)])].join(""), STD: CHARS, WEIGHTS: weights, SIZE, UNITS, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()) })})`)) as {
+      return { chars: CHARS, missing: missing.join(""), scales, advances, kerning, kerningSpaced, contextual, incomplete, fine, loaded, resolved };
+    })(${JSON.stringify({ ALL: [...new Set([...CHARS, ...[...(opts.extra ?? "")].slice(0, 512)])].join(""), STD: CHARS, WEIGHTS: weights, SIZE, UNITS, RUN_BUDGET, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()) })})`)) as {
       resolved?: string;
       chars: string;
       missing: string;
@@ -367,6 +399,7 @@ export async function generateMetrics(opts: {
       kerning: Record<string, Record<string, number>>;
       kerningSpaced: Record<string, Record<string, number>>;
       contextual: Record<string, Record<string, number>>;
+      incomplete: boolean;
       fine?: MetricsFile["fine"];
       loaded: boolean;
     };
@@ -400,6 +433,7 @@ export async function generateMetrics(opts: {
       kernChars: result.chars,
       ...(result.fine && { fine: result.fine }),
       ...(Object.values(result.contextual).some((c) => Object.keys(c).length) && { contextual: result.contextual }),
+      ...(result.incomplete && { contextualIncomplete: true }),
       vertical,
     };
     const upm = (bytes && fontFileInfo(bytes)?.unitsPerEm) || unitsPerEm(m);
@@ -490,6 +524,7 @@ export function writeMetrics(m: MetricsFile, dir: string, opts: { gzip?: boolean
           : { vertical: undefined }),
         ...(files.length && { files }),
         ...(missing && { missing }),
+        ...((prev.contextualIncomplete || cur.contextualIncomplete) && { contextualIncomplete: true }),
       };
       delete out.upm;
       const upm = prev.upm && prev.upm === cur.upm ? cur.upm : unitsPerEm(out);

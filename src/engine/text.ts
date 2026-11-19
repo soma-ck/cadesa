@@ -24,6 +24,8 @@ export interface MetricsInfo {
   files?: MetricsFace[];
   /** Set for a font measured as installed on one machine (a system font). */
   machineSpecific?: string;
+  /** The font shapes more runs in context than were measured (contextualIncomplete): its text widths are approximate. */
+  contextualIncomplete?: boolean;
 }
 
 const BUNDLED = fileURLToPath(new URL("../../fonts/", import.meta.url));
@@ -188,6 +190,7 @@ function load(file: string): FontMetrics {
       weights: m.weights,
       ...(m.files && { files: m.files }),
       ...(m.machineSpecific && { machineSpecific: m.machineSpecific }),
+      ...(m.contextualIncomplete && { contextualIncomplete: true }),
     },
     unsupported: (text) => [...new Set([...text].filter((c) => !index.has(c)))],
     ligatureIn(text) {
