@@ -34,6 +34,14 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   layout unit. In a source: a size token such as `"min(440px, 100%)"`. With `box-sizing:
   content-box` and padding or a border, it stays `≈`; so do percentages inside `height`, padding
   and margins.
+- A grid's percentage `row-gap` is laid out as Chromium does it: of a set height, a length; with
+  an auto height, the rows are sized without it, then placed that percentage of the grid's final
+  content height apart (they overflow it). A grid of one row has no row gap to place, and a flex
+  container with a set height takes its percentage row gap of it. In a source: a grid's `rowGap`
+  may name a percentage size token. A grid whose height may be stretched, or with a min-height or
+  max-height (and more than one row), stays `≈`.
+- A top or bottom `auto` margin is 0 in block flow and in a column flexbox with no free space. A
+  transform that moves nothing (`translateZ(0)`, `scale(1)`) is no longer `≈`.
 
 ## 0.1.12 (2026-11-19)
 

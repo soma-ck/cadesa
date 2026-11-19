@@ -469,7 +469,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             err([...p, "rowGap"], "rowGap only applies to a grid or a cluster (the gap between its rows)", { expected: "remove rowGap, or use gap" });
             break;
           }
-          const rowGap = l.rowGap === undefined ? undefined : spaceRef(l.rowGap, [...p, "rowGap"], "a gap");
+          // A grid's gap between rows may be a percentage of its height (a size token): 0 while its rows are sized, then of its final height.
+          const pctRowGap = typeof l.rowGap === "string" && l.pattern === "grid" && tokens.get(tokenKey("size", l.rowGap))?.pct !== undefined && !tokens.has(tokenKey("space", l.rowGap));
+          const rowGap = l.rowGap === undefined ? undefined : pctRowGap ? ref(l.rowGap, [...p, "rowGap"], "size") : spaceRef(l.rowGap, [...p, "rowGap"], "a gap");
           if (l.rowGap !== undefined && !rowGap) break;
           if (l.align !== undefined && (l.pattern === "stack" || l.pattern === "flow" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
             err([...p, "align"], l.pattern === "stack" || l.pattern === "flow" ? `align doesn't apply to a ${l.pattern} (its children always stretch)` : "invalid align", {

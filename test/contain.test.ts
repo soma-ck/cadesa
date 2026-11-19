@@ -5,6 +5,7 @@
  */
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { identityTransform } from "../src/lift/page.js";
 import { parseContain } from "../src/model.js";
 import { run } from "./lift-page.js";
 
@@ -28,6 +29,7 @@ describe("contain values", () => {
 
 describe("containment", () => {
   const r = fixture("contained");
+  const wide = r;
 
   it("lays out the page exactly", () => expect(r.exact()).toBe(true));
 
@@ -69,7 +71,7 @@ describe("containment", () => {
   });
 
   it("widths with percentages in min(), max(), clamp() and calc() are of the containing block", () => {
-    const wide = fixture("contained");
+
     const at = (w: number) => run(readFileSync("fixtures/css/contained.html", "utf8").replace(/^[\s\S]*<body>|<\/body>[\s\S]*$/g, ""), readFileSync("fixtures/css/contained.css", "utf8"), [w], { bare: true });
     const big = at(1300);
     expect(wide.exact()).toBe(true);
@@ -88,6 +90,29 @@ describe("containment", () => {
     // max-width: min(36rem, 90%), centered.
     expect(geo(wide.box("capped"))).toEqual([34.406, 1004, 331.188, 24]);
     expect(geo(big.box("capped"))).toEqual([362, 764, 576, 24]);
+  });
+
+  it("a grid's percentage row gap: 0 while an auto-height grid sizes its rows, then of its final height", () => {
+    // 120px of rows (48 + 48 + 24) with no gap; then 8% of 120 = 9.6, cut to 9.594: the rows overflow.
+    expect(geo(wide.box("gallery"))).toEqual([16, 1044, 368, 120]);
+    expect(wide.box("cell-3").y - wide.box("cell").y).toBe(48 + 9.59375);
+    expect(geo(wide.box("cell-5"))).toEqual([16, 1159.188, 178, 24]);
+    // One column with padding: 6% of the 72px content height.
+    expect(wide.box("cell-7").y - wide.box("cell-6").y).toBe(24 + 4.3125);
+    // A set height: the gap is 5% of the 224px content height, and the rows share what is left.
+    expect(geo(wide.box("cell-11"))).toEqual([24, 1381.594, 167.203, 106.406]);
+    // One row: no gap between rows to place, whatever the min-height.
+    expect(geo(wide.box("strip"))).toEqual([16, 1496, 368, 120]);
+  });
+
+  it("top and bottom auto margins with nothing to take are 0; translateZ(0) moves nothing", () => {
+    expect(geo(wide.box("pushed"))).toEqual([16, 1640, 368, 24]);
+    expect(geo(wide.box("pushed-2"))).toEqual([16, 1664, 368, 24]);
+    expect(wide.approx("layered")).toBeUndefined();
+    expect(identityTransform("transform", "translateZ(0)")).toBe(true);
+    expect(identityTransform("transform", "translate3d(0, 0, 0) scale(1)")).toBe(true);
+    expect(identityTransform("transform", "translateY(-2px)")).toBe(false);
+    expect(identityTransform("rotate", "0deg")).toBe(true);
   });
 
   it("will-change and isolation change nothing, unless will-change makes a fixed box's containing block", () => {

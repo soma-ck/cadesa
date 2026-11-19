@@ -650,11 +650,12 @@ export function liftElements(input: LiftInput): LiftResult {
       const j = justify ? JI[justify.value.trim()] : "stretch";
       // The column gap, and the row gap when it differs.
       const gapOf = (): Record<string, string> => {
-        const tok = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? (lengthToken("space", d.value) ?? (d === colGap ? pctToken(d.value) : undefined)) : undefined);
+        // Either gap may be a percentage: the column gap of the grid's width, the row gap of its height (the page front end keeps it only where that is modelled).
+        const tok = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? (lengthToken("space", d.value) ?? pctToken(d.value)) : undefined);
         const val = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? resolveVar(d.value)?.raw : "0px");
         for (const d of [rowGap, colGap]) if (d && !isZero(resolveVar(d.value)?.raw ?? "x") && !tok(d)) note(e, s, d, "gap must be a px or rem length", "geometry");
         const g = tok(colGap);
-        const rg = val(rowGap) !== val(colGap) ? (tok(rowGap) ?? lengthToken("space", "0px")) : undefined;
+        const rg = val(rowGap) !== val(colGap) || /%$/.test(val(rowGap) ?? "") ? (tok(rowGap) ?? lengthToken("space", "0px")) : undefined;
         return { ...(g && { gap: g }), ...(rg && { rowGap: rg }) };
       };
       if (auto) {

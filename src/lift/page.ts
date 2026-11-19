@@ -1667,7 +1667,8 @@ export abstract class PageLifter {
           // A set height or min-height stretches a grid's rows (a stack's items don't).
           const sized = ["height", "min-height"].some((p) => own.has(p) && !/^(auto|0(px)?)$/.test(res(p) ?? "auto"));
           const single = !cols || cols === "none" || (n && n[1] === "1");
-          if (single && plainItems && !sized) {
+          // (A percentage row gap is a grid's own: of its final height.)
+          if (single && plainItems && !sized && !/%$/.test(rowGap ?? "")) {
             // One column: a stack with the row gap.
             decl("display", "flex", own.get("display")!.utility);
             decl("flex-direction", "column", own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
@@ -1799,6 +1800,18 @@ export abstract class PageLifter {
         let v = this.resolve(el, si, o.value);
         // Empty after substitution (`height: var(--unset)`): invalid at computed-value time, so the initial value.
         if (v === undefined || v === "") continue;
+        // A transform that moves nothing (translateZ(0), a layer hint): no effect on where it's drawn.
+        if (/^(transform|translate|rotate|scale)$/.test(p) && identityTransform(p, v)) continue;
+        // A top or bottom auto margin is 0 in block flow, and in a column flexbox with no free
+        // space (its height is its content's).
+        if (/^margin-(top|bottom)$/.test(p) && v === "auto" && !abs) {
+          const parentEl = el.parent && el.parent !== this.bodyEl ? el.parent : undefined;
+          const column = inFlexOrGrid && !!parentEl && this.isColumn(parentEl, si) && this.definiteHeight(parentEl, si) === "auto" && /^(auto|0|0px)?$/.test(this.resolve(parentEl, si, parentEl.own[si].get("min-height")?.value ?? "") ?? "");
+          if (!inFlexOrGrid || column) {
+            decl(p, "0px", `${o.utility} (${p}: auto is 0 ${column ? "with no free space in its column" : "in block flow"})`);
+            continue;
+          }
+        }
         // A relative box's percentage top or bottom: of its parent's height when that is definite, else auto.
         if (pos === "relative" && (p === "top" || p === "bottom") && /%$/.test(v) && parseFloat(v) !== 0) {
           const of = this.definiteHeight(el.parent, si);
@@ -2143,15 +2156,34 @@ export abstract class PageLifter {
   }
 
   /**
-   * A percentage row gap: of the container's height, so 0 where that height is auto (a flex
-   * container outside flex and grid); in a grid, or a flex container whose height is set or may be
-   * stretched, it isn't modelled (noted, and left out).
+   * A percentage row gap: of the container's content height. A set height makes it a length; an
+   * auto height makes it 0 in a flex container, and in a grid 0 while the rows are sized, then of
+   * the final height (kept as a percentage for the engine). A height that may be stretched (a flex
+   * or grid item), or a grid's min-height or max-height, isn't modelled (noted, and left out).
    */
   pctRowGap(el: El, si: number, o: Origin | undefined, grid = false): Origin | undefined {
     if (!o) return o;
     const v = this.resolve(el, si, o.value);
     if (!v || !/^(\d+\.?\d*|\.\d+)%$/.test(v) || parseFloat(v) === 0) return o;
-    if (!grid && this.definiteHeight(el, si) === "auto") return { ...o, value: "0px", utility: `${o.utility} (row-gap: ${v} of an auto height is 0)` };
+    // A grid of one row (no more items than columns) has no row gap to place.
+    if (grid) {
+      const tracks = gridTrackCount(this.resolve(el, si, el.own[si].get("grid-template-columns")?.value ?? "none") ?? "");
+      const items = el.children.filter((k) => k.roles[si] && k.roles[si] !== "hidden" && k.roles[si] !== "out" && !this.positioned(k, si)).length;
+      const placed = ["grid-row", "grid-row-start", "grid-row-end", "grid-area", "grid-column", "grid-column-start", "grid-column-end", "grid-auto-flow", "grid-template-rows", "grid-template-areas"].some((p) => el.children.some((k) => k.own[si]?.has(p)) || (p.startsWith("grid-auto") || p.startsWith("grid-template")) && el.own[si].has(p));
+      if (tracks !== undefined && items <= tracks && !placed) return { ...o, value: "0px", utility: `${o.utility} (row-gap: ${v}, one row: no gap between rows)` };
+    }
+    const of = this.definiteHeight(el, si);
+    // Of a set height: a length (the percentage of the content height, cut to a layout unit).
+    if (typeof of === "object") {
+      const f = Math.fround;
+      const px = Math.trunc(f(f(f(Math.floor(of.px * 64 + 1e-6) / 64) * f(parseFloat(v))) / 100) * 64) / 64;
+      return { ...o, value: `${fmtNum(px)}px`, utility: `${o.utility} (row-gap: ${v} of a ${fmtNum(of.px)}px content height)` };
+    }
+    if (of === "auto" && !grid) return { ...o, value: "0px", utility: `${o.utility} (row-gap: ${v} of an auto height is 0)` };
+    // A grid of auto height sizes its rows without the gap, then places them that percentage of its
+    // final content height apart (they may overflow). A min-height or max-height isn't modelled.
+    const limited = ["min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(this.resolve(el, si, el.own[si].get(p)?.value ?? "") ?? ""));
+    if (of === "auto" && !limited) return o;
     this.note(el, si, { decl: `${o.utility} (row-gap: ${v})`, reason: `a percentage row gap of a ${grid ? "grid's" : "container's set or stretched"} height is not modelled`, kind: "geometry" });
     return undefined;
   }
@@ -2754,6 +2786,56 @@ export abstract class PageLifter {
     for (const e of edits) out = out.slice(0, e.at) + e.text + out.slice(e.end);
     return out;
   }
+}
+
+/** A transform (or translate, rotate, scale) that leaves the box where it is: translateZ(0), scale(1), rotate(0deg). */
+export function identityTransform(prop: string, v: string): boolean {
+  const zero = (a: string) => /^[+-]?(0*\.?0+)(px|rem|em|%|deg|rad|turn|grad)?$/.test(a.trim());
+  const one = (a: string) => /^[+-]?(1(\.0*)?|100%)$/.test(a.trim());
+  const s = v.trim().toLowerCase();
+  if (s === "none") return true;
+  if (prop === "translate") return s.split(/\s+/).every(zero);
+  if (prop === "scale") return s.split(/\s+/).every(one);
+  if (prop === "rotate") return zero(s.split(/\s+/).at(-1)!);
+  const fns = [...s.matchAll(/([a-z0-9]+)\(([^()]*)\)\s*/g)];
+  if (!fns.length || fns.map((m) => m[0]).join("").trim() !== s) return false;
+  return fns.every(([, name, args]) => {
+    const xs = args.split(",");
+    if (/^translate(x|y|z|3d)?$/.test(name) || /^skew(x|y)?$/.test(name)) return xs.every(zero);
+    if (/^scale(x|y|z|3d)?$/.test(name)) return xs.every(one);
+    if (/^rotate(x|y|z)?$/.test(name)) return zero(xs[0]);
+    if (name === "rotate3d") return xs.length === 4 && zero(xs[3]);
+    return false;
+  });
+}
+
+/** How many column tracks grid-template-columns makes (none: one implicit column), or undefined (auto-fill, subgrid, line names...). */
+export function gridTrackCount(v: string): number | undefined {
+  const s = v.trim();
+  if (s === "" || s === "none") return 1;
+  if (/\[|auto-fill|auto-fit|subgrid|masonry/.test(s)) return undefined;
+  let n = 0;
+  let depth = 0;
+  let cur = "";
+  const flush = () => {
+    if (!cur) return true;
+    const rep = /^repeat\(\s*(\d+)\s*,\s*(.+)\)$/s.exec(cur);
+    if (rep) {
+      const inner = gridTrackCount(rep[2]);
+      if (inner === undefined) return false;
+      n += parseInt(rep[1]) * inner;
+    } else n++;
+    cur = "";
+    return true;
+  };
+  for (const ch of s) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (/\s/.test(ch) && depth === 0) {
+      if (!flush()) return undefined;
+    } else cur += ch;
+  }
+  return flush() ? n : undefined;
 }
 
 /** Absolute units (pt, pc, in, cm, mm, Q) in px, as the browser converts them (1in = 96px). */

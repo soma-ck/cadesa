@@ -195,6 +195,8 @@ interface Arrangement {
   /** Natural height of each row. */
   heights: number[];
   gap: number;
+  /** A grid's percentage row gap: of its final content height (its rows were sized with none). */
+  gapPct?: number;
   align: "start" | "center" | "end" | "stretch";
   insetTop: number;
   insetY: number;
@@ -1160,6 +1162,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         rows,
         heights: rows.map((r) => Math.max(0, ...r.map(outerH))),
         gap: rowGap,
+        ...(props.rowGap?.pct !== undefined && { gapPct: props.rowGap.pct }),
         align: props.align?.value ?? (pattern === "cluster" ? "center" : "stretch"),
         insetTop: ins.top,
         insetY: insY,
@@ -1234,7 +1237,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     placeStack(b);
     const a = arrangement.get(b);
     if (!a) return;
-    const natural = a.heights.reduce((s, h) => s + h, 0) + a.gap * (a.rows.length - 1);
+    // A percentage row gap resolves against the final content height (Chromium sized the rows without it; they may overflow).
+    const gap = a.gapPct !== undefined ? sizeAt({ pct: a.gapPct }, Math.max(0, b.h - a.insetY)) : a.gap;
+    const natural = a.heights.reduce((s, h) => s + h, 0) + gap * (a.rows.length - 1);
     const free = Math.max(0, b.h - a.insetY - natural);
     const next = a.flexLines ? diffuser(U(free), a.rows.length) : () => U(free / a.rows.length);
     let y = 0;
@@ -1258,7 +1263,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         const space = rowH - outerH(c);
         c.y = y + m.top + (a.align === "center" ? space / 2 : a.align === "end" ? space : 0);
       }
-      y += rowH + a.gap;
+      y += rowH + gap;
     });
   }
 

@@ -111,7 +111,7 @@ export interface ResolvedProps {
   /** `pct`: the gap between columns is this percentage of the content width (value is 0: what intrinsic sizes count). */
   gap?: Resolved<number> & { pct?: number };
   /** A grid's or cluster's gap between rows, when it differs from `gap`. */
-  rowGap?: Resolved<number>;
+  rowGap?: Resolved<number> & { pct?: number };
   padding?: Resolved<Sides>;
   background?: Resolved<string>;
   /** The color, and each side's width as Chromium draws it. */
@@ -229,7 +229,9 @@ export function resolveElement(model: Model, component: Component, slot: string 
         out.pattern = { value: l.pattern, display: l.pattern, steps: [...pre, src(`${l.path}.pattern`)] };
         const gapPct = l.gap?.kind === "size" ? model.tokens.get(tokenKey("size", l.gap.name))!.pct : undefined;
         out.gap = gapPct !== undefined ? { ...sizeOf(l.gap!), value: 0, pct: gapPct, display: `${gapPct}% of the content width` } : l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
-        if (l.rowGap) out.rowGap = lengthOf(l.rowGap);
+        const rowPct = l.rowGap?.kind === "size" ? model.tokens.get(tokenKey("size", l.rowGap.name))!.pct : undefined;
+        // A percentage of the grid's height: 0 while its rows are sized, then of its final content height.
+        if (l.rowGap) out.rowGap = rowPct !== undefined ? { ...sizeOf(l.rowGap), value: 0, pct: rowPct, display: `${rowPct}% of the content height (0 while the rows are sized)` } : lengthOf(l.rowGap);
         if (l.pattern !== "stack" && l.pattern !== "flow") {
           const def = l.pattern === "cluster" ? "center" : "stretch";
           const a = l.align ?? def;
