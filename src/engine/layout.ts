@@ -1871,14 +1871,17 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     changed = false;
     for (const [b, a] of absInfo) {
       if (flagged.has(b)) continue;
-      const dep = (a.cb && flagged.has(a.cb) ? a.cb : undefined) ?? (a.staticPos && a.parent && flagged.has(a.parent) ? a.parent : undefined);
+      // (A page-level one at its static position sits below the page's in-flow boxes: any of them that isn't guaranteed moves it.)
+      const pageDep = a.staticPos && !a.parent ? boxes.find((x) => x !== b && !absInfo.has(x) && flagged.has(x)) : undefined;
+      const dep = (a.cb && flagged.has(a.cb) ? a.cb : undefined) ?? (a.staticPos && a.parent && flagged.has(a.parent) ? a.parent : undefined) ?? pageDep;
       if (dep) {
         flag(b, `geometry depends on #${dep.id}, which the engine can't guarantee (${flagged.get(dep)})`, true);
         changed = true;
       }
     }
   }
-  for (const [b, why] of flagged) if (!b.assumptions.length && !issues.some((i) => i.severity === "error" && i.id === b.id)) b.assumptions.push(why);
+  // (A box with an error of its own carries it as its reason, so every report counts it as approximate.)
+  for (const [b, why] of flagged) if (!b.assumptions.length) b.assumptions.push(issues.find((i) => i.severity === "error" && i.id === b.id)?.message ?? why);
 
 
   // A box past the right edge of the viewport makes the page scroll sideways, unless a box around

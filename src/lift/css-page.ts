@@ -528,12 +528,15 @@ interface Sheet {
   skipped: { file: string; line: number; text: string; reason: string }[];
   /** @font-face rules: the family and style of each face. */
   faces: { family: string; style: string }[];
+  /** @keyframes that animate where or how large a box is drawn (transform, offsets, sizes, margins). */
+  moving: string[];
 }
 
 function readSheet(file: string, text: string, origin: Origin3, start: number, lineOffset = 0): Sheet {
   const rules: CssRuleIn[] = [];
   const skipped: Sheet["skipped"] = [];
   const faces: Sheet["faces"] = [];
+  const moving: string[] = [];
   let order = start;
   const root = postcss.parse(text, { from: file });
   const declsOf = (r: Container) => {
@@ -564,13 +567,20 @@ function readSheet(file: string, text: string, origin: Origin3, start: number, l
         const get = (prop: string) => a.nodes?.find((d): d is import("postcss").Declaration => d.type === "decl" && d.prop.toLowerCase() === prop)?.value.trim();
         const family = get("font-family")?.replace(/^["']|["']$/g, "");
         if (family) faces.push({ family: family.toLowerCase(), style: (get("font-style") ?? "normal").toLowerCase() });
+      } else if (/^(-webkit-)?keyframes$/.test(name)) {
+        // Keyframes that change a box's transform, offsets, size or margins move what is drawn while they run.
+        let moves = false;
+        a.walkDecls((d) => {
+          if (/^(transform|translate|rotate|scale|top|right|bottom|left|inset|width|height|min-|max-|margin|padding|offset)/.test(d.prop.toLowerCase())) moves = true;
+        });
+        if (moves) moving.push(a.params.trim().replace(/^["']|["']$/g, ""));
       } else if (name === "import") skipped.push({ file, line, text: `@import ${a.params}`, reason: "@import is not followed; lift the imported file too" });
       else if (!/^(font-face|keyframes|-webkit-keyframes|charset|namespace|property|page|counter-style|font-feature-values)$/.test(name))
         skipped.push({ file, line, text: `@${a.name} ${a.params}`.trim(), reason: `@${a.name} is not modelled` });
     }
   };
   root.each((n) => visit(n, []));
-  return { rules, skipped, faces };
+  return { rules, skipped, faces, moving };
 }
 
 // ---------------------------------------------------------------- the lifter
@@ -600,6 +610,7 @@ class CssLifter extends PageLifter {
   rules: CssRuleIn[] = [];
   skipped: Sheet["skipped"] = [];
   faces: Sheet["faces"] = [];
+  moving = new Set<string>();
 
   constructor(page: string, html: string, files: SheetFile[]) {
     super(page, html, files.map((f) => f.file).join(","));
@@ -664,11 +675,16 @@ class CssLifter extends PageLifter {
       this.rules.push(...s.rules);
       this.skipped.push(...s.skipped);
       this.faces.push(...s.faces);
+      for (const k of s.moving) this.moving.add(k);
     }
     // Token names come from the custom properties declared on :root / html.
     for (const r of this.rules)
       if (r.origin === "author" && !r.media.length && /^(:root|html)$/.test(r.selector.trim()))
         for (const d of r.decls) if (d.prop.startsWith("--")) this.theme.set(d.prop, d.value);
+  }
+
+  movingAnimation(name: string): boolean {
+    return this.moving.has(name);
   }
 
   italicFace(family: string): boolean | undefined {

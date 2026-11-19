@@ -116,7 +116,29 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
    * items aligned by height (center, end) or stretched to it (only their own box, unless they
    * place rows inside it).
    */
+  /**
+   * Whether a box's own position depends on its size: its parent centers or end-aligns it by its
+   * height (a grid area, a flex line, auto top or bottom margins), or by its width when its width
+   * comes from its content (fit-content in a stack, a grid area or a flex line). A box stretched
+   * across its parent, or centered by a max-width, keeps its x when only its height changes.
+   */
+  const bySize = (p: Box): boolean => {
+    const m = p.props.margin?.value;
+    if (m && (m.autoTop || m.autoBottom)) return true;
+    const gp = parentOf.get(p);
+    const pat = gp?.props.pattern?.value;
+    if ((m?.autoLeft || m?.autoRight) && (pat === "stack" || pat === "cluster" || pat === "grid" || p.props.width?.value === "fit")) return true;
+    if (!gp || !pat) return false;
+    const al = p.props.place?.value.align ?? gp.props.align?.value;
+    const js = p.props.place?.value.justify ?? gp.props.justifyItems?.value;
+    const content = gp.props.grid?.value;
+    if (pat === "grid" || pat === "layer") return /^(center|end)$/.test(al ?? "") || /^(center|end)$/.test(js ?? "") || (!!content && (!/^(normal|stretch|start)$/.test(content.justifyContent) || !/^(normal|stretch|start)$/.test(content.alignContent)));
+    if (pat === "cluster") return /^(center|end)$/.test(al ?? "center") || (gp.props.justify?.value ?? "start") !== "start";
+    if (pat === "stack") return /^(center|end)$/.test(al ?? "stretch");
+    return false;
+  };
   const sizeChange = (b: Box, why: string, heightOnly = false) => {
+    if (bySize(b)) subtree(b, "position", `moved by #${b.id}: ${why}`);
     if (heightOnly) {
       mark(b, "size", why);
       // Its rows (grid rows, cluster lines, a stack's growing items) share its height: what's in them moves and stretches.
@@ -148,6 +170,9 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
         for (const s of sibs) if (!outOfFlow(s)) subtree(s, "position", moved);
       }
       mark(p, "size", `resized by #${b.id}: ${why}`);
+      // A box its parent places by its size (centered or end-aligned, auto margins, centered by a
+      // max-width) moves when it is resized, with everything inside it.
+      if (bySize(p)) subtree(p, "position", moved);
     }
     const roots = l.boxes;
     if (outOfFlow(cur)) return;
@@ -221,7 +246,9 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
       }
     const pos = b.props.position!.value;
     const atStatic = (pos.left === undefined && pos.right === undefined) || (pos.top === undefined && pos.bottom === undefined);
-    const dep = [cb, atStatic ? parentOf.get(b) : undefined].find((a) => a && [...(marks.get(a)?.values() ?? [])].length);
+    // (A page-level one at its static position sits below the page's in-flow boxes.)
+    const pageDep = atStatic && !parentOf.get(b) ? l.boxes.find((r) => r !== b && !outOfFlow(r) && [...(marks.get(r)?.values() ?? [])].some((e) => e !== "paint")) : undefined;
+    const dep = [cb, atStatic ? parentOf.get(b) : undefined, pageDep].find((a) => a && [...(marks.get(a)?.values() ?? [])].length);
     if (dep) subtree(b, "position", `moved by #${dep.id}: ${[...marks.get(dep)!.keys()][0].replace(/^(moved|resized) by #\S+: /, "")}`);
   }
 

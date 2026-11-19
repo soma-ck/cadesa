@@ -494,6 +494,10 @@ export abstract class PageLifter {
   rootVar(_name: string): string | undefined {
     return undefined;
   }
+  /** Whether @keyframes `name` animates where or how large a box is drawn (transform, offsets, sizes). */
+  movingAnimation(_name: string): boolean {
+    return false;
+  }
   /** A registered (@property) custom property that doesn't inherit. */
   registered(_name: string): { inherits: boolean; initial?: string } | undefined {
     return undefined;
@@ -2136,6 +2140,12 @@ export abstract class PageLifter {
       const trap = abs ? this.transformedContainer(el, si) : undefined;
       if (trap) this.note(el, si, { decl: trap, reason: "a transform, filter or will-change on an ancestor makes it this box's containing block, which isn't modelled", kind: "geometry" });
       this.transformDecls(el, si, decl, handled);
+      // An animation of its transform, offsets or size: where it is drawn depends on the time (and
+      // fill-mode keeps the last keyframe's). Not modelled: the box and its subtree are approximate.
+      const anim = res("animation-name") ?? res("animation");
+      const named = anim ? anim.split(",").flatMap((a) => a.trim().split(/\s+/)).find((w) => this.movingAnimation(w.replace(/^["']|["']$/g, ""))) : undefined;
+      if (named && res("animation-play-state") !== "paused" && !/^none$/.test(res("animation-name") ?? ""))
+        this.note(el, si, { decl: `${(own.get("animation-name") ?? own.get("animation"))!.utility} (animation: ${named})`, reason: "an animation of its transform, position or size moves what is drawn while it runs", kind: "visual" });
       // Everything else the element sets on itself.
       for (const [p, o] of own) {
         if (handled.has(p) || skipProp(p)) continue;

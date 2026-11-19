@@ -345,9 +345,11 @@ export async function verifyFindings(opts: {
       const rects = await measureBoxes(page);
       const layout = opts.layouts.find((l) => l.width === w)!;
       const uncertain = new Set(opts.impacts?.find((i) => i.width === w)?.uncertain.map((u) => u.id));
+      const errored = new Set(layout.issues.filter((i) => i.severity === "error").map((i) => i.id));
       for (const b of walk(layout.boxes)) {
         if (b.anonymous) continue;
-        const flagged = uncertain.has(b.id) || b.assumptions.length > 0;
+        // (A box the engine reports an error on is approximate too, as in the coverage line.)
+        const flagged = uncertain.has(b.id) || b.assumptions.length > 0 || errored.has(b.id);
         const c = rects[b.id];
         const differ = !c || rectDelta(b, c) > 0.5;
         if (flagged) (report.boxes.approximate++, differ && report.boxes.approximateDiffer++);

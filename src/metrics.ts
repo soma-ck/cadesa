@@ -228,7 +228,7 @@ export async function generateMetrics(opts: {
         `@font-face{font-family:"__cadesa_fb";font-weight:100 900;src:url(data:font/woff2;base64,${fb}) format("woff2")}</style>`,
     );
     // Passed as a string so bundlers/transpilers can't inject helpers that don't exist in the page.
-    const result = (await page.evaluate(`(async ({ ALL, WEIGHTS, SIZE, UNITS, FAMILY, FAMS }) => {
+    const result = (await page.evaluate(`(async ({ ALL, STD, WEIGHTS, SIZE, UNITS, FAMILY, FAMS }) => {
       const ctx = document.createElement("canvas").getContext("2d");
       ctx.fontKerning = "normal";
       const W0 = WEIGHTS[0];
@@ -238,7 +238,8 @@ export async function generateMetrics(opts: {
       const f0 = W0 + " " + SIZE + "px " + FAMILY;
       const missing = [...ALL].filter((c) => widthIn(f0 + ", monospace", c) !== widthIn(f0 + ", __cadesa_fb", c));
       const CHARS = [...ALL].filter((c) => !missing.includes(c)).join("");
-      const KERN_CHARS = CHARS;
+      // Characters measured beyond the standard set (icon codepoints) get widths, not kerning pairs.
+      const KERN_CHARS = [...CHARS].filter((c) => STD.includes(c)).join("");
       // An optical-size axis: widths that don't scale with the font size can't come from one table.
       const sample = "Hamburgefonstiv HAMBURGEFONSTIV 0123456789";
       const big = widthIn(f0, sample);
@@ -357,7 +358,7 @@ export async function generateMetrics(opts: {
       }
       const loaded = FAMILY === "__cadesa" ? document.fonts.check(W0 + " 16px __cadesa") : resolved !== undefined;
       return { chars: CHARS, missing: missing.join(""), scales, advances, kerning, kerningSpaced, contextual, fine, loaded, resolved };
-    })(${JSON.stringify({ ALL: [...new Set([...CHARS, ...(opts.extra ?? "")])].join(""), WEIGHTS: weights, SIZE, UNITS, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()) })})`)) as {
+    })(${JSON.stringify({ ALL: [...new Set([...CHARS, ...[...(opts.extra ?? "")].slice(0, 512)])].join(""), STD: CHARS, WEIGHTS: weights, SIZE, UNITS, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()) })})`)) as {
       resolved?: string;
       chars: string;
       missing: string;
