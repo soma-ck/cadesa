@@ -67,6 +67,8 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
     center` and `right` place it as Chromium does. Its only content an inline-block, a box is
     no longer a text box.
   - `line-height: normal` is the font's ascent, descent and line gap.
+  - `align-items: baseline` in a flex row aligns text items in different fonts, sizes and line
+    heights (each first baseline is its strut's ascent below its content edge).
   - A text field (`text`, `email`, `search`, `password`, `tel`, `url`, `number`), with or
     without native appearance, is one line of its line height, never shorter than normal, plus
     padding and border; alone on its line it is placed like any inline-block. A `<select>`

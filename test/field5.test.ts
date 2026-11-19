@@ -288,9 +288,11 @@ describe("align-items: baseline", () => {
     expect(r.exact()).toBe(true);
   });
 
-  it("text in different sizes needs the font's vertical metrics: ≈", () => {
+  it("text in different sizes: each first baseline from its font's vertical metrics", () => {
     const r = run(`<div class="r2"><span class="a">Small</span><span class="big">Big heading</span></div>`, `.r2 { display: flex; align-items: baseline; gap: 8px } .big { font-size: 28px }`, [400]);
-    expect(r.approx("a")).toMatch(/baseline/);
+    expect(r.approx("a")).toBeUndefined();
+    // Chromium: 16px/24px text's baseline is 18px below its top, 28px/42px text's 31px.
+    expect([r.box("a").y, r.box("big").y, r.box("r2").h]).toEqual([13, 0, 42]);
   });
 });
 

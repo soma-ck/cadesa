@@ -1886,9 +1886,14 @@ export abstract class PageLifter {
     if (!kids.length) return undefined;
     const t0 = this.textOf(kids[0], si);
     const same = (t: TextCtx) => t.size === t0.size && t.family.value === t0.family.value && t.weight === t0.weight && JSON.stringify(t.lineHeight) === JSON.stringify(t0.lineHeight) && !t.fluid && !t0.fluid;
+    // In one font, size and line height their first baselines sit equally far below their content
+    // edges; otherwise each is its strut's ascent below it (from the fonts' vertical metrics).
+    const allSame = kids.every((k) => same(this.textOf(k, si)));
     const tops: number[] = [];
     for (const k of kids) {
-      if (k.roles[si] !== "text" || !same(this.textOf(k, si))) return undefined;
+      if (k.roles[si] !== "text") return undefined;
+      const strut = allSame ? undefined : this.strutOf(k, si);
+      if (!allSame && !strut) return undefined;
       const own = k.own[si];
       const self = own.get("align-self");
       if (self && !/^(auto|baseline|first baseline)$/.test(this.resolve(k, si, self.value) ?? "")) return undefined;
@@ -1901,7 +1906,7 @@ export abstract class PageLifter {
       const bw = /^(none|hidden)$/.test(style) ? 0 : len("border-top-width");
       const [mt, pt] = [len("margin-top"), len("padding-top")];
       if (mt === undefined || pt === undefined || bw === undefined) return undefined;
-      tops.push(mt + pt + borderPx(bw));
+      tops.push(mt + pt + borderPx(bw) + (strut?.sa ?? 0));
     }
     const top = Math.max(...tops);
     return tops.map((t) => top - t);
