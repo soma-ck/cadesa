@@ -174,14 +174,15 @@ function collapseItems(raw: string): { text: string; items: number[]; marks: { i
   let pending = false;
   const items: number[] = [];
   const marks: { id: number; open: boolean; at: number; lead?: boolean }[] = [];
-  const space = () => {
+  const space = (edge = false) => {
     // A collapsible space after another one (even across an element edge) disappears.
     if (pending && n > 0 && !out.endsWith(" ")) {
       out += " ";
       n++;
-    } else if (pending && n > 0) {
-      // Removed right after a box opened behind a kept space: the box starts with it (LayoutNG keeps
-      // its start on the line that space ends).
+    } else if (pending && n > 0 && edge) {
+      // Whitespace of its own (a text node of only spaces) right after a box opened behind a kept
+      // space, before an element: removed, it is still an item of that box at the end of the line
+      // the kept space ends, so LayoutNG keeps the box's start on that line.
       for (const m of marks) if (m.open && m.at === n) m.lead = true;
     }
     pending = false;
@@ -199,7 +200,7 @@ function collapseItems(raw: string): { text: string; items: number[]; marks: { i
     }
     if (ch === EDGE) {
       // A space before an edge belongs to the text before it.
-      space();
+      space(true);
       if (n > 0 && items.at(-1) !== n) items.push(n);
     } else if (/[ \t\n\r\f]/.test(ch)) pending = true;
     else {

@@ -693,7 +693,11 @@ export function layoutText(
       let below = opts.strut!.below;
       const pending: typeof spans = [];
       for (const sp of spans) {
-        const on = sp.from === sp.to ? sp.from >= a && (sp.from < b || (b === all.length && sp.from === b)) : (sp.lead ? sp.from - 1 : sp.from) < b && sp.to > a;
+        // A box whose own leading whitespace collapsed opens at the end of this line when the line is
+        // full there: the kept space before it doesn't fit, so LayoutNG takes the trailing whitespace
+        // (that collapsed space, and the box's start) onto this line.
+        const leads = sp.lead && sp.from === b && l.width + measure(" ", sp.from - 1) + ls > maxWidth + 1e-6;
+        const on = sp.from === sp.to ? sp.from >= a && (sp.from < b || (b === all.length && sp.from === b)) : (leads ? sp.from - 1 : sp.from) < b && sp.to > a;
         if (!on) continue;
         if (sp.align) pending.push(sp);
         else {
