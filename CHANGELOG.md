@@ -20,6 +20,8 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
 ## Unreleased
 
+- A table given its width by a grid track or a stretching flex container is never narrower than its
+  caption: its columns fill the caption's width (it laid them out in the track's).
 - Inline runs in another size, font, line height or vertical-align are measured: `<small>`,
   `.small` and `font-size: .875em` spans, `<sup>` and `<sub>`, text in another family, nested
   runs, and generated content. Each run is measured in its own font, and each line box is the union

@@ -1118,7 +1118,8 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
   const und = undistributableSpace(g, cols);
   let assignable: LU;
   const minW = g.props.min ? U(g.props.min.value) : 0;
-  if (fixedW) assignable = Math.max(0, Math.max(U(w), minW) - und);
+  // (Never narrower than its captions, even where a grid or flex container gives it its width.)
+  if (fixedW) assignable = Math.max(0, Math.max(U(w), minW, capMin) - und);
   else {
     const mm = gridMinMax(cols, und, g.fixed, true);
     const used = Math.max(U(w), mm.min, capMin, minW);

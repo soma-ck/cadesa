@@ -9,6 +9,17 @@ import { loadSource } from "../src/load.js";
 import { validate } from "../src/validate.js";
 import { run } from "./lift-page.js";
 
+describe("a table sized by a grid track narrower than its caption", () => {
+  it("is as wide as its caption, and its columns fill that width (fuzz:tables seed 100462)", () => {
+    const r = run(
+      `<div class="g"><div class="dt" data-fixture="t"><div class="cap">tools yard due harbor picking status line</div><div class="row"><div class="cell" data-fixture="c">shipped quantity</div></div></div><div>works</div></div>`,
+      `.g { display: grid; grid-template-columns: 200px 1fr; gap: 8px } .dt { display: table; border-spacing: 7px 1px } .cap { display: table-caption; padding: 8px; width: 243px } .row { display: table-row } .cell { display: table-cell }`,
+      [300],
+    );
+    expect([r.box("t").w, r.box("c").w]).toEqual([259, 245]);
+  });
+});
+
 const geo = (b: Box) => [b.x, b.y, b.w, b.h].map((n) => +n.toFixed(3));
 
 const BODY =
