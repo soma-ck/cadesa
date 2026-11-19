@@ -37,7 +37,7 @@ body {
   border: 0;
   font: inherit;
   line-height: 1;
-  transform: perspective(100px) translateZ(60px);
+  transform: perspective(10vmin) translateZ(6vmin);
 }
 
 .note {

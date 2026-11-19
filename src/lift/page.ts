@@ -25,7 +25,7 @@ import { lineHeightPx, lineHeightRatio } from "../engine/layout.js";
 import { layoutText, metricsFor } from "../engine/text.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
 import { containsLayout, parseContain, type Contain } from "../model.js";
-import { individual, originOf, transformList } from "../engine/transform.js";
+import { individual, originOf3, transformList4 } from "../engine/transform.js";
 import { firstFamily } from "../fonts.js";
 import type { Decl } from "./css.js";
 import { linesOf } from "./impact.js";
@@ -3234,11 +3234,11 @@ export abstract class PageLifter {
       if (v === undefined || v === "") continue;
       if (identityTransform(p, v)) continue;
       const fn = p === "transform" ? v : individual(p, v);
-      if (fn === undefined || (fn && !transformList(fn, 100, 100))) return;
+      if (fn === undefined || (fn && !transformList4(fn, 100, 100))) return;
       if (fn) parts.push(fn);
     }
     const origin = val("transform-origin");
-    if (origin !== undefined && !originOf(origin, 100, 100)) {
+    if (origin !== undefined && !originOf3(origin, 100, 100)) {
       if (!parts.length) for (const p of [...PROPS, "transform-origin"]) handled.add(p);
       return;
     }

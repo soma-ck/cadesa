@@ -300,7 +300,7 @@ describe("elements not laid out are counted", () => {
   it("children of a grid Cadesa has no pattern for, and the rows of a table", async () => {
     const { notLaidOut } = await import("../src/laidout.js");
     // (A collapsed row isn't modelled: the table is one box.)
-    const r = run(`<section class="g"><p>One</p><p>Two</p></section><table class="t"><tr><td>Cell</td></tr></table><p class="after">After</p>`, `p { margin: 0 } .g { display: grid; grid-template-columns: subgrid } .t tr { visibility: collapse }`, [400]);
+    const r = run(`<section class="g"><p>One</p><p>Two</p></section><table class="t"><tr><td>Cell</td></tr></table><p class="after">After</p>`, `p { margin: 0 } .g { display: grid; grid-template-columns: masonry } .t tr { visibility: collapse }`, [400]);
     expect(r.layout().notLaidOut!.map((x) => x.tag)).toEqual(["p", "p"]);
     const c = notLaidOut(r.t, r.layouts)!;
     expect(c.count).toBe(5);
@@ -313,7 +313,7 @@ describe("elements not laid out are counted", () => {
 
 describe("advice on a lifted page is in CSS terms", () => {
   it("no layout: { pattern }, text roles or size tokens", () => {
-    const r = run(`<section class="g"><p>One</p></section><p class="n">Normal</p><img class="i" src="x.png">`, `p { margin: 0 } .g { display: grid; grid-template-columns: subgrid } .n { font-family: Unmeasured; line-height: normal }`, [400]);
+    const r = run(`<section class="g"><p>One</p></section><p class="n">Normal</p><img class="i" src="x.png">`, `p { margin: 0 } .g { display: grid; grid-template-columns: masonry } .n { font-family: Unmeasured; line-height: normal }`, [400]);
     const text = r.findings.map((f) => f.message).join("\\n");
     expect(text).not.toMatch(/pattern:|text: <role>|size token|add aspect/);
     expect(text).toMatch(/the children of #g aren.t laid out: its display \(or grid template\) has no Cadesa equivalent/);

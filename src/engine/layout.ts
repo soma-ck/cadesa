@@ -13,8 +13,8 @@ import type { Fixture, FixtureNode } from "../fixture.js";
 import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
 import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type GridSpec, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
-import { boxMatrix, mapRect, multiply, type Matrix } from "./transform.js";
-import { expandTracks, place as gridPlace, sizeTracks, trackStarts, type Contribution, type Explicit, type TrackList, type TrackSize } from "./grid.js";
+import { boxMatrix4, multiply4, originOf, perspective4, projectRect, translate4, type Matrix4 } from "./transform.js";
+import { expandTracks, placeFlow as gridPlace, sizeTracks, trackStarts, type Contribution, type Explicit, type TrackList, type TrackSize } from "./grid.js";
 import { firstBaseline, layoutTable, tableGrid, tableInsets, tableIntrinsic, type Grid, type TableHooks } from "./table.js";
 
 const EPS = 0.001;
@@ -999,9 +999,14 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     });
 
   /** The template of a grid, its items' placements and the explicit grid (old-style columns and min as track lists too). */
-  function gridSetup(p: ResolvedProps, kids: Kid[], innerW: number | undefined, colGap: number, rowGap: number, innerH: number | undefined) {
+  function gridSetup(p: ResolvedProps, kids: Kid[], innerW: number | undefined, colGap: number, rowGap: number, innerH: number | undefined, sub?: { widths: number[] } | { span: number }) {
     const spec: GridSpec = p.grid?.value ?? { autoColumns: [{ min: "auto", max: "auto" }], autoRows: [{ min: "auto", max: "auto" }], dense: false, justifyContent: "normal", alignContent: "normal" };
     let columns: TrackList | undefined = spec.columns;
+    // A subgrid's columns: the ones it spans in its parent (their widths once the parent sized them).
+    if (spec.subgridColumns && sub) {
+      const tracks: TrackSize[] = "widths" in sub ? sub.widths.map((w) => ({ min: { len: w }, max: { len: w } })) : Array.from({ length: sub.span }, () => ({ min: "auto" as const, max: "auto" as const }));
+      columns = { tracks, names: tracks.map(() => []).concat([[]]) };
+    }
     if (!columns && p.columns) {
       const tracks: TrackSize[] = p.columns.value.map((t) => ("size" in t ? { min: { len: t.size }, max: { len: t.size } } : { min: t.auto ? "auto" : { len: 0 }, max: { fr: t.fr } }));
       columns = { tracks, names: tracks.map(() => []).concat([[]]) };
@@ -1021,7 +1026,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     };
     const places = kids.map((k) => resolveElement(model, k.comp, k.slot, width).place?.value);
     const auto = { start: { auto: true as const }, end: { auto: true as const } };
-    const placed = gridPlace(ex, places.map((pl) => ({ row: pl?.row ?? auto, column: pl?.column ?? auto })), spec.dense);
+    const placed = gridPlace(ex, places.map((pl) => ({ row: pl?.row ?? auto, column: pl?.column ?? auto })), spec.dense, !!spec.column);
     return { spec, cols, rowsT, ex, places, placed };
   }
 
@@ -1047,6 +1052,31 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     return { a, b, minContent: it.min + mx, maxContent: it.max + mx, minimum: minimum + mx, minimumSpanningFlex: ins.left + ins.right + mx, ...(it.why && { why: it.why, minOnly: true }) };
   }
 
+  /** Subgrids' column widths, set by their parent grid before it lays them out. */
+  const subgridCols = new WeakMap<FixtureNode, { widths: number[]; gap: number }>();
+
+  /**
+   * The column contributions of a grid's items: a subgrid's own items contribute to the parent's
+   * columns they are in (a subgrid of no inline margin, border or padding, with the parent's gap).
+   */
+  function gridColItems(kids: Kid[], areas: { c0: number; c1: number }[], colGap: number): (Contribution & { why?: string; minOnly?: boolean })[] {
+    return kids.flatMap((k, i) => {
+      const a = areas[i];
+      const kp = resolveElement(model, k.comp, k.slot, width);
+      if (!kp.grid?.value.subgridColumns) return [colContribution(k, a.c0, a.c1)];
+      const ins = insets(kp);
+      const m = marginOf(kp);
+      const subKids = k.node.children.map((n) => ({ node: n, ...childOf(n, k.comp, true) })).filter((x) => x.comp !== null) as Kid[];
+      const own = kp.gap !== undefined && kp.gap.display !== "0px (no gap)";
+      if (ins.left || ins.right || m.left || m.right || own) return [{ a: a.c0, b: a.c1, minContent: 0, maxContent: 0, minimum: 0, why: "a subgrid with inline padding, border, margins or a gap of its own isn't modelled" }];
+      const g = gridSetup(kp, subKids, undefined, colGap, 0, undefined, { span: a.c1 - a.c0 });
+      if ("why" in g.placed) return [{ a: a.c0, b: a.c1, minContent: 0, maxContent: 0, minimum: 0, why: g.placed.why }];
+      if (g.placed.cols > a.c1 - a.c0 || g.placed.colOffset) return [{ a: a.c0, b: a.c1, minContent: 0, maxContent: 0, minimum: 0, why: "a subgrid's items past the columns it spans aren't modelled" }];
+      const placed = g.placed;
+      return subKids.map((sk, j) => colContribution(sk, a.c0 + placed.areas[j].c0, a.c0 + placed.areas[j].c1));
+    });
+  }
+
   /** A grid's own min-content and max-content widths (its columns sized under that constraint). */
   function gridIntrinsic(p: ResolvedProps, kids: Kid[]): { min: number; max: number } | { why: string } {
     const gap = p.gap?.pct !== undefined ? 0 : (p.gap?.value ?? 0);
@@ -1056,8 +1086,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if ("why" in g.placed) return { why: g.placed.why };
     const { placed, spec } = g;
     const tracks = axisTracks(g.cols.tracks, placed.cols, placed.colOffset, spec.autoColumns);
-    const items = kids.map((k, i) => colContribution(k, placed.areas[i].c0, placed.areas[i].c1));
-    const bad = items.find((it, i) => it.why && tracks.slice(placed.areas[i].c0, placed.areas[i].c1).some((t) => !(typeof t.min === "object" && "len" in t.min && typeof t.max === "object" && "len" in t.max)));
+    const items = gridColItems(kids, placed.areas, gap);
+    const bad = items.find((it) => it.why && tracks.slice(it.a, it.b).some((t) => !(typeof t.min === "object" && "len" in t.min && typeof t.max === "object" && "len" in t.max)));
     if (bad) return { why: bad.why! };
     const sum = (s: number[]) => s.reduce((t, x) => t + x, 0) + gap * Math.max(0, s.length - 1);
     return { min: sum(sizeTracks(tracks, items, gap, "min-content", false)), max: sum(sizeTracks(tracks, items, gap, "max-content", false)) };
@@ -1069,16 +1099,21 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
    * then each item aligned in its area (stretched, or start, center or end; auto margins). The rows
    * are sized again once the grid's height is final (gridArrange).
    */
-  function templateGrid(box: { props: ResolvedProps }, kids: Kid[], innerW: number, colGap: number, notes: string[]): { boxes: Box[]; contentH: number; arrange: (contentH: number) => void } {
+  function templateGrid(box: { props: ResolvedProps; node?: FixtureNode }, kids: Kid[], innerW: number, colGap: number, notes: string[]): { boxes: Box[]; contentH: number; arrange: (contentH: number) => void } {
     const p = box.props;
+    // A subgrid laid out in its parent: the parent's column widths and gap.
+    const sub = p.grid?.value.subgridColumns ? (box.node && subgridCols.get(box.node)) : undefined;
+    if (p.grid?.value.subgridColumns && !sub) notes.push("a subgrid outside a grid that sizes its columns isn't modelled");
     const rowGapPct = p.rowGap?.pct;
+    // (A subgrid's own row gap: its rows aren't the parent's.)
     const rowGap = rowGapPct !== undefined ? 0 : (p.rowGap?.value ?? (p.gap?.pct !== undefined ? 0 : colGap));
+    if (sub) colGap = sub.gap;
     const innerH = p.height ? Math.max(0, p.height.value - insets(p).top - insets(p).bottom) : undefined;
-    let g = gridSetup(p, kids, innerW, colGap, rowGap, innerH);
+    let g = gridSetup(p, kids, innerW, colGap, rowGap, innerH, sub ? { widths: sub.widths } : undefined);
     if ("why" in g.placed) {
       notes.push(`its grid placement isn't modelled (${g.placed.why})`);
       const auto = { start: { auto: true as const }, end: { auto: true as const } };
-      g = { ...g, placed: gridPlace(g.ex, kids.map(() => ({ row: auto, column: auto })), g.spec.dense) };
+      g = { ...g, placed: gridPlace(g.ex, kids.map(() => ({ row: auto, column: auto })), g.spec.dense, !!g.spec.column) };
     }
     const placed = g.placed as Exclude<typeof g.placed, { why: string }>;
     const { spec } = g;
@@ -1100,8 +1135,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const fixed = (t: TrackSize) => typeof t.min === "object" && "len" in t.min && typeof t.max === "object" && "len" in t.max;
 
     // Columns.
-    const colItems = kids.map((k, i) => colContribution(k, areas[i].c0, areas[i].c1));
-    colItems.forEach((it, i) => {
+    const colItems = gridColItems(kids, areas, colGap);
+    colItems.forEach((it) => {
       // (An item whose min-content width alone is known only matters to tracks sized up to its max-content.)
       const needsMax = (t: TrackSize) => t.max === "auto" || t.max === "max-content" || t.fit !== undefined;
       if (it.why && colTracks.slice(it.a, it.b).some((t) => (it.minOnly ? needsMax(t) : !fixed(t) && !(typeof t.max === "object" && "fr" in t.max && typeof t.min === "object" && "len" in t.min))))
@@ -1119,6 +1154,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const boxes = kids.map((k, i) => {
       const a = areas[i];
       const cw = span(colX, colW, a.c0, a.c1);
+      if (resolveElement(model, k.comp, k.slot, width).grid?.value.subgridColumns) subgridCols.set(k.node, { widths: colW.slice(a.c0, a.c1), gap: colGap });
       const kp = atBase(resolveElement(model, k.comp, k.slot, width), cw);
       const km = marginOf(kp);
       const j = justify(i);
@@ -1457,7 +1493,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       children.push(...t.children);
       contentH = Math.max(0, t.h - insY);
     } else if (kids.length && pattern === "grid" && fullGrid(props, kids)) {
-      const tg = templateGrid({ props }, kids, innerW, gap, assumptions);
+      const tg = templateGrid({ props, node: n }, kids, innerW, gap, assumptions);
       children.push(...tg.boxes);
       contentH = tg.contentH;
       gridArr = tg.arrange;
@@ -2044,18 +2080,30 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
 
   // Transforms: each transformed box, and everything inside it, is drawn mapped by its matrix (and
   // its ancestors'); its rectangle is the bounding box of its mapped corners. Nothing else moves.
-  const drawTransformed = (b: Box, acc: Matrix | undefined) => {
+  // A 3D transform is projected: under its parent's perspective (perspective, perspective-origin),
+  // flattened onto its parent's plane (transform-style: flat), as getBoundingClientRect() reports it.
+  const drawTransformed = (b: Box, chain: Matrix4[], parent: Box | undefined) => {
     const t = b.props.transform?.value;
-    let m = acc;
-    const own = t ? boxMatrix(t.list, t.origin, b.w, b.h) : undefined;
+    let next = chain;
+    const own = t ? boxMatrix4(t.list, t.origin, b.w, b.h) : undefined;
     if (own) {
-      const local = multiply(multiply([1, 0, 0, 1, b.x, b.y], own), [1, 0, 0, 1, -b.x, -b.y]);
-      m = acc ? multiply(acc, local) : local;
+      let local = multiply4(multiply4(translate4(b.x, b.y), own), translate4(-b.x, -b.y));
+      const p = parent?.props.perspective?.value;
+      if (p && parent) {
+        const o = originOf(p.origin, parent.w, parent.h) ?? [parent.w / 2, parent.h / 2];
+        const [ox, oy] = [parent.x + o[0], parent.y + o[1]];
+        local = multiply4(multiply4(multiply4(translate4(ox, oy), perspective4(p.d)), translate4(-ox, -oy)), local);
+      }
+      next = [local, ...chain];
     }
-    for (const k of b.children) drawTransformed(k, m);
-    if (m) Object.assign(b, (({ x, y, w, h }) => ({ x, y, w, h }))(mapRect(m, b.x, b.y, b.w, b.h)));
+    for (const k of b.children) drawTransformed(k, next, b);
+    if (next.length) {
+      const r = projectRect(next, b.x, b.y, b.w, b.h);
+      if (r) Object.assign(b, r);
+      else b.assumptions.push("its 3D transform puts part of it behind the viewer, where Chromium clips it");
+    }
   };
-  for (const b of boxes) drawTransformed(b, undefined);
+  for (const b of boxes) drawTransformed(b, [], undefined);
 
   // Uncertainty spreads: a box the engine can't guarantee (an assumption, an error, an element it
   // skipped) may have a different size, which moves its later siblings (every sibling in a cluster,

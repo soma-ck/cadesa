@@ -55,8 +55,20 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   the baseline a select had when it was laid out before the font loaded (up to half a pixel off,
   which depends on when the font arrives). `<input type=color>` is 50×27 with its baseline 21px
   down, at any font. Date, time and file inputs stay `≈` (their inner fields aren't modelled).
-- An inline box whose leading space collapses into the space before it opens on the line that space
-  ends: in a font size or line height of its own, that line is as tall as its strut.
+- An inline box whose own leading whitespace (spaces before an element in it) collapses into the
+  space before it opens on the line that space ends when that line is full there: in a font size or
+  line height of its own, that line is as tall as its strut, as LayoutNG takes trailing whitespace.
+- `grid-auto-flow: column` and `column dense`: auto-placed items fill a column's rows, then add a
+  column (CSS Grid's placement with the axes swapped). In a source: a template's `flow: column`.
+- Subgrids: `grid-template-columns: subgrid` on a grid item takes the columns it spans in its parent,
+  and its own items size them along with the parent's (rows of a ledger lining up their cells),
+  with the parent's column gap. A subgrid with inline padding, border, margins or a gap of its own
+  stays `≈`.
+- 3D transforms are projected as `getBoundingClientRect()` reports them: `translateZ`,
+  `translate3d`, `rotateX`, `rotateY`, `rotate3d`, `scale3d`, `perspective()` and `matrix3d`, about a
+  3D `transform-origin`, under the parent's `perspective` and `perspective-origin`, flattened at
+  each level (`transform-style: flat`). Part of a box behind the viewer, `preserve-3d`, and lengths
+  in viewport units stay `≈`. In a source: `perspective: <px>` or `{ value, origin }`.
 - A line height in px with a font size that isn't a whole number of 1/64 px (`40px` at `16.8px`) is
   exactly that many px (it came out 1/64 px short).
 

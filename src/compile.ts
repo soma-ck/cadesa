@@ -83,7 +83,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
               `grid-template-areas: ${l.template.areas ? l.template.areas.map((a) => JSON.stringify(a)).join(" ") : "none"}`,
               `grid-auto-columns: ${l.template.autoColumns ?? "auto"}`,
               `grid-auto-rows: ${l.template.autoRows ?? "auto"}`,
-              `grid-auto-flow: ${l.template.dense ? "row dense" : "row"}`,
+              `grid-auto-flow: ${l.template.flow ?? "row"}${l.template.dense ? " dense" : ""}`,
               `justify-content: ${l.template.justifyContent ?? "normal"}`,
               `align-content: ${l.template.alignContent ?? "normal"}`,
             ]
@@ -136,6 +136,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   else if (unset("radius")) out.push("border-radius: 0");
   if (p.transform) out.push(`transform: ${p.transform.value}`, `transform-origin: ${p.transform.origin ?? "50% 50%"}`);
   else if (unset("transform")) out.push("transform: none");
+  if (p.perspective) out.push(`perspective: ${p.perspective.value}px`, `perspective-origin: ${p.perspective.origin ?? "50% 50%"}`);
   // max-width + auto margins. width: 100% so a flex or grid parent doesn't shrink-wrap the box
   // (auto margins switch off stretching). maxWidth and measure share max-width: when both apply
   // (in this rule or merged from an earlier one), the smaller wins.

@@ -1,0 +1,115 @@
+/*
+ * grid-auto-flow: column and column dense (items fill columns, adding columns), subgrids (rows that
+ * line up their cells on the parent grid's columns), and 3D transforms under a perspective (each box
+ * as getBoundingClientRect projects it).
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 15px/1.4 Inter, sans-serif;
+  color: #1d2329;
+  background: #ffffff;
+}
+
+.board {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 20px 16px;
+}
+
+.shelf {
+  display: grid;
+  grid-auto-flow: column;
+  grid-template-rows: repeat(3, auto);
+  grid-auto-columns: minmax(80px, 1fr);
+  gap: 8px;
+  margin-bottom: 20px;
+}
+
+.book {
+  padding: 6px 8px;
+  background: #eef2f6;
+}
+
+.book--wide {
+  grid-column: span 2;
+}
+
+.book--tall {
+  grid-row: span 2;
+}
+
+.book--pinned {
+  grid-row: 1;
+}
+
+.packed {
+  display: grid;
+  grid-auto-flow: column dense;
+  grid-template-rows: 40px 40px;
+  grid-auto-columns: 90px;
+  gap: 6px;
+  margin-bottom: 20px;
+}
+
+.slot {
+  padding: 4px;
+  background: #f4ecdc;
+}
+
+.slot--two {
+  grid-row: span 2;
+}
+
+.ledger {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 12px;
+  margin-bottom: 24px;
+}
+
+.entry {
+  display: grid;
+  grid-column: 1 / -1;
+  grid-template-columns: subgrid;
+  padding: 4px 0;
+  border-bottom: 1px solid #dde3e8;
+}
+
+.entry__cost {
+  text-align: right;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 24px;
+  perspective: 600px;
+}
+
+.card {
+  height: 90px;
+  padding: 12px;
+  background: #e6eef8;
+}
+
+.card--tilt {
+  transform: rotateX(30deg);
+}
+
+.card--turn {
+  transform: rotateY(-40deg);
+}
+
+.card--lift {
+  transform: translateZ(60px);
+}
+
+.card--flat {
+  transform: rotate(4deg);
+}

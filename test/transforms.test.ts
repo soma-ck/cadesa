@@ -28,7 +28,7 @@ describe("transform values", () => {
     expect(originOf("25% 10px", 100, 40)).toEqual([25, 10]);
     expect(individual("translate", "4px 0")).toBe("translate(4px, 0)");
     expect(individual("rotate", "z 5deg")).toBe("rotate(5deg)");
-    expect(individual("rotate", "x 5deg")).toBeUndefined();
+    expect(individual("rotate", "x 5deg")).toBe("rotateX(5deg)");
   });
 });
 

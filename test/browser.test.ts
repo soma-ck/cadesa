@@ -32,7 +32,7 @@ describe.skipIf(!browserOk)("check --verify", () => {
       { status: "confirmed", detail: "20×20px" },
       { status: "confirmed", detail: "20×20px" },
     ]);
-    // Drawn 2.5 times its size (perspective(100px) translateZ(60px)): 50×50 in Chromium, though 20×20 in the layout.
+    // Drawn 2.5 times its size (perspective(10vmin) translateZ(6vmin), not modelled in viewport units): 50×50 in Chromium, though 20×20 in the layout.
     expect(by("zoomed")[0].verified).toEqual({ status: "not reproduced", detail: "50×50px" });
     expect(by("note")[0].verified).toMatchObject({ status: "confirmed", detail: "text #999999 on #ffffff is 2.85:1; WCAG AA needs 4.5:1" });
     expect(by("box")[0].verified).toMatchObject({ status: "confirmed", detail: "overflows by 100px" });

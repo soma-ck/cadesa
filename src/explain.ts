@@ -28,6 +28,7 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   grid: "layout",
   place: "place",
   transform: "transform",
+  perspective: "perspective",
   gap: "layout",
   align: "layout",
   min: "layout",

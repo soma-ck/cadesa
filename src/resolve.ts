@@ -27,6 +27,10 @@ export interface GridSpec {
   autoColumns: TrackSize[];
   autoRows: TrackSize[];
   dense: boolean;
+  /** grid-auto-flow: column (auto-placed items fill columns, adding columns). */
+  column?: boolean;
+  /** grid-template-columns: subgrid (its columns are the ones it spans in its parent grid). */
+  subgridColumns?: boolean;
   justifyContent: string;
   alignContent: string;
 }
@@ -146,6 +150,8 @@ export interface ResolvedProps {
   contain?: Resolved<Contain>;
   /** A 2D transform about its origin (CSS transform and transform-origin): where the box and its content are drawn. */
   transform?: Resolved<{ list: string; origin?: string }>;
+  /** perspective (px) and perspective-origin: the 3D transforms of its children are projected from there. */
+  perspective?: Resolved<{ d: number; origin?: string }>;
   /** A grid's template (CSS grid-template-*, grid-auto-*, content alignment), sized by Chromium's grid algorithm. */
   grid?: Resolved<GridSpec>;
   /** A grid item's lines and its own alignment. */
@@ -322,12 +328,14 @@ export function resolveElement(model: Model, component: Component, slot: string 
           const shown = [t.columns && `columns ${t.columns}`, t.rows && `rows ${t.rows}`, t.areas && `areas ${t.areas.map((a) => JSON.stringify(a)).join(" ")}`, t.autoRows && `auto rows ${t.autoRows}`, t.autoColumns && `auto columns ${t.autoColumns}`].filter(Boolean).join(", ");
           out.grid = {
             value: {
-              columns: list(t.columns),
+              columns: t.columns === "subgrid" ? undefined : list(t.columns),
+              ...(t.columns === "subgrid" && { subgridColumns: true }),
               rows: list(t.rows),
               areas: t.areas ? parseAreas(t.areas) : undefined,
               autoColumns: auto(t.autoColumns),
               autoRows: auto(t.autoRows),
               dense: !!t.dense,
+              ...(t.flow === "column" && { column: true }),
               justifyContent: t.justifyContent ?? "normal",
               alignContent: t.alignContent ?? "normal",
             },
@@ -377,6 +385,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "transform": {
         const t = p.transform!;
         out.transform = { value: { list: t.value, ...(t.origin && { origin: t.origin }) }, display: `${t.value}${t.origin ? ` about ${t.origin}` : ""}`, steps: [...pre, src(t.path)] };
+        break;
+      }
+      case "perspective": {
+        const v = p.perspective!;
+        out.perspective = { value: { d: v.value, ...(v.origin && { origin: v.origin }) }, display: `${v.value}px${v.origin ? ` from ${v.origin}` : ""}`, steps: [...pre, src(v.path)] };
         break;
       }
       case "contain": {

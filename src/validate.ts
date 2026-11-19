@@ -1,6 +1,6 @@
 import { closest, type Diagnostic } from "./diagnostics.js";
 import { lengthExpr } from "./fluid.js";
-import { originOf, transformList } from "./engine/transform.js";
+import { originOf, originOf3, transformList4 } from "./engine/transform.js";
 import { parseAreas, parseLinePair, parseTrackList } from "./engine/grid.js";
 import type { PathSeg, Source } from "./load.js";
 import {
@@ -269,11 +269,15 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   const gridTemplate = (v: unknown, path: PathSeg[]): GridTemplateProp | undefined => {
     const o = obj(v, path, "a grid template");
     if (!o) return undefined;
-    keys(o, path, ["columns", "rows", "areas", "autoColumns", "autoRows", "dense", "justifyContent", "alignContent"]);
+    keys(o, path, ["columns", "rows", "areas", "autoColumns", "autoRows", "dense", "flow", "justifyContent", "alignContent"]);
     const out: GridTemplateProp = {};
     let ok = true;
     for (const k of ["columns", "rows", "autoColumns", "autoRows"] as const) {
       if (o[k] === undefined) continue;
+      if (k === "columns" && o[k] === "subgrid") {
+        out.columns = "subgrid";
+        continue;
+      }
       const l = typeof o[k] === "string" ? parseTrackList(o[k] as string) : undefined;
       if (!l || (k.startsWith("auto") && (l.repeat || !l.tracks.length))) {
         err([...path, k], `invalid ${k}`, { expected: 'a CSS track list, e.g. "1fr auto 1fr", "repeat(3, minmax(0, 1fr))" or "[full-start] 16px [content-start] 1fr"', got: o[k] });
@@ -292,6 +296,12 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         err([...path, "dense"], "invalid dense", { expected: "true or false", got: o.dense });
         ok = false;
       } else if (o.dense) out.dense = true;
+    }
+    if (o.flow !== undefined) {
+      if (o.flow !== "row" && o.flow !== "column") {
+        err([...path, "flow"], "invalid flow", { expected: "row or column", got: o.flow });
+        ok = false;
+      } else if (o.flow === "column") out.flow = "column";
     }
     const CONTENT = ["start", "center", "end", "stretch", "space-between", "space-around", "space-evenly"];
     for (const k of ["justifyContent", "alignContent"] as const) {
@@ -806,15 +816,32 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           if (isObj(v)) keys(v, p, ["value", "origin"]);
           const list = typeof o.value === "string" ? o.value.trim() : undefined;
           const origin = typeof o.origin === "string" ? o.origin.trim() : o.origin === undefined ? undefined : null;
-          if (!list || !transformList(list, 100, 100)) {
-            err(isObj(v) ? [...p, "value"] : p, "invalid transform", { expected: 'CSS 2D transform functions in px or %, e.g. "rotate(3deg)" or "translate(-50%, 0) scale(1.2)"', got: o.value });
+          if (!list || !transformList4(list, 100, 100)) {
+            err(isObj(v) ? [...p, "value"] : p, "invalid transform", { expected: 'CSS transform functions in px or % (2D, or 3D: translateZ, rotateX, rotateY, rotate3d, scale3d, perspective(), matrix3d), e.g. "rotate(3deg)" or "translate(-50%, 0) scale(1.2)"', got: o.value });
             break;
           }
-          if (origin === null || (origin !== undefined && !originOf(origin, 100, 100))) {
+          if (origin === null || (origin !== undefined && !originOf3(origin, 100, 100))) {
             err([...p, "origin"], "invalid transform origin", { expected: 'a transform-origin in keywords, px or %, e.g. "left top" or "50% 0"', got: o.origin });
             break;
           }
           out.transform = { value: list, ...(origin && { origin }), path: p.join(".") };
+          break;
+        }
+        case "perspective": {
+          // perspective: 600 (px), or { value: 600, origin: "left top" }: its children's 3D transforms are seen from there.
+          const o = isObj(v) ? v : { value: v };
+          if (isObj(v)) keys(v, p, ["value", "origin"]);
+          const d = typeof o.value === "number" ? o.value : typeof o.value === "string" && /^\d*\.?\d+px$/.test(o.value.trim()) ? parseFloat(o.value) : NaN;
+          const origin = typeof o.origin === "string" ? o.origin.trim() : o.origin === undefined ? undefined : null;
+          if (!(d >= 0)) {
+            err(isObj(v) ? [...p, "value"] : p, "invalid perspective", { expected: "a distance in px, e.g. 600 or \"600px\"", got: o.value });
+            break;
+          }
+          if (origin === null || (origin !== undefined && !originOf(origin, 100, 100))) {
+            err([...p, "origin"], "invalid perspective origin", { expected: 'a perspective-origin in keywords, px or %, e.g. "left top" or "50% 0"', got: o.origin });
+            break;
+          }
+          out.perspective = { value: d, ...(origin && { origin }), path: p.join(".") };
           break;
         }
         case "contain": {

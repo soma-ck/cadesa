@@ -14,7 +14,7 @@ import { classify } from "./selectors.js";
 import { validate } from "../validate.js";
 import { lengthExpr } from "../fluid.js";
 import { parseContain } from "../model.js";
-import { originOf, transformList } from "../engine/transform.js";
+import { originOf, originOf3, transformList4 } from "../engine/transform.js";
 import { parseAreas, parseLinePair, parseTrackList } from "../engine/grid.js";
 import { lineHeightRatio } from "../engine/layout.js";
 import { metricsFor } from "../engine/text.js";
@@ -695,7 +695,7 @@ export function liftElements(input: LiftInput): LiftResult {
         const tracks = cols && cv !== "none" ? gridTracks(cv) : undefined;
         // The rest of a grid's template: CSS Grid's own algorithm (layout.template).
         const more = (["grid-template-rows", "grid-template-areas", "grid-auto-rows", "grid-auto-columns", "grid-auto-flow", "justify-content", "align-content"] as const).map((p) => [p, take(p)] as const);
-        if (cols && cv !== "none" && !tracks && !parseTrackList(cv.replace(/(-?\d*\.?\d+)rem\b/g, (_, n) => `${parseFloat(n) * 16}px`)))
+        if (cols && cv !== "none" && cv !== "subgrid" && !tracks && !parseTrackList(cv.replace(/(-?\d*\.?\d+)rem\b/g, (_, n) => `${parseFloat(n) * 16}px`)))
           note(e, s, cols, `grid-template-columns: ${cv} has no Cadesa pattern`, "geometry");
         else if (!tracks || more.some(([, d]) => d)) {
           const template: Record<string, unknown> = {};
@@ -704,7 +704,8 @@ export function liftElements(input: LiftInput): LiftResult {
           const list = (d: Decl, key: string) => {
             const v = px(d.value);
             if (v === "none" || (key.startsWith("auto") && v === "auto")) return;
-            if (parseTrackList(v) && !(key.startsWith("auto") && parseTrackList(v)!.repeat)) template[key] = v;
+            if (key === "columns" && v === "subgrid") template[key] = v;
+            else if (parseTrackList(v) && !(key.startsWith("auto") && parseTrackList(v)!.repeat)) template[key] = v;
             else note(e, s, d, `${d.prop}: ${v} isn't a track list Cadesa reads`, "geometry");
           };
           if (cols && cv !== "none") list({ ...cols, value: cv }, "columns");
@@ -718,8 +719,11 @@ export function liftElements(input: LiftInput): LiftResult {
               if (rows.length && parseAreas(rows)) template.areas = rows;
               else if (v !== "none") note(e, s, d, `grid-template-areas: ${v} isn't a template Cadesa reads`, "geometry");
             } else if (p === "grid-auto-flow") {
-              if (/^(row\s+dense|dense\s+row|dense)$/.test(v)) template.dense = true;
-              else if (v !== "row") note(e, s, d, `grid-auto-flow: ${v} isn't modelled (row and dense are)`, "geometry");
+              const words = v.split(/\s+/);
+              if (words.length && words.every((w) => /^(row|column|dense)$/.test(w)) && new Set(words).size === words.length && !(words.includes("row") && words.includes("column"))) {
+                if (words.includes("dense")) template.dense = true;
+                if (words.includes("column")) template.flow = "column";
+              } else note(e, s, d, `grid-auto-flow: ${v} isn't modelled (row, column and dense are)`, "geometry");
             } else {
               const c = CONTENT[v];
               if (c === undefined) note(e, s, d, `${p}: ${v} has no Cadesa equivalent`, "geometry");
@@ -940,9 +944,19 @@ export function liftElements(input: LiftInput): LiftResult {
     if (tf) {
       const list = resolveVar(tf.value)?.raw.trim();
       const origin = to ? resolveVar(to.value)?.raw.trim() : undefined;
-      if (list && list !== "none" && transformList(list, 100, 100) && (origin === undefined || originOf(origin, 100, 100)))
+      if (list && list !== "none" && transformList4(list, 100, 100) && (origin === undefined || originOf3(origin, 100, 100)))
         out.transform = origin && !/^(50%|center)(\s+(50%|center))?$/.test(origin) ? { value: list, origin } : list;
-      else if (list !== "none") note(e, s, tf, "only 2D transforms (in px or %) are modelled", "visual");
+      else if (list !== "none") note(e, s, tf, "only transforms in px or % (2D, and 3D with translateZ, rotateX, rotateY, rotate3d, scale3d, perspective() or matrix3d) are modelled", "visual");
+    }
+    // perspective: its children's 3D transforms are projected from perspective-origin.
+    const pp = take("perspective");
+    const po = take("perspective-origin");
+    if (pp && pp.value.trim() !== "none") {
+      const d = resolveVar(pp.value)?.raw.trim();
+      const origin = po ? resolveVar(po.value)?.raw.trim() : undefined;
+      const px = d !== undefined && LENGTH.test(d) ? pxOf(d) : NaN;
+      if (px >= 0 && (origin === undefined || originOf(origin, 100, 100))) out.perspective = origin && !/^(50%|center)(\s+(50%|center))?$/.test(origin) ? { value: px, origin } : px;
+      else note(e, s, pp, "perspective must be a px or rem length (and perspective-origin keywords, px or %)", "visual");
     }
     // contain: layout and paint make an independent formatting context, size sizes the box as if empty.
     const ct = take("contain");

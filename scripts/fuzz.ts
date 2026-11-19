@@ -260,6 +260,12 @@ function genLayout(g: Gen, parentDepth: number): Obj {
     if (r.chance(0.3)) t.rows = r.pick(["auto 1fr", "minmax(40px, auto)", "60px auto", "auto auto auto"]);
     if (r.chance(0.2)) t.autoRows = r.pick(["minmax(32px, auto)", "48px", "auto"]);
     if (r.chance(0.15)) t.dense = true;
+    // Column flow: items fill the rows of a column, then add a column.
+    if (r.chance(0.15)) {
+      t.flow = "column";
+      t.rows ??= r.pick(["auto auto", "auto auto auto", "40px auto"]);
+      if (r.chance(0.5)) t.autoColumns = r.pick(["minmax(60px, 1fr)", "100px", "auto"]);
+    }
     if (r.chance(0.15)) t.justifyContent = r.pick(["start", "center", "end", "space-between"]);
     if (r.chance(0.1)) t.alignContent = r.pick(["start", "center", "end"]);
     l.template = t;
@@ -344,12 +350,20 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
     if (r.chance(0.3)) pl.justify = r.pick(["start", "center", "end", "stretch"]);
     if (Object.keys(pl).length) p.place = pl;
   }
-  // A 2D transform: drawn mapped, moving nothing else.
+  // A subgrid: a grid item whose columns are the ones it spans in its parent's template.
+  if (parent === "grid" && p.layout && (p.layout as Obj).template && r.chance(0.35)) {
+    ((p.layout as Obj).template as Obj).columns = "subgrid";
+    delete (p.layout as Obj).gap;
+    p.place = { ...((p.place as Obj) ?? {}), column: r.pick(["1 / -1", "span 2", "1 / 3", "2 / -1"]) };
+  }
+  // A transform: drawn mapped (in 3D, projected under its parent's perspective), moving nothing else.
   if (kind !== "media" && r.chance(0.06 * s))
     p.transform = r.weighted<Obj | string>([
       [r.pick(["rotate(3deg)", "rotate(-7deg)", "translate(10px, -4px)", "scale(1.1)", "translateX(-50%)", "rotate(-2deg) scale(0.9)", "skewX(10deg)", "rotate(90deg)"]), 4],
       [{ value: r.pick(["scale(1.2)", "rotate(5deg)"]), origin: r.pick(["left top", "0 0", "right bottom", "25% 75%"]) }, 1],
+      [r.pick(["rotateX(30deg)", "rotateY(-35deg)", "translateZ(40px)", "perspective(500px) rotateY(20deg)", "rotate3d(1, 1, 0, 25deg)", "translate3d(10px, 0, -60px)", "rotateX(90deg)", "scale3d(1.1, 0.9, 2) rotateX(15deg)"]), 2],
     ]);
+  if (kind === "box" && r.chance(0.08 * s)) p.perspective = r.weighted<Obj | number>([[r.pick([300, 600, 1000]), 3], [{ value: r.pick([400, 800]), origin: r.pick(["left top", "25% 75%", "right center"]) }, 1]]);
   if (kind === "media") {
     if (r.chance(0.85)) p.aspect = r.pick(["16:9", "4:3", "1:1", "3:2", "2:3", "21:9", 1.5, 0.75, "1.91:1"]);
     else if (r.chance(0.8)) p.height = r.pick(g.sizes);

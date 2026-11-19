@@ -126,8 +126,10 @@ export interface GridTemplateProp {
   areas?: string[];
   autoColumns?: string;
   autoRows?: string;
-  /** grid-auto-flow (row only; dense fills earlier holes). */
+  /** grid-auto-flow: dense fills earlier holes. */
   dense?: boolean;
+  /** grid-auto-flow: column fills columns (adding columns) instead of rows. */
+  flow?: "row" | "column";
   /** justify-content / align-content: where the tracks sit when they don't fill the grid. */
   justifyContent?: string;
   alignContent?: string;
@@ -269,6 +271,8 @@ export interface Props {
    * are drawn mapped by it.
    */
   transform?: { value: string; origin?: string; path: string };
+  /** perspective (px) and perspective-origin: its children's 3D transforms are seen from there. */
+  perspective?: { value: number; origin?: string; path: string };
   /** In a grid: the lines it spans (grid-row, grid-column) and its own alignment in its area. */
   place?: PlaceProp;
   /**
@@ -342,6 +346,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "position",
   "contain",
   "transform",
+  "perspective",
   "place",
   "part",
 ];

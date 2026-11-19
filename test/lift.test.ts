@@ -214,7 +214,9 @@ describe("lift of expressive CSS", () => {
     expect((one(`.c { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px 12px }`).data.styles as Record<string, { layout: unknown }>).c.layout).toMatchObject({ pattern: "grid", columns: 3 });
     // Other track lists keep CSS's template, sized by the grid algorithm.
     expect((one(`.c { display: grid; grid-template-columns: minmax(200px, 1fr) auto }`).data.styles as Record<string, { layout: unknown }>).c.layout).toEqual({ pattern: "grid", template: { columns: "minmax(200px, 1fr) auto" } });
-    const r = one(`.c { display: grid; grid-template-columns: subgrid }`);
-    expect(r.unlifted[0].reason).toMatch(/grid-template-columns: subgrid has no Cadesa pattern/);
+    const r = one(`.c { display: grid; grid-template-columns: masonry }`);
+    expect(r.unlifted[0].reason).toMatch(/grid-template-columns: masonry has no Cadesa pattern/);
+    // A subgrid's columns are its parent's.
+    expect((one(`.c { display: grid; grid-template-columns: subgrid }`).data.styles as Record<string, { layout: unknown }>).c.layout).toEqual({ pattern: "grid", template: { columns: "subgrid" } });
   });
 });

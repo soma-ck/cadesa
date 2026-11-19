@@ -535,6 +535,19 @@
           "pattern": "^\\s*(none|content|strict|((size|inline-size|layout|style|paint)(\\s+|$))+)\\s*$",
           "description": "CSS containment: layout or paint makes the box an independent formatting context (margins don't collapse through it) and the containing block of its absolute and fixed descendants (paint also clips); size sizes it as if empty (inline-size: its widths only); style changes nothing. content is layout paint style, strict adds size; none: in a breakpoint override, no containment"
         },
+        "perspective": {
+          "oneOf": [
+            { "type": "number", "minimum": 0 },
+            { "type": "string", "pattern": "^\\s*\\d*\\.?\\d+px\\s*$" },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["value"],
+              "properties": { "value": { "type": "number", "minimum": 0 }, "origin": { "type": "string" } }
+            }
+          ],
+          "description": "perspective in px (and perspective-origin): its children's 3D transforms are projected from there"
+        },
         "part": {
           "type": "string",
           "pattern": "^\\s*(caption(\\s+(top|bottom))?|column|column-group|header|body|footer|row|cell(\\s+(baseline|top|middle|bottom))?)\\s*$",

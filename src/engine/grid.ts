@@ -288,6 +288,18 @@ export interface Explicit {
 }
 
 /**
+ * Place every item by grid-auto-flow: row flow (place), or column flow, which is row flow with the
+ * axes swapped (CSS Grid §8.5 swaps "row" and "column" for it).
+ */
+export function placeFlow(ex: Explicit, items: { row: LinePair; column: LinePair }[], dense: boolean, column: boolean): ReturnType<typeof place> {
+  if (!column) return place(ex, items, dense);
+  const areas = ex.areas && new Map([...ex.areas].map(([n, a]) => [n, { r0: a.c0, r1: a.c1, c0: a.r0, c1: a.r1 }] as const));
+  const t = place({ cols: ex.rows, rows: ex.cols, colNames: ex.rowNames, rowNames: ex.colNames, ...(areas && { areas }) }, items.map((it) => ({ row: it.column, column: it.row })), dense);
+  if ("why" in t) return t;
+  return { areas: t.areas.map((a) => ({ r0: a.c0, r1: a.c1, c0: a.r0, c1: a.r1 })), rows: t.cols, cols: t.rows, rowOffset: t.colOffset, colOffset: t.rowOffset };
+}
+
+/**
  * Place every item (CSS Grid §8.5, row flow): items with a definite row and column first, then
  * those locked to a row, then the rest by the auto-placement cursor. Returns each item's area
  * (0-based lines, possibly in implicit tracks before the explicit grid: `offset` rows/columns were
