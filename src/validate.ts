@@ -5,6 +5,8 @@ import {
   DEFAULT_PREFIX,
   LENGTH_CATEGORIES,
   OVERFLOWS,
+  parseContain,
+  relative,
   PROP_ORDER,
   ROOT_FONT_PX,
   TOKEN_CATEGORIES,
@@ -171,9 +173,15 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: fl.css, px: fl.at(1280), fluid: fl.at });
             continue;
           }
+          // A size with percentages of the parent's width in calc(), min(), max() or clamp().
+          const withPct = !len && !fl && category === "size" && typeof value === "string" ? lengthExpr(value, { pct: true }) : undefined;
+          if (withPct?.pct) {
+            tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: withPct.css, calc: withPct.pct });
+            continue;
+          }
           if (!len) {
             err(path, `invalid ${category} length`, {
-              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px), or one that follows the viewport width, e.g. "clamp(16px, 8px + 2vw, 32px)"${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%"' : category === "space" ? "; negative for a margin that pulls the box outward" : ""}`,
+              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px), or one that follows the viewport width, e.g. "clamp(16px, 8px + 2vw, 32px)"${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%" or "min(440px, 100%)"' : category === "space" ? "; negative for a margin that pulls the box outward" : ""}`,
               got: value,
             });
             continue;
@@ -231,7 +239,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
   /** A size token that must be a fixed length (a percentage of the width can't size it). */
   const fixedRef = (value: unknown, path: PathSeg[], what: string): Ref | undefined => {
     const r = ref(value, path, "size");
-    if (r && tokens.get(tokenKey("size", r.name))!.pct !== undefined) {
+    if (r && relative(tokens.get(tokenKey("size", r.name))!)) {
       err(path, `"${r.name}" is a percentage; ${what} needs a length`, { expected: "a size token in px or rem", got: value });
       return undefined;
     }
@@ -461,7 +469,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             err([...p, "rowGap"], "rowGap only applies to a grid or a cluster (the gap between its rows)", { expected: "remove rowGap, or use gap" });
             break;
           }
-          const rowGap = l.rowGap === undefined ? undefined : spaceRef(l.rowGap, [...p, "rowGap"], "a gap");
+          // A grid's gap between rows may be a percentage of its height (a size token): 0 while its rows are sized, then of its final height.
+          const pctRowGap = typeof l.rowGap === "string" && l.pattern === "grid" && tokens.get(tokenKey("size", l.rowGap))?.pct !== undefined && !tokens.has(tokenKey("space", l.rowGap));
+          const rowGap = l.rowGap === undefined ? undefined : pctRowGap ? ref(l.rowGap, [...p, "rowGap"], "size") : spaceRef(l.rowGap, [...p, "rowGap"], "a gap");
           if (l.rowGap !== undefined && !rowGap) break;
           if (l.align !== undefined && (l.pattern === "stack" || l.pattern === "flow" || !["start", "center", "end", "stretch"].includes(l.align as string))) {
             err([...p, "align"], l.pattern === "stack" || l.pattern === "flow" ? `align doesn't apply to a ${l.pattern} (its children always stretch)` : "invalid align", {
@@ -661,6 +671,13 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const fix = (a: Overflow, other: Overflow): Overflow => (scrolling(other) && !scrolling(a) ? (a === "visible" ? "auto" : "hidden") : a);
           [x, y] = [fix(x, y), fix(y, x)];
           out.overflow = { x, y, raw: x === y ? x : `x ${x}, y ${y}`, path: p.join(".") };
+          break;
+        }
+        case "contain": {
+          // contain: "layout paint style", content, strict, size, inline-size; none in an override.
+          const c = typeof v === "string" ? parseContain(v) : undefined;
+          if (!c) err(p, "invalid contain", { expected: "none, content, strict, or any of size (or inline-size), layout, style and paint, e.g. \"layout paint\"", got: v });
+          else out.contain = { ...c, raw: (v as string).trim().toLowerCase().replace(/\s+/g, " "), path: p.join(".") };
           break;
         }
         case "textAlign":

@@ -10,7 +10,7 @@
  */
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
-import { scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
+import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
 import { activeBreakpoints, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 
@@ -93,6 +93,15 @@ function offsetX(b: Box, cell: number): number {
 const inLine = (b: Box) => b.props.pattern?.value === "stack" || b.props.pattern?.value === "flow";
 
 const NO_MARGIN: Margins = { top: 0, right: 0, bottom: 0, left: 0 };
+
+/**
+ * Whether box `b` is the containing block of an absolutely positioned (any positioned box, or
+ * layout or paint containment) or fixed (containment only) descendant.
+ */
+export function containingBlock(b: Box, type: "absolute" | "fixed" | string): boolean {
+  if (containsLayout(b.props.contain?.value)) return true;
+  return type === "absolute" && !!b.props.position;
+}
 const marginOf = (p: ResolvedProps): Margins => p.margin?.value ?? NO_MARGIN;
 /** Height including the vertical margins (a flex or grid item's outer size; they never collapse there). */
 const outerH = (b: Box) => {
@@ -186,6 +195,8 @@ interface Arrangement {
   /** Natural height of each row. */
   heights: number[];
   gap: number;
+  /** A grid's percentage row gap: of its final content height (its rows were sized with none). */
+  gapPct?: number;
   align: "start" | "center" | "end" | "stretch";
   insetTop: number;
   insetY: number;
@@ -256,7 +267,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     return t === "absolute" || t === "fixed";
   };
   /** Out-of-flow boxes waiting for their containing block's final geometry, parents first. */
-  const absQueue: { k: { node: FixtureNode; comp: Component; slot: string | undefined }; parent: Box | undefined; first: boolean; pattern: string }[] = [];
+  const absQueue: {
+    k: { node: FixtureNode; comp: Component; slot: string | undefined };
+    parent: Box | undefined;
+    /** Its static position from its parent's content box corner (before its own margins), or undefined when it isn't known. */
+    at?: { x: number; y: number };
+  }[] = [];
   /** Each placed out-of-flow box: its containing block (undefined: the window) and whether it sits at its static position. */
   const absInfo = new Map<Box, { cb?: Box; parent?: Box; staticPos: boolean }>();
   /** The window's height: fixed boxes, and absolute ones with no positioned ancestor, are placed in it. */
@@ -468,17 +484,20 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const ins = insets(p);
     const insX = ins.left + ins.right;
     const unknown = (why: string): Intrinsic => ({ min: 0, max: 0, why });
-    const capOf = (r?: { value: number | { pct: number } }) => (r === undefined ? Infinity : typeof r.value === "number" ? r.value : NaN);
+    // A width or max width with a percentage in it is cyclic here (the box being sized holds this
+    // one): for its intrinsic contribution the whole value counts as auto or none (CSS Sizing §5.2.1).
+    const capOf = (r?: { value: number | { pct: number } }) => (r === undefined ? Infinity : typeof r.value === "number" ? r.value : Infinity);
     // (A content size suggestion: the caller clamps it by the box's own max width, which may be a percentage.)
     const cap = contentOnly ? Infinity : Math.min(capOf(p.maxWidth), capOf(p.measure));
-    if (isNaN(cap)) return unknown(`<${n.tag}> has a percentage max width`);
-    const pw = contentOnly ? undefined : p.width?.value;
+    const pw = contentOnly || (typeof p.width?.value === "object") ? undefined : p.width?.value;
     if (typeof pw === "number") {
       const w = Math.max(insX, Math.min(pw, cap));
       return { min: w, max: w };
     }
     if (pw !== undefined && pw !== "fit") return unknown(`<${n.tag}> has a ${pw === "fill" ? "fill" : "percentage"} width, which depends on the box being sized`);
     if (p.aspect && !contentOnly) return unknown(`<${n.tag}> has an aspect ratio`);
+    // Size containment (size or inline-size): as wide as if it were empty.
+    if (p.contain?.value.size) return { min: insX, max: insX };
     let min = 0;
     let max = 0;
     let wraps = false;
@@ -784,7 +803,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
    * is the padding box of the nearest positioned ancestor (fixed, or none: the window). Offsets in
    * px or a percentage of it; a width from left and right, else its own, else shrink-to-fit; a
    * height from top and bottom, else its own or its content's. With no offset on an axis it sits
-   * at its static position, which is known only before any in-flow sibling in block flow.
+   * at its static position (see measure: below the in-flow boxes before it in block flow, at the
+   * start of a flexbox, at the padding box corner of a grid).
    */
   function placeAbsolute(parentOf: Map<Box, Box>, pageX: number, pageY: number) {
     while (absQueue.length) {
@@ -792,12 +812,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const p = resolveElement(model, a.k.comp, a.k.slot, width);
       const pos = p.position!.value;
       let cbBox: Box | undefined;
-      if (pos.type === "absolute")
-        for (let x = a.parent; x; x = parentOf.get(x))
-          if (x.props.position) {
-            cbBox = x;
-            break;
-          }
+      for (let x = a.parent; x; x = parentOf.get(x))
+        if (containingBlock(x, pos.type)) {
+          cbBox = x;
+          break;
+        }
       const bw = (b: Box) => b.props.border?.value.widths ?? { top: 0, right: 0, bottom: 0, left: 0 };
       const cb = cbBox ? { x: cbBox.x + bw(cbBox).left, y: cbBox.y + bw(cbBox).top, w: cbBox.w - bw(cbBox).left - bw(cbBox).right, h: cbBox.h - bw(cbBox).top - bw(cbBox).bottom } : { x: 0, y: 0, w: width, h: windowH };
       const at = (v: number | { pct: number } | undefined, base: number) => (v === undefined ? undefined : sizeAt(v, base));
@@ -839,13 +858,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // Position: by its offsets, else where it would be in flow.
       const parent = a.parent;
       const pin = parent ? insets(parent.props) : undefined;
-      const sx = parent ? parent.x + pin!.left : pageX;
-      const sy = parent ? parent.y + pin!.top : pageY;
-      const staticOk = a.first && /^(flow|page|stack)$/.test(a.pattern);
+      const sx = (parent ? parent.x + pin!.left : pageX) + (a.at?.x ?? 0);
+      const sy = (parent ? parent.y + pin!.top : pageY) + (a.at?.y ?? 0);
+      const staticOk = !!a.at;
       let staticPos = false;
       const x = l !== undefined ? cb.x + l + m.left : r !== undefined ? cb.x + cb.w - r - box.w - m.right : ((staticPos = true), sx + m.left);
       const y = t !== undefined ? cb.y + t + m.top : b !== undefined ? cb.y + cb.h - b - box.h - m.bottom : ((staticPos = true), sy + m.top);
-      if (staticPos && !staticOk) box.assumptions.push("an absolutely positioned box without offsets sits where it would be in flow, which is known only before any in-flow sibling in block flow");
+      if (staticPos && !staticOk) box.assumptions.push("an absolutely positioned box without offsets sits where it would be in flow, which isn't modelled here (after content the engine doesn't lay out, after empty blocks whose margins collapse through the parent, or aligned in a flex row or grid)");
       box.x = 0;
       box.y = 0;
       place(box, x, y, cb.w, cb.h);
@@ -970,7 +989,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // overflow other than visible or clip: a scroll container, a new block formatting context that
     // keeps its children's margins inside.
     const ov = props.overflow?.value;
-    const scroller = scrolls(ov);
+    // So does layout or paint containment (an independent formatting context).
+    const scroller = scrolls(ov) || containsLayout(props.contain?.value);
     const throughTop = inFlow && ins.top === 0 && !scroller;
     const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.minHeight && !props.aspect && !scroller;
     let escaped: FlowResult | undefined;
@@ -1040,7 +1060,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         contentH = lines.length * lineH;
         contentW = Math.max(...lines.map((l) => l.width));
         // Text in a box that clips or scrolls it (overflow-x other than visible) doesn't spill out: check reports it as clipped.
-        if (tl.minContent > innerW + 0.5 && !t.nowrap && !t.wrapAnywhere && (!ov || ov.x === "visible")) {
+        if (tl.minContent > innerW + 0.5 && !t.nowrap && !t.wrapAnywhere && (!ov || ov.x === "visible") && !props.contain?.value.paint) {
           issues.push({
             severity: "warning",
             id,
@@ -1059,10 +1079,15 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // their content needs more (aspect-ratio's automatic minimum size). In a stack (a column
     // flexbox) that minimum is capped by the max-width converted through the ratio.
     const media = MEDIA.has(n.tag);
-    let h = props.height?.value ?? contentH + insY;
+    // Size containment: as tall as if it were empty (its content is laid out, and overflows).
+    const sizeContained = props.contain?.value.size === "both";
+    if (sizeContained && (rows || grows || (kids.length && !containsLayout(props.contain!.value) && (throughTop || throughBottom))))
+      assumptions.push("size containment on a flex, grid or block container without layout containment: how its content sizes against its empty height isn't modelled");
+    const ownH = sizeContained ? 0 : contentH;
+    let h = props.height?.value ?? ownH + insY;
     if (props.aspect && !props.height) {
       const ratioH = w / props.aspect.value;
-      const contentMin = parent === "stack" ? Math.min(contentH + insY, maxW / props.aspect.value) : contentH + insY;
+      const contentMin = parent === "stack" ? Math.min(ownH + insY, maxW / props.aspect.value) : ownH + insY;
       h = media ? ratioH : Math.max(ratioH, contentMin);
       // A one-line cluster with an aspect ratio whose content is taller: Chromium sometimes keeps the ratio.
       if (!media && pattern === "cluster" && props.wrap?.value === false && contentMin > ratioH + EPS) assumptions.push("a one-line cluster with an aspect ratio whose content is taller than the ratio: its height isn't modelled");
@@ -1144,6 +1169,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         rows,
         heights: rows.map((r) => Math.max(0, ...r.map(outerH))),
         gap: rowGap,
+        ...(props.rowGap?.pct !== undefined && { gapPct: props.rowGap.pct }),
         align: props.align?.value ?? (pattern === "cluster" ? "center" : "stretch"),
         insetTop: ins.top,
         insetY: insY,
@@ -1152,10 +1178,32 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       });
     if (rows || grows) arrange(box);
     for (const k of outKids) {
-      // In flow before it: what its static position (where it would be with no offsets) depends on.
+      // Its static position (where it would be with no offsets): in block flow, below the in-flow
+      // boxes before it and the margins pending there (those before it only: what follows can't
+      // collapse with it), as if it were the only item in a flexbox, at the padding box corner of a grid.
       const at = n.children.indexOf(k.node);
-      const first = !kids.some((x) => n.children.indexOf(x.node) < at) && !skipped.some((x) => n.children.indexOf(x) < at);
-      absQueue.push({ k, parent: box, first, pattern: pattern ?? "flow" });
+      const before = kids.flatMap((x, i) => (n.children.indexOf(x.node) < at ? [i] : []));
+      const skippedBefore = skipped.some((x) => n.children.indexOf(x) < at);
+      let pos: { x: number; y: number } | undefined;
+      const flowLike = pattern === undefined || pattern === "flow";
+      if (skippedBefore) pos = undefined;
+      else if (!before.length && (flowLike || pattern === "stack")) pos = { x: 0, y: 0 };
+      else if (pattern === "stack") pos = { x: 0, y: 0 };
+      else if (pattern === "cluster") pos = (props.justify?.value ?? "start") === "start" && /^(start|stretch)$/.test(props.align?.value ?? "center") ? { x: 0, y: 0 } : undefined;
+      else if (pattern === "grid" || pattern === "layer") pos = /^(start|stretch)$/.test(props.align?.value ?? "stretch") && /^(start|stretch)$/.test(props.justifyItems?.value ?? "stretch") ? { x: -(ins.left - (props.border?.value.widths.left ?? 0)), y: -(ins.top - (props.border?.value.widths.top ?? 0)) } : undefined;
+      else if (flowLike) {
+        const boxesBefore = before.map((i) => children[i]);
+        let last = -1;
+        boxesBefore.forEach((b, i) => {
+          if (!collapse.get(b)!.empty) last = i;
+        });
+        const empties = boxesBefore.slice(last + 1).map((b) => collapse.get(b)!.top);
+        if (last >= 0) {
+          const lb = boxesBefore[last];
+          pos = { x: 0, y: lb.y + lb.h + sum(join(collapse.get(lb)!.bottom, ...empties)) };
+        } else if (!throughTop) pos = { x: 0, y: sum(join(...empties)) };
+      }
+      absQueue.push({ k, parent: box, at: pos });
     }
 
     // Overflow: past the content box on the right (a negative right margin may pull a child past it on purpose).
@@ -1163,7 +1211,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // A box that clips or scrolls its content horizontally: what doesn't fit is cut off or scrolls,
     // it doesn't spill out (check reports clipped text). Scrollbars take space only where they
     // aren't overlaid (Windows, many Linux setups); Cadesa predicts overlay scrollbars.
-    const clipsX = !!ov && ov.x !== "visible";
+    const clipsX = (!!ov && ov.x !== "visible") || !!props.contain?.value.paint;
     const where = "where scrollbars aren't overlaid (Windows, many Linux setups)";
     const sb: { taller?: string; narrower?: string } = {};
     if (!props.height && !props.aspect && (ov?.x === "scroll" || (ov?.x === "auto" && widest > innerW + 0.5)))
@@ -1192,7 +1240,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
           message: `the text of #${id} doesn't wrap (white-space: nowrap) and overflows it by ${fmtPx(contentW - innerW)}px at ${width}px`,
         });
     }
-    const clipsY = !!ov && ov.y !== "visible";
+    const clipsY = (!!ov && ov.y !== "visible") || !!props.contain?.value.paint;
     if (props.height && contentH > props.height.value - insY + 0.5 && clipsY) box.overflowY = contentH - (props.height.value - insY);
     else if (props.height && contentH > props.height.value - insY + 0.5) {
       box.overflowY = contentH - (props.height.value - insY);
@@ -1218,7 +1266,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     placeStack(b);
     const a = arrangement.get(b);
     if (!a) return;
-    const natural = a.heights.reduce((s, h) => s + h, 0) + a.gap * (a.rows.length - 1);
+    // A percentage row gap resolves against the final content height (Chromium sized the rows without it; they may overflow).
+    const gap = a.gapPct !== undefined ? sizeAt({ pct: a.gapPct }, Math.max(0, b.h - a.insetY)) : a.gap;
+    const natural = a.heights.reduce((s, h) => s + h, 0) + gap * (a.rows.length - 1);
     const free = Math.max(0, b.h - a.insetY - natural);
     const next = a.flexLines ? diffuser(U(free), a.rows.length) : () => U(free / a.rows.length);
     let y = 0;
@@ -1242,7 +1292,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         const space = rowH - outerH(c);
         c.y = y + m.top + (a.align === "center" ? space / 2 : a.align === "end" ? space : 0);
       }
-      y += rowH + a.gap;
+      y += rowH + gap;
     });
   }
 
@@ -1374,6 +1424,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
 
   const boxes: Box[] = [];
   let unknownOnPage: string | undefined;
+  /** Page-level absolute boxes after in-flow ones: their static position is known once the body's flow is. */
+  const pageAbs: { entry: (typeof absQueue)[number]; before: number }[] = [];
   for (const n of fixture.body) {
     const p = model.prefix;
     const candidates = n.classes.filter((k) => k.startsWith(p) && !k.includes("__")).map((k) => k.slice(p.length));
@@ -1394,7 +1446,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       continue;
     }
     if (outOfFlow(c, undefined)) {
-      absQueue.push({ k: { node: n, comp: c, slot: undefined }, parent: undefined, first: !boxes.length, pattern: "page" });
+      const entry: (typeof absQueue)[number] = { k: { node: n, comp: c, slot: undefined }, parent: undefined, ...(!boxes.length && { at: { x: 0, y: 0 } }) };
+      absQueue.push(entry);
+      if (boxes.length && !unknownOnPage) pageAbs.push({ entry, before: boxes.length });
       continue;
     }
     boxes.push(measure(n, c, undefined, pageW, "page"));
@@ -1405,6 +1459,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const through = bodyPad.top === 0;
   const body = flow(boxes, pageW, through, "escape");
   const top = through ? sum(join(strut(bodyMargin.top), body.empty ? body.pending : body.top)) : bodyMargin.top + bodyPad.top;
+  // Below the page-level boxes before it and the margins pending there (as in measure).
+  for (const { entry, before } of pageAbs) {
+    const prior = boxes.slice(0, before);
+    let last = -1;
+    prior.forEach((b, i) => {
+      if (!collapse.get(b)!.empty) last = i;
+    });
+    const empties = prior.slice(last + 1).map((b) => collapse.get(b)!.top);
+    const base = bodyPad.top ? bodyMargin.top + bodyPad.top : 0;
+    if (last >= 0) entry.at = { x: 0, y: top + prior[last].y + prior[last].h + sum(join(collapse.get(prior[last])!.bottom, ...empties)) - base };
+    else if (!through) entry.at = { x: 0, y: top + sum(join(...empties)) - base };
+  }
   for (const b of boxes) {
     b.y += outer.top + top;
     b.x += outer.left + bodyMargin.left + bodyPad.left;

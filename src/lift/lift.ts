@@ -13,6 +13,7 @@ import { parseCss, specificity, splitSelectors, type CssRule, type Decl, type Pa
 import { classify } from "./selectors.js";
 import { validate } from "../validate.js";
 import { lengthExpr } from "../fluid.js";
+import { parseContain } from "../model.js";
 
 /**
  * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
@@ -527,7 +528,9 @@ export function liftElements(input: LiftInput): LiftResult {
     const r = resolveVar(value);
     if (r && /^(?:\d+(?:\.\d+)?|\.\d+)%$/.test(r.raw) && parseFloat(r.raw) > 0 && parseFloat(r.raw) <= 100)
       return r.varName ? tokens.named("size", r.varName, r.raw) : tokens.literal("size", r.raw);
-    return lengthToken("size", value);
+    // Percentages in calc(), min(), max() or clamp() ("min(440px, 100%)"): computed per box.
+    const f = r ? lengthExpr(r.raw, { pct: true }) : undefined;
+    return lengthToken("size", value) ?? (f?.pct ? tokens.literal("size", f.css) : undefined);
   };
   /** grid-template-columns as Cadesa tracks: size tokens, "<n>fr" and "minmax(0, <n>fr)" (undefined when another kind of track is used). */
   const gridTracks = (v: string): string[] | undefined => {
@@ -647,11 +650,12 @@ export function liftElements(input: LiftInput): LiftResult {
       const j = justify ? JI[justify.value.trim()] : "stretch";
       // The column gap, and the row gap when it differs.
       const gapOf = (): Record<string, string> => {
-        const tok = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? (lengthToken("space", d.value) ?? (d === colGap ? pctToken(d.value) : undefined)) : undefined);
+        // Either gap may be a percentage: the column gap of the grid's width, the row gap of its height (the page front end keeps it only where that is modelled).
+        const tok = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? (lengthToken("space", d.value) ?? pctToken(d.value)) : undefined);
         const val = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? resolveVar(d.value)?.raw : "0px");
         for (const d of [rowGap, colGap]) if (d && !isZero(resolveVar(d.value)?.raw ?? "x") && !tok(d)) note(e, s, d, "gap must be a px or rem length", "geometry");
         const g = tok(colGap);
-        const rg = val(rowGap) !== val(colGap) ? (tok(rowGap) ?? lengthToken("space", "0px")) : undefined;
+        const rg = val(rowGap) !== val(colGap) || /%$/.test(val(rowGap) ?? "") ? (tok(rowGap) ?? lengthToken("space", "0px")) : undefined;
         return { ...(g && { gap: g }), ...(rg && { rowGap: rg }) };
       };
       if (auto) {
@@ -743,7 +747,7 @@ export function liftElements(input: LiftInput): LiftResult {
     const maxW = take("max-width");
     const autoX = margins[1]?.value.trim() === "auto" && margins[3]?.value.trim() === "auto";
     const both = maxW && /^min\(\s*([^,]+?)\s*,\s*([^,]+?)\s*\)$/.exec(maxW.value.trim());
-    if (both && autoX) {
+    if (both && autoX && lengthToken("size", both[1]) && lengthToken("size", both[2])) {
       // Cadesa's own output when maxWidth and measure both apply: max-width: min(maxWidth, measure).
       const a = lengthToken("size", both[1]);
       const b = lengthToken("size", both[2]);
@@ -829,6 +833,14 @@ export function liftElements(input: LiftInput): LiftResult {
       const ok = (v?: string) => !!v && ["visible", "hidden", "clip", "auto", "scroll"].includes(v);
       if (!ok(x) || !ok(y)) note(e, s, (!ok(x) ? ox : oy)!, "overflow must be visible, hidden, clip, auto or scroll", "geometry");
       else if (x !== "visible" || y !== "visible") out.overflow = x === y ? x : { x, y };
+    }
+    // contain: layout and paint make an independent formatting context, size sizes the box as if empty.
+    const ct = take("contain");
+    if (ct) {
+      const raw = resolveVar(ct.value)?.raw.trim().toLowerCase().replace(/\s+/g, " ");
+      const c = raw ? parseContain(raw) : undefined;
+      if (!c) note(e, s, ct, "contain must be none, content, strict, or size, inline-size, layout, style and paint", "geometry");
+      else if (c.layout || c.paint || c.size) out.contain = raw;
     }
     const bi = take("background-image");
     if (bi && bi.value.trim() !== "none") {
@@ -1059,6 +1071,7 @@ export function liftElements(input: LiftInput): LiftResult {
         margin: () => lengthToken("space", "0px"),
         radius: () => lengthToken("radius", "0px"),
         overflow: () => "visible",
+        contain: () => "none",
         textAlign: () => "start",
       };
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {

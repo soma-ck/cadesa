@@ -134,9 +134,11 @@ describe("percentage gaps", () => {
     expect(geo(r.box("s-2"))).toEqual([0, 48, 200, 24]);
   });
 
-  it("a grid's percentage column gap is exact; its percentage row gap isn't modelled", () => {
+  it("a grid's percentage gaps: of its width between columns, of its final height between rows", () => {
     const r = run(`<div class="grid"><p class="g">One</p><p class="g">Two</p><p class="g">Three</p></div>`, `p { margin: 0 } .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 5% }`, [400]);
     expect(geo(r.box("g-2"))).toEqual([210, 0, 190, 24]);
-    expect(r.approx("g-3")).toMatch(/percentage row gap of a grid's height is not modelled/);
+    // Rows sized without the row gap (48px), then placed 5% of that apart.
+    expect(r.exact()).toBe(true);
+    expect(r.box("g-3").y).toBe(24 + 2.390625);
   });
 });

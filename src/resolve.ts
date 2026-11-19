@@ -4,6 +4,7 @@ import {
   tokenKey,
   type Breakpoint,
   type Component,
+  type Contain,
   type Justify,
   type MarginSide,
   type Model,
@@ -48,9 +49,13 @@ export interface ResolvedText {
   underline: boolean;
 }
 
-/** A percentage of the containing block's content width (a size token like "50%"). */
+/**
+ * A percentage of the containing block's content width (a size token like "50%"), or an expression
+ * with percentages in it ("min(440px, 100%)"): `of` gives its px (float) for that width.
+ */
 export interface Pct {
   pct: number;
+  of?: (base: number) => number;
 }
 
 export interface Sides {
@@ -67,6 +72,8 @@ export interface Sides {
 export function sizeAt(v: number | Pct, base: number): number {
   if (typeof v === "number") return v;
   const f = Math.fround;
+  // An expression: its float value cut to a layout unit (LayoutUnit(float) truncates).
+  if (v.of) return Math.trunc(f(v.of(base) * 64)) / 64;
   return Math.trunc(f(f(f(base) * f(v.pct)) / 100) * 64) / 64;
 }
 
@@ -92,6 +99,8 @@ export interface ResolvedProps {
   grow?: Resolved<{ factor: number; basis: "zero" | "content" }>;
   aspect?: Resolved<number>;
   overflow?: Resolved<{ x: Overflow; y: Overflow }>;
+  /** Containment (see Props.contain). */
+  contain?: Resolved<Contain>;
   /** Positioning and its offsets (px, or a percentage of the containing block). */
   position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct; height?: number | Pct }>;
   fit?: Resolved<"cover" | "contain">;
@@ -102,7 +111,7 @@ export interface ResolvedProps {
   /** `pct`: the gap between columns is this percentage of the content width (value is 0: what intrinsic sizes count). */
   gap?: Resolved<number> & { pct?: number };
   /** A grid's or cluster's gap between rows, when it differs from `gap`. */
-  rowGap?: Resolved<number>;
+  rowGap?: Resolved<number> & { pct?: number };
   padding?: Resolved<Sides>;
   background?: Resolved<string>;
   /** The color, and each side's width as Chromium draws it. */
@@ -201,6 +210,10 @@ export function resolveElement(model: Model, component: Component, slot: string 
     /** A size token: a length, or a percentage of the containing block's width. */
     const sizeOf = (r: Ref): Resolved<number | Pct> => {
       const t = model.tokens.get(tokenKey(r.kind, r.name))!;
+      if (t.calc) {
+        const calc = t.calc;
+        return { value: { pct: NaN, of: (base) => calc(width, base) }, display: `${t.raw} (% of the parent's width)`, steps: [tokenStep(r), ...pre, src(r.path)] };
+      }
       if (t.pct === undefined) return lengthOf(r);
       return { value: { pct: t.pct }, display: `${t.pct}% of the parent's width`, steps: [tokenStep(r), ...pre, src(r.path)] };
     };
@@ -216,7 +229,9 @@ export function resolveElement(model: Model, component: Component, slot: string 
         out.pattern = { value: l.pattern, display: l.pattern, steps: [...pre, src(`${l.path}.pattern`)] };
         const gapPct = l.gap?.kind === "size" ? model.tokens.get(tokenKey("size", l.gap.name))!.pct : undefined;
         out.gap = gapPct !== undefined ? { ...sizeOf(l.gap!), value: 0, pct: gapPct, display: `${gapPct}% of the content width` } : l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
-        if (l.rowGap) out.rowGap = lengthOf(l.rowGap);
+        const rowPct = l.rowGap?.kind === "size" ? model.tokens.get(tokenKey("size", l.rowGap.name))!.pct : undefined;
+        // A percentage of the grid's height: 0 while its rows are sized, then of its final content height.
+        if (l.rowGap) out.rowGap = rowPct !== undefined ? { ...sizeOf(l.rowGap), value: 0, pct: rowPct, display: `${rowPct}% of the content height (0 while the rows are sized)` } : lengthOf(l.rowGap);
         if (l.pattern !== "stack" && l.pattern !== "flow") {
           const def = l.pattern === "cluster" ? "center" : "stretch";
           const a = l.align ?? def;
@@ -260,6 +275,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
         out.overflow = { value: { x: o.x, y: o.y }, display: o.raw, steps: [...pre, src(o.path)] };
         break;
       }
+      case "contain": {
+        const c = p.contain!;
+        if (c.layout || c.paint || c.size) out.contain = { value: { layout: c.layout, paint: c.paint, ...(c.size && { size: c.size }) }, display: c.raw, steps: [...pre, src(c.path)] };
+        break;
+      }
       case "textAlign": {
         const t = p.textAlign!;
         out.textAlign = { value: t.value, display: t.value, steps: [...pre, src(t.path)] };
@@ -301,7 +321,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
         break;
       case "height": {
         const t = model.tokens.get(tokenKey(p.height!.kind, p.height!.name))!;
-        if (t.pct !== undefined) out.heightPct = sizeOf(p.height!);
+        if (t.pct !== undefined || t.calc) out.heightPct = sizeOf(p.height!);
         else out.height = lengthOf(p.height!);
         break;
       }

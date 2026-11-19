@@ -157,6 +157,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     out.push(...(e.width || e.maxWidth ? [] : ["width: 100%"]), `aspect-ratio: ${p.aspect.raw}`, "height: auto", ...(ctx.height ? ["min-height: auto"] : []));
   if (p.fit) out.push(`object-fit: ${p.fit.value}`);
   if (p.overflow) out.push(`overflow-x: ${p.overflow.x}`, `overflow-y: ${p.overflow.y}`);
+  if (p.contain) out.push(`contain: ${p.contain.raw}`);
   if (p.position) {
     const ps = p.position;
     out.push(`position: ${ps.type}`, ...(["top", "right", "bottom", "left"] as const).map((k) => `${k}: ${ps[k] ? v(ps[k]!) : "auto"}`), ...(ps.height ? [`height: ${v(ps.height)}`] : []));

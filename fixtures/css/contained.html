@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: containment, fluid percentages and static positions</title>
+    <link rel="stylesheet" href="contained.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <section class="panel">
+        <div class="panel-inner">
+          <h2 class="panel-title">Seasonal planting guide</h2>
+          <p class="panel-text">Which vegetables to sow each month, with the depth, spacing and days until harvest for each one.</p>
+        </div>
+        <span class="panel-badge">Spring</span>
+      </section>
+      <section class="notes">
+        <p class="note">Content containment keeps the margins of its paragraphs inside.</p>
+        <div class="note-pin"></div>
+      </section>
+      <div class="loose">
+        <p class="note">A plain block lets them collapse through its edges.</p>
+      </div>
+      <div class="sized">
+        <p class="note">Size containment: as tall as its padding, whatever it holds.</p>
+      </div>
+      <div class="row">
+        <div class="row-item">
+          <p class="row-text">Narrow as if empty</p>
+        </div>
+        <p class="row-side">Beside it</p>
+      </div>
+      <aside class="dock">
+        <p class="dock-text">A layout-contained box is the containing block of its fixed child.</p>
+        <div class="dock-bar"></div>
+      </aside>
+      <div class="painted">
+        <p class="note">Style and paint containment.</p>
+      </div>
+      <form class="signup">
+        <h2 class="signup-title">Join the allotment list</h2>
+        <p class="signup-text">We send one letter each season, never more.</p>
+      </form>
+      <div class="wide">
+        <p class="wide-text">As wide as the page less a gutter, up to a limit.</p>
+      </div>
+      <div class="split">
+        <div class="split-main"><p class="split-text">Half the row, between two limits</p></div>
+        <div class="split-side"><p class="split-text">The rest</p></div>
+      </div>
+      <div class="third"><p class="split-text">A third of what is left after two gutters</p></div>
+      <div class="capped"><p class="split-text">Capped at most of the width, centered</p></div>
+      <div class="gallery">
+        <p class="cell">Tomatoes</p>
+        <p class="cell">Runner beans, climbing on canes</p>
+        <p class="cell">Courgettes</p>
+        <p class="cell">Leeks, earthed up as they grow</p>
+        <p class="cell">Garlic</p>
+      </div>
+      <div class="facts">
+        <p class="cell">Sow in March</p>
+        <p class="cell">Plant out in May</p>
+        <p class="cell">Harvest from July</p>
+      </div>
+      <div class="tiles">
+        <p class="cell">North bed</p>
+        <p class="cell">South bed</p>
+        <p class="cell">Greenhouse</p>
+        <p class="cell">Cold frame</p>
+      </div>
+      <div class="strip">
+        <p class="cell">One row only</p>
+        <p class="cell">So the row gap places nothing</p>
+      </div>
+      <div class="column">
+        <p class="cell">Top of a column</p>
+        <p class="pushed">Its auto margin has no free space to take</p>
+      </div>
+      <p class="pushed">An auto margin in block flow is 0</p>
+      <div class="layered"><p class="cell">Promoted to its own layer, drawn where it is</p></div>
+      <section class="card">
+        <h2 class="card-title">Water butts</h2>
+        <div class="card-rule"></div>
+        <p class="card-text">Collect rain from the shed roof and use it on the beds in dry weeks.</p>
+      </section>
+      <section class="card">
+        <p class="card-text tail">A marker after the last paragraph and its margin.</p>
+        <div class="card-mark"></div>
+      </section>
+      <section class="card">
+        <div class="spacer"></div>
+        <div class="card-rule"></div>
+        <p class="card-text">After an empty block whose margins collapse.</p>
+      </section>
+      <section class="card stacked">
+        <p class="card-text">In a column flexbox, it sits at the start.</p>
+        <div class="card-rule"></div>
+      </section>
+      <section class="card gridded">
+        <p class="card-text">In a grid, at the padding box corner.</p>
+        <div class="card-rule"></div>
+      </section>
+      <div class="centered-grid">
+        <div class="narrow-card"><p class="cell">A card as wide as a length or its column, centered in it.</p></div>
+      </div>
+      <p class="pretty">Plant garlic in autumn, a hand's width apart, and lift it in summer when the leaves turn yellow.</p>
+      <h2 class="balanced">Everything you need to grow your own vegetables</h2>
+      <p class="no-wrap">One line that never wraps</p>
+      <div class="actions">
+        <button class="action" type="button">Save draft</button>
+        <button class="action" type="button">Preview</button>
+        <button class="action" type="button">Publish now</button>
+        <button class="action" type="button">Schedule for later</button>
+      </div>
+      <div class="tags"><span class="tag">Soil</span><span class="tag">Compost</span><span class="tag">Seeds and bulbs</span><span class="tag">Tools</span><span class="tag">Irrigation</span></div>
+      <div class="pills">
+        <a class="pill" href="#spring">Spring</a>
+        <a class="pill" href="#summer">Summer harvest</a>
+        <a class="pill" href="#autumn">Autumn</a>
+      </div>
+      <div class="chips">
+        <span class="chip">Middle aligned</span>
+        <span class="chip">chips</span>
+      </div>
+    </main>
+    <div class="announcer"></div>
+  </body>
+</html>

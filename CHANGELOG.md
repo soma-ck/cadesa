@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.13 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.13 mcp
+npx -y cadesa@0.1.14 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.14 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -17,6 +17,51 @@ ask for `metrics --google` or a page loads its fonts from there, and the ones `c
 to load the URL you give it; your pages are never sent anywhere. `metrics --measure`,
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
+
+## 0.1.14 (2026-11-19)
+
+- `contain` is laid out. `layout` and `paint` (and `content`, `strict`) make the box an independent
+  formatting context, so its children's margins stay inside, and the containing block of its
+  absolute and fixed descendants; `paint` also clips what overflows it. `size` sizes the box as if
+  it were empty (as tall as its padding and border, its intrinsic widths too), `inline-size` only
+  its widths; `style` moves nothing. In a source: `contain: "layout paint"`. `content-visibility:
+  auto` is that containment, its height `≈` (off screen its content is skipped). `will-change` and
+  `isolation` change nothing, except that `will-change: transform` (like a transform or filter)
+  makes an ancestor the containing block of a fixed box, which stays `≈`.
+- A `width` or `max-width` with percentages inside `min()`, `max()`, `clamp()` or `calc()`
+  (`width: min(440px, 100%)`, `min(1100px, 100% - 28px)`, `calc((100% - 2rem) / 3)`) is computed
+  per box against its containing block's width, in float as Chromium evaluates it, then cut to a
+  layout unit. In a source: a size token such as `"min(440px, 100%)"`. With `box-sizing:
+  content-box` and padding or a border, it stays `≈`; so do percentages inside `height`, padding
+  and margins.
+- A grid's percentage `row-gap` is laid out as Chromium does it: of a set height, a length; with
+  an auto height, the rows are sized without it, then placed that percentage of the grid's final
+  content height apart (they overflow it). A grid of one row has no row gap to place, and a flex
+  container with a set height takes its percentage row gap of it. In a source: a grid's `rowGap`
+  may name a percentage size token. A grid whose height may be stretched, or with a min-height or
+  max-height (and more than one row), stays `≈`.
+- An absolutely positioned box without offsets is placed at its static position after in-flow
+  siblings too: in block flow below the boxes before it and the margins pending there (only those
+  before it: what follows can't collapse with it), then its own margin; in a flexbox at the start of
+  its content box, as if it were the only item; in a grid at its padding box corner. After empty
+  blocks whose margins collapse through the parent, or aligned other than at the start, it stays `≈`.
+  A page-level one after the page's content (a router's announcer) sits below it.
+- A width or max-width with a percentage in it counts as `auto` (or `none`) in the intrinsic size
+  of the box that holds it, as CSS Sizing says for a cyclic percentage: a `1fr` column holding
+  `width: min(360px, 100%)` is sized by the card's content.
+- `text-wrap: pretty` and `balance` move line breaks but, in Chromium, never change the line count
+  (both fall back to greedy breaks otherwise), so the boxes are exact (outside a flex row); the
+  reported lines are the greedy ones. The `text-wrap` shorthand is read as its mode and style:
+  `nowrap` is `white-space: nowrap`, `stable` lays out as `auto`.
+- Several inline-blocks sharing lines (a button group, tags or badges in a row) are laid out: a
+  block whose only content is inline-blocks wraps them between each other, one collapsed space of
+  its font apart (none when there is no whitespace between them), each line placed by `text-align`
+  (start, center or end). With vertical metrics, when every item reaches as far above and below
+  the baseline (`baseline` or `middle`: one line of the same text style, or the same height), each
+  line box is the union of that and the block's strut. Text that wraps inside an item is flagged at
+  the widths where it does; items that differ in extent stay `≈`.
+- A top or bottom `auto` margin is 0 in block flow and in a column flexbox with no free space. A
+  transform that moves nothing (`translateZ(0)`, `scale(1)`) is no longer `≈`.
 
 ## 0.1.13 (2026-11-19)
 

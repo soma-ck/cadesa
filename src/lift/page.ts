@@ -24,6 +24,7 @@ import { borderPx, insets } from "../resolve.js";
 import { lineHeightPx } from "../engine/layout.js";
 import { metricsFor } from "../engine/text.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
+import { containsLayout, parseContain, type Contain } from "../model.js";
 import { firstFamily } from "../fonts.js";
 import type { Decl } from "./css.js";
 import { linesOf } from "./impact.js";
@@ -147,6 +148,10 @@ export interface El {
   lineAlign?: ("center" | "end" | undefined)[];
   /** Padding the line box of a lone inline-block adds above and below it (its strut, its margins), per state: see aloneOnLine. */
   linePad?: ({ top: number; bottom: number } | undefined)[];
+  /** Inline-blocks sharing the lines of this block (per state): the space between them and where each line's free space goes, see inlineRow. */
+  inlineRow?: ({ gap: number; justify: "start" | "center" | "end" } | undefined)[];
+  /** An inline-block on a shared line: px its line box reaches above and below its margin box (per state), see inlineRow. */
+  rowLine?: ({ top: number; bottom: number } | undefined)[];
   /** A flex row aligns baselines: px its item is pushed down to put its first baseline on the line's (per state). */
   baselineShift: (number | undefined)[];
   /** A run of text among element children (added after the cascade): its anonymous box. */
@@ -273,7 +278,15 @@ export function longhands(prop: string, value: string): [string, string][] {
     "border-end-start-radius": ["border-bottom-left-radius"],
   };
   if (corner[prop]) return corner[prop].map((p) => [p, value]);
-  if (prop === "text-wrap") return [["text-wrap", value]];
+  if (prop === "text-wrap") {
+    // text-wrap: <mode> || <style> (wrap | nowrap, auto | balance | pretty | stable).
+    const words = value.trim().toLowerCase().split(/\s+/);
+    const mode = words.find((w) => /^(wrap|nowrap)$/.test(w));
+    const style = words.find((w) => /^(auto|balance|pretty|stable)$/.test(w));
+    if (words.length && words.length === (mode ? 1 : 0) + (style ? 1 : 0))
+      return [["text-wrap-mode", mode ?? "wrap"], ["text-wrap-style", style ?? "auto"]];
+    return [["text-wrap", value]];
+  }
   if (prop === "font") {
     const v = value.trim();
     if (/^(inherit|initial|unset|revert)$/.test(v)) return ["font-style", "font-weight", "font-size", "line-height", "font-family"].map((p) => [p, v] as [string, string]);
@@ -761,6 +774,50 @@ export abstract class PageLifter {
     return v === "absolute" || v === "fixed";
   }
 
+  /**
+   * The containment that applies to the element (contain, and content-visibility: auto's layout,
+   * paint and style), or undefined for none. Nothing applies to a non-atomic inline box or a table part.
+   */
+  containOf(el: El, si: number): Contain | undefined {
+    const own = el.own[si];
+    if (!own || (!own.has("contain") && !own.has("content-visibility"))) return undefined;
+    if (/^(inline|contents|none)$|^table-/.test(this.displayOf(el, si))) return undefined;
+    const r = (p: string) => {
+      const o = own.get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    const v = r("contain");
+    const c: Contain = { ...((v && parseContain(v)) || { layout: false, paint: false }) };
+    if (r("content-visibility") === "auto") c.layout = c.paint = true;
+    return c.layout || c.paint || c.size ? c : undefined;
+  }
+
+  /**
+   * For an absolutely positioned or fixed box: the declaration on an ancestor that makes it its
+   * containing block by a transform, filter or will-change (which Cadesa doesn't model), when that
+   * ancestor comes before any positioned (absolute only) or contained one.
+   */
+  transformedContainer(el: El, si: number): string | undefined {
+    const fixed = this.resolve(el, si, el.own[si].get("position")?.value ?? "") === "fixed";
+    for (let a = el.parent; a; a = a.parent) {
+      const own = a.own[si];
+      if (!own) continue;
+      const r = (p: string) => {
+        const o = own.get(p);
+        return o ? this.resolve(a, si, o.value) : undefined;
+      };
+      // The same box positioned (for an absolute box) or contained: modelled.
+      const c = this.containOf(a, si);
+      if (c && (c.layout || c.paint)) return undefined;
+      if (!fixed && !/^(static)?$/.test(r("position") ?? "")) return undefined;
+      const tf = ["transform", "translate", "rotate", "scale", "perspective", "filter", "backdrop-filter"].find((p) => !/^(none)?$/.test(r(p) ?? ""));
+      if (tf) return `${own.get(tf)!.utility} (${tf}: ${r(tf)})`;
+      const wc = r("will-change");
+      if (wc && /\b(transform|translate|rotate|scale|perspective|filter|backdrop-filter)\b/.test(wc)) return `${own.get("will-change")!.utility} (will-change: ${wc})`;
+    }
+    return undefined;
+  }
+
   /** The display the cascade gives the element (the browser's default for its tag when nothing sets it). */
   ownDisplay(el: El, si: number): string {
     const d = el.own[si].get("display");
@@ -807,6 +864,19 @@ export abstract class PageLifter {
    * lines only make it taller around the same baseline or middle); undefined when it can't be told.
    */
   lineReach(el: El, si: number): { top: number; bottom: number } | undefined {
+    const x = this.lineExtents(el, si);
+    if (!x) return undefined;
+    const { a, hm, strut } = x;
+    const eps = 1e-6;
+    return { top: Math.max(0, strut.sa - a > eps ? strut.sa - a : 0), bottom: Math.max(0, strut.sd - (hm - a) > eps ? strut.sd - (hm - a) : 0) };
+  }
+
+  /**
+   * An inline-block on a line of its parent's: how far the parent's baseline is below its margin
+   * box's top (`a`, after its vertical-align), its margin box's height (`hm`) and the parent's
+   * strut; undefined when it can't be told (see lineReach).
+   */
+  lineExtents(el: El, si: number): { a: number; hm: number; strut: { sa: number; sd: number } } | undefined {
     const parent = el.parent!;
     const res = (k: El, p: string) => {
       const o = k.own[si].get(p);
@@ -852,7 +922,10 @@ export abstract class PageLifter {
         if (el.tag === "button" || !(h >= 0)) return undefined;
         hm = mt + (res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb) + mb;
       }
-      const clips = !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "");
+      // Clipping its overflow, or layout containment, leaves it no baseline: its bottom margin edge is.
+      const contained = this.containOf(el, si);
+      if ((contained?.paint && !contained.layout) || contained?.size) return undefined;
+      const clips = !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "") || !!contained?.layout;
       a = clips ? hm : mt + bt + pt + own.sa;
     }
     const va = res(el, "vertical-align") ?? "baseline";
@@ -861,8 +934,7 @@ export abstract class PageLifter {
       const u = (x: number) => Math.round(x * 64);
       a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
     } else if (va !== "baseline") return undefined;
-    const eps = 1e-6;
-    return { top: Math.max(0, strut.sa - a > eps ? strut.sa - a : 0), bottom: Math.max(0, strut.sd - (hm - a) > eps ? strut.sd - (hm - a) : 0) };
+    return { a, hm, strut };
   }
 
   /**
@@ -919,7 +991,7 @@ export abstract class PageLifter {
       const o = k.own[si].get(p);
       return o ? this.resolve(k, si, o.value) : undefined;
     };
-    if (!/^(baseline)?$/.test(res(el, "vertical-align") ?? "") || !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "")) return false;
+    if (!/^(baseline)?$/.test(res(el, "vertical-align") ?? "") || !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "") || this.containOf(el, si)) return false;
     if (parent !== this.bodyEl && !/^(block|flow-root|list-item)$/.test(this.displayOf(parent, si))) return false;
     const t = this.textOf(el, si);
     const pt = this.textOf(parent, si);
@@ -963,7 +1035,7 @@ export abstract class PageLifter {
     const prev = (i < 0 ? sibs : sibs.slice(0, i)).at(-1);
     const next = i < 0 ? undefined : sibs[i];
     const parentDisplay = parent.parent ? this.displayOf(parent.parent, si) : "block";
-    const ownContext = /^(inline-block|flow-root)$/.test(this.displayOf(parent, si)) || !/^(visible|clip)?$/.test(res(parent, "overflow-x") ?? "");
+    const ownContext = /^(inline-block|flow-root)$/.test(this.displayOf(parent, si)) || !/^(visible|clip)?$/.test(res(parent, "overflow-x") ?? "") || containsLayout(this.containOf(parent, si));
     const contained = (side: "top" | "bottom") => parent !== this.bodyEl && (edge(parent, side) || ownContext || /flex|grid/.test(parentDisplay));
     for (const side of ["top", "bottom"] as const) {
       const m = px(el, `margin-${side}`);
@@ -973,6 +1045,55 @@ export abstract class PageLifter {
       if (near ? !tight(near, side === "top" ? "bottom" : "top") : !contained(side)) return false;
     }
     return true;
+  }
+
+  /**
+   * A block whose only content is two or more inline-blocks (a button group, badges in a row): they
+   * share line boxes, wrapping between them, which is a wrapping flex row with the space between
+   * them (one collapsed space of the block's font, or none) as its gap. On each line their baselines
+   * (or middles) align with the block's strut; when every item reaches as far above and below the
+   * baseline (one line of the same text style, or the same height), each line box is the union of
+   * that and the strut, which their vertical margins take up. Text that wraps inside an item is
+   * flagged at the widths where it does (dynamic()).
+   */
+  inlineRow(p: El, si: number): void {
+    if (p.ownText || p.pseudo) return;
+    if (p !== this.bodyEl && !/^(block|flow-root|list-item|inline-block)$/.test(this.displayOf(p, si))) return;
+    const shown = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
+    const items = p.children.filter(shown);
+    if (items.length < 2 || items.some((k) => k.pseudo || k.anonymous !== undefined || k.tag === "br" || this.ownDisplay(k, si) !== "inline-block" || (k.roles[si] !== "text" && k.roles[si] !== "leaf"))) return;
+    const pt = this.textOf(p, si);
+    if (pt.fluid || pt.inherited.get("direction")?.value === "rtl") return;
+    if (!/^(normal)?$/.test(pt.inherited.get("white-space")?.value ?? "") || !/^(wrap)?$/.test(pt.inherited.get("text-wrap-mode")?.value ?? "")) return;
+    if (!/^(0|0px)?$/.test(pt.inherited.get("text-indent")?.value ?? "") || !/^(normal|0|0px)?$/.test(pt.inherited.get("word-spacing")?.value ?? "")) return;
+    const ta = pt.inherited.get("text-align")?.value ?? "";
+    const justify = /^(start|left|unset|initial|-webkit-auto)?$/.test(ta) ? "start" : /^(center|-webkit-center)$/.test(ta) ? "center" : /^(right|end|-webkit-right)$/.test(ta) ? "end" : undefined;
+    if (!justify) return;
+    // Whitespace between two items collapses to one space; none: no space.
+    const nodes = p.node.childNodes ?? [];
+    const at = items.map((k) => nodes.indexOf(k.node));
+    const spaced = at.slice(1).map((j, i) => nodes.slice(at[i] + 1, j).some((c) => c.nodeName === "#text" && /[ \t\n\r\f]/.test(c.value ?? "")));
+    if (spaced.some((x) => x !== spaced[0])) return;
+    let gap = 0;
+    if (spaced[0]) {
+      const w = metricsFor(pt.family.value)?.measure(" ", pt.size, pt.weight);
+      if (w === undefined) return;
+      gap = w + pt.letterSpacing;
+    }
+    const ex = items.map((k) => this.lineExtents(k, si));
+    if (ex.some((x) => !x)) return;
+    const a = ex[0]!.a;
+    const d = ex[0]!.hm - a;
+    if (ex.some((x) => Math.abs(x!.a - a) > 1e-6 || Math.abs(x!.hm - x!.a - d) > 1e-6)) return;
+    const strut = ex[0]!.strut;
+    const eps = 1e-6;
+    const top = strut.sa - a > eps ? strut.sa - a : 0;
+    const bottom = strut.sd - d > eps ? strut.sd - d : 0;
+    for (const k of items) {
+      (k.rowLine ??= [])[si] = { top, bottom };
+      if (k.roles[si] === "text" && !/^(nowrap|pre)$/.test(this.textOf(k, si).inherited.get("white-space")?.value ?? "")) (k.oneLine ??= [])[si] = true;
+    }
+    (p.inlineRow ??= [])[si] = { gap, justify };
   }
 
   /** Inline-blocks alone on their line, laid out as blocks (before any element is synthesized: a parent may take padding from one). */
@@ -986,6 +1107,7 @@ export abstract class PageLifter {
         const parentDisplay = el.parent !== this.bodyEl ? this.displayOf(el.parent!, si) : "block";
         if (/flex|grid/.test(parentDisplay) && parentRole === "container") return;
         if (this.ownDisplay(el, si) === "inline-block" && this.aloneOnLine(el, si)) el.alone[si] = true;
+        if (role === "container") this.inlineRow(el, si);
         if (this.ownDisplay(el, si) === "inline" && role === "text") {
           const lh = this.inlineLine(el, si);
           if (lh !== undefined) (el.inlineLine ??= [])[si] = lh;
@@ -1458,10 +1580,10 @@ export abstract class PageLifter {
     // Children of a flex or grid container are blockified: never inline content.
     const formatsChildren = this.states.some((_, si) => /^(inline-)?(flex|grid)$/.test(this.displayOf(el, si)));
     const allInline = el.children.length > 0 && !formatsChildren && el.children.every((c) => this.inlineChild(c));
-    // Its only content an inline-block (a badge alone in a div): a box of its own on the line (see aloneOnLine).
+    // Its only content inline-blocks (a badge alone in a div, buttons in a row): boxes on its lines (see aloneOnLine, inlineRow).
     const shownKids = el.children.filter((c) => !this.ignorable(c));
     const loneBlock =
-      !el.ownText && shownKids.length === 1 && !shownKids[0].pseudo && shownKids[0].anonymous === undefined && this.states.every((_, si) => this.displayOf(shownKids[0], si) === "none" || this.ownDisplay(shownKids[0], si) === "inline-block");
+      !el.ownText && shownKids.length >= 1 && shownKids.every((k) => !k.pseudo && k.anonymous === undefined && k.tag !== "br" && this.states.every((_, si) => this.displayOf(k, si) === "none" || this.ownDisplay(k, si) === "inline-block"));
     const hasText = !loneBlock && (el.ownText || (allInline && this.visibleText(el)));
     this.states.forEach((_, si) => {
       const d = this.displayOf(el, si);
@@ -1505,7 +1627,7 @@ export abstract class PageLifter {
       if (inlineLine !== undefined) {
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline box's own rectangle is its text's content area; Cadesa lays out its lines (exact), not that rectangle", kind: "visual" });
         if (!own.has("width")) decl("width", "fit-content", "an inline element alone between blocks");
-      } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && el.anonymous === undefined)
+      } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && !el.rowLine?.[si] && el.anonymous === undefined)
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
       // An empty inline (zero size where the next block starts) or a lone inline-block: as wide as its content.
       if (((el.asBlock[si] === "empty" && !inFlexOrGrid) || el.alone[si]) && !own.has("width")) decl("width", "fit-content", el.alone[si] ? "inline-block (alone on its line)" : "empty inline element");
@@ -1530,7 +1652,7 @@ export abstract class PageLifter {
         // Offsets do nothing on a box that isn't positioned.
         (/^(top|right|bottom|left)$/.test(p) && !/^(relative|absolute|fixed|sticky)$/.test(pos ?? "static")) || p === "box-sizing" ||
         // vertical-align moves only inline-level boxes on a line (noted above, or alone on it) and table cells.
-        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline" || el.alone[si])) ||
+        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline" || el.alone[si] || !!el.rowLine?.[si])) ||
         // Alone on a centered or end-aligned line, auto margins place it.
         (/^margin-(left|right)$/.test(p) && !!el.alone[si] && !!el.lineAlign?.[si]) ||
         // Alone in its parent on a line, its vertical margins are in the parent's padding.
@@ -1619,7 +1741,9 @@ export abstract class PageLifter {
           // A set height or min-height stretches a grid's rows (a stack's items don't).
           const sized = ["height", "min-height"].some((p) => own.has(p) && !/^(auto|0(px)?)$/.test(res(p) ?? "auto"));
           const single = !cols || cols === "none" || (n && n[1] === "1");
-          if (single && plainItems && !sized) {
+          // (A percentage row gap is a grid's own: of its final height.)
+          // (Nor with an absolutely positioned child: its static position is the grid's padding box corner.)
+          if (single && plainItems && !sized && !/%$/.test(rowGap ?? "") && !el.children.some((k) => this.positioned(k, si))) {
             // One column: a stack with the row gap.
             decl("display", "flex", own.get("display")!.utility);
             decl("flex-direction", "column", own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
@@ -1634,6 +1758,18 @@ export abstract class PageLifter {
             decl("grid-template-columns", !cols || cols === "none" ? "1fr" : cols, own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
             if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins in a grid are not modelled", kind: "geometry" });
           }
+        } else if (/^(block|flow-root|list-item|inline-block)$/.test(display) && el.inlineRow?.[si]) {
+          // Inline-blocks sharing its lines: a wrapping row, the space between them its gap (see inlineRow).
+          const row = el.inlineRow[si]!;
+          const why = "inline-blocks on its lines";
+          decl("display", "flex", why);
+          decl("flex-direction", "row", why);
+          decl("flex-wrap", "wrap", why);
+          decl("align-items", "flex-start", `${why}: their baselines align`);
+          decl("column-gap", `${fmtNum(row.gap)}px`, row.gap ? `${why}: the space between them` : `${why}: no space between them`);
+          decl("row-gap", "0px", `${why}: line boxes stack`);
+          if (row.justify !== "start") decl("justify-content", row.justify === "center" ? "center" : "flex-end", `${why}: text-align`);
+          if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins between inline-blocks are not modelled", kind: "geometry" });
         } else if (/^(block|flow-root|list-item|inline-block)$/.test(display)) {
           if (this.blockFlow === "flow") {
             // Block flow, margins and all ("flow" is lift's own marker for layout: { pattern: flow }).
@@ -1714,6 +1850,15 @@ export abstract class PageLifter {
       }
       for (const s of SIDES) handled.add(`border-${s}-width`).add(`border-${s}-style`).add(`border-${s}-color`);
 
+      // On a line shared with other inline-blocks: its vertical margins take up what the line box adds around it.
+      const rl = el.rowLine?.[si];
+      if (rl)
+        for (const side of ["top", "bottom"] as const) {
+          const o = own.get(`margin-${side}`);
+          const base = o ? (lengthPx(this.resolveBox(el, si, o.value) ?? "0", this.textOf(el, si).size) ?? 0) : 0;
+          decl(`margin-${side}`, `${fmtNum(base + rl[side])}px`, `${o ? `${o.utility} and ` : ""}the line box around it`);
+          handled.add(`margin-${side}`);
+        }
       // A lone inline-block's line box reaches past it: the parent's padding takes the difference.
       const lp = el.linePad?.[si];
       if (lp)
@@ -1722,6 +1867,27 @@ export abstract class PageLifter {
           const base = o ? (lengthPx(this.resolveBox(el, si, o.value) ?? "0", this.textOf(el, si).size) ?? 0) : 0;
           decl(`padding-${side}`, `${fmtNum(base + lp[side])}px`, `${o ? `${o.utility} and ` : ""}the line box around its inline-block`);
         }
+
+      // Containment: layout and paint make an independent formatting context (and the containing
+      // block of positioned descendants), size sizes the box as if empty, style moves nothing. None
+      // of it applies to a non-atomic inline box. content-visibility: auto is layout, paint and style
+      // containment, plus size containment while the box is off screen.
+      const contain = this.containOf(el, si);
+      for (const p of ["contain", "content-visibility", "contain-intrinsic-size", "contain-intrinsic-width", "contain-intrinsic-height", "contain-intrinsic-block-size", "contain-intrinsic-inline-size"]) handled.add(p);
+      const cv = res("content-visibility");
+      if (cv === "auto")
+        this.note(el, si, { decl: `${own.get("content-visibility")!.utility} (content-visibility: auto)`, reason: "content-visibility: auto skips the content of a box off screen, which is then as tall as its contain-intrinsic-size; which boxes are off screen isn't modelled", kind: "height" });
+      else if (cv === "hidden") this.note(el, si, { decl: `${own.get("content-visibility")!.utility} (content-visibility: hidden)`, reason: "content-visibility: hidden skips the box's content, which isn't modelled", kind: "geometry" });
+      if (contain) {
+        const words = [contain.size === "both" ? "size" : contain.size === "inline" ? "inline-size" : "", contain.layout ? "layout" : "", contain.paint ? "paint" : ""].filter(Boolean).join(" ");
+        decl("contain", words, (own.get("contain") ?? own.get("content-visibility"))!.utility);
+        const cis = contain.size ? [...handled].find((p) => p.startsWith("contain-intrinsic") && own.has(p) && !/^none$/.test(res(p) ?? "none")) : undefined;
+        if (cis) this.note(el, si, { decl: `${own.get(cis)!.utility} (${cis}: ${res(cis)})`, reason: "contain-intrinsic-size sizes a size-contained box, which isn't modelled", kind: "geometry" });
+      }
+      // A transform, filter or will-change on an ancestor makes it the containing block of this
+      // positioned box, which Cadesa places by its positioned (or contained) ancestor or the window.
+      const trap = abs ? this.transformedContainer(el, si) : undefined;
+      if (trap) this.note(el, si, { decl: trap, reason: "a transform, filter or will-change on an ancestor makes it this box's containing block, which isn't modelled", kind: "geometry" });
       // Everything else the element sets on itself.
       for (const [p, o] of own) {
         if (handled.has(p) || skipProp(p)) continue;
@@ -1730,6 +1896,18 @@ export abstract class PageLifter {
         let v = this.resolve(el, si, o.value);
         // Empty after substitution (`height: var(--unset)`): invalid at computed-value time, so the initial value.
         if (v === undefined || v === "") continue;
+        // A transform that moves nothing (translateZ(0), a layer hint): no effect on where it's drawn.
+        if (/^(transform|translate|rotate|scale)$/.test(p) && identityTransform(p, v)) continue;
+        // A top or bottom auto margin is 0 in block flow, and in a column flexbox with no free
+        // space (its height is its content's).
+        if (/^margin-(top|bottom)$/.test(p) && v === "auto" && !abs) {
+          const parentEl = el.parent && el.parent !== this.bodyEl ? el.parent : undefined;
+          const column = inFlexOrGrid && !!parentEl && this.isColumn(parentEl, si) && this.definiteHeight(parentEl, si) === "auto" && /^(auto|0|0px)?$/.test(this.resolve(parentEl, si, parentEl.own[si].get("min-height")?.value ?? "") ?? "");
+          if (!inFlexOrGrid || column) {
+            decl(p, "0px", `${o.utility} (${p}: auto is 0 ${column ? "with no free space in its column" : "in block flow"})`);
+            continue;
+          }
+        }
         // A relative box's percentage top or bottom: of its parent's height when that is definite, else auto.
         if (pos === "relative" && (p === "top" || p === "bottom") && /%$/.test(v) && parseFloat(v) !== 0) {
           const of = this.definiteHeight(el.parent, si);
@@ -1851,9 +2029,12 @@ export abstract class PageLifter {
             const v = { left: "start", start: "start", center: "center", right: "end", end: "end" }[o.value];
             if (v && v !== "start") decl("text-align", v, o.utility);
             else if (!v) decl("text-align", o.value, o.utility);
-          } else if (/^text-wrap(-style)?$/.test(p) && o.value === "balance" && !(parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si))) {
-            // Balancing keeps the line count, so a box whose width doesn't depend on its text keeps its size.
-            this.note(el, si, { decl: o.utility, reason: "text-wrap: balance moves line breaks but keeps the line count; the box is exact, the reported lines are not", kind: "none" });
+          } else if (/^text-wrap(-style)?$/.test(p) && /^(balance|pretty)$/.test(o.value) && !(parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si))) {
+            // Chromium's balanced and pretty line breakers keep the greedy line count (they fall
+            // back to it otherwise), so a box whose width doesn't depend on its text keeps its size.
+            this.note(el, si, { decl: o.utility, reason: `text-wrap: ${o.value} moves line breaks but keeps the line count; the box is exact, the reported lines are not`, kind: "none" });
+          } else if (/^text-wrap(-style)?$/.test(p) && o.value === "stable") {
+            // stable: the same breaks as auto when the page is laid out (it only differs while editing).
           } else if (!/^(normal|none|auto|wrap|manual|0|0px|ltr)$/.test(o.value) && !(p === "font-style" && o.value === "normal")) decl(p, o.value, o.utility);
         }
         this.inlineContent(el, si);
@@ -1915,7 +2096,8 @@ export abstract class PageLifter {
       this.note(el, si, { decl: `${utility} (${prop}: ${v})`, reason: "an em length under a font size that follows the viewport width is not modelled", kind: "geometry" });
       return v;
     }
-    const f = lengthExpr(v, { em: t.size, vh: this.viewportHeight });
+    // (A width or max-width may hold percentages of the containing block: lift keeps them for the engine.)
+    const f = lengthExpr(v, { em: t.size, vh: this.viewportHeight, pct: prop === "width" || prop === "max-width" });
     if (f && /\d[dsl]?v(?:h|min|max)\b/i.test(v)) this.usesViewportHeight = true;
     return f ? f.css : v;
   }
@@ -1936,7 +2118,8 @@ export abstract class PageLifter {
     const allSame = kids.every((k) => same(this.textOf(k, si)));
     const tops: number[] = [];
     for (const k of kids) {
-      if (k.roles[si] !== "text") return undefined;
+      // (Layout containment leaves an item no baseline.)
+      if (k.roles[si] !== "text" || this.containOf(k, si)) return undefined;
       const strut = allSame ? undefined : this.strutOf(k, si);
       if (!allSame && !strut) return undefined;
       const own = k.own[si];
@@ -2072,15 +2255,34 @@ export abstract class PageLifter {
   }
 
   /**
-   * A percentage row gap: of the container's height, so 0 where that height is auto (a flex
-   * container outside flex and grid); in a grid, or a flex container whose height is set or may be
-   * stretched, it isn't modelled (noted, and left out).
+   * A percentage row gap: of the container's content height. A set height makes it a length; an
+   * auto height makes it 0 in a flex container, and in a grid 0 while the rows are sized, then of
+   * the final height (kept as a percentage for the engine). A height that may be stretched (a flex
+   * or grid item), or a grid's min-height or max-height, isn't modelled (noted, and left out).
    */
   pctRowGap(el: El, si: number, o: Origin | undefined, grid = false): Origin | undefined {
     if (!o) return o;
     const v = this.resolve(el, si, o.value);
     if (!v || !/^(\d+\.?\d*|\.\d+)%$/.test(v) || parseFloat(v) === 0) return o;
-    if (!grid && this.definiteHeight(el, si) === "auto") return { ...o, value: "0px", utility: `${o.utility} (row-gap: ${v} of an auto height is 0)` };
+    // A grid of one row (no more items than columns) has no row gap to place.
+    if (grid) {
+      const tracks = gridTrackCount(this.resolve(el, si, el.own[si].get("grid-template-columns")?.value ?? "none") ?? "");
+      const items = el.children.filter((k) => k.roles[si] && k.roles[si] !== "hidden" && k.roles[si] !== "out" && !this.positioned(k, si)).length;
+      const placed = ["grid-row", "grid-row-start", "grid-row-end", "grid-area", "grid-column", "grid-column-start", "grid-column-end", "grid-auto-flow", "grid-template-rows", "grid-template-areas"].some((p) => el.children.some((k) => k.own[si]?.has(p)) || (p.startsWith("grid-auto") || p.startsWith("grid-template")) && el.own[si].has(p));
+      if (tracks !== undefined && items <= tracks && !placed) return { ...o, value: "0px", utility: `${o.utility} (row-gap: ${v}, one row: no gap between rows)` };
+    }
+    const of = this.definiteHeight(el, si);
+    // Of a set height: a length (the percentage of the content height, cut to a layout unit).
+    if (typeof of === "object") {
+      const f = Math.fround;
+      const px = Math.trunc(f(f(f(Math.floor(of.px * 64 + 1e-6) / 64) * f(parseFloat(v))) / 100) * 64) / 64;
+      return { ...o, value: `${fmtNum(px)}px`, utility: `${o.utility} (row-gap: ${v} of a ${fmtNum(of.px)}px content height)` };
+    }
+    if (of === "auto" && !grid) return { ...o, value: "0px", utility: `${o.utility} (row-gap: ${v} of an auto height is 0)` };
+    // A grid of auto height sizes its rows without the gap, then places them that percentage of its
+    // final content height apart (they may overflow). A min-height or max-height isn't modelled.
+    const limited = ["min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(this.resolve(el, si, el.own[si].get(p)?.value ?? "") ?? ""));
+    if (of === "auto" && !limited) return o;
     this.note(el, si, { decl: `${o.utility} (row-gap: ${v})`, reason: `a percentage row gap of a ${grid ? "grid's" : "container's set or stretched"} height is not modelled`, kind: "geometry" });
     return undefined;
   }
@@ -2436,7 +2638,7 @@ export abstract class PageLifter {
         const el = byId.get(b.id);
         if (!el) continue;
         const sel = `[data-fixture="${b.id}"]`;
-        if (el.oneLine?.[si] && el.alone[si] && b.lines && b.lines.length > 1)
+        if (el.oneLine?.[si] && (el.alone[si] || el.rowLine?.[si]) && b.lines && b.lines.length > 1)
           out.push({ file: this.page, line: el.line, selector: sel, decl: "display: inline-block", reason: `its text takes ${b.lines.length} lines at ${layout.width}px; its line box is modelled for one line`, kind: "geometry" });
         if (el.rowGap[si] && this.lineCount(b) > 1)
           out.push({ file: this.page, line: el.line, selector: sel, decl: el.rowGap[si], reason: `the row wraps at ${layout.width}px and its row gap differs from its column gap; a cluster has one gap`, kind: "geometry" });
@@ -2683,6 +2885,56 @@ export abstract class PageLifter {
     for (const e of edits) out = out.slice(0, e.at) + e.text + out.slice(e.end);
     return out;
   }
+}
+
+/** A transform (or translate, rotate, scale) that leaves the box where it is: translateZ(0), scale(1), rotate(0deg). */
+export function identityTransform(prop: string, v: string): boolean {
+  const zero = (a: string) => /^[+-]?(0*\.?0+)(px|rem|em|%|deg|rad|turn|grad)?$/.test(a.trim());
+  const one = (a: string) => /^[+-]?(1(\.0*)?|100%)$/.test(a.trim());
+  const s = v.trim().toLowerCase();
+  if (s === "none") return true;
+  if (prop === "translate") return s.split(/\s+/).every(zero);
+  if (prop === "scale") return s.split(/\s+/).every(one);
+  if (prop === "rotate") return zero(s.split(/\s+/).at(-1)!);
+  const fns = [...s.matchAll(/([a-z0-9]+)\(([^()]*)\)\s*/g)];
+  if (!fns.length || fns.map((m) => m[0]).join("").trim() !== s) return false;
+  return fns.every(([, name, args]) => {
+    const xs = args.split(",");
+    if (/^translate(x|y|z|3d)?$/.test(name) || /^skew(x|y)?$/.test(name)) return xs.every(zero);
+    if (/^scale(x|y|z|3d)?$/.test(name)) return xs.every(one);
+    if (/^rotate(x|y|z)?$/.test(name)) return zero(xs[0]);
+    if (name === "rotate3d") return xs.length === 4 && zero(xs[3]);
+    return false;
+  });
+}
+
+/** How many column tracks grid-template-columns makes (none: one implicit column), or undefined (auto-fill, subgrid, line names...). */
+export function gridTrackCount(v: string): number | undefined {
+  const s = v.trim();
+  if (s === "" || s === "none") return 1;
+  if (/\[|auto-fill|auto-fit|subgrid|masonry/.test(s)) return undefined;
+  let n = 0;
+  let depth = 0;
+  let cur = "";
+  const flush = () => {
+    if (!cur) return true;
+    const rep = /^repeat\(\s*(\d+)\s*,\s*(.+)\)$/s.exec(cur);
+    if (rep) {
+      const inner = gridTrackCount(rep[2]);
+      if (inner === undefined) return false;
+      n += parseInt(rep[1]) * inner;
+    } else n++;
+    cur = "";
+    return true;
+  };
+  for (const ch of s) {
+    if (ch === "(") depth++;
+    if (ch === ")") depth--;
+    if (/\s/.test(ch) && depth === 0) {
+      if (!flush()) return undefined;
+    } else cur += ch;
+  }
+  return flush() ? n : undefined;
 }
 
 /** Absolute units (pt, pc, in, cm, mm, Q) in px, as the browser converts them (1in = 96px). */
