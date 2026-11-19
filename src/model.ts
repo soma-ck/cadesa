@@ -174,10 +174,19 @@ export interface Props {
    * minimum size in a flex row is 0. Overflowing content scrolls or is cut off, never spills out.
    */
   overflow?: { x: Overflow; y: Overflow; raw: string; path: string };
+  /**
+   * Positioning. relative: in flow, shifted by its offsets (its siblings don't move); absolute: out
+   * of flow, placed by its offsets in the padding box of its nearest positioned ancestor (else the
+   * window); fixed: in the window. Offsets are space tokens (may be negative) or percentage size
+   * tokens (of the containing block's width for left/right, its height for top/bottom). height: an
+   * absolute box's height as a percentage size token of its containing block's height.
+   */
+  position?: { type: PositionType; top?: Ref; right?: Ref; bottom?: Ref; left?: Ref; height?: Ref; path: string };
   /** Removed by this override (`maxWidth: none`), with the YAML path. */
   unset?: Partial<Record<Unsettable, string>>;
 }
 
+export type PositionType = "relative" | "absolute" | "fixed" | "sticky";
 export type Overflow = "visible" | "hidden" | "clip" | "auto" | "scroll";
 export const OVERFLOWS: Overflow[] = ["visible", "hidden", "clip", "auto", "scroll"];
 /** A scroll container: overflow other than visible or clip on either axis. */
@@ -203,6 +212,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "textAlign",
   "grow",
   "overflow",
+  "position",
 ];
 
 export interface Slot {
@@ -245,7 +255,7 @@ export interface Model {
    */
   /** Lifted on the fly from a page's CSS (or Tailwind): findings give their advice in CSS terms. */
   css?: boolean;
-  page?: { background?: Ref; path: string; margin?: PageSides; padding?: PageSides; outer?: PageSides; clipX?: boolean };
+  page?: { background?: Ref; path: string; margin?: PageSides; padding?: PageSides; outer?: PageSides; clipX?: boolean; windowHeight?: number };
 }
 
 /** Space tokens per side of the page (a missing side is 0). */

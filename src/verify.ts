@@ -288,6 +288,8 @@ export async function verifyFindings(opts: {
   maxWidths?: number;
   /** How to name an element in the report (default: its data-fixture id). */
   describe?: (id: string) => string;
+  /** The window height (px) the page was laid out for. */
+  height?: number;
   /** And this many widths without findings. */
   samples?: number;
 }): Promise<VerifyReport> {
@@ -332,13 +334,13 @@ export async function verifyFindings(opts: {
   };
   const results = new Map<number, Map<string, Verdict>>();
   try {
-    const page: Page = await browser.newPage({ viewport: { width: widths[0] ?? 1280, height: 900 } });
+    const page: Page = await browser.newPage({ viewport: { width: widths[0] ?? 1280, height: opts.height ?? 800 } });
     await page.goto(server.url(pagePath));
     await settle(page);
     const failed = await page.evaluate("[...document.fonts].filter((f) => f.status === 'error').map((f) => f.family)");
     if ((failed as string[]).length) report.notes.push(`fonts that failed to load in Chromium: ${[...new Set(failed as string[])].join(", ")}`);
     for (const w of widths) {
-      await page.setViewportSize({ width: w, height: 900 });
+      await page.setViewportSize({ width: w, height: opts.height ?? 800 });
       await settle(page);
       const rects = await measureBoxes(page);
       const layout = opts.layouts.find((l) => l.width === w)!;

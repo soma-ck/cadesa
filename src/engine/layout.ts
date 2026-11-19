@@ -68,7 +68,8 @@ export interface Layout {
   page?: { background: string; path: string };
 }
 
-type ParentKind = "page" | Pattern;
+/** "abs": an absolutely positioned or fixed box, placed in its containing block. */
+type ParentKind = "page" | "abs" | Pattern;
 const MEDIA = new Set(["img", "video", "picture", "svg", "canvas", "iframe", "object", "embed"]);
 const CONTROLS = new Set(["button", "input", "select", "textarea"]);
 
@@ -249,6 +250,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (atTop) return { boxes, contentH: throughTop ? 0 : Math.max(0, sum(pending)), top: pending, bottom: NONE, empty: true, pending };
     return { boxes, contentH: Math.max(0, end === "keep" ? cursor + sum(pending) : cursor), top, bottom: end === "escape" ? pending : NONE, empty: false, pending: NONE };
   }
+  /** Absolutely positioned or fixed: out of flow. */
+  const outOfFlow = (c: Component, slot: string | undefined) => {
+    const t = resolveElement(model, c, slot, width).position?.value.type;
+    return t === "absolute" || t === "fixed";
+  };
+  /** Out-of-flow boxes waiting for their containing block's final geometry, parents first. */
+  const absQueue: { k: { node: FixtureNode; comp: Component; slot: string | undefined }; parent: Box | undefined; first: boolean; pattern: string }[] = [];
+  /** Each placed out-of-flow box: its containing block (undefined: the window) and whether it sits at its static position. */
+  const absInfo = new Map<Box, { cb?: Box; parent?: Box; staticPos: boolean }>();
+  /** The window's height: fixed boxes, and absolute ones with no positioned ancestor, are placed in it. */
+  const windowH = model.page?.windowHeight ?? 800;
+
   /** Elements of the fixture (component roots and slots) that aren't laid out at all, with their descendants. */
   const skippedEls = new Map<FixtureNode, { id: string; tag: string; line?: number }>();
   const isBox = (n: FixtureNode) => n.classes.some((k) => k.startsWith(model.prefix) && (k.includes("__") || model.components.has(k.slice(model.prefix.length))));
@@ -474,7 +487,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         max = up(t.maxContent);
       }
     } else if (n.children.length) {
-      const kids = n.children.map((k) => ({ node: k, ...childOf(k, c, true) }));
+      // Absolutely positioned children don't size their parent.
+      const kids = n.children.map((k) => ({ node: k, ...childOf(k, c, true) })).filter((k) => !k.comp || !outOfFlow(k.comp, k.slot));
       if (kids.some((k) => k.comp === null)) return unknown(`<${n.tag}> has children the engine doesn't lay out`);
       const pat = p.pattern?.value;
       if (!pat) return unknown(`<${n.tag}> has children but no layout`);
@@ -760,6 +774,86 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     return { colW, colX };
   }
 
+  /**
+   * Absolute and fixed boxes, once every box is in place (page coordinates): the containing block
+   * is the padding box of the nearest positioned ancestor (fixed, or none: the window). Offsets in
+   * px or a percentage of it; a width from left and right, else its own, else shrink-to-fit; a
+   * height from top and bottom, else its own or its content's. With no offset on an axis it sits
+   * at its static position, which is known only before any in-flow sibling in block flow.
+   */
+  function placeAbsolute(parentOf: Map<Box, Box>, pageX: number, pageY: number) {
+    while (absQueue.length) {
+      const a = absQueue.shift()!;
+      const p = resolveElement(model, a.k.comp, a.k.slot, width);
+      const pos = p.position!.value;
+      let cbBox: Box | undefined;
+      if (pos.type === "absolute")
+        for (let x = a.parent; x; x = parentOf.get(x))
+          if (x.props.position) {
+            cbBox = x;
+            break;
+          }
+      const bw = (b: Box) => b.props.border?.value.widths ?? { top: 0, right: 0, bottom: 0, left: 0 };
+      const cb = cbBox ? { x: cbBox.x + bw(cbBox).left, y: cbBox.y + bw(cbBox).top, w: cbBox.w - bw(cbBox).left - bw(cbBox).right, h: cbBox.h - bw(cbBox).top - bw(cbBox).bottom } : { x: 0, y: 0, w: width, h: windowH };
+      const at = (v: number | { pct: number } | undefined, base: number) => (v === undefined ? undefined : sizeAt(v, base));
+      const [l, r, t, b] = [at(pos.left, cb.w), at(pos.right, cb.w), at(pos.top, cb.h), at(pos.bottom, cb.h)];
+      const m = marginOf(p);
+      const ins = insets(p);
+      const notes: string[] = [];
+      // Width.
+      const pw = p.width?.value;
+      const cap = p.maxWidth ? sizeAt(p.maxWidth.value, cb.w) : p.measure ? sizeAt(p.measure.value, cb.w) : Infinity;
+      let w: number;
+      if (typeof pw === "number" || (pw !== undefined && typeof pw === "object")) w = sizeAt(pw, cb.w);
+      else if (pw === "fill") w = cb.w;
+      else if (l !== undefined && r !== undefined && pw !== "fit") w = cb.w - l - r - m.left - m.right;
+      else {
+        const avail = cb.w - (l ?? 0) - (r ?? 0) - m.left - m.right;
+        const it = intrinsic(a.k.node, a.k.comp, a.k.slot, true);
+        if (it.why) {
+          notes.push(`an absolutely positioned box is as wide as its content, which can't be measured here (${it.why})`);
+          w = Math.max(0, avail);
+        } else w = Math.min(it.max, Math.max(it.min, avail));
+      }
+      w = Math.max(ins.left + ins.right, Math.min(w, cap));
+      if (p.aspect) notes.push("an absolutely positioned box with an aspect ratio isn't modelled");
+      const box = measure(a.k.node, a.k.comp, a.k.slot, w, "abs", w);
+      box.assumptions.push(...notes);
+      // Height: a percentage of the containing block's, or stretched between top and bottom when it has none of its own.
+      if (pos.height !== undefined && !p.height) {
+        box.h = Math.max(ins.top + ins.bottom, sizeAt(pos.height, cb.h));
+        arrange(box);
+      } else if (!p.height && !p.aspect && t !== undefined && b !== undefined) {
+        const target = Math.max(ins.top + ins.bottom, cb.h - t - b - m.top - m.bottom);
+        if (target > box.h) grow(box, target);
+        else if (target < box.h) {
+          box.h = target;
+          arrange(box);
+        }
+      }
+      // Position: by its offsets, else where it would be in flow.
+      const parent = a.parent;
+      const pin = parent ? insets(parent.props) : undefined;
+      const sx = parent ? parent.x + pin!.left : pageX;
+      const sy = parent ? parent.y + pin!.top : pageY;
+      const staticOk = a.first && /^(flow|page|stack)$/.test(a.pattern);
+      let staticPos = false;
+      const x = l !== undefined ? cb.x + l + m.left : r !== undefined ? cb.x + cb.w - r - box.w - m.right : ((staticPos = true), sx + m.left);
+      const y = t !== undefined ? cb.y + t + m.top : b !== undefined ? cb.y + cb.h - b - box.h - m.bottom : ((staticPos = true), sy + m.top);
+      if (staticPos && !staticOk) box.assumptions.push("an absolutely positioned box without offsets sits where it would be in flow, which is known only before any in-flow sibling in block flow");
+      box.x = 0;
+      box.y = 0;
+      place(box, x, y, cb.w, cb.h);
+      const home = parent ?? undefined;
+      if (home) {
+        home.children.push(box);
+        parentOf.set(box, home);
+      } else boxes.push(box);
+      for (const d of walk([box])) for (const k of d.children) parentOf.set(k, d);
+      absInfo.set(box, { cb: cbBox, parent, staticPos });
+    }
+  }
+
   function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind, forcedW?: number): Box {
     const id = idOf(n);
     const props = resolveElement(model, c, slot, width);
@@ -829,7 +923,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Between the rows of a grid or the lines of a cluster (row-gap), when it differs from the column gap.
     const rowGap = props.rowGap?.value ?? gap;
     const allKids = isText ? [] : n.children.map((k) => ({ node: k, ...childOf(k, c) }));
-    const kids = allKids.filter((k) => k.comp !== null) as { node: FixtureNode; comp: Component; slot: string | undefined }[];
+    const placed = allKids.filter((k) => k.comp !== null) as { node: FixtureNode; comp: Component; slot: string | undefined }[];
+    // Absolute and fixed children are out of flow: placed once everything else is (see placeAbsolute).
+    const kids = placed.filter((k) => !outOfFlow(k.comp, k.slot));
+    const outKids = placed.filter((k) => outOfFlow(k.comp, k.slot));
     const skipped = allKids.filter((k) => k.comp === null).map((k) => k.node);
 
     if (!isText && n.ownText && n.children.length) {
@@ -1048,6 +1145,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         oneLine: pattern === "cluster" && props.wrap?.value === false,
       });
     if (rows || grows) arrange(box);
+    for (const k of outKids) {
+      // In flow before it: what its static position (where it would be with no offsets) depends on.
+      const at = n.children.indexOf(k.node);
+      const first = !kids.some((x) => n.children.indexOf(x.node) < at) && !skipped.some((x) => n.children.indexOf(x) < at);
+      absQueue.push({ k, parent: box, first, pattern: pattern ?? "flow" });
+    }
 
     // Overflow: past the content box on the right (a negative right margin may pull a child past it on purpose).
     const widest = Math.max(contentW, ...children.map((b) => b.x + b.w + Math.min(0, marginOf(b.props).right)));
@@ -1256,6 +1359,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       unknownOnPage ??= `<${n.tag}> on the page isn't a Cadesa component; its height and margins are unknown`;
       continue;
     }
+    if (outOfFlow(c, undefined)) {
+      absQueue.push({ k: { node: n, comp: c, slot: undefined }, parent: undefined, first: !boxes.length, pattern: "page" });
+      continue;
+    }
     boxes.push(measure(n, c, undefined, pageW, "page"));
   }
   // The body is block flow: page-level boxes stack, their margins collapsing. Its own top margin
@@ -1271,12 +1378,33 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   // Its margins can collapse through empty boxes above it too, so every page-level box is unsure.
   if (unknownOnPage) for (const b of boxes) sources.set(b, unknownOnPage);
 
+  // Convert relative positions to page coordinates. A relatively positioned box is shifted by its
+  // offsets (a percentage of its parent's width or height), with what is inside it; nothing else moves.
+  const place = (b: Box, ox: number, oy: number, cbW: number, cbH: number) => {
+    b.x += ox;
+    b.y += oy;
+    const pos = b.props.position?.value;
+    if (pos && (pos.type === "relative" || pos.type === "sticky")) {
+      const at = (v: number | { pct: number } | undefined, base: number) => (v === undefined ? undefined : sizeAt(v, base));
+      const [l, r, t, bt] = [at(pos.left, cbW), at(pos.right, cbW), at(pos.top, cbH), at(pos.bottom, cbH)];
+      if (pos.type === "relative") {
+        b.x += l ?? (r !== undefined ? -r : 0);
+        b.y += t ?? (bt !== undefined ? -bt : 0);
+      }
+    }
+    const inset = insets(b.props);
+    for (const k of b.children) place(k, b.x + inset.left, b.y + inset.top, b.w - inset.left - inset.right, b.h - inset.top - inset.bottom);
+  };
+  const pageX = outer.left + bodyMargin.left + bodyPad.left;
+  for (const b of boxes) place(b, 0, 0, pageW, windowH);
+  const parentOf = new Map<Box, Box>();
+  for (const b of walk(boxes)) for (const k of b.children) parentOf.set(k, b);
+  placeAbsolute(parentOf, pageX, outer.top + (bodyPad.top ? bodyMargin.top + bodyPad.top : 0));
+
   // Uncertainty spreads: a box the engine can't guarantee (an assumption, an error, an element it
   // skipped) may have a different size, which moves its later siblings (every sibling in a cluster,
   // grid or layer, whose rows and lines it shares), resizes its parent, and so on up to the page.
   // Every box reached is flagged, so no prediction is presented as exact when it isn't.
-  const parentOf = new Map<Box, Box>();
-  for (const b of walk(boxes)) for (const k of b.children) parentOf.set(k, b);
   for (const b of walk(boxes)) {
     if (b.assumptions.length) sources.set(b, sources.get(b) ?? b.assumptions[0]);
     const e = issues.find((i) => i.severity === "error" && i.id === b.id);
@@ -1298,23 +1426,29 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // Siblings in a cluster, grid or layer share rows and lines; in a stack where some grow they share its extra height.
       const loose = parent && (!inLine(parent) || parent.children.some((k) => k.props.grow));
       const i = sibs.indexOf(b);
-      sibs.forEach((s, j) => (j > i || (loose && j !== i)) && flag(s, why, true));
+      sibs.forEach((s, j) => (j > i || (loose && j !== i)) && !absInfo.has(s) && flag(s, why, true));
+      // An out-of-flow box doesn't resize or move what's around it.
+      if (absInfo.has(b)) break;
       // A parent that is resized also moves its whole subtree when its own parent aligns it by size
       // (cluster lines, grid rows and the layer cell); in a stack or on the page it stays put.
       const grand = parent && parentOf.get(parent);
       if (parent) flag(parent, why, !!grand && !inLine(grand));
     }
   }
+  // An out-of-flow box moves with its containing block (and its parent, at its static position).
+  for (let changed = true; changed; ) {
+    changed = false;
+    for (const [b, a] of absInfo) {
+      if (flagged.has(b)) continue;
+      const dep = (a.cb && flagged.has(a.cb) ? a.cb : undefined) ?? (a.staticPos && a.parent && flagged.has(a.parent) ? a.parent : undefined);
+      if (dep) {
+        flag(b, `geometry depends on #${dep.id}, which the engine can't guarantee (${flagged.get(dep)})`, true);
+        changed = true;
+      }
+    }
+  }
   for (const [b, why] of flagged) if (!b.assumptions.length && !issues.some((i) => i.severity === "error" && i.id === b.id)) b.assumptions.push(why);
 
-  // Convert relative positions to page coordinates.
-  const place = (b: Box, ox: number, oy: number) => {
-    b.x += ox;
-    b.y += oy;
-    const inset = insets(b.props);
-    for (const k of b.children) place(k, b.x + inset.left, b.y + inset.top);
-  };
-  for (const b of boxes) place(b, 0, 0);
 
   // A box past the right edge of the viewport makes the page scroll sideways, unless a box around
   // it (or the page itself) clips or scrolls what doesn't fit. Reported once, on the outermost.
@@ -1324,6 +1458,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const overflowing = new Set(issues.flatMap((i) => /^#(\S+) overflows #/.exec(i.message)?.[1] ?? []));
     const visit = (b: Box) => {
       if (past(b) && overflowing.has(b.id)) return;
+      // A fixed box stays in the window: it never makes the page scroll.
+      if (b.props.position?.value.type === "fixed") return;
       if (past(b)) {
         const m = marginOf(b.props);
         const path = (m.right < 0 || m.left < 0 ? b.props.margin?.steps.at(-1)?.path : undefined) ?? b.props.width?.steps.at(-1)?.path ?? b.sourcePath;

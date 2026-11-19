@@ -77,8 +77,8 @@ export interface Origin {
 }
 
 /**
- * The viewport height that vh, dvh, svh and lvh are computed for. Cadesa predicts layouts per
- * width; the height of the window isn't known, so boxes sized by it are marked approximate.
+ * The default height of the window the page is laid out in (`--height`): vh, dvh, svh and lvh,
+ * and percentage heights of the root, are computed exactly for it, as widths are for each width.
  */
 export const VIEWPORT_HEIGHT = 800;
 
@@ -370,6 +370,10 @@ export interface PageLift {
   responsive: string[];
   /** Things the reader should know about how the page was read (e.g. a stylesheet used under another name). */
   notes: string[];
+  /** The window height (px) the page was laid out for: vh units and the root's percentage heights. */
+  viewportHeight: number;
+  /** Some box depends on the window's height (vh units, a percentage height of the root). */
+  usesViewportHeight: boolean;
   /** The cascade per element (for pointing findings at the rule that set a property). */
   elements: { els: El[]; html?: El; body?: El };
   /**
@@ -411,7 +415,7 @@ export abstract class PageLifter {
   vars = new Map<string, Decl>();
   pageBackground?: Decl;
   /** The page's insets per side (CSS lengths): the body's margin and padding (with its border), and the root element's (outer). */
-  pageSides: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string } = {};
+  pageSides: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string; windowHeight?: number } = {};
   rootText!: TextCtx;
   /** Custom properties defined on :root (unresolved): token names come from them. */
   theme = new Map<string, string>();
@@ -421,6 +425,10 @@ export abstract class PageLifter {
   uaInCascade = false;
   /** How a block container with block children is lifted: a stack (no margins) or block flow. */
   blockFlow: "stack" | "flow" = "stack";
+  /** The window's height in px: vh units and the root's percentage heights are computed for it. */
+  viewportHeight = VIEWPORT_HEIGHT;
+  /** Some length depends on the window's height (vh, or a percentage height of the root). */
+  usesViewportHeight = false;
   /** For the source header: what the page was lifted with. */
   abstract readonly label: string;
 
@@ -659,11 +667,11 @@ export abstract class PageLifter {
       } else if (parent.fluid && MATHY.test(fs) && /\d(em|%)/.test(fs)) {
         this.note(el, si, { decl, reason: "a font size relative to one that follows the viewport width is not modelled", kind: "text" });
       } else {
-        const f = MATHY.test(fs) ? lengthExpr(fs, { em: parent.size, vh: VIEWPORT_HEIGHT }) : undefined;
+        const f = MATHY.test(fs) ? lengthExpr(fs, { em: parent.size, vh: this.viewportHeight }) : undefined;
+        if (f && /\d[dsl]?v(?:h|min|max)\b/i.test(fs)) this.usesViewportHeight = true;
         if (f) {
           t.size = f.at(1280);
           t.fluid = f.fluid ? f.css : undefined;
-          if (/\d[dsl]?v(?:h|min|max)\b/i.test(fs)) this.note(el, si, { decl, reason: `viewport-height units are computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`, kind: "text" });
         } else this.note(el, si, { decl, reason: "font-size must be a length, or calc()/clamp()/min()/max() of px, rem, em and vw", kind: "text" });
       }
     }
@@ -712,7 +720,17 @@ export abstract class PageLifter {
 
   displayOf(el: El, si: number): string {
     if (el.asBlock[si]) return "block";
-    return this.ownDisplay(el, si);
+    const d = this.ownDisplay(el, si);
+    // An absolutely positioned or fixed box is blockified.
+    if (this.positioned(el, si)) return d === "inline-flex" ? "flex" : d === "inline-grid" ? "grid" : /^(inline|inline-block|inline-flow-root)$/.test(d) ? "block" : d;
+    return d;
+  }
+
+  /** position: absolute or fixed (out of flow, laid out in its containing block). */
+  positioned(el: El, si: number) {
+    const p = el.own[si]?.get("position");
+    const v = p ? this.resolve(el, si, p.value) : undefined;
+    return v === "absolute" || v === "fixed";
   }
 
   /** The display the cascade gives the element (the browser's default for its tag when nothing sets it). */
@@ -1034,7 +1052,7 @@ export abstract class PageLifter {
       const d = this.displayOf(el, si);
       let role: Role;
       if (d === "none" || (el.parent && el.parent.roles[si] === "hidden")) role = "hidden";
-      else if (this.outOfFlow(el, si)) role = "out";
+      else if (this.asideFloat(el, si)) role = "out";
       else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || this.isTable(el, si)) role = "leaf";
       else if (hasText && (el.children.length === 0 || allInline)) role = "text";
       else if (el.children.length) role = "container";
@@ -1062,7 +1080,9 @@ export abstract class PageLifter {
       };
       const parentRole = el.parent && el.parent !== this.bodyEl ? el.parent.roles[si] : "page";
       const parentDisplay = el.parent && el.parent !== this.bodyEl ? this.displayOf(el.parent, si) : "block";
-      const inFlexOrGrid = /flex|grid/.test(parentDisplay) && parentRole === "container";
+      // An absolutely positioned or fixed box isn't a flex or grid item.
+      const abs = this.positioned(el, si);
+      const inFlexOrGrid = /flex|grid/.test(parentDisplay) && parentRole === "container" && !abs;
 
       // Inline-level boxes in block flow sit on line boxes, which Cadesa doesn't model, except an
       // inline-block alone on its line whose line box is exactly its margin box.
@@ -1078,10 +1098,12 @@ export abstract class PageLifter {
 
       const skipProp = (p: string) =>
         // Flex item properties do nothing outside a flex container (align-self: outside flex and grid).
-        (/^(flex|flex-grow|flex-shrink|flex-basis|order)$/.test(p) && !(/flex/.test(parentDisplay) && parentRole === "container")) ||
+        (/^(flex|flex-grow|flex-shrink|flex-basis|order)$/.test(p) && !(/flex/.test(parentDisplay) && parentRole === "container" && !abs)) ||
         (p === "align-self" && !inFlexOrGrid) ||
         p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p) || p === "display" ||
-        (pos === "sticky" && /^(position|top|right|bottom|left|z-index)$/.test(p)) || p === "box-sizing" ||
+        (pos === "sticky" && /^(top|right|bottom|left)$/.test(p)) || p === "z-index" ||
+        // Offsets do nothing on a box that isn't positioned.
+        (/^(top|right|bottom|left)$/.test(p) && !/^(relative|absolute|fixed|sticky)$/.test(pos ?? "static")) || p === "box-sizing" ||
         // vertical-align moves only inline-level boxes on a line (noted above) and table cells.
         (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline"));
 
@@ -1259,15 +1281,24 @@ export abstract class PageLifter {
         let v = this.resolve(el, si, o.value);
         // Empty after substitution (`height: var(--unset)`): invalid at computed-value time, so the initial value.
         if (v === undefined || v === "") continue;
+        // A relative box's percentage top or bottom: of its parent's height when that is definite, else auto.
+        if (pos === "relative" && (p === "top" || p === "bottom") && /%$/.test(v) && parseFloat(v) !== 0) {
+          const of = this.definiteHeight(el.parent, si);
+          if (of === "auto") continue;
+          if (of === "unknown") {
+            this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: `a percentage ${p} of a parent whose height may be stretched (a flex or grid item) is not decided`, kind: "visual" });
+            continue;
+          }
+          v = `${fmtNum((parseFloat(v) / 100) * of.px)}px`;
+        }
         // A percentage height: of the parent's height when that is definite, else as if auto.
-        if ((p === "height" || p === "min-height") && /^[\d.]+%$/.test(v)) {
+        if ((p === "height" || p === "min-height") && /^[\d.]+%$/.test(v) && !(p === "height" && abs)) {
           const of = this.definiteHeight(el.parent, si);
           if (of === "auto") continue;
           if (of === "unknown") {
             this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: `a percentage ${p} of a parent whose height may be stretched (a flex or grid item) is not decided`, kind: "height" });
             continue;
           }
-          if (of.viewport) this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: `a percentage of the viewport's height is computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`, kind: "height" });
           v = `${fmtNum((parseFloat(v) / 100) * of.px)}px`;
         }
         if (p === "background-color" || p === "outline-color" || p === "text-decoration-color") {
@@ -1424,15 +1455,9 @@ export abstract class PageLifter {
       this.note(el, si, { decl: `${utility} (${prop}: ${v})`, reason: "an em length under a font size that follows the viewport width is not modelled", kind: "geometry" });
       return v;
     }
-    const f = lengthExpr(v, { em: t.size, vh: VIEWPORT_HEIGHT });
-    if (!f) return v;
-    if (/\d[dsl]?v(?:h|min|max)\b/i.test(v))
-      this.note(el, si, {
-        decl: `${utility} (${prop}: ${v})`,
-        reason: `viewport-height units are computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`,
-        kind: /height$/.test(prop) ? "height" : "geometry",
-      });
-    return f.css;
+    const f = lengthExpr(v, { em: t.size, vh: this.viewportHeight });
+    if (f && /\d[dsl]?v(?:h|min|max)\b/i.test(v)) this.usesViewportHeight = true;
+    return f ? f.css : v;
   }
 
   /**
@@ -1473,7 +1498,10 @@ export abstract class PageLifter {
    * the percentage behaves as auto, "unknown" when it depends on stretching (a flex or grid item).
    */
   definiteHeight(el: El | undefined, si: number, depth = 0): "auto" | "unknown" | { px: number; viewport: boolean } {
-    if (!el) return { px: VIEWPORT_HEIGHT, viewport: true };
+    if (!el) {
+      this.usesViewportHeight = true;
+      return { px: this.viewportHeight, viewport: true };
+    }
     if (depth > 64) return "unknown";
     const own = el.own[si];
     const o = own?.get("height");
@@ -1491,7 +1519,7 @@ export abstract class PageLifter {
       px = (parseFloat(pct[1]) / 100) * of.px;
       viewport = of.viewport;
     } else {
-      const f = lengthExpr(v, { em: size, vh: VIEWPORT_HEIGHT });
+      const f = lengthExpr(v, { em: size, vh: this.viewportHeight });
       if (!f || f.fluid) return "unknown";
       px = f.at(0);
       viewport = /\d[dsl]?v(?:h|min|max)\b/i.test(v);
@@ -1770,6 +1798,8 @@ export abstract class PageLifter {
   }
 
   assemble(): PageLift {
+    // Fixed boxes, and absolute ones with no positioned ancestor, are placed in the window.
+    if (this.els.some((e) => this.states.some((_, si) => e.roles[si] && this.positioned(e, si)))) this.pageSides.windowHeight = this.viewportHeight;
     // Page background and page-level styles from <body> / <html>.
     for (const el of [this.htmlEl, this.bodyEl]) {
       if (!el) continue;
@@ -1902,6 +1932,8 @@ export abstract class PageLifter {
       states: this.states,
       responsive,
       notes: this.readerNotes,
+      viewportHeight: this.viewportHeight,
+      usesViewportHeight: this.usesViewportHeight,
       spacing: (w: number) => {
         const si = this.states.indexOf(stateAt(this.states, w));
         return (spacingAt[si] ??= this.runTogether(si));

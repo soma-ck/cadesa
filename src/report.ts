@@ -307,6 +307,8 @@ export interface Coverage {
   notes?: string[];
   /** Elements a browser shows that Cadesa didn't lay out (no box, so no finding, covers them). */
   notLaidOut?: NotLaidOut;
+  /** The window height (px) the page was laid out for, when some box depends on it (vh). */
+  height?: number;
 }
 
 /** Cut `s` to at most `n` characters at a word boundary, marking the cut with "…". */
@@ -396,7 +398,7 @@ export function formatCoverage(c: Coverage): string {
   const pct = (n: number) => `${Math.round((n / c.boxes) * 100)}%`;
   const perWidth = Math.round(c.boxes / Math.max(1, c.widths));
   const out = [
-    `coverage: ${perWidth} boxes × ${c.widths} width${c.widths === 1 ? "" : "s"} · ${pct(c.exact)} exact · ${pct(c.approximate)} approximate (≈)`,
+    `coverage: ${perWidth} boxes × ${c.widths} width${c.widths === 1 ? "" : "s"}${c.height ? ` for ${/^(8|1[18](\d\d)?$)/.test(String(c.height)) ? "an" : "a"} ${c.height}px tall window` : ""} · ${pct(c.exact)} exact · ${pct(c.approximate)} approximate (≈)`,
   ];
   if (c.reasons.length)
     out.push(`  ≈ because: ${c.reasons.slice(0, 3).map((r) => `${r.reason} (×${r.count})`).join(" · ")}${c.reasons.length > 3 ? ` · +${c.reasons.length - 3} more causes` : ""}`);

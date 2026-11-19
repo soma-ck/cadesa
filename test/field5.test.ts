@@ -14,8 +14,8 @@ import { modelOf, render } from "../src/project.js";
 const FONT = `body { margin: 0; font: 16px/1.5 Inter, sans-serif; color: #111111; background: #ffffff }`;
 
 /** Lift `body` with `css` (after a zero-margin Inter body unless `bare`), lay it out and check it. */
-export function run(body: string, css: string, widths = [400], opts: { bare?: boolean; head?: string } = {}) {
-  const t = liftCssPage("t.html", `<!doctype html><html><head>${opts.head ?? ""}<link rel="stylesheet" href="t.css"></head><body>${body}</body></html>`, [{ file: "t.css", text: opts.bare ? css : `${FONT}\n${css}` }]);
+export function run(body: string, css: string, widths = [400], opts: { bare?: boolean; head?: string; height?: number } = {}) {
+  const t = liftCssPage("t.html", `<!doctype html><html><head>${opts.head ?? ""}<link rel="stylesheet" href="t.css"></head><body>${body}</body></html>`, [{ file: "t.css", text: opts.bare ? css : `${FONT}\n${css}` }], undefined, { height: opts.height });
   const m = modelOf(loadSource("t.html (lifted)", t.yaml));
   const layouts = widths.map((w) => render(m, t.fixtureAt(w), [w])[0]);
   const impacts = tailwindImpact(t, layouts);
@@ -156,12 +156,17 @@ describe("units", () => {
     expect(r.exact(400) && r.exact(1440)).toBe(true);
   });
 
-  it("vh is computed for an 800px tall viewport and marked ≈", () => {
-    const r = run(`<div class="shell"><div class="card"><p class="cp">Sign in</p></div></div><p class="after">Below</p>`, `p { margin: 0 } .shell { display: grid; place-items: center; min-height: 100dvh; padding: 16px; box-sizing: border-box } .card { width: 280px; padding: 24px; border: 1px solid #ddd }`, [400]);
+  it("vh is computed exactly for the window height (800px by default, or --height)", () => {
+    const body = `<div class="shell"><div class="card"><p class="cp">Sign in</p></div></div><p class="after">Below</p>`;
+    const css = `p { margin: 0 } .shell { display: grid; place-items: center; min-height: 100dvh; padding: 16px; box-sizing: border-box } .card { width: 280px; padding: 24px; border: 1px solid #ddd }`;
+    const r = run(body, css, [400]);
     expect(geo(r.box("card"))).toEqual([35, 363, 330, 74]);
     expect(geo(r.box("after"))).toEqual([0, 800, 400, 24]);
-    expect(r.approx("shell")).toMatch(/800px tall viewport/);
-    expect(r.approx("card")).toMatch(/800px tall viewport/);
+    expect(r.exact()).toBe(true);
+    expect(r.t.usesViewportHeight).toBe(true);
+    const s = run(body, css, [400], { height: 600 });
+    expect(geo(s.box("card"))).toEqual([35, 263, 330, 74]);
+    expect(geo(s.box("after"))).toEqual([0, 600, 400, 24]);
   });
 });
 
@@ -218,6 +223,25 @@ describe("the page", () => {
 });
 
 describe("approximate only where it matters", () => {
+  it("decides :is(), :where(), :not() and pseudo-classes the markup settles", () => {
+    const css = `p { margin: 0 } :is(.page, .other) :where(.lead):not(.x) { padding-top: 4px } .page :is(p):lang(fr) { padding-top: 8px } :where(:dir(rtl)) .lead { padding-top: 40px }
+      .item:nth-child(2 of .on) { padding-left: 6px } .f:placeholder-shown { padding-left: 3px } .f:read-write { padding-right: 5px } .f:-moz-focusring { padding: 90px }
+      details:open .d { padding-left: 7px } .f:invalid { margin-left: 2px } .v:valid { margin-left: 1px }`;
+    const r = run(
+      `<main class="page" lang="fr"><p class="lead">Lead</p><p class="item">a</p><p class="item on">b</p><p class="item on">c</p><details open><summary>S</summary><p class="d">D</p></details><input class="f" placeholder="Name" required style="width: 100px; height: 20px"><input class="v" style="width: 100px; height: 20px"></main>`,
+      css,
+      [400],
+    );
+    const pad = (id: string) => r.box(id).props.padding?.value;
+    expect(pad("lead")).toMatchObject({ top: 8 });
+    expect(pad("item-3")).toMatchObject({ left: 6 });
+    expect(pad("item-2")).toMatchObject({ left: 0 });
+    expect(pad("f")).toMatchObject({ left: 3, right: 5, top: 1 });
+    expect(r.box("f").props.margin?.value.left).toBe(2);
+    expect(r.box("v").props.margin?.value.left).toBe(1);
+    expect(r.t.lifted.unlifted.filter((u) => /may match/.test(u.reason))).toEqual([]);
+  });
+
   it("decides :has() against the page", () => {
     const css = `.page { padding: 16px } p, h1 { margin: 0 } body:has(.app-shell) { overflow: hidden } .page:has(> .lead) { padding: 24px } .page:has(.missing) { padding: 40px }`;
     const r = run(`<main class="page"><h1 class="title">Hello</h1><p class="lead">Lead</p></main>`, css, [400]);
@@ -286,5 +310,47 @@ describe("advice on a lifted page is in CSS terms", () => {
     expect(text).toMatch(/the children of #g aren.t laid out: its display \(or grid template\) has no Cadesa equivalent/);
     expect(text).toMatch(/the text of #n can.t be measured/);
     expect(r.m.css).toBe(true);
+  });
+});
+
+describe("positioned boxes", () => {
+  const HTML = `<header class="bar"><span class="bar-title">Fixed bar</span></header><section class="hero"><div class="hero-bg"></div><p class="hero-text">Hero text sits over a background layer</p><span class="hero-tag">New</span></section><div class="row"><p class="row-a">Row item</p><span class="dot"></span><p class="row-b">Another</p></div><div class="shift"><p class="moved">Shifted</p><p class="after">Not moved</p></div><span class="loose">In the window</span>`;
+  const CSS = `p { margin: 0 } .bar { position: fixed; top: 0; left: 0; right: 0; height: 48px; padding: 0 16px } .bar-title { display: block; padding-top: 12px } .hero { position: relative; padding: 80px 24px 40px; border: 4px solid #333 } .hero-bg { position: absolute; inset: 0 } .hero-text { position: relative; font-size: 20px } .hero-tag { position: absolute; right: 5%; bottom: 10%; padding: 2px 6px } .row { display: flex; gap: 8px; position: relative } .dot { position: absolute; left: 2vw; top: 4px; width: 8px; height: 8px } .shift { padding: 8px } .moved { position: relative; top: 10px; left: 20px } .loose { position: absolute; top: 100px; left: 50%; width: 120px }`;
+  it("places absolute, fixed and relative boxes as Chromium does, exactly", () => {
+    const r = run(HTML, CSS, [400, 1000]);
+    expect(geo(r.box("hero-bg", 400))).toEqual([4, 4, 392, 180]);
+    expect(geo(r.box("hero-tag", 400))).toEqual([330.219, 138, 46.188, 28]);
+    expect(geo(r.box("bar", 1000))).toEqual([0, 0, 1000, 48]);
+    expect(geo(r.box("dot", 1000))).toEqual([20, 162, 8, 8]);
+    expect(geo(r.box("moved", 400))).toEqual([28, 230, 384, 24]);
+    expect(geo(r.box("after", 400))).toEqual([8, 244, 384, 24]);
+    expect(geo(r.box("loose", 1000))).toEqual([500, 100, 120, 24]);
+    expect(r.exact(400) && r.exact(1000)).toBe(true);
+  });
+
+  it("an absolute box is neither its parent's overflow nor a reason to scroll the page when fixed", () => {
+    const r = run(`<div class="box"><span class="wide">Wide</span></div><div class="fx">Fixed and wide</div>`, `.box { position: relative; width: 100px } .wide { position: absolute; left: 0; top: 0; width: 300px } .fx { position: fixed; left: 300px; top: 0; width: 300px }`, [400]);
+    expect(r.findings.filter((f) => f.check === "layout").map((f) => f.message)).toEqual([]);
+  });
+
+  it("an in-flow sibling's uncertainty doesn't make an absolute box ≈", () => {
+    const r = run(`<div class="card"><p class="body">Text</p><span class="badge">Pro</span></div>`, `.card { position: relative; padding: 16px } .body { margin: 0; transform: scale(2) } .badge { position: absolute; top: 4px; right: 4px }`, [400]);
+    expect(r.approx("badge")).toBeUndefined();
+  });
+});
+
+describe("--height", () => {
+  it("lays the page out for that window, and the coverage line says so", async () => {
+    const { mkdtempSync, writeFileSync } = await import("node:fs");
+    const { tmpdir } = await import("node:os");
+    const { join } = await import("node:path");
+    const { checkCmd } = await import("../src/commands.js");
+    const dir = mkdtempSync(join(tmpdir(), "cadesa-height-"));
+    writeFileSync(join(dir, "p.html"), `<!doctype html><html><body><div class="shell"><p class="t">Hi</p></div></body></html>`);
+    writeFileSync(join(dir, "p.css"), `body { margin: 0; font: 16px/1.5 Inter } p { margin: 0 } .shell { min-height: 100vh }`);
+    const a = checkCmd({ fixture: join(dir, "p.html"), css: join(dir, "p.css"), widths: [400] });
+    expect(a.text).toMatch(/^coverage: 2 boxes × 1 width for an 800px tall window · 100% exact/);
+    const b = checkCmd({ fixture: join(dir, "p.html"), css: join(dir, "p.css"), widths: [400], height: 600 });
+    expect(b.text).toMatch(/^coverage: 2 boxes × 1 width for a 600px tall window · 100% exact/);
   });
 });

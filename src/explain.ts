@@ -51,6 +51,7 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   wrap: "layout",
   grow: "grow",
   overflow: "overflow",
+  position: "position",
 };
 
 function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: string; path: string } | undefined {

@@ -13,7 +13,7 @@
  */
 import { kindOf, worst } from "../lift/lift.js";
 import { hintOf, lengthPx, PageLifter, round, type El, type Origin, type PageLift, type State } from "../lift/page.js";
-import { isStatePseudo, parseTailwindCss, widthsHold, type TailwindCss } from "./css.js";
+import { isStatePseudo, parseTailwindCss, heightsHold, widthsHold, type TailwindCss } from "./css.js";
 import { INVALID, simplify, substitute } from "./values.js";
 
 export { longhands, stateAt, type State } from "../lift/page.js";
@@ -43,8 +43,10 @@ export function statesFor(cuts: number[], names: Map<number, string> = new Map()
   return out;
 }
 
-export function liftTailwind(page: string, html: string, cssFile: string, cssText: string): TailwindLift {
-  return new TailwindLifter(page, html, parseTailwindCss(cssFile, cssText)).run();
+export function liftTailwind(page: string, html: string, cssFile: string, cssText: string, opts: { height?: number } = {}): TailwindLift {
+  const l = new TailwindLifter(page, html, parseTailwindCss(cssFile, cssText));
+  if (opts.height) l.viewportHeight = opts.height;
+  return l.run();
 }
 
 class TailwindLifter extends PageLifter {
@@ -156,7 +158,7 @@ class TailwindLifter extends PageLifter {
         const k = kinds.length ? worst(kinds) : "none";
         let skip = false;
         for (const m of rule.media) {
-          if (!widthsHold(m.widths, st.lo)) skip = true;
+          if (!widthsHold(m.widths, st.lo) || !heightsHold(m, this.viewportHeight)) skip = true;
           else if (m.dark) {
             this.note(el, si, { decl: cls, reason: "dark: variants are not modelled; the light color scheme is assumed", kind: "none" });
             skip = true;

@@ -86,6 +86,8 @@ export interface SourceInput {
    * source, generated class names and ids → fixture).
    */
   tailwind?: string;
+  /** The window height in px for a page lifted from CSS or Tailwind (vh units); default 800. */
+  height?: number;
 }
 
 /**
@@ -121,16 +123,16 @@ const liftFile = (css: string) => lift(css, readFileSync(css, "utf8"));
 
 const pageCache = new Map<string, PageLift>();
 /** Lift a page with its stylesheet (cached per file contents, so one command lifts once). */
-function pageLiftFile(kind: "tailwind" | "css", page: string, css: string): PageLift {
+function pageLiftFile(kind: "tailwind" | "css", page: string, css: string, height?: number): PageLift {
   const html = readFileSync(page, "utf8");
   // --css takes several stylesheets, comma-separated (a framework's CSS and the app's own).
   const files = (kind === "css" ? css.split(",").map((f) => f.trim()).filter(Boolean) : [css]).map((file) => ({ file, text: readFileSync(file, "utf8") }));
-  const hash = createHash("sha256").update(kind).update("\0").update(page).update("\0").update(html);
+  const hash = createHash("sha256").update(kind).update("\0").update(String(height ?? "")).update("\0").update(page).update("\0").update(html);
   for (const f of files) hash.update("\0").update(f.file).update("\0").update(f.text);
   const key = hash.digest("hex");
   let t = pageCache.get(key);
   if (!t) {
-    t = kind === "tailwind" ? liftTailwind(page, html, css, files[0].text) : liftCssPage(page, html, files);
+    t = kind === "tailwind" ? liftTailwind(page, html, css, files[0].text, { height }) : liftCssPage(page, html, files, undefined, { height });
     pageCache.clear();
     pageCache.set(key, t);
   }
@@ -138,22 +140,22 @@ function pageLiftFile(kind: "tailwind" | "css", page: string, css: string): Page
 }
 
 /** Lift a Tailwind page (cached per file contents, so one command lifts once). */
-export function tailwindFile(page: string, css: string): TailwindLift {
-  return pageLiftFile("tailwind", page, css);
+export function tailwindFile(page: string, css: string, height?: number): TailwindLift {
+  return pageLiftFile("tailwind", page, css, height);
 }
 
 /** Lift an HTML page with its plain CSS: the cascade element by element (cached per file contents). */
-export function cssPageFile(page: string, css: string): PageLift {
-  return pageLiftFile("css", page, css);
+export function cssPageFile(page: string, css: string, height?: number): PageLift {
+  return pageLiftFile("css", page, css, height);
 }
 
 /** The page lift behind --tailwind, or --css with a page (fixture). */
 function pageLiftOf(s: SourceInput & { fixture?: string }): PageLift | undefined {
   if (s.tailwind) {
     if (!s.fixture) throw new InputError("--tailwind needs the Tailwind page as <fixture.html>");
-    return tailwindFile(s.fixture, s.tailwind);
+    return tailwindFile(s.fixture, s.tailwind, s.height);
   }
-  if (s.css && s.fixture) return cssPageFile(s.fixture, s.css);
+  if (s.css && s.fixture) return cssPageFile(s.fixture, s.css, s.height);
   return undefined;
 }
 
@@ -175,6 +177,7 @@ function pageOf(s: SourceInput & { fixture: string }): Page {
 /** The page lift's notes for the reader, shown under the coverage line. */
 function withNotes(c: Coverage, p: Page, layouts: Layout[]): Coverage {
   if (p.tw?.notes.length) c.notes = p.tw.notes;
+  if (p.tw?.usesViewportHeight) c.height = p.tw.viewportHeight;
   // Elements a browser shows that no box covers: nothing is checked there.
   const missing = p.tw && notLaidOut(p.tw, layouts);
   if (missing?.count) c.notLaidOut = missing;
@@ -378,7 +381,7 @@ export function lastInCascade(html: string, files: string[]): number {
  * files in place of them with `after`, or `addCss` rules appended to the last one), and report
  * what moves at each width. Nothing is written.
  */
-function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; after?: string; addCss?: string }): Result {
+function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; after?: string; addCss?: string; height?: number }): Result {
   if (!s.css) throw new InputError("--after and --add-css preview a CSS edit: they need the page's stylesheets as --css");
   const t0 = performance.now();
   const split = (l: string) => l.split(",").map((f) => f.trim()).filter(Boolean);
@@ -401,8 +404,8 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
     added = { file: last.file, firstLine: last.text.split("\n").length + 1 };
     afterFiles = afterFiles.map((f, k) => (k === i ? { file: f.file, text: `${f.text}\n${s.addCss}\n` } : f));
   }
-  const lb = liftCssPage(s.fixture, html, beforeFiles);
-  const la = liftCssPage(s.fixture, html, afterFiles);
+  const lb = liftCssPage(s.fixture, html, beforeFiles, undefined, { height: s.height });
+  const la = liftCssPage(s.fixture, html, afterFiles, undefined, { height: s.height });
   const mb = modelOf(loadSource(`${s.fixture} (lifted)`, lb.yaml));
   const ma = modelOf(loadSource(`${s.fixture} (lifted, edited)`, la.yaml));
   const pb: Page = { label: s.fixture, fixture: lb.fixture, at: lb.fixtureAt, tw: lb };
@@ -488,7 +491,7 @@ export async function checkVerifyCmd(s: SourceInput & { fixture: string; widths:
     const e = names.element(id);
     return `${names.short(id) ?? `#${id}`}${e?.line ? ` (${basename(e.file)}:${e.line})` : ""}`;
   };
-  const report = await verifyFindings({ page: s.fixture, html: run.p.tw.html, cssFiles, findings: run.findings, layouts: run.layouts, impacts: run.impacts, describe });
+  const report = await verifyFindings({ page: s.fixture, html: run.p.tw.html, cssFiles, findings: run.findings, layouts: run.layouts, impacts: run.impacts, describe, height: run.p.tw.viewportHeight });
   return finishCheck(s, run, report);
 }
 
@@ -649,8 +652,8 @@ export function liftCmd(s: { css: string; out?: string; fixture?: string; widths
 }
 
 /** `cadesa lift --tailwind page.html --css compiled.css`: a source plus the page with generated classes and ids. */
-function liftTailwindCmd(s: { css: string; page: string; out?: string; widths: number[]; plain?: boolean }): Result {
-  const tw = s.plain ? cssPageFile(s.page, s.css) : tailwindFile(s.page, s.css);
+function liftTailwindCmd(s: { css: string; page: string; out?: string; widths: number[]; plain?: boolean; height?: number }): Result {
+  const tw = s.plain ? cssPageFile(s.page, s.css, s.height) : tailwindFile(s.page, s.css, s.height);
   const fixtureOut = s.out ? join(dirname(s.out), `${basename(s.page).replace(/\.html?$/, "")}.cadesa.html`) : undefined;
   if (s.out) {
     mkdirSync(dirname(s.out), { recursive: true });

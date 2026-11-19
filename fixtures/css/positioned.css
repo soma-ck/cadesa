@@ -1,0 +1,200 @@
+/*
+ * Positioned boxes from landing pages and app shells: a fixed top bar, decorative layers that
+ * fill their section (inset: 0), corner badges with negative offsets, timeline dots in vw, a
+ * relative nudge, a sticky summary holding a badge, and a toast placed in the window.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #102a43;
+  background: #ffffff;
+}
+
+h1,
+h2,
+p,
+ul {
+  margin: 0;
+}
+
+.topbar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 56px;
+  padding: 16px 20px;
+  background: #ffffff;
+  border-bottom: 1px solid #d9e2ec;
+}
+
+.topbar-count {
+  position: absolute;
+  right: 20px;
+  top: 16px;
+  padding: 0 8px;
+  font-size: 14px;
+}
+
+.page {
+  padding: 72px 16px 32px;
+}
+
+.hero {
+  position: relative;
+  padding: 64px 24px 48px;
+  border: 2px solid #102a43;
+  margin-bottom: 24px;
+}
+
+.hero-backdrop {
+  position: absolute;
+  inset: 0;
+  background: #f0f4f8;
+}
+
+.hero-glow {
+  position: absolute;
+  top: 10%;
+  right: 5%;
+  width: 30%;
+  height: 40%;
+  background: #d9e2ec;
+}
+
+.hero-title {
+  position: relative;
+  font-size: clamp(1.5rem, 1rem + 2vw, 2.5rem);
+  line-height: 1.2;
+}
+
+.hero-lead {
+  position: relative;
+  margin-top: 12px;
+}
+
+.hero-tag {
+  position: absolute;
+  left: 24px;
+  top: 20px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.card {
+  position: relative;
+  padding: 20px 16px 16px 24px;
+  border: 1px solid #d9e2ec;
+}
+
+.card-ribbon {
+  position: absolute;
+  top: -10px;
+  right: -6px;
+  padding: 2px 8px;
+  font-size: 12px;
+  line-height: 16px;
+  background: #102a43;
+  color: #ffffff;
+}
+
+.card-title {
+  font-size: 18px;
+  line-height: 1.4;
+}
+
+.card-edge {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: #102a43;
+}
+
+.steps {
+  list-style: none;
+  padding: 0 0 0 32px;
+  margin-bottom: 24px;
+}
+
+.step {
+  position: relative;
+  padding: 4px 0;
+}
+
+.step-dot {
+  position: absolute;
+  left: -24px;
+  top: 12px;
+  width: 1vw;
+  height: 8px;
+  background: #102a43;
+}
+
+.nudge {
+  padding: 8px;
+  margin-bottom: 24px;
+}
+
+.nudged {
+  position: relative;
+  top: 6px;
+  left: 12px;
+}
+
+.media {
+  margin-bottom: 24px;
+}
+
+.media-frame {
+  position: relative;
+  height: 160px;
+  border: 3px solid #102a43;
+}
+
+.media-fill {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  bottom: 8px;
+  left: 8px;
+  background: #bcccdc;
+}
+
+.pinned {
+  position: sticky;
+  top: 0;
+  padding: 12px 16px;
+  border: 1px solid #d9e2ec;
+}
+
+.pinned-count {
+  position: absolute;
+  right: 16px;
+  top: 12px;
+}
+
+.toast {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  width: 160px;
+  padding: 12px;
+  background: #102a43;
+  color: #ffffff;
+}
