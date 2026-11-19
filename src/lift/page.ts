@@ -19,8 +19,7 @@
 import { parse } from "parse5";
 import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
 import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type P5Node } from "../fixture.js";
-import { loadSource } from "../load.js";
-import { modelOf, render } from "../project.js";
+import { ABSOLUTE, lengthExpr, MATHY } from "../fluid.js";
 import { borderPx, insets } from "../resolve.js";
 import { lineHeightPx } from "../engine/layout.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
@@ -77,8 +76,16 @@ export interface Origin {
   shorthand?: string;
 }
 
+/**
+ * The viewport height that vh, dvh, svh and lvh are computed for. Cadesa predicts layouts per
+ * width; the height of the window isn't known, so boxes sized by it are marked approximate.
+ */
+export const VIEWPORT_HEIGHT = 800;
+
 export interface TextCtx {
   size: number;
+  /** A font size that follows the viewport width (clamp(), vw): its CSS in px and vw; `size` is its value at 1280px. */
+  fluid?: string;
   lineHeight: { num: number } | { px: number } | "normal";
   family: { value: string; hint?: string };
   weight: number;
@@ -541,7 +548,7 @@ export abstract class PageLifter {
   resolve(el: El, si: number, value: string): string | undefined {
     const v = substitute(value, (n) => this.lookupVar(el, si, n));
     if (v === INVALID) return undefined;
-    return simplify(v).trim();
+    return absolute(simplify(v).trim());
   }
 
   /** A box length (not font-size): as resolve(), with em as the element's own font size, also inside calc(). */
@@ -636,9 +643,24 @@ export abstract class PageLifter {
     if (el.tag === "small") t.size = parent.size * 0.8;
     const fs = val("font-size");
     if (fs) {
-      const px = lengthPx(fs, parent.size, parent.size);
-      if (px !== undefined) t.size = px;
-      else this.note(el, si, { decl: `${own.get("font-size")!.utility} (font-size: ${fs})`, reason: "font-size must be a length", kind: "text" });
+      const decl = `${own.get("font-size")!.utility} (font-size: ${fs})`;
+      const KEYWORDS: Record<string, number> = { "xx-small": 9, "x-small": 10, small: 13, medium: 16, large: 18, "x-large": 24, "xx-large": 32, "xxx-large": 48 };
+      const rel = /^(-?(?:\d+\.?\d*|\.\d+))(em|%)$/.exec(fs);
+      const px = KEYWORDS[fs] ?? (fs === "smaller" ? parent.size / 1.2 : fs === "larger" ? parent.size * 1.2 : lengthPx(fs, parent.size, parent.size));
+      if (px !== undefined) {
+        t.size = px;
+        // em and % of a size that follows the viewport follow it too.
+        t.fluid = parent.fluid && (rel || fs === "smaller" || fs === "larger") ? lengthExpr(`calc(${parent.fluid} * ${px / parent.size})`)?.css : undefined;
+      } else if (parent.fluid && MATHY.test(fs) && /\d(em|%)/.test(fs)) {
+        this.note(el, si, { decl, reason: "a font size relative to one that follows the viewport width is not modelled", kind: "text" });
+      } else {
+        const f = MATHY.test(fs) ? lengthExpr(fs, { em: parent.size, vh: VIEWPORT_HEIGHT }) : undefined;
+        if (f) {
+          t.size = f.at(1280);
+          t.fluid = f.fluid ? f.css : undefined;
+          if (/\d[dsl]?v(?:h|min|max)\b/i.test(fs)) this.note(el, si, { decl, reason: `viewport-height units are computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`, kind: "text" });
+        } else this.note(el, si, { decl, reason: "font-size must be a length, or calc()/clamp()/min()/max() of px, rem, em and vw", kind: "text" });
+      }
     }
     const lh = val("line-height");
     if (lh) {
@@ -1227,6 +1249,7 @@ export abstract class PageLifter {
         else if (/^(padding|margin)-|^(width|height|max-width|max-height|min-width|min-height|row-gap|column-gap|border-radius|top|right|bottom|left)$/.test(p)) {
           // em is the element's own font size (inside calc() too).
           if (/\dem\b/.test(v)) v = this.resolveBox(el, si, o.value) ?? v;
+          v = this.mathValue(el, si, p, v, o.utility);
           const h = hintOf(o.value, this.theme);
           if (h && /^-?[\d.]+px$/.test(v) && parseFloat(v) !== 0) v = this.varValue(h, v);
         }
@@ -1241,22 +1264,29 @@ export abstract class PageLifter {
       // source can stay border-box. Anything else is left content-box (lift notes it).
       if (!this.preflight) {
         const sizing = res("box-sizing") ?? "content-box";
-        const px = (p: string) => {
+        /** A declared length as an expression lengthExpr reads (px, or px and vw), or undefined. */
+        const expr = (p: string): string | undefined => {
           const d = out.get(p);
-          if (!d) return 0;
-          const m = /^(-?[\d.]+)(px)?$/.exec(d.value.trim());
-          return m && (m[2] || parseFloat(m[1]) === 0) ? parseFloat(m[1]) : NaN;
+          if (!d) return "0px";
+          let v = d.value.trim();
+          const ref = /^var\((--[\w-]+)\)$/.exec(v);
+          if (ref) v = this.vars.get(ref[1])?.value ?? v;
+          if (/^-?[\d.]+$/.test(v) && parseFloat(v) === 0) return "0px";
+          return /^-?[\d.]+px$/.test(v) || lengthExpr(v) ? v : undefined;
         };
-        const border = (side: string) => (/^(none|hidden)$/.test(out.get(`border-${side}-style`)?.value ?? "none") ? 0 : px(`border-${side}-width`));
-        const extraX = px("padding-left") + px("padding-right") + border("left") + border("right");
-        const extraY = px("padding-top") + px("padding-bottom") + border("top") + border("bottom");
+        const border = (side: string) => (/^(none|hidden)$/.test(out.get(`border-${side}-style`)?.value ?? "none") ? "0px" : expr(`border-${side}-width`));
+        const sumOf = (parts: (string | undefined)[]) => (parts.some((x) => x === undefined) ? undefined : lengthExpr(`calc(${parts.join(" + ")})`));
+        const extraX = [expr("padding-left"), expr("padding-right"), border("left"), border("right")];
+        const extraY = [expr("padding-top"), expr("padding-bottom"), border("top"), border("bottom")];
         let ok = true;
         if (sizing !== "border-box")
           for (const [p, extra] of [["width", extraX], ["max-width", extraX], ["height", extraY], ["min-height", extraY], ["max-height", extraY], ["min-width", extraX]] as const) {
             const d = out.get(p);
-            if (!d || extra === 0 || /^(auto|none)$/.test(d.value.trim())) continue;
-            const m = /^([\d.]+)px$/.exec(d.value.trim());
-            if (m && !isNaN(extra)) decl(p, `${fmtNum(parseFloat(m[1]) + extra)}px`, `${(d as Decl & { utility?: string }).utility ?? p} (content-box)`);
+            const e = sumOf(extra);
+            if (!d || (e && !e.fluid && e.at(0) === 0) || /^(auto|none)$/.test(d.value.trim())) continue;
+            // The length plus the padding and border, in px when both are (an expression in px and vw when either follows the viewport).
+            const total = e && expr(p) ? sumOf([expr(p), e.css]) : undefined;
+            if (total && (total.fluid || /^[\d.]+px$/.test(d.value.trim()) || /^var\(/.test(d.value.trim()))) decl(p, total.css, `${(d as Decl & { utility?: string }).utility ?? p} (content-box)`);
             else ok = false;
           }
         decl("box-sizing", ok ? "border-box" : sizing, own.get("box-sizing")?.utility ?? "browser default (content-box)");
@@ -1265,12 +1295,14 @@ export abstract class PageLifter {
       // Text: a text box carries its full (inherited) text style.
       if (role === "text") {
         decl("font-family", text.family.hint ? this.varValue(text.family.hint, text.family.value) : text.family.value, "inherited font");
-        decl("font-size", `${fmtNum(text.size)}px`, "inherited font size");
+        decl("font-size", text.fluid ?? `${fmtNum(text.size)}px`, "inherited font size");
         decl("font-weight", String(text.weight), "inherited font weight");
         const lh = text.lineHeight;
+        if (text.fluid && lh !== "normal" && "px" in lh) this.note(el, si, { decl: "line-height", reason: "a fixed line height with a font size that follows the viewport width is not modelled (its ratio changes with the width)", kind: "text" });
         decl("line-height", lh === "normal" ? "normal" : "num" in lh ? fmtNum(lh.num) : fmtNum(lh.px / text.size), "inherited line height");
         decl("color", this.colorValue(text.color.hex, text.color.hint), "inherited color");
         if (text.letterSpacing) decl("letter-spacing", `${fmtNum(text.letterSpacing / text.size)}em`, "inherited tracking");
+        if (text.fluid && text.letterSpacing) this.note(el, si, { decl: "letter-spacing", reason: "letter spacing with a font size that follows the viewport width is not modelled", kind: "text" });
         for (const [p, o] of text.inherited) {
           if (INHERITED_PAINT.has(p)) continue;
           if (p === "text-align") {
@@ -1328,6 +1360,30 @@ export abstract class PageLifter {
     }
   }
 
+  /**
+   * A box length with math or viewport units, in the form Cadesa computes per width: calc(), min(),
+   * max() and clamp() of px, rem, em and vw (em is the element's font size), and vh at the default
+   * viewport height (noted: the real height varies). Anything else (a percentage inside) is left
+   * as it is, for lift to report.
+   */
+  mathValue(el: El, si: number, prop: string, v: string, utility: string): string {
+    if (!MATHY.test(v) || /url\(|["']/.test(v)) return v;
+    const t = this.textOf(el, si);
+    if (t.fluid && /\dem\b/.test(v)) {
+      this.note(el, si, { decl: `${utility} (${prop}: ${v})`, reason: "an em length under a font size that follows the viewport width is not modelled", kind: "geometry" });
+      return v;
+    }
+    const f = lengthExpr(v, { em: t.size, vh: VIEWPORT_HEIGHT });
+    if (!f) return v;
+    if (/\d[dsl]?v(?:h|min|max)\b/i.test(v))
+      this.note(el, si, {
+        decl: `${utility} (${prop}: ${v})`,
+        reason: `viewport-height units are computed for a ${VIEWPORT_HEIGHT}px tall viewport; the real height varies`,
+        kind: /height$/.test(prop) ? "height" : "geometry",
+      });
+    return f.css;
+  }
+
   colorValue(hex: string, hint?: string) {
     if (!hint) return hex;
     return this.varValue(hint, hex);
@@ -1361,9 +1417,10 @@ export abstract class PageLifter {
   }
 
   /** A resolved length, as a reference to the theme variable it came from when there is one. */
-  len(el: El, si: number, o: Origin): string | undefined {
-    const v = this.resolve(el, si, o.value);
-    if (v === undefined) return undefined;
+  len(el: El, si: number, o: Origin, prop = "gap"): string | undefined {
+    const r = this.resolve(el, si, o.value);
+    if (r === undefined) return undefined;
+    const v = this.mathValue(el, si, prop, /\dem\b/.test(r) ? (this.resolveBox(el, si, o.value) ?? r) : r, o.utility);
     const h = hintOf(o.value, this.theme);
     return h && /^-?[\d.]+px$/.test(v) && parseFloat(v) !== 0 ? this.varValue(h, v) : v;
   }
@@ -1868,6 +1925,12 @@ export abstract class PageLifter {
     for (const e of edits) out = out.slice(0, e.at) + e.text + out.slice(e.end);
     return out;
   }
+}
+
+/** Absolute units (pt, pc, in, cm, mm, Q) in px, as the browser converts them (1in = 96px). */
+export function absolute(v: string): string {
+  if (/url\(|["']/.test(v)) return v;
+  return v.replace(/(^|[^\w.-])(-?(?:\d+\.?\d*|\.\d+))(pt|pc|in|cm|mm|q)\b/gi, (_, pre, n, u) => `${pre}${Math.round(parseFloat(n) * ABSOLUTE[u.toLowerCase()] * 1e6) / 1e6}px`);
 }
 
 function innerWidth(b: Box) {

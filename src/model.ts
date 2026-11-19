@@ -5,6 +5,8 @@ export const ROOT_FONT_PX = 16;
 export interface Length {
   raw: string;
   px: number;
+  /** A length that follows the viewport width (vw, clamp()...): its px at a viewport width. `px` is its value at 1280px. */
+  fluid?: (viewport: number) => number;
 }
 
 export type TokenCategory = "space" | "size" | "color" | "radius" | "font" | "paint" | "shadow";
@@ -18,6 +20,8 @@ export interface Token {
   raw: string;
   /** Pixel value for length tokens (not for a percentage size token). */
   px?: number;
+  /** A length token that follows the viewport width (vw, clamp()...): its px at a viewport width (`px` is its value at 1280px). */
+  fluid?: (viewport: number) => number;
   /** A size token in percent ("50%"): of the containing block's content width. */
   pct?: number;
 }

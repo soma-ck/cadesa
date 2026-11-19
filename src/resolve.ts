@@ -187,7 +187,9 @@ export function resolveElement(model: Model, component: Component, slot: string 
     };
     const lengthOf = (r: Ref): Resolved<number> => {
       const t = model.tokens.get(tokenKey(r.kind, r.name))!;
-      return { value: layoutUnit(t.px!), display: `${fmtPx(t.px!)}px`, steps: [tokenStep(r), ...pre, src(r.path)] };
+      // A token that follows the viewport width has its value at this width.
+      const px = t.fluid ? t.fluid(width) : t.px!;
+      return { value: layoutUnit(px), display: `${fmtPx(px)}px${t.fluid ? ` (${t.raw} at ${width}px)` : ""}`, steps: [tokenStep(r), ...pre, src(r.path)] };
     };
     /** A size token: a length, or a percentage of the containing block's width. */
     const sizeOf = (r: Ref): Resolved<number | Pct> => {
@@ -332,22 +334,23 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const role = model.text.get(r.name)!;
         const color = model.tokens.get(tokenKey("color", role.color.name))!;
         const font = role.font ? model.tokens.get(tokenKey("font", role.font.name))!.raw : undefined;
+        const sizePx = role.size.fluid ? role.size.fluid(width) : role.size.px;
         out.text = {
           value: {
             role: role.name,
             font,
-            sizePx: role.size.px,
+            sizePx: sizePx,
             weight: role.weight,
             lineHeight: role.lineHeight,
             color: color.raw,
-            letterSpacing: (role.letterSpacing ?? 0) * role.size.px,
+            letterSpacing: (role.letterSpacing ?? 0) * sizePx,
             uppercase: role.transform === "uppercase",
             wrapAnywhere: role.wrap === "anywhere" || role.wrap === "break-word",
             breakWord: role.wrap === "break-word",
             nowrap: role.wrap === "none",
             underline: role.decoration === "underline",
           },
-          display: `${role.name} (${fmtPx(role.size.px)}px/${role.lineHeight}, ${role.weight})`,
+          display: `${role.name} (${fmtPx(sizePx)}px/${role.lineHeight}, ${role.weight})`,
           steps: [{ kind: "text", label: `text.${role.name}`, path: role.path }, ...pre, src(r.path)],
         };
         break;

@@ -12,6 +12,7 @@ import { Document, isMap, isScalar, visit } from "yaml";
 import { parseCss, specificity, splitSelectors, type CssRule, type Decl, type ParsedCss } from "./css.js";
 import { classify } from "./selectors.js";
 import { validate } from "../validate.js";
+import { lengthExpr } from "../fluid.js";
 
 /**
  * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
@@ -130,6 +131,7 @@ class Tokens {
   literal(cat: Cat, raw: string): string {
     const known = this.byValue.get(`${cat}:${raw}`);
     if (known) return known;
+    if ((cat === "space" || cat === "size" || cat === "radius") && /[(]|vw\b/.test(raw)) return this.add(cat, `${cat}-fluid-${(this.cats.get(cat)?.size ?? 0) + 1}`, raw);
     if (raw.startsWith("-")) return this.add(cat, `px-n${String(Math.round(-pxOf(raw) * 100) / 100).replace(".", "-")}`, raw);
     const name =
       cat === "paint" || cat === "shadow"
@@ -503,7 +505,11 @@ export function liftElements(input: LiftInput): LiftResult {
     if (!r) return undefined;
     let raw = r.raw;
     if (isZero(raw)) raw = "0px";
-    if (!(signed ? SIGNED_LENGTH : LENGTH).test(raw)) return undefined;
+    if (!(signed ? SIGNED_LENGTH : LENGTH).test(raw)) {
+      // A length that follows the viewport width (vw, clamp()...): its own token, computed per width.
+      const f = lengthExpr(raw);
+      return f?.fluid ? tokens.literal(cat, f.css) : undefined;
+    }
     // A negative value is its own token (a var named for a gutter may hold either sign elsewhere).
     return r.varName && !raw.startsWith("-") ? tokens.named(cat, r.varName, raw) : tokens.literal(cat, raw);
   };
@@ -866,8 +872,8 @@ export function liftElements(input: LiftInput): LiftResult {
     if (fst && fst.value.trim() !== "normal") note(e, s, fst, "only upright text is measured", "text");
     if (fs || lh || ff || fw || color) {
       const sizeRaw = fs ? resolveVar(fs.value)?.raw : undefined;
-      const sizeOk = sizeRaw !== undefined && LENGTH.test(sizeRaw);
-      const sizePx = sizeOk ? pxOf(sizeRaw!) : NaN;
+      const sizeOk = sizeRaw !== undefined && (LENGTH.test(sizeRaw) || !!lengthExpr(sizeRaw)?.fluid);
+      const sizePx = sizeOk ? (LENGTH.test(sizeRaw!) ? pxOf(sizeRaw!) : lengthExpr(sizeRaw!)!.at(1280)) : NaN;
       let lineHeight: number | undefined;
       const lhRaw = lh ? resolveVar(lh.value)?.raw : undefined;
       if (lhRaw !== undefined) {

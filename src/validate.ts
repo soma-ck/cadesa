@@ -1,4 +1,5 @@
 import { closest, type Diagnostic } from "./diagnostics.js";
+import { lengthExpr } from "./fluid.js";
 import type { PathSeg, Source } from "./load.js";
 import {
   DEFAULT_PREFIX,
@@ -164,9 +165,14 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: `${pct}%`, pct });
         } else if (LENGTH_CATEGORIES.has(category)) {
           const len = asLength(value, category === "space");
+          const fl = !len && typeof value === "string" ? lengthExpr(value) : undefined;
+          if (fl?.fluid) {
+            tokens.set(tokenKey(category, name), { category, name, path: path.join("."), raw: fl.css, px: fl.at(1280), fluid: fl.at });
+            continue;
+          }
           if (!len) {
             err(path, `invalid ${category} length`, {
-              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px)${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%"' : category === "space" ? "; negative for a margin that pulls the box outward" : ""}`,
+              expected: `a length in rem or px, e.g. 1.5rem or 24px (a plain number is px), or one that follows the viewport width, e.g. "clamp(16px, 8px + 2vw, 32px)"${category === "size" ? ', or a percentage of the parent\'s width, e.g. "50%"' : category === "space" ? "; negative for a margin that pulls the box outward" : ""}`,
               got: value,
             });
             continue;
@@ -289,11 +295,14 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           ok = false;
         }
       if (!ok) continue;
-      const sizeRaw = asLength(role.size);
+      // A size that follows the viewport width (clamp(), vw) is measured at each width.
+      const sizeFluid = typeof role.size === "string" && !asLength(role.size) ? lengthExpr(role.size) : undefined;
+      const sizeRaw = asLength(role.size) ?? (sizeFluid?.fluid ? sizeFluid.css : undefined);
       if (!sizeRaw) {
-        err([...path, "size"], "invalid font size", { expected: "a length in rem or px, e.g. 1rem or 16px (a plain number is px)", got: role.size });
+        err([...path, "size"], "invalid font size", { expected: 'a length in rem or px, e.g. 1rem or 16px (a plain number is px), or one that follows the viewport width, e.g. "clamp(1rem, 0.5rem + 2vw, 2rem)"', got: role.size });
         ok = false;
       }
+      const sizeLength = (): Length => (sizeFluid?.fluid ? { raw: sizeFluid.css, px: sizeFluid.at(1280), fluid: sizeFluid.at } : parseLength(sizeRaw!));
       const WEIGHTS: Record<string, number> = { normal: 400, bold: 700 };
       const weight =
         typeof role.weight === "number" ? role.weight : typeof role.weight === "string" ? WEIGHTS[role.weight.trim()] ?? Number(role.weight) : NaN;
@@ -308,7 +317,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         const t = role.lineHeight.trim();
         if (/^\d*\.?\d+%$/.test(t)) lineHeight = parseFloat(t) / 100;
         else if (/^\d*\.?\d+$/.test(t)) lineHeight = parseFloat(t);
-        else if (LENGTH.test(t) && sizeRaw) lineHeight = Math.round((parseLength(t).px / parseLength(sizeRaw).px) * 1e6) / 1e6;
+        else if (LENGTH.test(t) && sizeRaw && !sizeFluid?.fluid) lineHeight = Math.round((parseLength(t).px / parseLength(sizeRaw).px) * 1e6) / 1e6;
       }
       if (!(lineHeight > 0)) {
         err([...path, "lineHeight"], "invalid line height", { expected: 'a ratio like 1.5, or a length like "24px" or "150%"', got: role.lineHeight });
@@ -337,7 +346,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         name,
         path: path.join("."),
         font,
-        size: parseLength(sizeRaw!),
+        size: sizeLength(),
         weight,
         lineHeight,
         decoration: role.decoration as "none" | "underline" | undefined,
