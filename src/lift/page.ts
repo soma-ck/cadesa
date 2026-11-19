@@ -1136,7 +1136,7 @@ export abstract class PageLifter {
     const pt = this.textOf(k.parent, si);
     if (kt.fluid || pt.fluid || this.textOf(root, si).fluid || kt.letterSpacing !== pt.letterSpacing) return false;
     const m = metricsFor(kt.family.value, kt.italic);
-    if (!m || !m.vertical(kt.size, kt.weight) || m.weightIssue(kt.weight)) return false;
+    if (!m || !m.vertical(kt.size, kt.weight)) return false;
     const e = this.inlineExtent(k, si);
     if (!e || !this.strutOf(root, si) || this.baselineShift(k, si) === undefined) return false;
     // Middle, text-top and text-bottom place a box by its extent on each line it is on: one whose
@@ -1618,7 +1618,7 @@ export abstract class PageLifter {
     if ((type === "checkbox" || type === "radio") && native) return isFinite(insX) ? Math.max(0, 13 - insX) : undefined;
     if (type === "range" && native) return isFinite(insX) ? Math.max(0, 129 - insX) : undefined;
     const m = metricsFor(t.family.value, t.italic);
-    if (!m || m.weightIssue(t.weight) || t.letterSpacing || !/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "")) return undefined;
+    if (!m || t.letterSpacing || !/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "")) return undefined;
     if (el.tag === "select") {
       if (attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1) return undefined;
       const labels: string[] = [];
@@ -2127,7 +2127,7 @@ export abstract class PageLifter {
     if (!/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "")) return undefined;
     const m = metricsFor(t.family.value, t.italic);
     const v = m?.vertical(t.size, t.weight);
-    if (!m || !v || m.unsupported(text).length || m.weightIssue(t.weight)) return undefined;
+    if (!m || !v || m.unsupported(text).length) return undefined;
     const own = k.own[si];
     const res = (p: string) => {
       const o = own.get(p);
@@ -2186,7 +2186,7 @@ export abstract class PageLifter {
     if (!k.children.length) return undefined;
     const m = metricsFor(t.family.value, t.italic);
     const strut = this.strutOf(k, si);
-    if (!m || !strut || m.weightIssue(t.weight)) return undefined;
+    if (!m || !strut) return undefined;
     // Every descendant an inline box whose text is measured (runStyle), with nothing else of its own that moves text.
     const ok = (d: El): boolean => {
       if (d.tag === "br") return true;
@@ -2198,7 +2198,6 @@ export abstract class PageLifter {
       const same = dt.size === pt.size && dt.family.value === pt.family.value && !!dt.italic === !!pt.italic && JSON.stringify(dt.lineHeight) === JSON.stringify(pt.lineHeight) && dt.letterSpacing === pt.letterSpacing;
       const va = d.own[si].get("vertical-align");
       if ((!same || (va && this.resolve(d, si, va.value) !== "baseline")) && !this.runModelled(d, si)) return false;
-      if (dt.weight !== pt.weight && metricsFor(dt.family.value, dt.italic)?.weightIssue(dt.weight)) return false;
       for (const p of d.own[si].keys()) if (!p.startsWith("--") && !/^(color|background(-color|-image)?|font-(size|family|weight|style)|line-height|vertical-align|display|box-sizing|text-decoration.*|cursor|opacity)$/.test(p)) return false;
       const dd = d.own[si].get("display");
       if (dd && this.resolve(d, si, dd.value) !== "inline") return false;

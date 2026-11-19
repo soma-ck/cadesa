@@ -41,8 +41,6 @@ export interface FontMetrics {
   /** With `spaced`, as letter-spaced text (no contextual alternates); letter-spacing itself isn't added. */
   measure(text: string, sizePx: number, weight: number, spaced?: boolean): number | undefined;
   unsupported(text: string): string[];
-  /** Why this weight can't be measured exactly (e.g. a synthesized bold), if so. */
-  weightIssue(weight: number): string | undefined;
   /**
    * A ligature or contextual run of this font in the text (a pair the font shapes differently when
    * letter-spacing turns ligatures off, or a longer run), if any: Chromium never breaks inside one.
@@ -78,7 +76,12 @@ export function clearMetricsCache() {
   registry.clear();
 }
 
-/** CSS Fonts 4 §5.2 weight matching for a family made of static faces. */
+/**
+ * CSS Fonts 4 §5.2 weight matching for a family made of static faces. A weight the matched face
+ * doesn't have (600 or 700 from a 400 or 500 face) is synthesized bold, which in Chromium on Linux
+ * emboldens the outlines only: advances and vertical metrics stay the matched face's (probed at
+ * 8–100px), so such text is measured with that face's table.
+ */
 export function matchWeight(available: number[], desired: number): number {
   const asc = [...available].sort((a, b) => a - b);
   const desc = [...asc].reverse();
@@ -230,13 +233,6 @@ function load(file: string): FontMetrics {
       // A text field's average and maximum character widths at this size (px, unrounded).
       const chars = face.avgChar !== undefined && face.maxChar !== undefined ? { avgChar: px(face.avgChar), maxChar: px(face.maxChar) } : {};
       return { ascent: round(px(face.ascent)), descent: round(px(face.descent)), lineGap: round(px(face.lineGap)), xHeight: px(face.xHeight), ...chars };
-    },
-    weightIssue(weight) {
-      if (kind !== "static") return undefined;
-      const face = matchWeight(m.weights, weight);
-      // Browsers synthesize bold when asking for ≥600 and the closest face is ≤500.
-      if (weight >= 600 && face <= 500) return `weight ${weight} would be synthesized from the ${face} face; measure a bold face too`;
-      return undefined;
     },
     measure(text, sizePx, weight, spaced) {
       const [wa, wb, t] = bracket(weight);

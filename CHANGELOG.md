@@ -18,6 +18,14 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- Synthesized bold is measured: text asking for a weight the page has no face for (600 or 700 when
+  only a 400 or 500 face is loaded, `<strong>` and `<th>` in such a family) uses the face CSS font
+  matching picks, and is as wide and as tall as that face's text. Chromium on Linux emboldens the
+  outlines only (probed from 8 to 100px: advances and vertical metrics don't change), so such boxes,
+  `≈` before ("weight 700 would be synthesized"), are exact.
+
 ## 0.1.18 (2026-11-19)
 
 0.1.17 was tagged but never published (a test didn't typecheck in the release build); 0.1.18 is the same code.

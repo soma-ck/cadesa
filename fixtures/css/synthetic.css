@@ -1,0 +1,91 @@
+/*
+ * Synthesized bold: the page loads one face of "Lato Text" (400), and asks for 500, 600, 700 and
+ * 900 in headings, labels, <strong>, <b> and table headers. CSS font matching picks the 400 face for
+ * all of them; Chromium emboldens its outlines for 600 and up, and the text is as wide as the 400
+ * face's.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 "Lato Text", sans-serif;
+  color: #222222;
+  background: #f7f7f4;
+}
+
+.notes {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 28px 18px;
+}
+
+.notes__title {
+  margin: 0 0 8px;
+  font-size: 34px;
+  line-height: 1.15;
+  font-weight: 700;
+}
+
+.notes__kicker {
+  margin: 0 0 20px;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.notes__body {
+  margin: 0 0 14px;
+}
+
+.notes__heavy {
+  margin: 0 0 14px;
+  font-weight: 900;
+  font-size: 21px;
+}
+
+.notes__medium {
+  margin: 0 0 14px;
+  font-weight: 500;
+}
+
+.notes__tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0 0 18px;
+}
+
+.notes__tag {
+  padding: 4px 10px;
+  border: 1px solid #bbbbaa;
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.notes__button {
+  display: inline-block;
+  padding: 8px 14px;
+  border: 0;
+  background: #224466;
+  color: #ffffff;
+  font: inherit;
+  font-weight: bold;
+}
+
+.notes__table {
+  border-collapse: collapse;
+  margin: 18px 0 0;
+}
+
+.notes__table th,
+.notes__table td {
+  padding: 4px 10px;
+  border: 1px solid #ccccbb;
+  text-align: left;
+}

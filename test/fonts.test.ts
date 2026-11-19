@@ -51,16 +51,16 @@ describe("custom font metrics", () => {
     // Glyph advances are rounded to 1/65536 px, as Chromium positions them.
     expect(m.measure("ab", 10, 400)).toBe(2 * (Math.round(0.54 * 10 * 65536) / 65536));
     expect(m.measure("ab", 10, 650)).toBe(2 * (Math.round(0.57 * 10 * 65536) / 65536)); // 650 → the 700 face
-    expect(m.weightIssue(650)).toBeUndefined();
   });
 
-  it("refuses to guess a synthesized bold", () => {
+  it("measures a synthesized bold with the matched face (Chromium emboldens outlines, not advances)", () => {
     const dir = mkdtempSync(join(tmpdir(), "cadesa-"));
-    const f = fake([400]);
-    f.family = "Only Regular";
-    writeMetrics(f, dir);
+    writeMetrics({ ...fake([400, 500]), family: "Two Faces" }, dir);
     process.env.CADESA_METRICS = dir;
-    expect(metricsFor("Only Regular")!.weightIssue(700)).toMatch(/synthesized from the 400 face/);
+    const m = metricsFor("Two Faces")!;
+    expect(matchWeight([400, 500], 700)).toBe(500);
+    expect(m.measure("ab", 10, 700)).toBe(m.measure("ab", 10, 500));
+    expect(m.measure("ab", 10, 600)).toBe(m.measure("ab", 10, 500));
   });
 
   it("measures text as approximate in a font whose contextual forms weren't all measured", () => {

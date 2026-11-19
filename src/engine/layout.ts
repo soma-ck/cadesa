@@ -356,14 +356,14 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         if (!rm) return `font "${fam}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`;
         const un = rm.unsupported(text);
         if (un.length) return `characters outside the measured set of "${fam}": ${un.map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`;
-        return rm.weightIssue(sp.weight ?? t.weight);
+        return undefined;
       })
       .find(Boolean);
     const why = !m
       ? `font "${(t.font ?? "inherited").split(",")[0]}${t.italic ? " italic" : ""}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`
       : m.unsupported(shown).length
         ? `characters outside the measured set: ${m.unsupported(shown).map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`
-        : ([t.weight, ...n.runMeta.flatMap((r) => (r.spans ?? []).flatMap((sp) => (sp.weight === undefined || sp.font !== undefined ? [] : [sp.weight])))].map((wt) => m.weightIssue(wt)).find(Boolean) ?? runWhy);
+        : runWhy;
     if (why) {
       assumptions.push(`text height assumes a single line (${why})`);
       return undefined;
