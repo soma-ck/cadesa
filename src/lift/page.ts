@@ -2195,7 +2195,8 @@ export abstract class PageLifter {
           for (const [p, extra] of [["width", extraX], ["max-width", extraX], ["height", extraY], ["min-height", extraY], ["max-height", extraY], ["min-width", extraX]] as const) {
             const d = out.get(p);
             const e = sumOf(extra);
-            if (!d || (e && !e.fluid && e.at(0) === 0) || /^(auto|none)$/.test(d.value.trim())) continue;
+            // (A width from the content, fit-content, comes out the same in either box sizing.)
+            if (!d || (e && !e.fluid && e.at(0) === 0) || /^(auto|none|fit-content|min-content|max-content)$/.test(d.value.trim())) continue;
             // A form control's height from its line is a border-box height already.
             if (p === "height" && controlH !== undefined) continue;
             // The length plus the padding and border, in px when both are (an expression in px and vw when either follows the viewport).
