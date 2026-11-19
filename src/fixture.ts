@@ -76,6 +76,8 @@ export interface Generated {
   weight?: number;
   open?: number;
   close?: number;
+  /** An inline-block of one line of text (an icon glyph in its font): one object on the line, this wide (margin box). */
+  atomic?: number;
   /** Floated to the start of the first line instead: a box as wide as its text plus `open` and `close`. */
   float?: boolean;
 }
@@ -113,7 +115,8 @@ function textOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   const info = inline?.(n);
   if (info?.atomic !== undefined) return "\uFFFC";
   const inner = (n.childNodes ?? []).filter((c) => !skip?.(c)).map((c) => textOf(c, skip, inline)).join("");
-  return `${info?.before && !info.before.float ? info.before.text : ""}${inner}${info?.after ? info.after.text : ""}`;
+  const gen = (g?: Generated) => (!g || g.float ? "" : g.atomic !== undefined ? "\uFFFC" : g.text);
+  return `${gen(info?.before)}${inner}${gen(info?.after)}`;
 }
 
 const UNDERLINED = new Set(["u", "ins", "s", "del", "strike"]);
@@ -225,6 +228,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   const generated = (g: Generated | undefined) => {
     if (!g) return;
     if (g.float) lead = { text: collapse(g.text), ...(g.weight !== undefined && { weight: g.weight }), extra: (g.open ?? 0) + (g.close ?? 0) };
+    else if (g.atomic !== undefined) span({ open: g.atomic }, () => (cur += "\uFFFC"));
     else span(g, () => (cur += g.text));
   };
   const walk = (k: P5Node, u: boolean) => {

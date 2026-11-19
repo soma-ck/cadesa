@@ -202,6 +202,8 @@ export async function generateMetrics(opts: {
   url?: string;
   /** A browser to reuse (several faces in one run). */
   browser?: Browser;
+  /** Characters to measure beyond the standard set (icon codepoints in the Private Use Area, other scripts). */
+  extra?: string;
 }): Promise<MetricsFile> {
   if (!opts.font && !opts.system) throw new Error("generateMetrics needs a font file or system");
   const format = opts.font ? FORMATS[extname(opts.font).toLowerCase()] : undefined;
@@ -355,7 +357,7 @@ export async function generateMetrics(opts: {
       }
       const loaded = FAMILY === "__cadesa" ? document.fonts.check(W0 + " 16px __cadesa") : resolved !== undefined;
       return { chars: CHARS, missing: missing.join(""), scales, advances, kerning, kerningSpaced, contextual, fine, loaded, resolved };
-    })(${JSON.stringify({ ALL: CHARS, WEIGHTS: weights, SIZE, UNITS, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()) })})`)) as {
+    })(${JSON.stringify({ ALL: [...new Set([...CHARS, ...(opts.extra ?? "")])].join(""), WEIGHTS: weights, SIZE, UNITS, FAMILY: family, FAMS: family.split(",").map((f) => f.trim()) })})`)) as {
       resolved?: string;
       chars: string;
       missing: string;

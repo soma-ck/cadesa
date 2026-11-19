@@ -199,7 +199,7 @@ const UA_TEXT: Record<string, string> = {
 };
 
 const TEXT_PROPS = new Set(["font-size", "line-height", "font-family", "font-weight", "color", "letter-spacing"]);
-const INHERITED_OTHER = new Set(["text-rendering", "text-transform", "text-align", "font-style", "white-space", "text-wrap", "text-wrap-mode", "text-wrap-style", "word-break", "overflow-wrap", "hyphens", "text-indent", "word-spacing", "font-variant-numeric", "font-stretch", "line-break", "tab-size", "direction"]);
+const INHERITED_OTHER = new Set(["text-rendering", "text-transform", "text-align", "font-style", "white-space", "text-wrap", "text-wrap-mode", "text-wrap-style", "word-break", "overflow-wrap", "hyphens", "text-indent", "word-spacing", "font-variant", "font-variant-numeric", "font-variant-caps", "font-variant-ligatures", "font-variant-east-asian", "font-variant-position", "font-variant-alternates", "font-variant-emoji", "font-kerning", "font-optical-sizing", "font-synthesis", "font-stretch", "line-break", "tab-size", "direction"]);
 /** Inherited, but only paint: never affect a box. */
 const INHERITED_PAINT = new Set(["-webkit-font-smoothing", "-moz-osx-font-smoothing", "font-feature-settings", "font-variation-settings", "cursor", "visibility", "list-style-type", "list-style-position", "text-shadow", "caret-color", "accent-color", "fill", "stroke"]);
 
@@ -1367,7 +1367,7 @@ export abstract class PageLifter {
     if (k.pseudo || k.anonymous !== undefined || !k.parent || this.outOfFlow(k, si)) return undefined;
     const d = this.displayOf(k, si);
     if (!(d === "inline-block" || (d === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
-    if (!REPLACED_BLOCK.has(k.tag) && (k.ownText || k.children.length)) return undefined;
+    if (!REPLACED_BLOCK.has(k.tag) && (k.ownText || k.children.length)) return this.atomicText(k, si);
     const own = k.own[si];
     const t = this.textOf(k, si);
     const pt = this.textOf(k.parent, si);
@@ -1425,7 +1425,7 @@ export abstract class PageLifter {
       } else if (va !== "baseline") {
         const r = lengthPx(va, size);
         if (r === undefined) return undefined;
-        a = hm - r;
+        a = hm + r;
       }
       return { width: ml + bw + mr, above: a, below: hm - a, strut };
     };
@@ -1439,6 +1439,77 @@ export abstract class PageLifter {
     if (!f) return undefined;
     for (let vw = 200; vw <= 3000; vw += 10) if (!inside(at(f.at(vw)))) return undefined;
     return (size: number) => at(size)?.width ?? 0;
+  }
+
+  /**
+   * An inline-block holding one line of text in its own font (Font Awesome's <i class="fa">, a
+   * Bootstrap Icons ::before, a short badge), inside a text box: its margin-box width when its text
+   * is measured and its line box stays the parent line's (its own line, at its line height and font,
+   * placed by vertical-align, within the parent's strut). undefined otherwise.
+   */
+  atomicText(k: El, si: number): number | undefined {
+    if (!k.parent || this.outOfFlow(k, si) || this.ownDisplay(k, si) !== "inline-block") return undefined;
+    const t = this.textOf(k, si);
+    if (t.fluid || this.textOf(k.parent, si).fluid) return undefined;
+    // Its text: a pseudo-element's content, or its own text and inline generated content in its font.
+    let text: string;
+    if (k.pseudo) {
+      const c = k.content?.[si];
+      if (typeof c !== "string") return undefined;
+      text = c;
+    } else {
+      const kids = k.children.filter((c) => this.displayOf(c, si) !== "none" && !this.outOfFlow(c, si));
+      if (kids.some((c) => !c.pseudo || this.ownDisplay(c, si) !== "inline" || typeof c.content?.[si] !== "string" || c.children.length)) return undefined;
+      const same = (c: El) => {
+        const ct = this.textOf(c, si);
+        return ct.size === t.size && ct.family.value === t.family.value && ct.weight === t.weight && ct.letterSpacing === t.letterSpacing;
+      };
+      if (!kids.every(same) || kids.some((c) => { const e = this.inlineEdges(c, si); return !e || e.open || e.close; })) return undefined;
+      const own = (k.node.childNodes ?? []).filter((c) => c.nodeName === "#text").map((c) => c.value ?? "").join("");
+      const before = kids.find((c) => c.pseudo === "before")?.content?.[si] as string | undefined;
+      const after = kids.find((c) => c.pseudo === "after")?.content?.[si] as string | undefined;
+      text = `${before ?? ""}${own}${after ?? ""}`;
+    }
+    text = text.replace(/[ \t\n\r\f]+/g, " ").trim();
+    if (!text || /^(nowrap|pre)$/.test(t.inherited.get("white-space")?.value ?? "") === false && text.includes(" ")) return undefined;
+    if (!/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "")) return undefined;
+    const m = metricsFor(t.family.value);
+    const v = m?.vertical(t.size, t.weight);
+    if (!m || !v || m.unsupported(text).length || m.weightIssue(t.weight)) return undefined;
+    const own = k.own[si];
+    const res = (p: string) => {
+      const o = own.get(p);
+      return o ? this.resolveBox(k, si, o.value) : undefined;
+    };
+    if (["width", "height", "min-width", "max-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
+    const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
+    const bdr = (side: string) => (/^(none|hidden)$/.test(this.resolve(k, si, own.get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+    const [ml, mr, mt, mb, pl, pr, pt, pb] = ["margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].map(px);
+    if (![ml, mr, mt, mb, pl, pr, pt, pb].every(isFinite)) return undefined;
+    // Its width: its text's max-content width (rounded up to a layout unit) and its edges.
+    const textW = (m.measure(text, t.size, t.weight, t.letterSpacing !== 0) ?? NaN) + [...text].length * t.letterSpacing;
+    if (!isFinite(textW)) return undefined;
+    const width = ml + bdr("left") + pl + Math.ceil(textW * 64 - 1e-6) / 64 + pr + bdr("right") + mr;
+    // Its own line: its line height, its baseline where its font's strut puts it.
+    const lu = (x: number) => Math.floor(x * 64 + 1e-6) / 64;
+    const lh = t.lineHeight === "normal" ? v.ascent + v.descent + v.lineGap : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : lu(t.lineHeight.px);
+    const leading = Math.round((lh - v.ascent - v.descent) * 64);
+    const sa = v.ascent + Math.floor(Math.trunc(leading / 2) / 64);
+    const hm = mt + bdr("top") + pt + lh + pb + bdr("bottom") + mb;
+    let a = mt + bdr("top") + pt + sa;
+    const strut = this.strutOf(k.parent, si);
+    if (!strut) return undefined;
+    const va = res("vertical-align") ?? "baseline";
+    if (va === "middle") {
+      const u = (x: number) => Math.round(x * 64);
+      a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
+    } else if (va !== "baseline") {
+      const r = lengthPx(va, t.size);
+      if (r === undefined) return undefined;
+      a += r;
+    }
+    if (a > strut.sa + 1e-6 || hm - a > strut.sd + 1e-6) return undefined;
+    return width;
   }
 
   /** Whether a text box has inline elements with a weight or edges of their own (its text is then measured run by run). */
@@ -1476,12 +1547,15 @@ export abstract class PageLifter {
         const c = p.content?.[si];
         if (c === undefined || this.displayOf(p, si) === "none" || this.outOfFlow(p, si)) continue;
         const e = this.inlineEdges(p, si);
+        // An inline-block of one line of text (an icon in its font): one object on the line.
+        const atomic = this.ownDisplay(p, si) === "inline-block" && !this.floatsAtStart(p, si) ? this.atomicText(p, si) : undefined;
         const g: Generated = {
           text: typeof c === "string" ? c : "",
           ...(this.textOf(p, si).weight !== this.textOf(el, si).weight && { weight: this.textOf(p, si).weight }),
           ...(e?.open && { open: e.open }),
           ...(e?.close && { close: e.close }),
           ...(this.floatsAtStart(p, si) && { float: true }),
+          ...(atomic !== undefined && { atomic }),
         };
         out[p.pseudo!] = g;
       }
@@ -2046,6 +2120,8 @@ export abstract class PageLifter {
         let v = this.resolve(el, si, o.value);
         // Empty after substitution (`height: var(--unset)`): invalid at computed-value time, so the initial value.
         if (v === undefined || v === "") continue;
+        // A property at its initial value (that is also every element's default) changes nothing.
+        if (isInitial(p, v)) continue;
         // A transform that moves nothing (translateZ(0), a layer hint): no effect on where it's drawn.
         if (/^(transform|translate|rotate|scale)$/.test(p) && identityTransform(p, v)) continue;
         // A top or bottom auto margin is 0 in block flow, and in a column flexbox with no free
@@ -2498,6 +2574,7 @@ export abstract class PageLifter {
       if (k.tag === "br" || this.outOfFlow(k, si) || this.displayOf(k, si) === "none") return;
       // An atomic inline of known size whose line box stays the same: one object on the line, measured.
       if (this.atomicInline(k, si) !== undefined) return;
+      if (k.pseudo && this.ownDisplay(k, si) === "inline-block" && !this.floatsAtStart(k, si) && this.atomicText(k, si) !== undefined) return;
       const own = k.own[si];
       const ua = UA_TEXT[k.tag];
       const where = k.pseudo ? `::${k.pseudo}` : `<${k.tag}>`;
@@ -2534,6 +2611,8 @@ export abstract class PageLifter {
       const changes: { prop: string; utility: string; kind: ImpactKind }[] = [];
       for (const [p, o] of own) {
         if (p.startsWith("--") || (p === "vertical-align" && this.resolve(k, si, o.value) === "baseline")) continue;
+        // A property at its initial value (that is also every element's default) changes nothing.
+        if (isInitial(p, this.resolve(k, si, o.value))) continue;
         const kind = TEXT_PROPS.has(p) ? (p === "color" ? "paint" : "text") : INHERITED_PAINT.has(p) && kindOf(p) !== "none" ? "paint" : kindOf(p);
         changes.push({ prop: p, utility: o.utility, kind });
       }
@@ -3239,3 +3318,86 @@ export function contentText(v: string): string | { unknown: string } | undefined
   }
   return out;
 }
+
+/**
+ * Initial values that are also every element's default in Chromium's stylesheet: a declaration of
+ * one changes nothing (`font-variant: normal` on an icon, `float: none`, `transform-origin` with no
+ * transform is handled elsewhere). Properties whose default differs by element (display, margins,
+ * white-space, text-decoration, vertical-align, overflow) aren't listed.
+ */
+const INITIAL: Record<string, RegExp> = {
+  "font-variant": /^normal$/,
+  "font-variant-caps": /^normal$/,
+  "font-variant-ligatures": /^normal$/,
+  "font-variant-numeric": /^normal$/,
+  "font-variant-east-asian": /^normal$/,
+  "font-variant-position": /^normal$/,
+  "font-variant-alternates": /^normal$/,
+  "font-variant-emoji": /^normal$/,
+  "font-feature-settings": /^normal$/,
+  "font-variation-settings": /^normal$/,
+  "font-stretch": /^(normal|100%)$/,
+  "font-kerning": /^auto$/,
+  "font-optical-sizing": /^auto$/,
+  "font-synthesis": /^(weight style small-caps|weight style|style weight)$/,
+  "font-size-adjust": /^none$/,
+  "text-transform": /^none$/,
+  "text-indent": /^0(px)?$/,
+  "word-spacing": /^(normal|0(px)?)$/,
+  "letter-spacing": /^(normal|0(px|em)?)$/,
+  "word-break": /^normal$/,
+  "line-break": /^auto$/,
+  "hyphens": /^manual$/,
+  "tab-size": /^8$/,
+  "text-rendering": /^auto$/,
+  "float": /^none$/,
+  "clear": /^none$/,
+  "position": /^static$/,
+  "z-index": /^auto$/,
+  "order": /^0$/,
+  "flex-grow": /^0$/,
+  "flex-shrink": /^1$/,
+  "flex-basis": /^auto$/,
+  "align-self": /^auto$/,
+  "justify-self": /^auto$/,
+  "min-width": /^auto$/,
+  "max-width": /^none$/,
+  "max-height": /^none$/,
+  "aspect-ratio": /^auto$/,
+  "filter": /^none$/,
+  "backdrop-filter": /^none$/,
+  "clip-path": /^none$/,
+  "mask": /^none$/,
+  "mask-image": /^none$/,
+  "perspective": /^none$/,
+  "transform-style": /^flat$/,
+  "backface-visibility": /^visible$/,
+  "will-change": /^auto$/,
+  "contain": /^none$/,
+  "isolation": /^auto$/,
+  "mix-blend-mode": /^normal$/,
+  "visibility": /^visible$/,
+  "opacity": /^1$/,
+  "box-shadow": /^none$/,
+  "text-shadow": /^none$/,
+  "outline-offset": /^0(px)?$/,
+  "object-fit": /^fill$/,
+  "object-position": /^(50% 50%|center|center center)$/,
+  "resize": /^none$/,
+  "user-select": /^auto$/,
+  "pointer-events": /^auto$/,
+  "touch-action": /^auto$/,
+  "writing-mode": /^horizontal-tb$/,
+  "unicode-bidi": /^normal$/,
+  "text-orientation": /^mixed$/,
+  "column-count": /^auto$/,
+  "column-width": /^auto$/,
+  "columns": /^auto$/,
+  "content-visibility": /^visible$/,
+  "scroll-behavior": /^auto$/,
+  "overscroll-behavior": /^auto$/,
+  "translate": /^none$/,
+  "rotate": /^none$/,
+  "scale": /^none$/,
+};
+export const isInitial = (prop: string, value: string | undefined) => value !== undefined && !!INITIAL[prop]?.test(value.trim().toLowerCase());

@@ -107,3 +107,20 @@ describe("atomic inlines and zero-size text", () => {
     expect(geo(r.box("toolbar-button", 400))).toEqual([16, geo(r.box("toolbar-button", 400))[1], 42, 34]);
   });
 });
+
+describe("icon fonts and initial values", () => {
+  it("collects the characters a font's text uses beyond the measured set (icon codepoints), for --measure", async () => {
+    const { fontUses } = await import("../src/fonts.js");
+    const r = run(`<p class="i"></p>`, `.i::before { content: "\\f0ac"; font-family: "Icons" } .i { font-family: "Icons" }`, [400]);
+    const u = fontUses(r.layouts).find((x) => x.family === "Icons")!;
+    expect(u.chars).toBe("");
+  });
+  it("never makes a box approximate for a property at its initial value", async () => {
+    const { isInitial } = await import("../src/lift/page.js");
+    expect(isInitial("font-variant", "normal")).toBe(true);
+    expect(isInitial("font-variant", "small-caps")).toBe(false);
+    expect(isInitial("min-width", "0")).toBe(false);
+    const r = run(`<p class="t">Plain words</p>`, `.t { font-variant: normal; text-transform: none; float: none; filter: none; font-feature-settings: normal }`, [400]);
+    expect(r.exact()).toBe(true);
+  });
+});

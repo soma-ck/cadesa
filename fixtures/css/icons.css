@@ -84,6 +84,34 @@ p {
   background: #4f46e5;
 }
 
+.links {
+  padding: 8px 16px;
+}
+
+.links-item::before {
+  content: "\00BB";
+  display: inline-block;
+  font-size: 18px;
+  font-weight: 700;
+  font-variant: normal;
+  line-height: 1;
+  vertical-align: -0.125em;
+  margin-right: 4px;
+}
+
+.glyph {
+  display: inline-block;
+  font-weight: 600;
+  font-style: normal;
+  font-variant: normal;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.glyph::before {
+  content: "\00A7";
+}
+
 @media (max-width: 600px) {
   .toolbar-button {
     font-size: 0;

@@ -9,7 +9,7 @@ import { parse } from "parse5";
 import postcss, { type AtRule } from "postcss";
 import { walk, type Layout } from "./engine/layout.js";
 import { clearMetricsCache, metricsFor, type MetricsInfo } from "./engine/text.js";
-import { generateMetrics, launchChromium, metricsFileName, sha256, writeMetrics, type Browser, type MetricsFile } from "./metrics.js";
+import { CHARS, generateMetrics, launchChromium, metricsFileName, sha256, writeMetrics, type Browser, type MetricsFile } from "./metrics.js";
 
 // ------------------------------------------------------------------ what the text uses
 
@@ -24,7 +24,14 @@ export interface FontUse {
   declaredIn?: string;
   /** Text boxes set in it, at any of the widths laid out. */
   boxes: string[];
+  /**
+   * Characters its text uses beyond the standard measured set (icon fonts' Private Use Area
+   * codepoints from `content:` values, other scripts): measured too.
+   */
+  chars?: string;
 }
+
+const STANDARD = new Set(CHARS);
 
 export const firstFamily = (stack: string) => stack.split(",")[0].trim().replace(/^["']|["']$/g, "");
 
@@ -42,6 +49,8 @@ export function fontUses(layouts: Layout[]): FontUse[] {
       if (!u.weights.includes(t.weight)) u.weights.push(t.weight);
       if (!u.sizes.includes(t.sizePx)) u.sizes.push(t.sizePx);
       if (!u.boxes.includes(b.id)) u.boxes.push(b.id);
+      const extra = [...b.text].filter((c) => !STANDARD.has(c) && c !== "\uFFFC" && /\S/.test(c));
+      if (extra.length) u.chars = [...new Set([...(u.chars ?? ""), ...extra])].sort().join("");
     }
   for (const u of out.values()) (u.weights.sort((a, b) => a - b), u.sizes.sort((a, b) => a - b));
   return [...out.values()];
@@ -313,6 +322,10 @@ export function fontReport(uses: FontUse[], sources: PageFontSources): FontRepor
       const measured = new Set((m.info.files ?? []).map((f) => f.sha256).filter(Boolean));
       if (local.length && measured.size) r.sameFiles = local.some((h) => measured.has(h));
       if (r.sameFiles === false) r.remeasure = "the page's font files differ from the ones measured";
+      // Characters the text uses that the table doesn't have (an icon's codepoint, measured only when a page uses it).
+      const lacks = u.chars ? m.unsupported(u.chars) : [];
+      if (!r.remeasure && lacks.length && (faces.length || google))
+        r.remeasure = `the table has no widths for characters the page's text uses (${lacks.slice(0, 6).map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")})`;
       // A variable table, while the page declares single weights: the browser uses the nearest
       // declared weight, not the one asked for.
       const declared = faces.length ? faces.filter((f) => f.style === "normal").map((f) => f.weight) : google ? googleWeights(google.url, u.family) : [];
@@ -504,28 +517,37 @@ export interface Measured {
 export async function measureFaces(
   family: string,
   faces: FontFaceRule[],
-  opts: { out: string; cacheDir: string; browser: Browser; via: Measured["via"] },
+  opts: { out: string; cacheDir: string; browser: Browser; via: Measured["via"]; extra?: string },
 ): Promise<Measured> {
   const result: Measured = { family, via: opts.via, faces: [] };
   const todo = facesToMeasure(faces, family);
   if (!todo.length) return { ...result, error: `no normal-style face of "${family}" covering Latin text` };
   let file: string | undefined;
+  // A face whose file can't be had (a weight the page declares but its text doesn't use, served
+  // from elsewhere) doesn't stop the others: it is reported, and only when none is measured, failed.
+  const failed: string[] = [];
   for (const f of todo) {
-    const { path, url } = await fileFor(f, opts.cacheDir);
-    const variable = f.weight.includes(" ");
-    const m: MetricsFile = await generateMetrics({ font: path, family, weight: variable ? undefined : Number(f.weight), url, browser: opts.browser });
-    file = writeMetrics(m, opts.out);
-    result.faces.push({ weight: f.weight, file: rel(path), ...(url && { url }), ...(m.files?.[0].sha256 && { sha256: m.files[0].sha256 }) });
+    try {
+      const { path, url } = await fileFor(f, opts.cacheDir);
+      const variable = f.weight.includes(" ");
+      const m: MetricsFile = await generateMetrics({ font: path, family, weight: variable ? undefined : Number(f.weight), url, browser: opts.browser, extra: opts.extra });
+      file = writeMetrics(m, opts.out);
+      result.faces.push({ weight: f.weight, file: rel(path), ...(url && { url }), ...(m.files?.[0].sha256 && { sha256: m.files[0].sha256 }) });
+    } catch (e) {
+      if (todo.length === 1) throw e;
+      failed.push(`${f.weight}: ${(e as Error).message.split("\n")[0]}`);
+    }
   }
-  return { ...result, metrics: file && rel(file) };
+  if (!result.faces.length) throw new Error(failed.join("; "));
+  return { ...result, metrics: file && rel(file), ...(failed.length && { warning: `not measured: ${failed.join("; ")}` }) };
 }
 
 /**
  * Measure the font installed on this machine under `family` (machine-specific). With `stack`,
  * the first of its families this machine has, as the browser would pick it.
  */
-export async function measureSystem(family: string, weights: number[], opts: { out: string; browser: Browser; stack?: string }): Promise<Measured> {
-  const m = await generateMetrics({ family, system: { weights, stack: opts.stack }, browser: opts.browser });
+export async function measureSystem(family: string, weights: number[], opts: { out: string; browser: Browser; stack?: string; extra?: string }): Promise<Measured> {
+  const m = await generateMetrics({ family, system: { weights, stack: opts.stack }, browser: opts.browser, extra: opts.extra });
   const file = writeMetrics(m, opts.out);
   return {
     family,
@@ -582,9 +604,11 @@ export async function measureReport(report: FontReport[], opts: MeasureOptions =
   try {
     for (const r of todo) {
       try {
-        if (r.status === "file" || (r.status === "measured" && r.faces.length)) done.push(await measureFaces(r.family, r.faces, { out, cacheDir, browser, via: "file" }));
-        else if (r.status === "google" || (r.status === "measured" && r.google)) done.push(await measureFaces(r.family, await googleFaces(r.google!.url), { out, cacheDir, browser, via: "google" }));
-        else done.push(await measureSystem(r.family, [...new Set([400, 700, ...r.weights])].sort((a, b) => a - b), { out, browser, stack: r.stack }));
+        // (With the characters the page's text uses beyond the standard set: icon codepoints.)
+        const extra = r.chars;
+        if (r.status === "file" || (r.status === "measured" && r.faces.length)) done.push(await measureFaces(r.family, r.faces, { out, cacheDir, browser, via: "file", extra }));
+        else if (r.status === "google" || (r.status === "measured" && r.google)) done.push(await measureFaces(r.family, await googleFaces(r.google!.url), { out, cacheDir, browser, via: "google", extra }));
+        else done.push(await measureSystem(r.family, [...new Set([400, 700, ...r.weights])].sort((a, b) => a - b), { out, browser, stack: r.stack, extra }));
       } catch (e) {
         done.push({ family: r.family, via: r.status === "system" || r.status === "unknown" ? "system" : r.status === "google" ? "google" : "file", faces: [], error: (e as Error).message.split("\n")[0] });
       }
