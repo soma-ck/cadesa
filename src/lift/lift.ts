@@ -941,12 +941,16 @@ export function liftElements(input: LiftInput): LiftResult {
     // A 2D transform about its origin: where the box and its content are drawn (nothing else moves).
     const tf = take("transform");
     const to = take("transform-origin");
-    if (tf) {
-      const list = resolveVar(tf.value)?.raw.trim();
+    // transform-style: preserve-3d: its children's 3D transforms compose with its own, unflattened.
+    const ts = take("transform-style");
+    const preserve = ts && resolveVar(ts.value)?.raw.trim() === "preserve-3d";
+    if (tf || preserve) {
+      const list = (tf ? resolveVar(tf.value)?.raw.trim() : undefined) ?? "none";
       const origin = to ? resolveVar(to.value)?.raw.trim() : undefined;
-      if (list && list !== "none" && transformList4(list, 100, 100) && (origin === undefined || originOf3(origin, 100, 100)))
-        out.transform = origin && !/^(50%|center)(\s+(50%|center))?$/.test(origin) ? { value: list, origin } : list;
-      else if (list !== "none") note(e, s, tf, "only transforms in px or % (2D, and 3D with translateZ, rotateX, rotateY, rotate3d, scale3d, perspective() or matrix3d) are modelled", "visual");
+      const custom = origin && !/^(50%|center)(\s+(50%|center))?$/.test(origin);
+      if ((list === "none" ? preserve : transformList4(list, 100, 100)) && (origin === undefined || originOf3(origin, 100, 100)))
+        out.transform = preserve ? { value: list, ...(custom && { origin }), style: "preserve-3d" } : custom ? { value: list, origin } : list;
+      else if (list !== "none") note(e, s, tf!, "only transforms in px or % (2D, and 3D with translateZ, rotateX, rotateY, rotate3d, scale3d, perspective() or matrix3d) are modelled", "visual");
     }
     // perspective: its children's 3D transforms are projected from perspective-origin.
     const pp = take("perspective");

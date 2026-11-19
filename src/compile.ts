@@ -134,7 +134,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   else if (unset("shadow")) out.push("box-shadow: none");
   if (p.radius) out.push(`border-radius: ${v(p.radius)}`);
   else if (unset("radius")) out.push("border-radius: 0");
-  if (p.transform) out.push(`transform: ${p.transform.value}`, `transform-origin: ${p.transform.origin ?? "50% 50%"}`);
+  if (p.transform) out.push(`transform: ${p.transform.value}`, `transform-origin: ${p.transform.origin ?? "50% 50%"}`, ...(p.transform.preserve3d ? ["transform-style: preserve-3d"] : []));
   else if (unset("transform")) out.push("transform: none");
   if (p.perspective) out.push(`perspective: ${p.perspective.value}px`, `perspective-origin: ${p.perspective.origin ?? "50% 50%"}`);
   // max-width + auto margins. width: 100% so a flex or grid parent doesn't shrink-wrap the box

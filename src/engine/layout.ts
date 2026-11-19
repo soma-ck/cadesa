@@ -1086,24 +1086,49 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
   const subgridCols = new WeakMap<FixtureNode, { widths: number[]; gap: number }>();
 
   /**
+   * A subgrid's inline edges and gap (CSS Grid §9.6): its margin, border and padding on each side
+   * (an extra margin for its items at that edge), and its own column gap (half the difference from
+   * its parent's on each side of a gutter inside it). undefined where they aren't lengths.
+   */
+  function subgridEdges(kp: ResolvedProps, parentGap: number): { start: number; end: number; gap: number } | undefined {
+    const ins = insets(kp);
+    const m = marginOf(kp);
+    if (m.autoLeft || m.autoRight || kp.padding?.pct?.left !== undefined || kp.padding?.pct?.right !== undefined || kp.margin?.pct?.left !== undefined || kp.margin?.pct?.right !== undefined || kp.gap?.pct !== undefined) return undefined;
+    const own = kp.gap !== undefined && kp.gap.display !== "0px (no gap)";
+    return { start: m.left + ins.left, end: m.right + ins.right, gap: own ? kp.gap!.value : parentGap };
+  }
+
+  /**
    * The column contributions of a grid's items: a subgrid's own items contribute to the parent's
-   * columns they are in (a subgrid of no inline margin, border or padding, with the parent's gap).
+   * columns they are in, with its edges and the half gap differences as extra margins (subgridEdges).
    */
   function gridColItems(kids: Kid[], areas: { c0: number; c1: number }[], colGap: number): (Contribution & { why?: string; minOnly?: boolean })[] {
     return kids.flatMap((k, i) => {
       const a = areas[i];
       const kp = resolveElement(model, k.comp, k.slot, width);
       if (!kp.grid?.value.subgridColumns) return [colContribution(k, a.c0, a.c1)];
-      const ins = insets(kp);
-      const m = marginOf(kp);
       const subKids = k.node.children.map((n) => ({ node: n, ...childOf(n, k.comp, true) })).filter((x) => x.comp !== null) as Kid[];
-      const own = kp.gap !== undefined && kp.gap.display !== "0px (no gap)";
-      if (ins.left || ins.right || m.left || m.right || own) return [{ a: a.c0, b: a.c1, minContent: 0, maxContent: 0, minimum: 0, why: "a subgrid with inline padding, border, margins or a gap of its own isn't modelled" }];
-      const g = gridSetup(kp, subKids, undefined, colGap, 0, undefined, { span: a.c1 - a.c0 });
+      const e = subgridEdges(kp, colGap);
+      if (!e) return [{ a: a.c0, b: a.c1, minContent: 0, maxContent: 0, minimum: 0, why: "a subgrid with inline padding or margins in percentages, or auto margins, isn't modelled" }];
+      const g = gridSetup(kp, subKids, undefined, e.gap, 0, undefined, { span: a.c1 - a.c0 });
       if ("why" in g.placed) return [{ a: a.c0, b: a.c1, minContent: 0, maxContent: 0, minimum: 0, why: g.placed.why }];
       if (g.placed.cols > a.c1 - a.c0 || g.placed.colOffset) return [{ a: a.c0, b: a.c1, minContent: 0, maxContent: 0, minimum: 0, why: "a subgrid's items past the columns it spans aren't modelled" }];
       const placed = g.placed;
-      return subKids.map((sk, j) => colContribution(sk, a.c0 + placed.areas[j].c0, a.c0 + placed.areas[j].c1));
+      const n = a.c1 - a.c0;
+      const half = (e.gap - colGap) / 2;
+      const extraOf = (c0: number, c1: number) => (c0 === 0 ? e.start : half) + (c1 === n ? e.end : half);
+      const items = subKids.map((sk, j) => {
+        const { c0, c1 } = placed.areas[j];
+        const c = colContribution(sk, a.c0 + c0, a.c0 + c1);
+        const extra = extraOf(c0, c1);
+        return extra ? { ...c, minContent: c.minContent + extra, maxContent: c.maxContent + extra, minimum: c.minimum + extra } : c;
+      });
+      // A track of the subgrid no item is in still takes the subgrid's edge at either end (not a gap's difference, as Chromium sizes it).
+      for (let j = 0; j < n; j++) {
+        const extra = (j === 0 ? e.start : 0) + (j === n - 1 ? e.end : 0);
+        if (extra > 0 && !placed.areas.some((ar) => ar.c0 <= j && j < ar.c1)) items.push({ a: a.c0 + j, b: a.c0 + j + 1, minContent: extra, maxContent: extra, minimum: extra });
+      }
+      return items;
     });
   }
 
@@ -1184,7 +1209,15 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     const boxes = kids.map((k, i) => {
       const a = areas[i];
       const cw = span(colX, colW, a.c0, a.c1);
-      if (resolveElement(model, k.comp, k.slot, width).grid?.value.subgridColumns) subgridCols.set(k.node, { widths: colW.slice(a.c0, a.c1), gap: colGap });
+      const rk = resolveElement(model, k.comp, k.slot, width);
+      // A subgrid's columns: the ones it spans, less its edges at either end and half its gap's
+      // difference from this one's at each gutter inside it.
+      const se = rk.grid?.value.subgridColumns ? subgridEdges(rk, colGap) : undefined;
+      if (se) {
+        const n = a.c1 - a.c0;
+        const half = (se.gap - colGap) / 2;
+        subgridCols.set(k.node, { widths: colW.slice(a.c0, a.c1).map((w, j) => Math.max(0, w - (j === 0 ? se.start : half) - (j === n - 1 ? se.end : half))), gap: se.gap });
+      }
       const kp = atBase(resolveElement(model, k.comp, k.slot, width), cw);
       const km = marginOf(kp);
       const j = justify(i);
@@ -2161,19 +2194,24 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
   // its ancestors'); its rectangle is the bounding box of its mapped corners. Nothing else moves.
   // A 3D transform is projected: under its parent's perspective (perspective, perspective-origin),
   // flattened onto its parent's plane (transform-style: flat), as getBoundingClientRect() reports it.
+  // A box whose parent preserves 3D (transform-style: preserve-3d) is in its 3D rendering context:
+  // its transform composes with its parent's, unflattened (the context's root is flattened onto
+  // its own parent's plane, as any box is).
   const drawTransformed = (b: Box, chain: Matrix4[], parent: Box | undefined) => {
     const t = b.props.transform?.value;
+    const inContext = !!parent?.props.transform?.value.preserve3d;
     let next = chain;
-    const own = t ? boxMatrix4(t.list, t.origin, b.w, b.h) : undefined;
-    if (own) {
-      let local = multiply4(multiply4(translate4(b.x, b.y), own), translate4(-b.x, -b.y));
+    const own = t && t.list !== "none" ? boxMatrix4(t.list, t.origin, b.w, b.h) : undefined;
+    // (A 3D rendering context's root with no transform of its own still takes its parent's perspective, for what composes with it.)
+    if (own || (t?.preserve3d && !inContext)) {
+      let local = own ? multiply4(multiply4(translate4(b.x, b.y), own), translate4(-b.x, -b.y)) : translate4(0, 0);
       const p = parent?.props.perspective?.value;
       if (p && parent) {
         const o = originOf(p.origin, parent.w, parent.h) ?? [parent.w / 2, parent.h / 2];
         const [ox, oy] = [parent.x + o[0], parent.y + o[1]];
         local = multiply4(multiply4(multiply4(translate4(ox, oy), perspective4(p.d)), translate4(-ox, -oy)), local);
       }
-      next = [local, ...chain];
+      next = inContext && chain.length ? [multiply4(chain[0], local), ...chain.slice(1)] : [local, ...chain];
     }
     for (const k of b.children) drawTransformed(k, next, b);
     if (next.length) {

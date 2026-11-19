@@ -347,7 +347,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `contain` | `"layout paint"`, `content`, `strict`, `size`, `inline-size`, `none` | `contain`: layout or paint keeps the children's margins inside and places absolute and fixed children in the box; size sizes it as if empty |
 | `textAlign` | `start`, `center`, `end` | `text-align` (fixed-height text is also centered vertically) |
 | `border` | color token, or `{ color, width, top, right, bottom, left }` | `border` with per-side widths (they count in layout, so it's structure) |
-| `transform` | `"rotate(3deg)"`, or `{ value, origin }` (2D and 3D functions in px or %) | `transform`, `transform-origin`: where the box and its content are drawn (3D: projected); nothing else moves |
+| `transform` | `"rotate(3deg)"`, or `{ value, origin, style }` (2D and 3D functions in px or %; `style: preserve-3d`, with `value: none` too) | `transform`, `transform-origin`, `transform-style`: where the box and its content are drawn (3D: projected; in a `preserve-3d` context, composed unflattened); nothing else moves |
 | `perspective` | px, or `{ value, origin }` | `perspective`, `perspective-origin`: the children's 3D transforms are seen from there |
 | `background`, `radius`, `backdrop`, `shadow`, `fit` | tokens | polish: `background-color`, `border-radius`, `background-image`, `box-shadow`, `object-fit` |
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)`; each listed property replaces its base value, and the narrowest active breakpoint wins |
@@ -358,8 +358,8 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 
 ## Roadmap
 
-- **Inline layout beyond one box per line:** inline-blocks with content of their own (not one line of text, not a set size) sharing a line with text or each other, and the rectangle of an inline span (its lines are exact; its own content-area box is `≈`). Runs in another size, font or vertical-align and atomic inlines of set size are measured.
-- **Floats,** 3D transforms and subgrid, which are reported as `≈` today.
+- **Inline layout beyond one box per line:** the rectangle of an inline span (its lines are exact; its own content-area box is `≈`), a run aligned `middle` (or `text-top`, `text-bottom`) whose content reaches past its strut and that splits across lines, and inline-blocks holding more than blocks of inline text (tables, flex rows, nested inline-blocks: KaTeX's layout). Runs in another size, font or vertical-align, atomic inlines of set size, and inline-blocks of lines or of blocks of lines are measured.
+- **Floats,** and form controls Chromium draws from parts of its own: time, month, week, datetime-local and file inputs (date inputs are measured, en-US).
 - **More of Tailwind:** `dark:` and container queries.
 
 ## Development

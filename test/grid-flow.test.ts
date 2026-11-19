@@ -42,3 +42,27 @@ describe("column flow, subgrids and 3D transforms", () => {
     for (const id of ["p3", "rx", "ry", "tz"]) expect(r.approx(id)).toBeUndefined();
   });
 });
+
+describe("subgrids with edges and a gap of their own, and preserve-3d", () => {
+  const css2 = `body { margin: 0; font: 16px/1.5 Inter; color: #111111; background: #ffffff }
+.led { display: grid; grid-template-columns: auto 1fr auto auto; column-gap: 10px }
+.row { display: grid; grid-column: 1 / -1; grid-template-columns: subgrid; margin: 0 4px 0 12px; padding: 0 6px; border: 1px solid #ccc; column-gap: 24px }
+.p3 { display: flex; gap: 20px; perspective: 400px; padding: 20px }
+.deep { width: 120px; height: 60px; transform-style: preserve-3d; transform: rotateY(30deg) }
+.face { height: 30px; transform: translateZ(40px) }`;
+  const html2 = `<div class="led"><div class="row"><span data-fixture="a1">12 May</span><span>Mended nets</span><span data-fixture="a3">4.20</span></div><div class="row"><span>13 May</span><span data-fixture="b2">Hull paint, two coats</span><span>18.00</span></div></div>
+<div class="p3"><div class="deep" data-fixture="deep"><div class="face" data-fixture="face">front</div></div></div>`;
+  const r = run(html2, css2, [600], { bare: true });
+  const geo = (id: string) => [r.box(id).x, r.box(id).y, r.box(id).w, r.box(id).h].map((n) => +n.toFixed(3));
+  it("takes a subgrid's edges and gap into its parent's columns (Chromium's boxes)", () => {
+    // The 4th column is empty: it takes the subgrid's end edge (4 + 1 + 6px); the gutters inside take 7px more on each side.
+    expect([geo("a1"), geo("b2"), geo("a3")]).toEqual([[19, 1, 53.094, 24], [96.094, 27, 411.469, 24], [531.563, 1, 40.438, 24]]);
+    for (const id of ["a1", "b2", "a3"]) expect(r.approx(id)).toBeUndefined();
+  });
+  it("composes a face's 3D transform with its parent's in a preserve-3d context", () => {
+    const close = (id: string, want: number[]) => geo(id).forEach((v, i) => expect(v).toBeCloseTo(want[i], 2));
+    close("deep", [5.9875, 69.5676, 137.6976, 64.8649]);
+    close("face", [-0.5275, 66.2175, 150.7513, 35.7825]);
+    for (const id of ["deep", "face"]) expect(r.approx(id)).toBeUndefined();
+  });
+});

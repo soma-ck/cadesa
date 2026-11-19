@@ -149,7 +149,7 @@ export interface ResolvedProps {
   /** Containment (see Props.contain). */
   contain?: Resolved<Contain>;
   /** A 2D transform about its origin (CSS transform and transform-origin): where the box and its content are drawn. */
-  transform?: Resolved<{ list: string; origin?: string }>;
+  transform?: Resolved<{ list: string; origin?: string; preserve3d?: boolean }>;
   /** perspective (px) and perspective-origin: the 3D transforms of its children are projected from there. */
   perspective?: Resolved<{ d: number; origin?: string }>;
   /** A grid's template (CSS grid-template-*, grid-auto-*, content alignment), sized by Chromium's grid algorithm. */
@@ -399,7 +399,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
       }
       case "transform": {
         const t = p.transform!;
-        out.transform = { value: { list: t.value, ...(t.origin && { origin: t.origin }) }, display: `${t.value}${t.origin ? ` about ${t.origin}` : ""}`, steps: [...pre, src(t.path)] };
+        out.transform = { value: { list: t.value, ...(t.origin && { origin: t.origin }), ...(t.preserve3d && { preserve3d: true }) }, display: `${t.value}${t.origin ? ` about ${t.origin}` : ""}${t.preserve3d ? ", preserve-3d" : ""}`, steps: [...pre, src(t.path)] };
         break;
       }
       case "perspective": {

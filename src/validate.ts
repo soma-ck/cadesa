@@ -811,12 +811,17 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           break;
         }
         case "transform": {
-          // transform: "rotate(3deg)", or { value: "translate(-50%, 0) scale(1.2)", origin: "left top" }.
+          // transform: "rotate(3deg)", or { value: "translate(-50%, 0) scale(1.2)", origin: "left top", style: preserve-3d }.
           const o = isObj(v) ? v : { value: v };
-          if (isObj(v)) keys(v, p, ["value", "origin"]);
+          if (isObj(v)) keys(v, p, ["value", "origin", "style"]);
           const list = typeof o.value === "string" ? o.value.trim() : undefined;
           const origin = typeof o.origin === "string" ? o.origin.trim() : o.origin === undefined ? undefined : null;
-          if (!list || !transformList4(list, 100, 100)) {
+          if (o.style !== undefined && o.style !== "flat" && o.style !== "preserve-3d") {
+            err([...p, "style"], "invalid transform style", { expected: "flat or preserve-3d", got: o.style });
+            break;
+          }
+          const preserve3d = o.style === "preserve-3d";
+          if (!list || (!(preserve3d && list === "none") && !transformList4(list, 100, 100))) {
             err(isObj(v) ? [...p, "value"] : p, "invalid transform", { expected: 'CSS transform functions in px or % (2D, or 3D: translateZ, rotateX, rotateY, rotate3d, scale3d, perspective(), matrix3d), e.g. "rotate(3deg)" or "translate(-50%, 0) scale(1.2)"', got: o.value });
             break;
           }
@@ -824,7 +829,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             err([...p, "origin"], "invalid transform origin", { expected: 'a transform-origin in keywords, px or %, e.g. "left top" or "50% 0"', got: o.origin });
             break;
           }
-          out.transform = { value: list, ...(origin && { origin }), path: p.join(".") };
+          out.transform = { value: list, ...(origin && { origin }), ...(preserve3d && { preserve3d }), path: p.join(".") };
           break;
         }
         case "perspective": {

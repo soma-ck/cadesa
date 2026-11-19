@@ -153,13 +153,25 @@ export function genCssCase(seed: number): CssCase {
     if (kind === "subgrid") {
       const n = r.int(2, 4);
       const g = cls(["display: grid", `grid-template-columns: ${r.pick(["auto 1fr auto", "max-content 1fr", "repeat(3, auto)", "1fr 2fr 1fr", "auto auto"])}`, `gap: ${r.int(0, 8)}px ${r.int(0, 16)}px`]);
-      const row = cls(["display: grid", "grid-column: 1 / -1", "grid-template-columns: subgrid", ...(r.chance(0.5) ? [`padding: ${r.int(0, 6)}px 0`] : []), ...(r.chance(0.3) ? ["border-bottom: 1px solid #ccc"] : [])]);
+      // Rows with padding, borders and margins of their own on the inline sides, and their own gap.
+      const edges = () => [
+        ...(r.chance(0.4) ? [`padding: ${r.int(0, 6)}px ${r.int(0, 12)}px ${r.int(0, 6)}px ${r.int(0, 12)}px`] : r.chance(0.5) ? [`padding: ${r.int(0, 6)}px 0`] : []),
+        ...(r.chance(0.3) ? [`border: ${r.int(1, 3)}px solid #ccc`] : r.chance(0.3) ? ["border-bottom: 1px solid #ccc"] : []),
+        ...(r.chance(0.3) ? [`margin: 0 ${r.int(0, 10)}px 0 ${r.int(0, 10)}px`] : []),
+        ...(r.chance(0.3) ? [`column-gap: ${r.int(0, 24)}px`] : []),
+      ];
+      const row = cls(["display: grid", "grid-column: 1 / -1", "grid-template-columns: subgrid", ...edges()]);
       const rows = Array.from({ length: r.int(1, 4) }, () => `<div${attr(row)}>${Array.from({ length: n }, () => `<span>${words(r, 1, 3)}</span>`).join("")}</div>`);
       return `<div${attr(g)}>${rows.join("")}</div>`;
     }
     const g = cls(["display: flex", "flex-wrap: wrap", `gap: ${r.int(4, 20)}px`, `perspective: ${r.pick(["300px", "600px", "1000px"])}`, ...(r.chance(0.3) ? [`perspective-origin: ${r.pick(["left top", "25% 75%", "right center"])}`] : [])]);
     const tf = () => r.pick(["rotateX(30deg)", "rotateY(-35deg)", "translateZ(40px)", "rotate3d(1, 1, 0, 25deg)", "translate3d(10px, 0, -60px)", "rotateY(20deg) scale(0.9)", "rotate(5deg)"]);
-    const items = Array.from({ length: r.int(1, 4) }, () => item([`width: ${r.int(60, 200)}px`, `height: ${r.int(30, 90)}px`, `transform: ${tf()}`, ...(r.chance(0.3) ? [`transform-origin: ${r.pick(["left top", "0 100%", "center"])}`] : [])]));
+    const items = Array.from({ length: r.int(1, 4) }, () => {
+      const d = [`width: ${r.int(60, 200)}px`, `height: ${r.int(30, 90)}px`, ...(r.chance(0.8) ? [`transform: ${tf()}`] : []), ...(r.chance(0.3) ? [`transform-origin: ${r.pick(["left top", "0 100%", "center"])}`] : [])];
+      // In a 3D rendering context (transform-style: preserve-3d): a face whose transform composes with the box's.
+      if (r.chance(0.4)) return `<div${attr(cls(["padding: 4px", "background: #e8edf2", "transform-style: preserve-3d", ...d]))}><div${attr(cls(["height: 20px", "background: #c9d8ea", `transform: ${tf()}`]))}>${words(r, 1, 2)}</div></div>`;
+      return item(d);
+    });
     return `<div${attr(g)}>${items.join("")}</div>`;
   };
   /** Inline-blocks sharing their lines with each other: tiles of one or more lines (<br>s). */

@@ -67,6 +67,15 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   styles a date input's inner parts (`::-webkit-datetime-edit`, as Bootstrap does) leaves it `≈`.
   Time, month, week, datetime-local and file inputs stay `≈` (a file input is `ceil(34 × width of
   "0")` wide, but its height doesn't follow its font as the others do).
+- Subgrids with padding, borders and margins on their inline sides and a column gap of their own are
+  laid out (CSS Grid §9.6, as Chromium sizes them): the subgrid's edges are an extra margin for its
+  items at either end (a track no item is in takes them too), half its gap's difference from its
+  parent's an extra margin at each gutter inside it, and its columns are the parent's less those.
+  Still `≈`: percentages and auto margins on a subgrid.
+- `transform-style: preserve-3d` is laid out: the transforms of the boxes in a 3D rendering context
+  compose with their parent's in 3D (the context's root, with its parent's perspective, is
+  flattened onto its own parent's plane), and each box is projected as `getBoundingClientRect()`
+  reports it. In a source: `transform: { value: ..., style: preserve-3d }` (`value: none` too).
 
 ## 0.1.18 (2026-11-19)
 

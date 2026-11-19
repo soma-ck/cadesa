@@ -1,6 +1,6 @@
 /*
  * grid-auto-flow: column and column dense (items fill columns, adding columns), subgrids (rows that
- * line up their cells on the parent grid's columns), and 3D transforms under a perspective (each box
+ * line up their cells on the parent grid's columns, some with edges and a gap of their own), and 3D transforms under a perspective (each box
  * as getBoundingClientRect projects it).
  */
 *,
@@ -85,6 +85,24 @@ body {
   text-align: right;
 }
 
+/* Subgrid rows with padding, a border and margins of their own, and their own column gap. */
+.ledger--boxed {
+  gap: 6px 10px;
+}
+
+.entry--boxed {
+  margin: 0 6px;
+  padding: 6px 14px 6px 9px;
+  border: 2px solid #c8d2da;
+  column-gap: 20px;
+}
+
+.entry--wide {
+  margin-left: 0;
+  padding-right: 3px;
+  column-gap: 4px;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
@@ -112,4 +130,20 @@ body {
 
 .card--flat {
   transform: rotate(4deg);
+}
+
+/* transform-style: preserve-3d: the face's transform composes with the card's in 3D. */
+.card--deep {
+  transform-style: preserve-3d;
+}
+
+.card__face {
+  height: 40px;
+  padding: 6px;
+  background: #c9d8ea;
+  transform: translateZ(40px) rotateX(-20deg);
+}
+
+.card__face--tilt {
+  transform: rotateY(35deg) translateZ(-30px);
 }

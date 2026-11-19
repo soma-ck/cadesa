@@ -270,7 +270,8 @@ export interface Props {
    * (transform-origin, default its center). It moves nothing else: the box and what is inside it
    * are drawn mapped by it.
    */
-  transform?: { value: string; origin?: string; path: string };
+  /** preserve3d (transform-style: preserve-3d): its children's 3D transforms compose with its own, unflattened. */
+  transform?: { value: string; origin?: string; preserve3d?: boolean; path: string };
   /** perspective (px) and perspective-origin: its children's 3D transforms are seen from there. */
   perspective?: { value: number; origin?: string; path: string };
   /** In a grid: the lines it spans (grid-row, grid-column) and its own alignment in its area. */
