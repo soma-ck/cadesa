@@ -1,6 +1,6 @@
 /** Command implementations shared by the CLI and the MCP server. Each returns text and data. */
 import { createHash } from "node:crypto";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { check } from "./check.js";
 import { wireframeSvg } from "./wireframe.js";
@@ -36,6 +36,8 @@ import { generateMetrics, launchChromium, writeMetrics } from "./metrics.js";
 import { pointFindings, Pointers } from "./pointers.js";
 import { verifyFindings, type VerifyReport } from "./verify.js";
 import { capture, formatCapture } from "./capture.js";
+import { notLaidOut } from "./laidout.js";
+import { checkAddedCss, compareFindings, type FindingChange } from "./whatif-check.js";
 import { existsSync } from "node:fs";
 import { resolve as resolvePath } from "node:path";
 import { pathToFileURL } from "node:url";
@@ -84,6 +86,35 @@ export interface SourceInput {
    * source, generated class names and ids → fixture).
    */
   tailwind?: string;
+}
+
+/**
+ * --css entries that are directories: their stylesheets, in name order (what capture writes:
+ * css/01-…, css/02-…). Other entries are kept as given.
+ */
+export function cssList(spec: string): string[] {
+  return spec
+    .split(",")
+    .map((f) => f.trim())
+    .filter(Boolean)
+    .flatMap((f) => {
+      if (!existsSync(f) || !statSync(f).isDirectory()) return [f];
+      const files = readdirSync(f)
+        .filter((n) => /\.css$/i.test(n))
+        .sort((a, b) => a.localeCompare(b, "en", { numeric: true }))
+        .map((n) => join(f, n));
+      if (!files.length) throw new InputError(`no .css files in ${f}`);
+      return files;
+    });
+}
+
+/** The input with --css (and --after) directories expanded into their files. */
+function withCssDir<T extends { css?: string; after?: string }>(s: T): T {
+  return {
+    ...s,
+    ...(s.css && { css: cssList(s.css).join(",") }),
+    ...(s.after && { after: cssList(s.after).join(",") }),
+  };
 }
 
 const liftFile = (css: string) => lift(css, readFileSync(css, "utf8"));
@@ -142,8 +173,11 @@ function pageOf(s: SourceInput & { fixture: string }): Page {
 }
 
 /** The page lift's notes for the reader, shown under the coverage line. */
-function withNotes(c: Coverage, p: Page): Coverage {
+function withNotes(c: Coverage, p: Page, layouts: Layout[]): Coverage {
   if (p.tw?.notes.length) c.notes = p.tw.notes;
+  // Elements a browser shows that no box covers: nothing is checked there.
+  const missing = p.tw && notLaidOut(p.tw, layouts);
+  if (missing?.count) c.notLaidOut = missing;
   return c;
 }
 
@@ -197,6 +231,7 @@ export function cssCmd(s: SourceInput): Result {
 }
 
 export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; lines?: boolean; svg?: string }): Result {
+  s = withCssDir(s);
   const t0 = performance.now();
   const p = pageOf(s);
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
@@ -215,8 +250,8 @@ export function renderCmd(s: SourceInput & { fixture: string; widths: number[]; 
   const fonts = fontsOf(s, layouts);
   return {
     text: shortenPaths(
-      formatCoverage(withNotes(coverage(layouts, imp?.impacts), p)) +
-      formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts }) +
+      formatCoverage(withNotes(coverage(layouts, imp?.impacts), p, layouts)) +
+      formatRender(layouts, { source: label, fixture: s.fixture, ms: ms(t0), lines: s.lines, impacts: imp?.impacts, css: !!p.tw }) +
       (imp ? "\n" + formatImpact(imp.impacts) : "") +
       (written.length ? `\nwireframe: ${written.join(", ")}\n` : "") +
       fontsNote(fonts, s, true)),
@@ -244,6 +279,7 @@ function whatifWidths(model: Model, p: Page): number[] {
 export function whatifCmd(
   s: SourceInput & { fixture: string; widths?: number[]; changes: Change[]; after?: string; addCss?: string },
 ): Result {
+  s = withCssDir(s);
   if (s.after || s.addCss) return cssWhatifCmd({ ...s, css: s.css ?? "" });
   if (!s.changes.length) throw new InputError("whatif needs at least one change (path=value), or with --css: --after <new.css> or --add-css <rules>");
   const t0 = performance.now();
@@ -269,8 +305,72 @@ export function whatifCmd(
   };
   const [a, b] = [approx(result.before!), approx(result.after!)];
   result.widths.forEach((w, i) => (w.approximate = [...new Set([...a[i], ...b[i]])]));
-  const cov = withNotes(coverage(result.after!, impactFor(s, result.after!)?.impacts), p);
-  return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
+  const ia = impactFor(s, result.after!)?.impacts;
+  const cov = withNotes(coverage(result.after!, ia), p, result.after!);
+  const findings = findingChanges(result.before!, impactFor(s, result.before!)?.impacts, p.tw, result.after!, ia, p.tw);
+  return {
+    text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length, findings })),
+    data: { coverage: cov, findings: findingsData(findings), ...result },
+    ok: true,
+  };
+}
+
+/** Where nothing sets a page background, a browser paints the page white: contrast is judged on that. */
+export const DEFAULT_BACKGROUND = "the browser's default white, as nothing sets a background";
+const onWhite = (ls: Layout[]): Layout[] => ls.map((l) => (l.page ? l : { ...l, page: { background: "#ffffff", path: DEFAULT_BACKGROUND } }));
+
+/** check before and after an edit, compared: what it fixes, what it leaves, what it adds. */
+function findingChanges(before: Layout[], ib: WidthImpact[] | undefined, pb: PageLift | undefined, after: Layout[], ia: WidthImpact[] | undefined, pa: PageLift | undefined): FindingChange[] {
+  const fb = check(onWhite(before), ib, pb);
+  const fa = check(onWhite(after), ia, pa);
+  const changes = compareFindings(fb, fa);
+  // Compared by generated id first; then named as check names them (element, rules).
+  if (pb) pointFindings(fb, pb);
+  if (pa) pointFindings(fa, pa);
+  return changes;
+}
+
+const findingsData = (cs: FindingChange[]) =>
+  cs.map((c) => ({
+    status: c.status,
+    check: c.check,
+    severity: c.finding.severity,
+    ...(c.finding.inconclusive && { inconclusive: true }),
+    id: c.finding.id,
+    message: c.finding.message,
+    ...(c.was && { before: c.was.message }),
+    widths: c.widths,
+    ...(c.finding.element && { element: c.finding.element }),
+    ...(c.finding.source && { source: c.finding.source }),
+  }));
+
+/**
+ * The --css file whose rules come last in the page's cascade (where --add-css rules go): the
+ * page links its stylesheets in its own order, and given files it doesn't link come first.
+ */
+export function lastInCascade(html: string, files: string[]): number {
+  const base = (f: string) => f.replace(/[?#].*$/, "").replace(/^.*[\\/]/, "");
+  const links = [...html.matchAll(/<link\b[^>]*>/gi)]
+    .map((m) => m[0])
+    .filter((t) => /\brel\s*=\s*["']?[^"'>]*\bstylesheet/i.test(t) && !/\balternate\b/i.test(t))
+    .map((t) => /\bhref\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>]+))/i.exec(t))
+    .map((h) => base(h?.[1] ?? h?.[2] ?? h?.[3] ?? ""));
+  // Each file's place in the cascade: the link it's matched to by name, -1 when the page doesn't link it.
+  const pos = files.map(() => -1);
+  const taken = new Set<number>();
+  links.forEach((name, at) => {
+    const i = files.findIndex((f, k) => pos[k] < 0 && base(f) === name);
+    if (i >= 0) (pos[i] = at), taken.add(at);
+  });
+  // As many unmatched files as unmatched links: the same stylesheets under other names, in order.
+  const looseFiles = files.map((_, k) => k).filter((k) => pos[k] < 0);
+  const looseLinks = links.map((_, at) => at).filter((at) => !taken.has(at));
+  if (looseFiles.length && looseFiles.length === looseLinks.length) looseFiles.forEach((k, j) => (pos[k] = looseLinks[j]));
+  let last = files.length - 1;
+  pos.forEach((p, k) => {
+    if (p > pos[last] || (p === pos[last] && k > last)) last = k;
+  });
+  return last;
 }
 
 /**
@@ -293,9 +393,13 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
     // Rules keep pointing at the file the page links, so the cascade order is unchanged.
     afterFiles = afterFiles.map((f, i) => ({ file: beforeFiles[i].file, text: f.text }));
   }
+  // Added rules go at the end of the stylesheet that comes last in the page's cascade.
+  let added: { file: string; firstLine: number } | undefined;
   if (s.addCss) {
-    const last = afterFiles[afterFiles.length - 1];
-    afterFiles = [...afterFiles.slice(0, -1), { file: last.file, text: `${last.text}\n${s.addCss}\n` }];
+    const i = lastInCascade(html, afterFiles.map((f) => f.file));
+    const last = afterFiles[i];
+    added = { file: last.file, firstLine: last.text.split("\n").length + 1 };
+    afterFiles = afterFiles.map((f, k) => (k === i ? { file: f.file, text: `${f.text}\n${s.addCss}\n` } : f));
   }
   const lb = liftCssPage(s.fixture, html, beforeFiles);
   const la = liftCssPage(s.fixture, html, afterFiles);
@@ -316,7 +420,7 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
   const result: WhatIf = {
     changes: [
       ...(s.after ? split(s.css).map((f, i) => ({ path: f, from: "as is", to: split(s.after!)[i] })).filter((c) => c.path !== c.to) : []),
-      ...(s.addCss ? [{ path: split(s.css).pop()!, from: "as is", to: `+ ${s.addCss.replace(/\s+/g, " ").trim()}` }] : []),
+      ...(s.addCss ? [{ path: added!.file, from: "as is", to: `+ ${s.addCss.replace(/\s+/g, " ").trim()}` }] : []),
     ],
     widths: widths.map((w, i) => {
       const d = diffLayouts(before[i], after[i], { valuesOnly: true });
@@ -326,11 +430,19 @@ function cssWhatifCmd(s: { fixture: string; css: string; widths?: number[]; afte
       return d;
     }),
   };
-  const cov = withNotes(coverage(after, ia), pa);
-  return { text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length })), data: { coverage: cov, ...result }, ok: true };
+  const cov = withNotes(coverage(after, ia), pa, after);
+  const findings = findingChanges(before, ib, lb, after, ia, la);
+  const texts = new Map(afterFiles.map((f) => [f.file, f.text]));
+  const addedCss = added && checkAddedCss(la, s.addCss!, added.file, added.firstLine, (f) => texts.get(f));
+  return {
+    text: shortenPaths(formatWhatif(result, { ms: ms(t0), coverage: cov, defaulted: !s.widths?.length, findings, addedCss, css: true })),
+    data: { coverage: cov, findings: findingsData(findings), ...(addedCss && { addedCss }), ...result },
+    ok: true,
+  };
 }
 
 export function explainCmd(s: SourceInput & { fixture: string; widths: number[]; id: string }): Result {
+  s = withCssDir(s);
   const id = s.id.replace(/^#/, "");
   const model = modelOf(load(s));
   const results = renderPage(model, pageOf(s), s.widths).map((l) => explain(model, l, id));
@@ -343,8 +455,8 @@ function runCheck(s: SourceInput & { fixture: string; widths: number[] }) {
   const p = pageOf(s);
   const layouts = renderPage(modelOf(load(s)), p, s.widths);
   const imp = impactFor(s, layouts);
-  const findings = check(layouts, imp?.impacts, p.tw);
-  const cov = withNotes(coverage(layouts, imp?.impacts), p);
+  const findings = check(onWhite(layouts), imp?.impacts, p.tw);
+  const cov = withNotes(coverage(layouts, imp?.impacts), p, layouts);
   return { p, layouts, impacts: imp?.impacts, findings, cov };
 }
 
@@ -354,18 +466,20 @@ function finishCheck(s: SourceInput & { fixture: string; widths: number[] }, run
   if (p.tw) pointFindings(findings, p.tw);
   const fonts = fontsOf(s, layouts);
   return {
-    text: formatCheck(findings, s.widths, cov, verified) + fontsNote(fonts, s, false),
+    text: formatCheck(findings, s.widths, cov, verified, { css: !!p.tw }) + fontsNote(fonts, s, false),
     data: { coverage: cov, findings, fonts: fontsData(fonts), ...(verified && { verify: verified }) },
     ok: !findings.some((f) => f.severity === "error" && !f.inconclusive && f.verified?.status !== "not reproduced"),
   };
 }
 
 export function checkCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
+  s = withCssDir(s);
   return finishCheck(s, runCheck(s));
 }
 
 /** `check --verify`: the sweep, then each finding measured in Chromium (Playwright). */
 export async function checkVerifyCmd(s: SourceInput & { fixture: string; widths: number[] }): Promise<Result> {
+  s = withCssDir(s);
   const run = runCheck(s);
   if (!run.p.tw) throw new InputError("--verify needs a page with its CSS: --css <file.css> or --tailwind <compiled.css>");
   const cssFiles = (s.tailwind ?? s.css!).split(",").map((f) => f.trim()).filter(Boolean);
@@ -382,7 +496,7 @@ export async function checkVerifyCmd(s: SourceInput & { fixture: string; widths:
 
 /** The fonts a laid-out page's text uses, and what Cadesa knows about each. */
 function fontsOf(s: SourceInput & { fixture: string }, layouts: Layout[]): FontReport[] {
-  return fontReport(fontUses(layouts), pageFontSources(s.fixture, [s.css, s.tailwind].filter((x): x is string => !!x)));
+  return fontReport(fontUses(layouts), pageFontSources(s.fixture, [...(s.css ? cssList(s.css) : []), ...(s.tailwind ? [s.tailwind] : [])]));
 }
 
 const fontsData = (r: FontReport[]) =>
@@ -429,6 +543,7 @@ function fontsNote(r: FontReport[], s: SourceInput & { fixture: string }, always
 export async function fontsCmd(
   s: SourceInput & { fixture: string; widths: number[]; measure?: boolean; system?: boolean; out?: string; via?: "cli" | "mcp" },
 ): Promise<Result> {
+  s = withCssDir(s);
   const p = pageOf(s);
   const model = modelOf(load(s));
   let report = fontsOf(s, renderPage(model, p, s.widths));
@@ -437,6 +552,8 @@ export async function fontsCmd(
   if (s.measure) {
     measured = await measureReport(report, { out: s.out, system: s.system });
     text += formatMeasured(measured) + (measured.length ? "\n" : "");
+    const unused = report.filter((f) => !f.boxes.length && f.status !== "measured").map((f) => f.family);
+    if (unused.length) text += `not measured, as no laid-out text is set in them: ${unused.join(", ")}\n\n`;
     report = fontsOf(s, renderPage(model, p, s.widths));
   }
   const measurable = report.some((f) => f.status === "file" || f.status === "google" || !!f.remeasure);
@@ -500,6 +617,7 @@ export async function metricsCmd(s: {
 }
 
 export function critiqueCmd(s: SourceInput & { fixture: string; widths: number[] }): Result {
+  s = withCssDir(s);
   const model = modelOf(load(s));
   const p = pageOf(s);
   const found = critique(model, p.fixture, renderPage(model, p, s.widths));

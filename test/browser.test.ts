@@ -2,13 +2,15 @@
  * check --verify and capture, against local fixtures in Chromium. Skipped when Playwright or a
  * Chrome/Chromium isn't available ($CADESA_CHROME, a system install, or Playwright's own).
  */
-import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Finding } from "../src/check.js";
 import { captureCmd, checkCmd, checkVerifyCmd, parseWidths } from "../src/commands.js";
 import { launchChromium } from "../src/metrics.js";
+import { serveFiles } from "../src/browser.js";
 
 const browserOk = await launchChromium().then(
   async (b) => (await b.close(), true),
@@ -67,6 +69,15 @@ describe.skipIf(!browserOk)("check --verify", () => {
     expect(clipped[0].verified!.detail).toMatch(/^\d+px of its text is cut off$/);
   });
 
+  it("measures text beside elements (no element of its own) and text cut off by its parent", async () => {
+    const { f } = await verified("fixtures/verify/text.html", "fixtures/verify/text.css", "400");
+    const word = f.find((x) => /"nonconformances" .* can't wrap/.test(x.message))!;
+    expect(word.verified).toEqual({ status: "confirmed", detail: "overflows by 37.38px" });
+    const cut = f.find((x) => x.check === "clipped")!;
+    expect(cut.verified).toEqual({ status: "confirmed", detail: "80px of its text is cut off" });
+    expect(f.every((x) => x.verified?.status === "confirmed")).toBe(true);
+  });
+
   it("loads widths without findings too", async () => {
     const { r } = await verified("fixtures/bootstrap/planning.html", "fixtures/bootstrap/bootstrap.css,fixtures/bootstrap/app.css", "320-1440/20");
     const v = (r.data as { verify: { widths: number[]; sampled: number[] } }).verify;
@@ -104,6 +115,55 @@ describe.skipIf(!browserOk)("capture", () => {
     const found = (c.data as { findings: Finding[] }).findings;
     expect(found.find((x) => x.check === "contrast")!.element).toMatchObject({ tag: "p", classes: ["muted"] });
     expect(found.find((x) => x.element?.classes.includes("icon-btn"))!.source![0].rules[0]).toMatchObject({ selector: ".icon-btn", line: 2, file: expect.stringMatching(/03-style-2\.css$/) });
+  });
+
+  it("writes one element per line where a line break can't change the rendering, and suggests --css <dir>", async () => {
+    const dir = join(tmp, "mini");
+    mkdirSync(dir, { recursive: true });
+    // A minified app: the whole body on one line, inline runs that must not gain spaces, a <pre>.
+    writeFileSync(join(dir, "s.css"), ".row { display: flex; gap: 4px } .card { padding: 8px } pre { margin: 0 }\n");
+    writeFileSync(
+      join(dir, "m.html"),
+      `<!doctype html><html><head><link rel="stylesheet" href="s.css"></head><body><main class="page"><div class="row"><a href="#a">A</a><a href="#b">B</a></div><section class="card"><p class="sum"><span>Total</span><span>42</span></p><pre>\n  keep  this\n</pre><p>Some <b>bold</b> <i>text</i> <div class="inner">block in inline</div> after</p><span class="tag">a</span><span class="tag">b</span></section><svg viewBox="0 0 10 10"><path d="M0 0h10"/></svg></main></body></html>`,
+    );
+    const out = join(tmp, "mini-out");
+    const r = await captureCmd({ url: join(dir, "m.html"), out });
+    const page = readFileSync(join(out, "page.html"), "utf8");
+    const lineOf = (s: string) => page.split("\n").findIndex((l) => l.includes(s)) + 1;
+    for (const s of ['<main class="page">', '<div class="row">', '<a href="', '<section class="card">', '<p class="sum">', "<pre>"]) expect(lineOf(s)).toBeGreaterThan(0);
+    expect(new Set(['<main class="page">', '<div class="row">', '<section class="card">', '<p class="sum">'].map(lineOf)).size).toBe(4);
+    // Flex items each on their own line; inline runs and preformatted text untouched.
+    expect(page).toMatch(/\n\s*<a href="[^"]*#a">A<\/a>\n\s*<a href="[^"]*#b">B<\/a>/);
+    expect(page).toContain("<span>Total</span><span>42</span>");
+    expect(page).toContain("<pre>  keep  this\n</pre>");
+    // The line breaks change nothing: every element is where it was, at the same size.
+    const rects = async (file: string) => {
+      const b = await launchChromium();
+      try {
+        const p = await b.newPage({ viewport: { width: 500, height: 800 } });
+        await p.goto(pathToFileURL(file).href);
+        return await p.evaluate(() => [...document.body.querySelectorAll("*")].map((e) => JSON.stringify(e.getBoundingClientRect())));
+      } finally {
+        await b.close();
+      }
+    };
+    expect(await rects(join(out, "page.html"))).toEqual(await rects(join(dir, "m.html")));
+    // The suggested command reads the captured stylesheets as a directory, and works.
+    const data = r.data as { command: string };
+    expect(data.command).toMatch(/ --css \S*mini-out\/css$/);
+    const c = checkCmd({ fixture: join(out, "page.html"), css: join(out, "css"), widths: [400] });
+    expect(c.text).toContain("coverage:");
+    const sum = (c.data as { findings: Finding[] }).findings.find((x) => x.check === "spacing" && x.message.includes("Total"));
+    expect(sum?.element?.line).toBe(lineOf('<p class="sum">'));
+  });
+
+  it("fails clearly when the page returns an error status", async () => {
+    const server = await serveFiles(tmp);
+    try {
+      await expect(captureCmd({ url: server.url(join(tmp, "missing.html")), out: join(tmp, "missing") })).rejects.toThrow(/returned HTTP 404.*nothing was captured/);
+    } finally {
+      server.close();
+    }
   });
 
   it("runs the login script before loading the page", async () => {

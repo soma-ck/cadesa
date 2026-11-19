@@ -19,7 +19,7 @@ import {
   type Result,
 } from "./commands.js";
 import { VERSION } from "./compile.js";
-import { CadesaError, formatDiagnostic } from "./diagnostics.js";
+import { CadesaError, formatDiagnostic, formatUnexpected } from "./diagnostics.js";
 import { parseSet } from "./project.js";
 
 const HELP = `cadesa ${VERSION}: predict what a style edit will do before you make it
@@ -30,6 +30,7 @@ Usage:
   cadesa render   <fixture.html> --source <source.cadesa.yaml> [--widths 390,1280] [--lines]
   cadesa whatif   <fixture.html> --source <source.cadesa.yaml> --set <path=value> [--set ...]
   cadesa whatif   <page.html> --css <a.css,b.css> (--after <a.css,b.new.css> | --add-css "<rules>")
+                    every whatif also runs check before and after: findings fixed, still there, new
   cadesa explain  <fixture.html> --source <source.cadesa.yaml> --id <fixture-id>
   cadesa check    <fixture.html> --source <source.cadesa.yaml>
   cadesa check    <page.html> --css <a.css,b.css> [--verify]
@@ -40,9 +41,11 @@ Usage:
                     findings are decided by what Chromium shows (needs Chrome or Chromium)
   cadesa capture  <url> [--out capture] [--login-script login.mjs] [--wait <selector>] [--width 1280]
                     load a page in Chromium and save what it rendered: page.html (scripts
-                    removed), its stylesheets in cascade order (including CSS-in-JS) and the fonts
-                    it loaded; prints the check command to run. --login-script runs a module's
-                    default export, async (page) => {}, first; no cookies or credentials are saved
+                    removed, one element per line), its stylesheets in cascade order as
+                    css/01-…, 02-… (including CSS-in-JS) and the fonts it loaded; prints the check
+                    command to run (--css <out>/css). An error status (404, 401) stops it.
+                    --login-script runs a module's default export, async (page) => {}, first; no
+                    cookies or credentials are saved
   cadesa critique <fixture.html> --source <source.cadesa.yaml>   design signals: scale, hierarchy, grouping, alignment, palette, tells
   cadesa lift     <file.css> [--out <file.cadesa.yaml>] [--fixture <fixture.html>]
   cadesa lift     --tailwind <page.html> --css <compiled.css> [--out <file.cadesa.yaml>]
@@ -62,7 +65,8 @@ Usage:
   cadesa mcp      start the MCP server on stdio (for Claude Code, Cursor, Codex, ...)
 
   render, whatif, explain and check also accept --css <file.css> instead of --source (several
-  stylesheets comma-separated, in cascade order: --css bootstrap.css,app.css):
+  stylesheets comma-separated, in cascade order: --css bootstrap.css,app.css; or a directory, whose
+  stylesheets are read in name order: --css capture/css):
   the page and its CSS are lifted on the fly (the whole cascade, element by element: block flow
   with margins, percentage widths, inherited text), and boxes it can't predict exactly are marked ≈.
   lift <file.css> --fixture <page.html> lifts the same way and shows the source.
@@ -79,9 +83,12 @@ Options:
   --verify   check: confirm each finding in Chromium (with --css or --tailwind)
   --after f  whatif with --css: preview the page with these stylesheets instead (one per --css
              file, same order), e.g. --css bootstrap.css,app.css --after bootstrap.css,app.new.css
-  --add-css  whatif with --css: preview the page with these rules appended to the last
-             stylesheet, e.g. --add-css ".card { padding: 24px }"
+  --add-css  whatif with --css: preview the page with these rules appended to the stylesheet
+             that comes last in the page's cascade, e.g. --add-css ".card { padding: 24px }";
+             a rule that matches nothing or loses to a more specific one is reported
   -h, --help show this help
+
+  CADESA_DEBUG=1 prints the stack of an unexpected error (a Cadesa bug: please report it).
 `;
 
 async function main(argv: string[]) {
@@ -226,7 +233,7 @@ try {
   } else if (e instanceof InputError) {
     process.stderr.write(`cadesa: ${e.message}\n\n${HELP}`);
   } else {
-    process.stderr.write(`cadesa: ${(e as Error).message}\n`);
+    process.stderr.write(formatUnexpected(e));
   }
   process.exitCode = 1;
 }

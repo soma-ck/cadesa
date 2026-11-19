@@ -36,7 +36,7 @@ type Probe =
   | { kind: "tap"; id: string }
   | { kind: "contrast"; id: string; run?: { tag: string; text: string } }
   | { kind: "overflow"; id: string; child: string }
-  | { kind: "wrap"; id: string }
+  | { kind: "wrap"; id: string; textOnly?: boolean }
   | { kind: "height"; id: string }
   | { kind: "clip"; id: string; axis: "x" | "y" };
 
@@ -47,7 +47,12 @@ export function probeOf(f: Finding): Probe | undefined {
     const m = /^"(.*?)(…)?" \(<([\w-]+)> in /.exec(f.message);
     return m ? { kind: "contrast", id: f.id, run: { tag: m[3], text: m[1] } } : { kind: "contrast", id: f.id };
   }
-  if (f.check === "clipped") return /^the text of #[\w-]+ is cut off/.test(f.message) ? { kind: "clip", id: f.id, axis: /cut off at the bottom/.test(f.message) ? "y" : "x" } : undefined;
+  if (f.check === "clipped") {
+    // "the text of #k is cut off by #b": #b is the box that clips (and scrolls) it.
+    const by = /^the text of #[\w-]+ is cut off by #([\w-]+)/.exec(f.message);
+    if (by) return { kind: "clip", id: by[1], axis: "x" };
+    return /^the text of #[\w-]+ is cut off/.test(f.message) ? { kind: "clip", id: f.id, axis: /cut off at the bottom/.test(f.message) ? "y" : "x" } : undefined;
+  }
   if (f.check !== "layout") return undefined;
   if (/^the text of #[\w-]+ doesn't wrap/.test(f.message)) return { kind: "wrap", id: f.id };
   let m = /^#([\w-]+) overflows #([\w-]+) by/.exec(f.message);
@@ -60,6 +65,14 @@ export function probeOf(f: Finding): Probe | undefined {
 
 const probeKey = (p: Probe) => JSON.stringify(p);
 
+/** Why a finding without a probe isn't measured. */
+export function unmeasured(f: Finding): string {
+  if (f.check === "spacing") return "decided by the markup and the CSS, not by sizes: nothing to measure";
+  if (f.check === "layout" && /no text role|loose text|can't be measured|isn't supported|not supported/.test(f.message))
+    return "about what Cadesa can lay out, not about the page: nothing to measure";
+  return "Cadesa has no measurement for this kind of finding";
+}
+
 interface Measured {
   displayed: boolean;
   w: number;
@@ -71,7 +84,12 @@ interface Measured {
   large?: boolean;
   /** overflow / wrap / height: px past the content box. */
   over?: number;
+  /** What couldn't be found in Chromium's page. */
+  missing?: string;
 }
+
+/** Chromium's verdict on one probe, or why it can't give one. */
+type Verdict = { shown: boolean; detail: string; severity?: "error" | "warning" } | { undecided: string };
 
 /**
  * Runs in the page: measure each probe. Plain JS in a string so nothing the TypeScript build adds
@@ -99,7 +117,7 @@ const PROBE_SCRIPT = `(probes) => {
   };
   return probes.map((p) => {
     const e = runIn(el(p.id), p.run);
-    if (!e) return { displayed: false, w: 0, h: 0 };
+    if (!e) return { displayed: false, w: 0, h: 0, missing: p.run ? "the <" + p.run.tag + "> run in the text box" : "the element" };
     const r = e.getBoundingClientRect();
     const out = { displayed: e.getClientRects().length > 0, w: r.width, h: r.height };
     if (p.kind === "contrast") {
@@ -121,13 +139,28 @@ const PROBE_SCRIPT = `(probes) => {
       if (c) {
         const m = parseFloat(getComputedStyle(c).marginRight) || 0;
         out.over = c.getBoundingClientRect().right + Math.min(0, m) - content(e).right;
+      } else {
+        // The child is a run of text (an anonymous box, no element of its own): the box's text itself.
+        const range = document.createRange();
+        let right = -Infinity;
+        for (const n of e.childNodes) {
+          if (n.nodeType !== 3 || !n.data.trim()) continue;
+          range.selectNodeContents(n);
+          for (const q of range.getClientRects()) right = Math.max(right, q.right);
+        }
+        if (right > -Infinity) out.over = right - content(e).right;
+        else out.missing = "the overflowing child";
       }
     } else if (p.kind === "wrap") {
       const range = document.createRange();
-      range.selectNodeContents(e);
       let right = -Infinity;
-      for (const q of range.getClientRects()) right = Math.max(right, q.right);
-      out.over = right - content(e).right;
+      // A run of text beside elements (an anonymous box): only the element's own text nodes.
+      for (const n of p.textOnly ? [...e.childNodes].filter((n) => n.nodeType === 3 && n.data.trim()) : [e]) {
+        range.selectNodeContents(n);
+        for (const q of range.getClientRects()) right = Math.max(right, q.right);
+      }
+      if (right > -Infinity) out.over = right - content(e).right;
+      else out.missing = "its text";
     } else if (p.kind === "height") {
       out.over = e.scrollHeight - e.clientHeight;
     } else if (p.kind === "clip") {
@@ -142,8 +175,10 @@ const PROBE_SCRIPT = `(probes) => {
 const hexOpaque = (h: string) => h.slice(0, 7);
 
 /** Did Chromium show the problem, and with what numbers? */
-function judge(p: Probe, m: Measured): { shown: boolean; detail: string; severity?: "error" | "warning" } | undefined {
+function judge(p: Probe, m: Measured): Verdict {
+  if (m.missing && !m.displayed) return { undecided: `${m.missing} isn't in the page Chromium loaded` };
   if (!m.displayed) return { shown: false, detail: "not displayed in Chromium" };
+  if (m.over === undefined && p.kind !== "tap" && p.kind !== "contrast") return { undecided: `${m.missing ?? "what to measure"} isn't in the page Chromium loaded` };
   switch (p.kind) {
     case "tap": {
       const small = Math.min(m.w, m.h);
@@ -153,7 +188,7 @@ function judge(p: Probe, m: Measured): { shown: boolean; detail: string; severit
       return { shown: false, detail: size };
     }
     case "contrast": {
-      if (m.image) return undefined; // an image behind the text: Chromium can't say either
+      if (m.image) return { undecided: "an image is behind the text: its contrast depends on the image, which Chromium doesn't measure" };
       // Paint the backgrounds from the canvas (white) up, then the text over them.
       const layers = [...((m as Measured & { layers?: string[] }).layers ?? [])].reverse();
       let bg = "#ffffff";
@@ -164,12 +199,11 @@ function judge(p: Probe, m: Measured): { shown: boolean; detail: string; severit
       return { shown: ratio < min, detail: `text ${hexOpaque(color)} on ${hexOpaque(bg)} is ${ratio.toFixed(2)}:1; WCAG AA needs ${min}:1`, severity: "error" };
     }
     case "clip": {
-      if (m.over === undefined) return undefined;
-      return { shown: m.over >= 1, detail: m.over >= 1 ? `${m.over}px of its text is cut off` : "its text fits", severity: "warning" };
+      const over = m.over!;
+      return { shown: over >= 1, detail: over >= 1 ? `${over}px of its text is cut off` : "its text fits", severity: "warning" };
     }
     default: {
-      if (m.over === undefined) return undefined;
-      const by = Math.max(0, m.over);
+      const by = Math.max(0, m.over!);
       return { shown: by > 0.5, detail: by > 0.5 ? `overflows by ${fmtPx(by)}px` : "fits", severity: "warning" };
     }
   }
@@ -259,6 +293,15 @@ export async function verifyFindings(opts: {
 }): Promise<VerifyReport> {
   const all = opts.layouts.map((l) => l.width);
   const describe = opts.describe ?? ((id: string) => `#${id}`);
+  // A finding on a run of text beside elements (an anonymous box, no element of its own) is
+  // measured on the element that holds it.
+  const anonParent = new Map<string, string>();
+  for (const l of opts.layouts) for (const b of walk(l.boxes)) for (const c of b.children) if (c.anonymous) anonParent.set(c.id, b.id);
+  const probeFor = (f: Finding): Probe | undefined => {
+    const p = probeOf(f);
+    if (p?.kind === "wrap" && anonParent.has(p.id)) return { kind: "wrap", id: anonParent.get(p.id)!, textOnly: true };
+    return p;
+  };
   const withFindings = [...new Set(opts.findings.map((f) => f.width))].sort((a, b) => a - b);
   const checked = spread(withFindings, opts.maxWidths ?? 60);
   const sampled = spread(all.filter((w) => !withFindings.includes(w)), opts.samples ?? 6);
@@ -267,7 +310,7 @@ export async function verifyFindings(opts: {
   // Every distinct probe, measured at every loaded width (cheap, and it shows where else an issue is).
   const probes = new Map<string, Probe>();
   for (const f of opts.findings) {
-    const p = probeOf(f);
+    const p = probeFor(f);
     if (p) probes.set(probeKey(p), p);
   }
   const probeList = [...probes.values()];
@@ -287,7 +330,7 @@ export async function verifyFindings(opts: {
     boxes: { exact: 0, exactDiffer: 0, approximate: 0, approximateDiffer: 0, examples: [] },
     notes: [],
   };
-  const results = new Map<number, Map<string, ReturnType<typeof judge>>>();
+  const results = new Map<number, Map<string, Verdict>>();
   try {
     const page: Page = await browser.newPage({ viewport: { width: widths[0] ?? 1280, height: 900 } });
     await page.goto(server.url(pagePath));
@@ -324,17 +367,18 @@ export async function verifyFindings(opts: {
 
   // Each finding: what Chromium showed at its width, if loaded there.
   const groupWidths = new Map<string, Set<number>>();
-  const groupKey = (f: Finding) => [f.check, f.id, f.path ?? "", probeOf(f) ? probeKey(probeOf(f)!) : f.message].join("|");
+  const groupKey = (f: Finding) => [f.check, f.id, f.path ?? "", probeFor(f) ? probeKey(probeFor(f)!) : f.message].join("|");
   for (const f of opts.findings) {
     const k = groupKey(f);
     groupWidths.set(k, (groupWidths.get(k) ?? new Set()).add(f.width));
   }
   for (const f of opts.findings) {
-    const p = probeOf(f);
+    const p = probeFor(f);
     const r = p && results.get(f.width)?.get(probeKey(p));
-    if (!p) f.verified = { status: "predicted", detail: "not something Chromium can measure" };
-    else if (!results.has(f.width)) f.verified = { status: "predicted", detail: "width not loaded in Chromium" };
-    else if (!r) f.verified = { status: "predicted", detail: "Chromium can't decide it either (an image is behind the text)" };
+    if (!p) f.verified = { status: "predicted", detail: unmeasured(f) };
+    else if (!results.has(f.width)) f.verified = { status: "predicted", detail: `${f.width}px wasn't loaded in Chromium (at most ${opts.maxWidths ?? 60} widths with findings are)` };
+    else if (!r) f.verified = { status: "predicted", detail: "not measured in Chromium" };
+    else if ("undecided" in r) f.verified = { status: "predicted", detail: r.undecided };
     else {
       // A definite finding is confirmed only at the severity it was reported with (a 30px button
       // isn't the 20px one the engine predicted, though it is still under 44px).
@@ -350,7 +394,10 @@ export async function verifyFindings(opts: {
     }
     if (p) {
       const at = groupWidths.get(groupKey(f))!;
-      const also = widths.filter((w) => !at.has(w) && results.get(w)?.get(probeKey(p))?.shown);
+      const also = widths.filter((w) => {
+        const v = results.get(w)?.get(probeKey(p));
+        return !at.has(w) && !!v && "shown" in v && v.shown;
+      });
       if (also.length) f.verified.alsoAt = also;
     }
   }

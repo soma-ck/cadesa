@@ -18,6 +18,33 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+Report, `whatif`, `capture` and `--verify` fixes from running 0.1.9 on two real apps:
+
+- The coverage line names each cause of `≈` as property, value and short reason, grouped
+  across selectors (`min-height: 100vh: min-height isn't modelled`), never cut mid-word.
+  Before, a cause could be just a selector (`.page-module__x__screen`) or end in "may".
+- The coverage line counts the elements a browser shows that Cadesa doesn't lay out (table
+  contents, absolutely positioned or floated elements): `! 31 of 77 elements not laid out`.
+- `whatif` runs `check` before and after the edit and lists the findings it fixes, the ones
+  still there (with their new numbers: a 23.98px button is still under 24px) and new ones.
+- `whatif --add-css` appends to the stylesheet that comes last in the page's cascade, and
+  reports an added rule that matches no element or loses to a rule already in the CSS:
+  `your rule didn't apply: .bar .y { … } at app.css:4 is more specific (0,2,0 vs your 0,1,0)`.
+  On plain CSS, a removed declaration shows its initial value (`margin 0px -12px → 0px`).
+- `capture` writes the DOM one element per line wherever a line break can't change the
+  rendering, so findings point at a useful `page.html:line`; it stops on an error status (404,
+  401) instead of saving the error page, notes redirects and stylesheets that failed, and
+  suggests `--css capture/css`. `--css` takes a directory of stylesheets, read in name order.
+- `--verify` measures overflowing text beside elements and text cut off by its parent, and
+  every finding it doesn't measure says why.
+- Contrast on a page where nothing sets a background is judged on white, as a browser paints
+  it. On `--css` and `--tailwind` pages, the report names no paths in the generated source.
+- `fonts --measure` measures only the fonts laid-out text is set in.
+- An unexpected error says it is a Cadesa bug to report; `CADESA_DEBUG=1` prints the stack.
+  A missing file is reported as such.
+
 ## 0.1.9 (2026-11-19)
 
 Fixes from running 0.1.8 on a captured Angular + Bootstrap app:

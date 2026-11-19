@@ -26,7 +26,7 @@ import {
   type Result,
 } from "./commands.js";
 import { VERSION } from "./compile.js";
-import { CadesaError, formatDiagnostic } from "./diagnostics.js";
+import { CadesaError, formatDiagnostic, formatUnexpected } from "./diagnostics.js";
 
 const INSTRUCTIONS = `Cadesa is a small styling language (YAML, *.cadesa.yaml) that compiles to plain CSS.
 Its layout engine runs without a browser, so you can predict what a style edit does before making it.
@@ -62,7 +62,7 @@ const sourceShape = {
   css: z
     .string()
     .optional()
-    .describe("Path to a plain CSS file to lift on the fly instead of a Cadesa source (several, comma-separated, e.g. a framework's CSS and the app's: bootstrap.css,app.css); boxes it can't predict exactly are marked ≈"),
+    .describe("Path to a plain CSS file to lift on the fly instead of a Cadesa source (several, comma-separated, e.g. a framework's CSS and the app's: bootstrap.css,app.css; or a directory of stylesheets, read in name order, e.g. capture/css); boxes it can't predict exactly are marked ≈"),
   sourceText: z
     .string()
     .optional()
@@ -111,7 +111,7 @@ function respond(run: () => Result, format: "text" | "json" = "text") {
           : e.diagnostics.map(formatDiagnostic).join("\n\n")
         : e instanceof InputError
           ? e.message
-          : `cadesa: ${(e as Error).message}`;
+          : formatUnexpected(e).trimEnd();
     return { content: [{ type: "text" as const, text }], isError: true };
   }
 }
@@ -137,7 +137,7 @@ export function createServer(): McpServer {
     {
       title: "Predict an edit",
       description:
-        "Preview an edit IN MEMORY: edits to the Cadesa source (changes), or with plain CSS (css) rules to add (addCss) or edited stylesheets (after). Reports which boxes move or resize, which properties change and the provenance of their new values, new and fixed issues, and the widths that stay unchanged. By default it checks every 20px from 320 to 1440 plus both sides of each breakpoint, grouping widths where the edit does the same thing. Boxes marked ≈ are approximate: unchanged is only guaranteed for boxes predicted exactly. Use this before editing the file to choose an edit and to rule out regressions at other widths. Nothing is written.",
+        "Preview an edit IN MEMORY: edits to the Cadesa source (changes), or with plain CSS (css) rules to add (addCss) or edited stylesheets (after). Reports which boxes move or resize, which properties change and the provenance of their new values, check's findings before and after the edit (fixed, still there with their new numbers, new), added CSS rules that match nothing or lose to a more specific rule, and the widths that stay unchanged. By default it checks every 20px from 320 to 1440 plus both sides of each breakpoint, grouping widths where the edit does the same thing. Boxes marked ≈ are approximate: unchanged is only guaranteed for boxes predicted exactly. Use this before editing the file to choose an edit and to rule out regressions at other widths. Nothing is written.",
       inputSchema: {
         ...pageShape,
         widths: z

@@ -19,7 +19,7 @@ What "matches Chromium" means here: every box Cadesa marks as exact matches Chro
 ```console
 $ cadesa check fixtures/verify/page.html --css fixtures/verify/page.css --widths 400,800
 coverage: 7 boxes × 2 widths · 86% exact · 14% approximate (≈)
-  ≈ because: .zoomed → transform: scale(3): transform is not modelled (×2)
+  ≈ because: transform: scale(3): transform isn't modelled (×2)
 
 ✖ [contrast] <p.note> text #999999 on #ffffff is 2.85:1; WCAG AA needs 4.5:1 · at 400, 800px
     element: fixtures/verify/page.html:11 <p class="note"> "Muted text, too light to read."
@@ -29,7 +29,7 @@ coverage: 7 boxes × 2 widths · 86% exact · 14% approximate (≈)
     element: fixtures/verify/page.html:12 <div class="box"> "A box wider than its parent"
     set on <div.wide>: fixtures/verify/page.css:52 .wide { width: 400px }
 
-inconclusive (these boxes aren't predicted exactly; confirm in a browser, or run check with --verify):
+inconclusive (Cadesa can't decide these without a browser: confirm in one, or run check with --verify):
 ? [tap-target] <button.zoomed> is 20×20px; WCAG 2.5.8 needs at least 24×24px · at 400, 800px
     element: fixtures/verify/page.html:10 <button class="zoomed"> "+"
     size: fixtures/verify/page.css:33 .zoomed { width: 20px; height: 20px }
@@ -38,7 +38,7 @@ inconclusive (these boxes aren't predicted exactly; confirm in a browser, or run
 
 How to read it:
 
-- **The coverage line comes first.** It says how much of the page Cadesa predicted exactly, and why the rest is `≈`. When most of a page is `≈`, it says so, and you should treat the report as leads.
+- **The coverage line comes first.** It says how much of the page Cadesa predicted exactly, and why the rest is `≈`. When most of a page is `≈`, it says so, and you should treat the report as leads. Elements a browser shows that Cadesa doesn't lay out at all (the rows of a table, which is one box; anything absolutely positioned or floated) are counted under it, `! 31 of 77 elements not laid out: inside a table, laid out as one box (×31)`: nothing is checked there.
 - **`✖` and `⚠` are definite.** Act on them: each names the element, the widths and the rule to change. Contrast, text that runs together and other checks that don't depend on exact positions stay definite even on a mostly `≈` page.
 - **`?` is inconclusive.** The finding depends on a box Cadesa can't predict exactly. Here `.zoomed` is drawn at `scale(3)`, so it is really 60×60px. Confirm it in a browser, or add `--verify` and Chromium decides.
 - **`whatif` follows the same rule.** It only says "unchanged" for boxes predicted exactly.
@@ -111,7 +111,7 @@ npx -y cadesa capture http://localhost:4200/orders --out capture --wait app-orde
 npx -y cadesa capture https://staging.example.com/orders --login-script login.mjs   # behind a login
 ```
 
-It writes `page.html` (the rendered DOM, with scripts removed), every stylesheet in cascade order under `css/` (linked files, `@import`s inlined where they were, `<style>` blocks, and CSS-in-JS rules read back from the browser when the `<style>` element has no text), and the font files the page loaded under `fonts/`. Then it prints the `cadesa check page.html --css ...` command to run on them. A login script is a module that exports `async (page) => {}` (a Playwright page) and runs before the URL is loaded. Cookies and storage are not saved, and password and hidden input values are removed from the page.
+It writes `page.html` (the rendered DOM, with scripts removed, one element per line wherever a line break can't change the rendering, so each finding's `page.html:line` points somewhere useful), every stylesheet in cascade order under `css/` as `01-…`, `02-…` (linked files, `@import`s inlined where they were, `<style>` blocks, and CSS-in-JS rules read back from the browser when the `<style>` element has no text), and the font files the page loaded under `fonts/`. Then it prints the command to run on them: `cadesa check capture/page.html --css capture/css` (`--css` takes a directory of stylesheets, read in name order, in every command). A URL that answers with an error status (a 404, a login wall's 401) stops the capture with that status instead of saving the error page; a redirect elsewhere is noted. A login script is a module that exports `async (page) => {}` (a Playwright page) and runs before the URL is loaded. Cookies and storage are not saved, and password and hidden input values are removed from the page.
 
 ### Confirm in Chromium: `--verify`
 
@@ -135,7 +135,7 @@ verified in Chromium 153.0.8010.52 at 2 widths (2 with findings, 0 without)
   boxes marked exact: 10 of 12 match Chromium within 0.5px · boxes marked ≈: 2 of 2 match
 ```
 
-Inconclusive findings are decided by what Chromium measures: on `fixtures/bootstrap/orders.html` both inconclusive contrast findings come back confirmed. Tap targets, contrast, horizontal overflow, unbreakable words and text taller than a fixed height are measured; other findings stay as predicted. The last lines compare every box the engine laid out with Chromium's at those widths. `--verify` needs a Chrome, Chromium or Edge on the machine (or `$CADESA_CHROME` pointing at one), like `metrics --measure`.
+Inconclusive findings are decided by what Chromium measures: on `fixtures/bootstrap/orders.html` both inconclusive contrast findings come back confirmed. Tap targets, contrast, horizontal overflow (also of text beside elements), unbreakable words, text cut off by `overflow: hidden` and text taller than a fixed height are measured; the others stay as predicted, each with the reason (text that runs together is decided by the markup, not by sizes). The last lines compare every box the engine laid out with Chromium's at those widths. `--verify` needs a Chrome, Chromium or Edge on the machine (or `$CADESA_CHROME` pointing at one), like `metrics --measure`.
 
 **Or try the examples:**
 
@@ -186,6 +186,8 @@ Add `--json` to any command for machine-readable output.
 $ cadesa whatif fixtures/settings.html --source settings.cadesa.yaml --set styles.settings-panel.when.narrow.padding=panel
 coverage: 6 boxes × 59 widths · 100% exact · 0% approximate (≈)
 
+check: no findings before or after the edit
+
 at 320–576px
    #panel        padding 16px → 32px
                    ← space.panel = 2rem ← when.narrow (≤ 576px) ← styles.settings-panel.when.narrow.padding
@@ -195,12 +197,22 @@ at 320–576px
 ✓ unchanged at 577–1440px: no box moved, no property changed
 ```
 
-On plain CSS, preview rules before adding them (`--add-css`), or compare an edited copy of a stylesheet (`--after`, one file per `--css` file):
+Every `whatif` also runs `check` before and after the edit and lists the findings it fixes, the ones still there (with their new numbers: a button that grows from 20 to 23.98px is still under 24px) and the ones it adds.
+
+On plain CSS, preview rules before adding them (`--add-css`, appended to the stylesheet that comes last in the page's cascade), or compare an edited copy of a stylesheet (`--after`, one file per `--css` file). A removed declaration shows its initial value (`margin 0px -12px → 0px`). An added rule that matches nothing, or loses to a rule already in your CSS, is reported before anything else:
+
+```console
+✖ your rule didn't apply: .bar .y { … } at app.css:4 is more specific (0,2,0 vs your 0,1,0)
+    .y { padding: 8px } loses padding-top, padding-right, padding-bottom, padding-left on <button.y>
+```
 
 ```console
 $ cadesa whatif fixtures/css/panel.html --css fixtures/css/panel.css --add-css ".icon-button { width: 44px; height: 44px }"
 coverage: 28 boxes × 58 widths · 88% exact · 12% approximate (≈)
-  ≈ because: .detail-row (row-gap: 4px): the row wraps and its row gap differs from its column gap (×189)
+  ≈ because: row-gap: 4px: the row wraps and its row gap differs from its column gap (×189)
+
+check, before → after the edit: 1 fixed, 0 still there, 0 new
+  ✓ fixed [tap-target] <button.icon-button> is 32×32px; 44×44px is recommended for touch (WCAG 2.5.5) · at all 58 widths
 
 at all 58 widths
   ≈#panel   h +12
@@ -212,7 +224,7 @@ at all 58 widths
   ≈24 boxes below move y +12: #item, #item-name, #item-desc, #details-label +20 more (20 approximate)
 ```
 
-**`check`** covers overflow (horizontal, unbreakable words, text taller than a fixed height), text cut off by `overflow: hidden` or an ellipsis, text that runs together (`<span>Total</span><span>42</span>`), tap targets (WCAG 2.5.8 and 2.5.5), and contrast against the nearest painted background (every stop of a gradient, translucent colors blended, inline `<span>`s and badges in their own color). Content scrolling inside a scroll container (`.table-responsive`) isn't an overflow, and elements hidden at a width (`d-none`, a collapsed navbar menu) aren't laid out or reported there. Text over an image, or a background Cadesa can't see, comes back *inconclusive*, not passed; so does a size-dependent finding on a box whose size isn't exactly predicted (a box that only moves keeps its findings).
+**`check`** covers overflow (horizontal, unbreakable words, text taller than a fixed height), text cut off by `overflow: hidden` or an ellipsis, text that runs together (`<span>Total</span><span>42</span>`), tap targets (WCAG 2.5.8 and 2.5.5), and contrast against the nearest painted background (every stop of a gradient, translucent colors blended, inline `<span>`s and badges in their own color). Content scrolling inside a scroll container (`.table-responsive`) isn't an overflow, and elements hidden at a width (`d-none`, a collapsed navbar menu) aren't laid out or reported there. Text over an image, or a background Cadesa can't see, comes back *inconclusive*, not passed (a page where nothing sets a background is white, as in a browser); so does a size-dependent finding on a box whose size isn't exactly predicted (a box that only moves keeps its findings).
 
 **`critique`** asks whether the page reads as designed, from measurable signals rather than taste: font sizes within 1.12× of each other (they read as one level), headings that barely stand out, groups spaced as far apart inside as outside, text edges that *almost* line up, a palette with no hue or competing accents, and common template tells. Findings are suggestions with numbers and a source line:
 
@@ -268,7 +280,7 @@ Real use has caught Cadesa wrong before: the site rebuild above found seven case
 
 ```sh
 cadesa fonts page.html --css styles.css            # which fonts the text uses, and where each comes from
-cadesa fonts page.html --css styles.css --measure  # measure them all (needs Chrome or Chromium)
+cadesa fonts page.html --css styles.css --measure  # measure the ones text is set in (needs Chrome or Chromium)
 cadesa metrics --google "Work Sans"                # or a Google font by name
 ```
 
@@ -332,7 +344,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `background`, `radius`, `backdrop`, `shadow`, `fit` | tokens | polish: `background-color`, `border-radius`, `background-image`, `box-shadow`, `object-fit` |
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)`; each listed property replaces its base value, and the narrowest active breakpoint wins |
 | `none` in `when` | e.g. `maxWidth: none` | removes a base value at a breakpoint (`.container` below 576px) |
-| `page.background` | color token | `:root { background-color }`, so contrast checks are conclusive |
+| `page.background` | color token | `:root { background-color }`, the color text is checked against (without it, the page is white, as in a browser) |
 
 **Components nest:** put a `.ca-plan-card` inside `.ca-pricing__plans` and the card lays out its own slots and breakpoints inside the parent's layout ([`examples/pricing`](examples/pricing)). Classes are `.ca-<component>` and `.ca-<component>__<slot>` (`prefix: ""` drops the `ca-`). The compiled CSS is plain, framework-free and has no runtime, so it works in React, Vue, Svelte or static HTML ([`examples/vue`](examples/vue)).
 

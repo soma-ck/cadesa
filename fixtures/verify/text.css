@@ -1,0 +1,6 @@
+body { margin: 0; font-family: Inter; font-size: 16px; line-height: 24px; background: #fff; color: #222 }
+.card { width: 100px; padding: 8px }
+.icon { height: 8px; background: #ddd }
+.clip { width: 120px; overflow: hidden }
+.label { margin: 0; white-space: nowrap }
+.wide { margin: 0; width: 200px }

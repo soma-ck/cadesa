@@ -6,6 +6,8 @@ import type { Explanation } from "./explain.js";
 import type { WidthImpact } from "./lift/impact.js";
 import type { LiftResult } from "./lift/lift.js";
 import type { WhatIf, WidthDiff } from "./project.js";
+import type { AddedCssReport, FindingChange } from "./whatif-check.js";
+import type { NotLaidOut } from "./laidout.js";
 import { fmtPx, type Resolved } from "./resolve.js";
 
 const pad = (s: string, n: number) => (s.length >= n ? s + " " : s + " ".repeat(n - s.length));
@@ -30,8 +32,10 @@ function summary(b: Box): string {
   return parts.join(" · ");
 }
 
-function issueLine(i: Issue) {
+/** One engine issue. On a --css or --tailwind page (`css`), no path into the generated Cadesa source. */
+function issueLine(i: Issue, css = false) {
   const icon = i.severity === "error" ? "✖" : "⚠";
+  if (css) return `  ${icon} ${i.message}`;
   return `  ${icon} ${i.message}${i.path ? `\n    edit: ${i.path}` : ""}${i.suggestion ? `\n    did you mean ${i.suggestion}?` : ""}`;
 }
 
@@ -41,7 +45,7 @@ function header(l: Layout) {
 
 export function formatRender(
   layouts: Layout[],
-  meta: { source: string; fixture: string; ms: number; lines?: boolean; impacts?: WidthImpact[] },
+  meta: { source: string; fixture: string; ms: number; lines?: boolean; impacts?: WidthImpact[]; css?: boolean },
 ): string {
   const out = [`${meta.source} × ${meta.fixture} · computed in ${meta.ms}ms, no browser`, ""];
   for (const l of layouts) {
@@ -68,7 +72,7 @@ export function formatRender(
       out.push(r.cells.map((c, i) => (i < 4 ? pad(c, widths[i]) : c)).join(" ").trimEnd());
       for (const line of r.lines ?? []) out.push(`${" ".repeat(widths[0] + 1)}│ ${line.text}  (${fmtPx(line.width)}px)`);
     }
-    for (const i of l.issues) out.push(issueLine(i));
+    for (const i of l.issues) out.push(issueLine(i, meta.css));
     out.push("");
   }
   return out.join("\n").trimEnd() + "\n";
@@ -83,20 +87,29 @@ const list = (ids: string[], n = 6) => ids.slice(0, n).map((id) => `#${id}`).joi
  * whatif, grouped: widths where the edit does the same thing share one block (boxes, property
  * changes and geometry deltas), and "unchanged" is only claimed for boxes predicted exactly.
  */
-export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage; defaulted?: boolean }): string {
+export function formatWhatif(
+  r: WhatIf,
+  meta: { ms: number; coverage?: Coverage; defaulted?: boolean; findings?: FindingChange[]; addedCss?: AddedCssReport; css?: boolean },
+): string {
   const all = r.widths.map((w) => w.width);
   const out = r.changes.map((c) => `whatif ${c.path}: ${show(c.from)} → ${show(c.to)}`);
   const swept = all.length > 2 ? `${all.length} widths from ${all[0]} to ${all[all.length - 1]}px${meta.defaulted ? " (every 20px, plus both sides of each breakpoint)" : ""}` : `${all.join(", ")}px`;
   out.push(`(in memory, nothing written · ${swept} · ${meta.ms}ms, no browser)`);
   if (meta.coverage) out.push(formatCoverage(meta.coverage).trimEnd());
   out.push("");
+  if (meta.addedCss) out.push(...formatAddedCss(meta.addedCss));
+  if (meta.findings) out.push(...formatFindingChanges(meta.findings, all), "");
+  // With check's findings compared above, the engine's own issues aren't repeated per width.
+  const issues = !meta.findings;
+  // A property the edit removes (or adds) on plain CSS: its initial value, not "unset".
+  const unset = (prop: string) => (meta.css ? (CSS_INITIAL[prop] ?? "its initial value") : "unset");
 
   type Group = { key: string; widths: number[]; w: WidthDiff[] };
   const groups = new Map<string, Group>();
   const unchanged: WidthDiff[] = [];
   for (const w of r.widths) {
-    const fresh = w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message)).map((i) => i.message);
-    const fixed = w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message)).map((i) => i.message);
+    const fresh = issues ? w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message)).map((i) => i.message) : [];
+    const fixed = issues ? w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message)).map((i) => i.message) : [];
     if (!w.elements.length && !w.added.length && !w.removed.length && !fresh.length && !fixed.length) {
       unchanged.push(w);
       continue;
@@ -145,7 +158,7 @@ export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage;
         first = false;
       };
       for (const p of e.props) {
-        line(`${p.prop} ${p.from?.display ?? "unset"} → ${p.to?.display ?? "unset"}`);
+        line(`${p.prop} ${p.from?.display ?? unset(p.prop)} → ${p.to?.display ?? unset(p.prop)}`);
         // The breakpoint step names one width ("390px ≤ 576px"); for a range, name the condition.
         if (p.to?.steps.length) out.push(blank + "  ← " + p.to.steps.map((s) => (one ? s.label : s.label.replace(/\(\d+(?:\.\d+)?px ≤ /, "(≤ "))).join(" ← "));
       }
@@ -160,9 +173,9 @@ export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage;
         }
     if (w.added.length) out.push(`  + shown after the edit: ${list(w.added)}`);
     if (w.removed.length) out.push(`  − hidden after the edit: ${list(w.removed)}`);
-    const fresh = w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message));
-    const fixed = w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message));
-    for (const i of fresh) out.push(issueLine(i).replace(/^ {2}/, "  new "));
+    const fresh = issues ? w.issuesAfter.filter((i) => !w.issuesBefore.some((b) => b.message === i.message)) : [];
+    const fixed = issues ? w.issuesBefore.filter((i) => !w.issuesAfter.some((a) => a.message === i.message)) : [];
+    for (const i of fresh) out.push(issueLine(i, meta.css).replace(/^ {2}/, "  new "));
     for (const i of fixed) out.push(`  ✓ fixed: ${i.message}`);
     const moved = w.elements.filter((e) => approx.has(e.id)).length;
     if (moved) out.push(`  ≈ ${moved} of these box${moved === 1 ? " is" : "es are"} approximate: the direction is predicted, the exact pixels need a browser`);
@@ -180,6 +193,64 @@ export function formatWhatif(r: WhatIf, meta: { ms: number; coverage?: Coverage;
       );
   } else if (!groups.size) out.push("✓ unchanged: no box moved, no property changed");
   return out.join("\n").trimEnd() + "\n";
+}
+
+/** What a Cadesa property is when no CSS sets it, in CSS terms (whatif on plain CSS). */
+const CSS_INITIAL: Record<string, string> = {
+  padding: "0px",
+  margin: "0px",
+  gap: "0px",
+  radius: "0px",
+  border: "none",
+  shadow: "none",
+  backdrop: "none",
+  background: "transparent",
+  maxWidth: "none",
+  measure: "none",
+  aspect: "auto",
+  width: "auto",
+  height: "auto",
+  min: "auto",
+  grow: "0",
+  overflow: "visible",
+  textAlign: "start",
+  justify: "start",
+  align: "stretch",
+  wrap: "nowrap",
+  pattern: "block",
+  fit: "fill",
+};
+
+/** Rules added with --add-css that matched nothing, or lost to a rule already in the cascade. */
+function formatAddedCss(a: AddedCssReport): string[] {
+  const out: string[] = [];
+  for (const r of a.unmatched) out.push(`✖ your rule didn't apply: ${clip(r, 100)} matches no element on the page`);
+  for (const l of a.lost) {
+    const els = l.elements.slice(0, 3).join(", ") + (l.elements.length > 3 ? ` +${l.elements.length - 3} more` : "");
+    out.push(
+      `✖ your rule didn't apply${l.at ? ` at ${l.at}` : ""}: ${l.winner} ${l.why}`,
+      `    ${clip(l.rule, 100)} loses ${l.props.join(", ")} on ${els}`,
+    );
+  }
+  if (out.length) out.push("");
+  return out;
+}
+
+/** check's findings before and after the edit: fixed, still there, new; one line per issue with its widths. */
+export function formatFindingChanges(changes: FindingChange[], all: number[]): string[] {
+  if (!changes.length) return ["check: no findings before or after the edit"];
+  const n = (s: FindingChange["status"]) => changes.filter((c) => c.status === s).length;
+  const out = [`check, before → after the edit: ${n("fixed")} fixed, ${n("still")} still there, ${n("new")} new`];
+  const icon = (f: Finding) => (f.inconclusive ? "?" : f.severity === "error" ? "✖" : "⚠");
+  const msg = (f: Finding) => f.message.replace(/ \(inconclusive: this box isn't exactly predicted for the original CSS\)/, "");
+  for (const c of changes) {
+    const f = c.finding;
+    const label = c.status === "fixed" ? "✓ fixed" : `${icon(f)} ${c.status === "still" ? "still" : "new"}`;
+    out.push(`  ${pad(label, 8)}[${f.check}] ${msg(f)} · at ${widthRanges(c.widths, all)}${c.status !== "fixed" && f.inconclusive ? " (inconclusive)" : ""}`);
+    if (c.was) out.push(`            before the edit: ${msg(c.was)}`);
+    if (f.element && c.status !== "fixed") out.push(`            element: ${describeElement(f.element)}`);
+  }
+  return out;
 }
 
 export function formatExplain(e: Explanation): string {
@@ -234,19 +305,61 @@ export interface Coverage {
   reasons: { reason: string; count: number }[];
   /** How the page was read, when the reader should know (a stylesheet used under another name). */
   notes?: string[];
+  /** Elements a browser shows that Cadesa didn't lay out (no box, so no finding, covers them). */
+  notLaidOut?: NotLaidOut;
 }
 
-/** Normalize a ≈ reason to its root cause, so the same cause groups across boxes and widths. */
-function rootCause(r: string): string {
-  return shortenPaths(r)
-    .replace(/^(?:moved|resized) by #[\w-]+: /, "")
+/** Cut `s` to at most `n` characters at a word boundary, marking the cut with "…". */
+export function clip(s: string, n: number): string {
+  if (s.length <= n) return s;
+  const cut = s.slice(0, n);
+  const at = Math.max(cut.lastIndexOf(" "), cut.lastIndexOf(", "));
+  return (at > n / 2 ? cut.slice(0, at) : cut).replace(/[\s,;:(]+$/, "") + "…";
+}
+
+/** The reason without its explanation: no parentheticals, up to the first "; ", at most `n` chars, never mid-word. */
+function shortReason(reason: string, n = 80): string {
+  let s = reason;
+  // Nested parentheses, innermost first.
+  for (let prev = ""; prev !== s; ) (prev = s), (s = s.replace(/\s*\([^()]*\)/g, ""));
+  s = s.split(/; /)[0].replace(/\bis not modelled\b/g, "isn't modelled").replace(/\bare not modelled\b/g, "aren't modelled").trim();
+  return clip(s, n);
+}
+
+/**
+ * Normalize a ≈ reason to its root cause, so the same cause groups across boxes, selectors and
+ * widths: "property: value: short reason", e.g. "min-height: 100vh: min-height isn't modelled".
+ */
+export function rootCause(r: string): string {
+  let s = shortenPaths(r)
+    .replace(/^(?:(?:moved|resized) by|stretched with|geometry depends on) #[\w-]+: /, "")
     .replace(/(?:\(\S+\.(?:css|html)(?::\d+)?\)|\S+\.(?:css|html|ya?ml):\d+)\s*/g, "")
     .replace(/\s+/g, " ")
     .replace(/ at \d+(?:\.\d+)?px/g, "")
-    .trim()
-    // Keep the cause, drop the explanation: "display: inline-block: an inline-level box in block flow".
-    .replace(/^(.{24,}?)(?:;| \().*$/, "$1")
-    .slice(0, 90);
+    .trim();
+  // Generated content (the rule's text may be cut short): the reason is the cause.
+  const pseudo = /: (::[\w-]+ (?:content|styles) (?:is|are) not modelled)$/.exec(s);
+  if (pseudo) return shortReason(pseudo[1]);
+  // An at-rule: "@import url(x): @import is not followed; …".
+  const at = /^@([\w-]+)[^:]*: (.*)$/.exec(s);
+  if (at) return `@${at[1]}: ${shortReason(at[2])}`;
+  // A rule the lift couldn't apply: "sel { a: 1; b: 2 } [on <body>]: reason".
+  const rule = /^(.*?) \{ ([^{}]*) \}(?: on <[\w-]+>)?: (.*)$/.exec(s);
+  if (rule) {
+    const [, selector, decls, reason] = rule;
+    const first = decls.split(/; /)[0].trim();
+    const decl = first ? `${first}${decls.includes("; ") ? " …" : ""}` : selector;
+    if (/may match; Cadesa can't decide it/.test(reason)) return `${decl}: Cadesa can't decide whether ${clip(selector, 48)} matches`;
+    return `${decl}: ${shortReason(reason)}`;
+  }
+  // "sel (prop: value) → prop: value: reason" (a rule's declaration): the last "prop: value: reason".
+  if (s.includes(" → ")) s = s.slice(s.lastIndexOf(" → ") + 3);
+  // The declaration named in a parenthesis, "min-h-screen (min-height: 100vh): reason", becomes the cause.
+  const paren = /^[^:()]*?\(([\w-]+: [^()]*)\)(?: on <[\w-]+>)?: (.*)$/.exec(s);
+  if (paren) return `${paren[1]}: ${shortReason(paren[2])}`;
+  const head = /^(<[\w-]+>|[\w-]+: [^:]+?|[\w-]+)(?: on <[\w-]+>)?: (.*)$/.exec(s);
+  if (head) return `${head[1]}: ${shortReason(head[2])}`;
+  return shortReason(s, 90);
 }
 
 export function coverage(layouts: Layout[], impacts?: WidthImpact[]): Coverage {
@@ -287,12 +400,18 @@ export function formatCoverage(c: Coverage): string {
   ];
   if (c.reasons.length)
     out.push(`  ≈ because: ${c.reasons.slice(0, 3).map((r) => `${r.reason} (×${r.count})`).join(" · ")}${c.reasons.length > 3 ? ` · +${c.reasons.length - 3} more causes` : ""}`);
+  const nl = c.notLaidOut;
+  if (nl?.count)
+    out.push(
+      `  ! ${nl.count} of ${nl.total} elements not laid out${c.widths > 1 ? ` (at ${nl.width}px)` : ""}: ${nl.causes.slice(0, 3).map((x) => `${x.cause} (×${x.count})`).join(" · ")}; nothing is checked there`,
+    );
   for (const n of c.notes ?? []) out.push(`  note: ${n}`);
-  if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat what follows as leads and confirm it in a browser");
+  if (nl && nl.count > nl.total / 2) out.push("  → most of this page's elements aren't laid out: the findings below cover only part of it; check the rest in a browser");
+  else if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat what follows as leads and confirm it in a browser");
   return out.join("\n") + "\n";
 }
 
-export function formatCheck(findings: Finding[], widths: number[], cov?: Coverage, verify?: VerifyReport): string {
+export function formatCheck(findings: Finding[], widths: number[], cov?: Coverage, verify?: VerifyReport, opts: { css?: boolean } = {}): string {
   const head = cov ? formatCoverage(cov) + "\n" : "";
   if (!findings.length) return shortenPaths(`${head}✓ no findings at ${describeWidths(widths)}\n${verify ? "\n" + formatVerify(verify) : ""}`);
   // One line per issue (same check, element, severity and edit path), listing the widths it occurs at.
@@ -334,7 +453,9 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
       out.push(
         "",
         r === 2
-          ? `inconclusive (these boxes aren't predicted exactly; ${verify ? "Chromium couldn't decide them either" : "confirm in a browser, or run check with --verify"}):`
+          ? verify
+            ? "inconclusive (Chromium didn't settle these either: each chromium: line says why):"
+            : "inconclusive (Cadesa can't decide these without a browser: confirm in one, or run check with --verify):"
           : "not reproduced in Chromium (no problem there at the widths it loaded):",
       );
     section = r;
@@ -351,7 +472,8 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
       const [first, ...rest] = describeRules(s.rules);
       out.push(`    ${s.what}: ${first}`, ...rest.map((x) => `    ${" ".repeat(s.what.length + 2)}${x}`));
     }
-    if (!f.element && f.path) out.push(`    edit: ${f.path}`);
+    // A path into the generated Cadesa source means nothing to someone editing CSS.
+    if (!f.element && f.path && !opts.css) out.push(`    edit: ${f.path}`);
     if (verify) out.push(`    chromium: ${verifiedLine(g.all, widths)}`);
   }
   const shown = sorted.filter((g) => !notReproduced(g.first));
