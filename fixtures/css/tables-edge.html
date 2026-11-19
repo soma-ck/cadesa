@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: tables at the edges of the table algorithm</title>
+    <link rel="stylesheet" href="tables-edge.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <!-- Collapsed borders on the first columns only: Chromium's edge array is shorter than the grid. -->
+    <table class="partial">
+      <tr><td class="lr">Loading bays and the yard behind them</td><td>Ramp</td><td>Gate three</td></tr>
+      <tr class="lead"><td class="wide" colspan="2">Shared between two columns</td><td>Free</td></tr>
+    </table>
+
+    <!-- A table's height shared by two row groups, one with a cell spanning past its last row. -->
+    <table class="tall">
+      <thead><tr><th>Week</th></tr></thead>
+      <tbody>
+        <tr><td>Monday</td></tr>
+        <tr><td>Tuesday, a longer day</td></tr>
+        <tr><td class="pad" rowspan="3">Spans to the end of its group</td></tr>
+        <tr><td class="small">Thursday</td></tr>
+      </tbody>
+      <tbody>
+        <tr><td><div>Friday</div><div>Early</div></td></tr>
+        <tr><td class="nowrap">Saturday</td></tr>
+      </tbody>
+    </table>
+
+    <!-- A table in a flex row: never narrower than its columns, whatever its width says. -->
+    <div class="row">
+      <table class="narrow">
+        <tr><th class="nowrap">Inspector on duty this week</th><td>Rotation</td></tr>
+        <tr><td colspan="2">Two inspectors share the coastal sites</td></tr>
+      </table>
+      <div class="side">Notes beside the table</div>
+    </div>
+
+    <!-- Fixed layout: a content-box percentage cell keeps its padding and border outside. -->
+    <table class="fixed">
+      <tr><td class="p20">Twenty percent</td><td class="w90">Ninety</td><td>The rest of the row</td></tr>
+      <tr><td>A</td><td>B</td><td>C</td></tr>
+    </table>
+
+    <!-- Baselines: an empty block has none, its cell's content edge is its baseline; rowspan="0". -->
+    <table class="base">
+      <tr><td class="block-cell"><div class="block"></div></td><td>Text on the baseline</td><td class="big">Big</td><td rowspan="0">All rows</td></tr>
+      <tr><td>One</td><td>Two</td><td>Three</td></tr>
+    </table>
+  </body>
+</html>

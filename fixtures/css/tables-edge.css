@@ -1,0 +1,122 @@
+/*
+ * Tables at the edges of Chromium's table algorithm, found by `npm run fuzz:tables`: collapsed
+ * borders on some columns only, a table height shared between row groups with a rowspan, a table
+ * in a flex row, fixed layout with content-box percentage cells, baselines and rowspan="0".
+ */
+body {
+  margin: 8px;
+  font-family: Inter, sans-serif;
+  font-size: 16px;
+  line-height: 1.5;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+table {
+  margin-bottom: 16px;
+}
+
+.partial {
+  border-collapse: collapse;
+  width: 60%;
+}
+
+.partial td {
+  padding: 3px 12px;
+}
+
+.lr {
+  border-left: 4px solid #52606d;
+  border-right: 3px solid #52606d;
+}
+
+.lead {
+  border-left: 1px solid #52606d;
+}
+
+.wide {
+  border-top: 2px solid #52606d;
+  border-left: 4px solid #52606d;
+  border-right: 2px solid #52606d;
+  white-space: nowrap;
+}
+
+.tall {
+  border-collapse: collapse;
+  border-top: 2px solid #52606d;
+  border-bottom: 2px solid #52606d;
+  height: 340px;
+}
+
+.tall td,
+.tall th {
+  padding: 2px 8px;
+}
+
+.pad {
+  padding: 7px;
+}
+
+.small {
+  font-size: 14px;
+  border-top: 1px solid #9aa5b1;
+}
+
+.nowrap {
+  white-space: nowrap;
+}
+
+.row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.narrow {
+  width: 40%;
+  margin: 0;
+  border-collapse: collapse;
+}
+
+.narrow td,
+.narrow th {
+  border: 1px solid #cbd2d9;
+  padding: 4px 6px;
+}
+
+.fixed {
+  table-layout: fixed;
+  width: 70%;
+  border-spacing: 4px 2px;
+}
+
+.fixed td {
+  padding: 6px 7px;
+  border-bottom: 2px solid #cbd2d9;
+}
+
+.p20 {
+  width: 20%;
+  border-left: 3px solid #52606d;
+}
+
+.w90 {
+  width: 90px;
+}
+
+.base td {
+  vertical-align: baseline;
+  padding: 3px 5px;
+  border: 1px solid #cbd2d9;
+}
+
+.block {
+  width: 30px;
+  height: 40px;
+  background: #e4e7eb;
+}
+
+.big {
+  font-size: 30px;
+  line-height: 1.2;
+}
