@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: Bootstrap 5 tables in an admin app</title>
+    <link rel="stylesheet" href="bootstrap.css" />
+    <link rel="stylesheet" href="app.css" />
+    <style>
+      .col-qty { width: 6rem; }
+      .col-status { width: 20%; }
+      .schedule { table-layout: fixed; min-width: 40rem; }
+      .schedule .c-day { width: 7rem; }
+      .schedule .c-shift { width: 25%; }
+      .schedule td { overflow-wrap: anywhere; }
+    </style>
+  </head>
+  <body>
+    <div class="container py-3">
+      <h1 class="page-title mb-3">Warehouse tables</h1>
+
+      <div class="card mb-3">
+        <div class="card-header">Open orders</div>
+        <div class="table-responsive">
+          <table class="table table-striped table-hover mb-0">
+            <thead>
+              <tr><th scope="col">#</th><th scope="col">Order</th><th scope="col">Customer</th><th scope="col" class="col-status">Status</th><th scope="col" class="col-qty text-end">Qty</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>1</td><td>SO-2001</td><td>North Yard Supplies</td><td>Picking</td><td class="text-end">120</td></tr>
+              <tr><td>2</td><td>SO-2002</td><td>Harbor Building Materials and Tools</td><td>Planned for the second shift</td><td class="text-end">48</td></tr>
+              <tr><td>3</td><td>SO-2003</td><td>Field Works</td><td>Shipped</td><td class="text-end">1,300</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="row g-3 mb-3">
+        <div class="col-md-6">
+          <table class="table table-sm table-bordered">
+            <caption>Stock by bin, counted this morning</caption>
+            <thead class="table-light">
+              <tr><th>Bin</th><th>Item</th><th class="text-end">On hand</th></tr>
+            </thead>
+            <tbody class="table-group-divider">
+              <tr><td>A-01</td><td>Hex bolts M8, 40 mm long</td><td class="text-end">2,400</td></tr>
+              <tr><td>A-02</td><td>Washers M8, zinc plated</td><td class="text-end">5,150</td></tr>
+              <tr><td>B-11</td><td>Cable ties 200 mm</td><td class="text-end">800</td></tr>
+            </tbody>
+            <tfoot>
+              <tr><td colspan="2">Total</td><td class="text-end">8,350</td></tr>
+            </tfoot>
+          </table>
+        </div>
+        <div class="col-md-6">
+          <table class="table table-borderless align-middle text-nowrap">
+            <tbody>
+              <tr><th scope="row">Carrier</th><td>Blue Line Freight</td></tr>
+              <tr><th scope="row">Departs</th><td>12 May 08:00</td></tr>
+              <tr><th scope="row">Arrives</th><td>14 May 17:30</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-body">
+          <h2 class="section-title mb-2">Shift plan</h2>
+          <div class="table-responsive">
+            <table class="table table-sm schedule mb-0">
+              <colgroup><col class="c-day" /><col class="c-shift" /><col /><col /></colgroup>
+              <thead>
+                <tr><th>Day</th><th>Shift</th><th>Lead</th><th>Notes</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Monday</td><td>Early</td><td>Ana</td><td>Inventory count in aisle A before the first pick wave</td></tr>
+                <tr><td rowspan="2">Tuesday</td><td>Early</td><td>Ben</td><td>Dock 3 closed for repairs</td></tr>
+                <tr><td>Late</td><td>Chloe</td><td>Two extra loaders</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <table class="table table-dark table-striped-columns">
+        <thead>
+          <tr><th>Region</th><th>Q1</th><th>Q2</th><th>Q3</th><th>Q4</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>North</td><td>1,204</td><td>1,310</td><td>1,422</td><td>1,580</td></tr>
+          <tr><td>South</td><td>980</td><td>1,045</td><td>1,120</td><td>1,213</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </body>
+</html>

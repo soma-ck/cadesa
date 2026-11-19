@@ -70,8 +70,11 @@ export interface Ref {
 
 export type GridTrack = { size: Ref } | { fr: number; auto: boolean };
 
-/** flow: block flow (display: block); vertical margins collapse between siblings and through the box. */
-export type Pattern = "stack" | "cluster" | "grid" | "layer" | "flow";
+/**
+ * flow: block flow (display: block); vertical margins collapse between siblings and through the box.
+ * table: a table (display: table); its children are table parts (see Props.part).
+ */
+export type Pattern = "stack" | "cluster" | "grid" | "layer" | "flow" | "table";
 
 export type Align = "start" | "center" | "end" | "stretch";
 /** Where a cluster puts the free space of each line (justify-content). */
@@ -87,7 +90,7 @@ export interface LayoutProp {
   rowGap?: Ref;
   /** Cross-axis alignment: cluster (default center), grid and layer (default stretch). Not for stack. */
   align?: Align;
-  /** Grid only: minimum column width; columns auto-fill the row. */
+  /** Grid: minimum column width; columns auto-fill the row. Table: its minimum width (min-width). */
   min?: Ref;
   /**
    * Grid only, instead of min: the column tracks (grid-template-columns). A size token is a fixed
@@ -107,6 +110,10 @@ export interface LayoutProp {
    * and sized as Chromium's grid does. Items may place themselves (`place`).
    */
   template?: GridTemplateProp;
+  /** Table only: collapsed borders (border-collapse: collapse); no gap between cells then. */
+  collapse?: boolean;
+  /** Table only: column widths from the first row and the column elements (table-layout: fixed). */
+  fixed?: boolean;
 }
 
 export interface GridTemplateProp {
@@ -131,6 +138,30 @@ export interface PlaceProp {
   /** align-self and justify-self in a grid (start, center, end, stretch). */
   align?: "start" | "center" | "end" | "stretch";
   justify?: "start" | "center" | "end" | "stretch";
+}
+
+/** What a child of a table is (CSS's table display types). */
+export type TablePart = "caption" | "column" | "column-group" | "header" | "body" | "footer" | "row" | "cell";
+export const TABLE_PARTS: TablePart[] = ["caption", "column", "column-group", "header", "body", "footer", "row", "cell"];
+/** Where a cell's content sits in its row (vertical-align). */
+export type CellAlign = "baseline" | "top" | "middle" | "bottom";
+
+/**
+ * A part value: `cell middle`, `caption bottom`, `row`; undefined when invalid. A cell may also be
+ * `content-box`: its width and height don't include its padding and border (CSS's box-sizing:
+ * content-box), which in a table with collapsed borders depend on its neighbours'.
+ */
+export function parsePart(v: string): { part: TablePart; align?: CellAlign; side?: "top" | "bottom"; contentBox?: boolean } | undefined {
+  const [part, ...mods] = v.trim().toLowerCase().split(/\s+/);
+  if (!TABLE_PARTS.includes(part as TablePart)) return undefined;
+  const out: { part: TablePart; align?: CellAlign; side?: "top" | "bottom"; contentBox?: boolean } = { part: part as TablePart };
+  for (const m of mods) {
+    if (part === "cell" && ["baseline", "top", "middle", "bottom"].includes(m) && !out.align) out.align = m as CellAlign;
+    else if (part === "cell" && m === "content-box" && !out.contentBox) out.contentBox = true;
+    else if (part === "caption" && (m === "top" || m === "bottom") && !out.side) out.side = m;
+    else return undefined;
+  }
+  return out;
 }
 
 /**
@@ -237,6 +268,14 @@ export interface Props {
   transform?: { value: string; origin?: string; path: string };
   /** In a grid: the lines it spans (grid-row, grid-column) and its own alignment in its area. */
   place?: PlaceProp;
+  /**
+   * A part of a table (a child of a `pattern: table`, or of its row groups and rows): its caption,
+   * a column or a group of columns, a row group (header, body, footer), a row or a cell. A cell's
+   * content sits on its row's baseline (the default), or at its top, middle or bottom; a caption
+   * above the table (the default) or below it. A cell spans the columns and rows its colspan and
+   * rowspan attributes say, a column those of its span.
+   */
+  part?: { value: TablePart; align?: CellAlign; side?: "top" | "bottom"; contentBox?: boolean; raw: string; path: string };
   /** Removed by this override (`maxWidth: none`), with the YAML path. */
   unset?: Partial<Record<Unsettable, string>>;
 }
@@ -301,6 +340,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "contain",
   "transform",
   "place",
+  "part",
 ];
 
 export interface Slot {

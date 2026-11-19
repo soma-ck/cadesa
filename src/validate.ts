@@ -8,6 +8,7 @@ import {
   LENGTH_CATEGORIES,
   OVERFLOWS,
   parseContain,
+  parsePart,
   relative,
   PROP_ORDER,
   ROOT_FONT_PX,
@@ -493,11 +494,11 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "layout": {
           const l = obj(v, p, "a layout");
           if (!l) break;
-          keys(l, p, ["pattern", "gap", "align", "min", "columns", "justify", "wrap", "rowGap", "template"]);
-          const PATTERNS = ["stack", "cluster", "grid", "layer", "flow"];
+          keys(l, p, ["pattern", "gap", "align", "min", "columns", "justify", "wrap", "rowGap", "template", "collapse", "fixed"]);
+          const PATTERNS = ["stack", "cluster", "grid", "layer", "flow", "table"];
           if (!PATTERNS.includes(l.pattern as string)) {
             err([...p, "pattern"], l.pattern === undefined ? 'missing required key "pattern"' : "unsupported layout pattern", {
-              expected: "stack, cluster, grid, layer or flow",
+              expected: "stack, cluster, grid, layer, flow or table",
               got: l.pattern,
               suggestion: typeof l.pattern === "string" ? closest(l.pattern, PATTERNS) : undefined,
             });
@@ -530,9 +531,13 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
               columns = gridTracks(l.columns, [...p, "columns"]);
               if (!columns) break;
             }
+          } else if (l.pattern === "table" && l.min !== undefined && l.columns === undefined) {
+            // A table's min-width: it is never narrower.
+            min = fixedRef(l.min, [...p, "min"], "the table's minimum width");
+            if (!min) break;
           } else if (l.min !== undefined || l.columns !== undefined) {
             const k = l.min !== undefined ? "min" : "columns";
-            err([...p, k], `${k} only applies to a grid`, { expected: `remove ${k}, or use pattern: grid` });
+            err([...p, k], `${k} only applies to a grid${k === "min" ? " or a table" : ""}`, { expected: `remove ${k}, or use pattern: grid` });
             break;
           }
           if (l.pattern === "flow" && l.gap !== undefined) {
@@ -543,8 +548,17 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const pctGap = typeof l.gap === "string" && (l.pattern === "cluster" || l.pattern === "grid") && tokens.get(tokenKey("size", l.gap))?.pct !== undefined && !tokens.has(tokenKey("space", l.gap));
           const gap = l.gap === undefined ? undefined : pctGap ? ref(l.gap, [...p, "gap"], "size") : spaceRef(l.gap, [...p, "gap"], "a gap");
           if (l.gap !== undefined && !gap) break;
-          if (l.rowGap !== undefined && l.pattern !== "grid" && l.pattern !== "cluster") {
-            err([...p, "rowGap"], "rowGap only applies to a grid or a cluster (the gap between its rows)", { expected: "remove rowGap, or use gap" });
+          if (l.rowGap !== undefined && l.pattern !== "grid" && l.pattern !== "cluster" && l.pattern !== "table") {
+            err([...p, "rowGap"], "rowGap only applies to a grid, a cluster or a table (the gap between its rows)", { expected: "remove rowGap, or use gap" });
+            break;
+          }
+          const badTable = (["collapse", "fixed"] as const).find((k) => l[k] !== undefined && (l.pattern !== "table" || typeof l[k] !== "boolean"));
+          if (badTable) {
+            err([...p, badTable], l.pattern !== "table" ? `${badTable} only applies to a table` : `invalid ${badTable}`, { expected: badTable === "collapse" ? "true (collapsed borders, border-collapse: collapse) or false" : "true (table-layout: fixed) or false", got: l[badTable] });
+            break;
+          }
+          if (l.align !== undefined && l.pattern === "table") {
+            err([...p, "align"], "align doesn't apply to a table (each cell's part says where its content sits)", { expected: "remove align, or give the cells part: \"cell top\" (middle, bottom, baseline)" });
             break;
           }
           // A grid's gap between rows may be a percentage of its height (a size token): 0 while its rows are sized, then of its final height.
@@ -588,6 +602,8 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             ...(l.justify !== undefined && l.pattern === "grid" && { justifyItems: l.justify as LayoutProp["justifyItems"] }),
             ...(l.justify !== undefined && l.pattern !== "grid" && { justify: l.justify as LayoutProp["justify"] }),
             ...(l.wrap === false && { wrap: false }),
+            ...(l.collapse === true && { collapse: true }),
+            ...(l.fixed === true && { fixed: true }),
           };
           break;
         }
@@ -801,6 +817,13 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const c = typeof v === "string" ? parseContain(v) : undefined;
           if (!c) err(p, "invalid contain", { expected: "none, content, strict, or any of size (or inline-size), layout, style and paint, e.g. \"layout paint\"", got: v });
           else out.contain = { ...c, raw: (v as string).trim().toLowerCase().replace(/\s+/g, " "), path: p.join(".") };
+          break;
+        }
+        case "part": {
+          // part: row, body, "cell middle", "caption bottom" (a child of a table, or of its rows).
+          const t = typeof v === "string" ? parsePart(v) : undefined;
+          if (!t) err(p, "invalid part", { expected: "caption (top or bottom), column, column-group, header, body, footer, row, or cell (baseline, top, middle or bottom), e.g. \"cell middle\"", got: v });
+          else out.part = { value: t.part, ...(t.align && { align: t.align }), ...(t.side && { side: t.side }), ...(t.contentBox && { contentBox: true }), raw: (v as string).trim().toLowerCase().replace(/\s+/g, " "), path: p.join(".") };
           break;
         }
         case "textAlign":

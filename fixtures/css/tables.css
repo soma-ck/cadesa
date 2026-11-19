@@ -1,0 +1,158 @@
+/*
+ * Plain tables: auto and fixed layout, separated and collapsed borders, border spacing, cell
+ * padding, colspans and rowspans, captions, column widths, vertical-align, presentational
+ * attributes (cellspacing, cellpadding, width, valign, nowrap) and display: table on <div>s.
+ */
+body {
+  margin: 0;
+  font-family: Inter, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+.page {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.title {
+  margin: 0 0 12px;
+  font-size: 24px;
+  line-height: 1.25;
+}
+
+.report {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+.report caption {
+  padding: 6px 0;
+  font-weight: 600;
+  text-align: left;
+}
+
+.report th,
+.report td {
+  padding: 6px 10px;
+  border: 1px solid #cbd2d9;
+  text-align: left;
+}
+
+.report thead th {
+  border-bottom-width: 2px;
+  background: #f5f7fa;
+}
+
+.report tfoot td {
+  border-top: 3px double #52606d;
+  font-weight: 600;
+}
+
+.report .num {
+  text-align: right;
+}
+
+.col-site {
+  width: 35%;
+}
+
+.col-dates {
+  width: 90px;
+}
+
+.grid {
+  border: 2px solid #9aa5b1;
+  margin-bottom: 20px;
+}
+
+.grid td {
+  border: 1px solid #cbd2d9;
+}
+
+.top {
+  vertical-align: top;
+}
+
+.middle {
+  vertical-align: middle;
+  height: 60px;
+}
+
+.bottom {
+  vertical-align: bottom;
+}
+
+.base {
+  vertical-align: baseline;
+}
+
+.big {
+  font-size: 22px;
+}
+
+.note {
+  margin: 8px 0;
+}
+
+.cards {
+  display: table;
+  width: 100%;
+  border-spacing: 8px 0;
+  margin-bottom: 20px;
+}
+
+.cards-row {
+  display: table-row;
+}
+
+.card-cell {
+  display: table-cell;
+  padding: 12px;
+  border: 1px solid #e4e7eb;
+  border-radius: 6px;
+  vertical-align: top;
+}
+
+.fixed {
+  table-layout: fixed;
+  width: 80%;
+  border-collapse: collapse;
+  margin-bottom: 20px;
+}
+
+.fixed td {
+  border: 1px solid #cbd2d9;
+  padding: 4px 8px;
+  overflow-wrap: anywhere;
+}
+
+.c1 {
+  width: 80px;
+}
+
+.c2 {
+  width: 30%;
+}
+
+.pct {
+  width: 100%;
+  border-spacing: 0;
+}
+
+.pct td {
+  padding: 8px;
+  border-bottom: 1px solid #cbd2d9;
+}
+
+.w30 {
+  width: 30%;
+}
+
+.w20 {
+  width: 20%;
+}

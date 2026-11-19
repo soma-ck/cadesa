@@ -50,8 +50,8 @@ Fonts: text is measured from per-font metrics (Inter is bundled). If a report sa
 measure=true measures them (once; needs Chrome or Chromium) so every box can be predicted.
 
 Language: tokens.{space,size,color,radius,font}, text roles {font,size,weight,lineHeight,color}, breakpoints
-(max-width, desktop-first), styles.<component> with layout {pattern: stack|cluster|grid|layer|flow, gap}
-(flow = block flow: vertical margins collapse), padding (token or {block, inline}), margin (space token, or
+(max-width, desktop-first), styles.<component> with layout {pattern: stack|cluster|grid|layer|flow|table, gap}
+(flow = block flow: vertical margins collapse; table: a table, with collapse/fixed and its children's part: row, "cell middle"...), padding (token or {block, inline}), margin (space token, or
 {block, inline} / {top, right, bottom, left}), background, border, radius, maxWidth (root only),
 width (size token | fill; size tokens may be percentages like "50%" of the parent's width), height, text,
 slots.<slot> (same props), and when.<breakpoint> overrides that replace properties. Every value is a token name.

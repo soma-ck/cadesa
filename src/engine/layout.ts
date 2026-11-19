@@ -15,6 +15,7 @@ import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, s
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 import { boxMatrix, mapRect, multiply, type Matrix } from "./transform.js";
 import { expandTracks, place as gridPlace, sizeTracks, trackStarts, type Contribution, type Explicit, type TrackList, type TrackSize } from "./grid.js";
+import { layoutTable, tableGrid, tableInsets, tableIntrinsic, type Grid, type TableHooks } from "./table.js";
 
 const EPS = 0.001;
 
@@ -96,7 +97,11 @@ function offsetX(b: Box, cell: number, flow = false): number {
 }
 
 /** Children one under another (a stack or block flow): a child that changes size moves only those after it. */
-const inLine = (b: Box) => b.props.pattern?.value === "stack" || b.props.pattern?.value === "flow";
+const inLine = (b: Box) =>
+  b.props.pattern?.value === "stack" || b.props.pattern?.value === "flow" ||
+  // A table's captions and row groups, and a row group's rows, are one under another too (table.ts flags the
+  // whole table when what changes is a width).
+  b.props.pattern?.value === "table" || /^(header|body|footer)$/.test(b.props.part?.value.part ?? "");
 
 const NO_MARGIN: Margins = { top: 0, right: 0, bottom: 0, left: 0 };
 
@@ -411,6 +416,59 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const classedOf = (n: FixtureNode, c: Component) =>
     n.children.filter((k) => k.classes.some((cl) => cl.startsWith(model.prefix) && (cl.startsWith(`${model.prefix}${c.name}__`) || model.components.has(cl.slice(model.prefix.length)))));
 
+  // Tables (table.ts): what doesn't depend on the table's width is worked out once per table.
+  const grids = new Map<FixtureNode, Grid>();
+  const tableHooks: TableHooks = {
+    props: (k) => resolveElement(model, k.comp, k.slot, width),
+    kids: (n, c) =>
+      n.children.map((k) => {
+        const r = childOf(k, c);
+        return { node: k, comp: r.comp, slot: r.slot, out: !!r.comp && outOfFlow(r.comp, r.slot) };
+      }),
+    content: (k, cell) => {
+      // (A cell's content is measured inside the cell: a table in it doesn't count its column percentages.)
+      if (cell) flexAncestors++;
+      const it = intrinsic(k.node, k.comp, k.slot, true);
+      if (cell) flexAncestors--;
+      if (it.why) return it;
+      const ins = insets(resolveElement(model, k.comp, k.slot, width));
+      return { min: it.min - ins.left - ins.right, max: it.max - ins.left - ins.right };
+    },
+    measure: (k, avail, w, over) => measure(k.node, k.comp, k.slot, avail, "table", w, over),
+    box: (k, over) => ({
+      id: idOf(k.node),
+      tag: k.node.tag,
+      component: k.comp.name,
+      slot: k.slot,
+      sourcePath: k.slot ? `${k.comp.path}.slots.${k.slot}` : k.comp.path,
+      fixtureLine: k.node.line,
+      attrs: k.node.attrs,
+      x: 0,
+      y: 0,
+      w: 0,
+      h: 0,
+      props: { ...resolveElement(model, k.comp, k.slot, width), ...over },
+      assumptions: [],
+      children: [],
+    }),
+    lineHeight: lineHeightPx,
+    skip: (n) => notLaidOut(n),
+    doubtful: (b) => {
+      for (const x of walk([b])) {
+        const why = x.assumptions[0] ?? issues.find((i) => i.severity === "error" && i.id === x.id)?.message;
+        if (why) return why;
+      }
+      return undefined;
+    },
+  };
+  /** Flex and grid containers and table cells being laid out around what's measured now. */
+  let flexAncestors = 0;
+  const gridOf = (n: FixtureNode, c: Component, props: ResolvedProps) => {
+    let g = grids.get(n);
+    if (!g) grids.set(n, (g = tableGrid(tableHooks, n, c, props)));
+    return g;
+  };
+
   /**
    * Chromium's LineFlexer (line_flexer.cc): the items of a line share its free space. Growing, in
    * proportion to their grow factors (float); shrinking (a line too full, which only a
@@ -511,6 +569,14 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // (A content size suggestion: the caller clamps it by the box's own max width, which may be a percentage.)
     const cap = contentOnly ? Infinity : Math.min(capOf(p.maxWidth), capOf(p.measure));
     const pw = contentOnly || (typeof p.width?.value === "object") ? undefined : p.width?.value;
+    // A table: its columns' widths (never narrower than their minimum, whatever its width says).
+    if (p.pattern?.value === "table") {
+      // (Its column percentages count only where no flex or grid container or table cell is around it.)
+      const t = tableIntrinsic(gridOf(n, c, p), flexAncestors === 0);
+      if (t.why) return unknown(t.why);
+      const w = typeof pw === "number" ? Math.max(pw, t.min) : undefined;
+      return w !== undefined ? { min: w, max: w } : { min: t.min, max: Math.max(t.min, Math.min(t.max, cap)) };
+    }
     if (typeof pw === "number") {
       const w = Math.max(insX, Math.min(pw, cap));
       return { min: w, max: w };
@@ -624,7 +690,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const p = atBase(p0, innerW);
       const km: Margins = { ...marginOf(p) };
       const out = km.left + km.right;
-      const kins = insets(p);
+      // (A table with collapsed borders: half its outer collapsed borders, and no padding.)
+      const tg = p.pattern?.value === "table" ? gridOf(k.node, k.comp, p) : undefined;
+      const kins = tg?.collapse ? insets({ border: { value: { color: "", widths: tableInsets(tg).border }, display: "", steps: [] } }) : insets(p);
       const insX = kins.left + kins.right;
       /** Errors, reported against the item's box once it's laid out (its id is known then). */
       const errors: { path: string; message: (id: string) => string }[] = [];
@@ -698,7 +766,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       min = Math.min(min, Math.max(cap, insX));
       // The flex base size is never below the padding and border (its content size is at least 0).
       base = Math.max(base, insX);
-      const hyp = Math.max(Math.min(base, cap), g?.basis === "zero" ? min : 0, insX);
+      // A table is never narrower than its columns' minimum, whatever its width or flex basis says.
+      const tableMin = p.pattern?.value === "table" && !content().why ? content().min : 0;
+      if (tableMin) {
+        min = Math.max(min, tableMin);
+        minKnown = true;
+      }
+      const hyp = Math.max(Math.min(base, cap), g?.basis === "zero" ? min : 0, insX, tableMin);
       // An aspect box that grows: its minimum width also follows its height, which isn't modelled.
       if (g && p.aspect) notes.push("grow on a box with an aspect ratio: its minimum width also follows its height, which isn't modelled");
       // flex-shrink: 1 unless a width is set (Cadesa compiles flex: none with it).
@@ -800,6 +874,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         const kp = resolveElement(model, k.comp, k.slot, width);
         // A scroll container's automatic minimum is 0.
         if (scrolls(kp.overflow?.value)) continue;
+        // A table's contribution to a grid column isn't its min-content width in Chromium (not modelled).
+        if (kp.pattern?.value === "table") notes.push("a table's minimum contribution to a grid column isn't modelled");
         const it = intrinsic(k.node, k.comp, k.slot);
         if (it.why && !it.minKnown) {
           notes.push(`a ${t.fr}fr column is at least as wide as its items' min-content width, which can't be measured here (${it.why})`);
@@ -1108,7 +1184,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       }
       w = Math.max(ins.left + ins.right, Math.min(w, cap));
       if (p.aspect) notes.push("an absolutely positioned box with an aspect ratio isn't modelled");
-      const box = measure(a.k.node, a.k.comp, a.k.slot, w, "abs", w, cb.w);
+      const box = measure(a.k.node, a.k.comp, a.k.slot, w, "abs", w, undefined, cb.w);
       box.assumptions.push(...notes);
       // Height: a percentage of the containing block's, or stretched between top and bottom when it has none of its own.
       if (pos.height !== undefined && !p.height) {
@@ -1145,11 +1221,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
   }
 
-  function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind, forcedW?: number, cbW?: number, stackAlign?: "start" | "center" | "end" | "stretch"): Box {
+  function measure(n: FixtureNode, c: Component, slot: string | undefined, avail: number, parent: ParentKind, forcedW?: number, over?: Partial<ResolvedProps>, cbW?: number, stackAlign?: "start" | "center" | "end" | "stretch"): Box {
     const id = idOf(n);
-    const rawProps = resolveElement(model, c, slot, width);
+    let rawProps = resolveElement(model, c, slot, width);
+    // A table cell's border as its table lays it out (table.ts); a collapsed table's own border and padding.
+    if (over) rawProps = { ...rawProps, ...over };
     // Percentage padding and margins: of the containing block's width.
-    const props = atBase(rawProps, cbW ?? avail);
+    let props = atBase(rawProps, cbW ?? avail);
+    const grid = props.pattern?.value === "table" ? gridOf(n, c, props) : undefined;
+    if (grid?.collapse) {
+      const t = tableInsets(grid);
+      props = { ...props, padding: undefined, border: props.border || Object.values(t.border).some(Boolean) ? { value: { color: props.border?.value.color ?? "transparent", widths: t.border }, display: "collapsed", steps: props.border?.steps ?? [] } : undefined };
+    }
     const sourcePath = slot ? `${c.path}.slots.${slot}` : c.path;
     const assumptions: string[] = [];
     const ins = insets(props);
@@ -1204,13 +1287,15 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       else if (parent === "stack" && pw === undefined && stackAlign && stackAlign !== "stretch" && !props.maxWidth && !props.aspect)
         w = fit(Math.max(0, avail - m.left - m.right), `sits in a stack aligned ${stackAlign}, which sizes it to its content`);
       else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
+      // A table without a width is as wide as its columns want (fit-content), unless a flex column or grid stretches it.
+      else if (grid && pw === undefined && parent !== "stack" && parent !== "grid" && parent !== "layer") w = fit(Math.max(0, avail - m.left - m.right), "is a table as wide as its content");
       else w = Math.max(0, avail - m.left - m.right); // page, flow, stack, grid cell, layer: stretch inside the margins
       if (w > maxW) w = maxW;
       // box-sizing: border-box never makes a box narrower than its padding and border.
       w = Math.max(w, insX);
     }
 
-    const innerW = Math.max(0, w - insX);
+    let innerW = Math.max(0, w - insX);
 
     // ---- content
     const children: Box[] = [];
@@ -1218,6 +1303,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let contentW = 0;
     let lines: Line[] | undefined;
     const pattern = props.pattern?.value;
+    // Inside a flex or grid container or a table cell, a table's column percentages don't size it (table_node.cc).
+    const formatsKids = (!!pattern && pattern !== "flow" && pattern !== "table") || props.part?.value.part === "cell";
+    if (formatsKids) flexAncestors++;
     // A percentage gap: of the content width (intrinsic sizes count it as 0, as Chromium does).
     const gap = props.gap?.pct !== undefined ? sizeAt({ pct: props.gap.pct }, innerW) : (props.gap?.value ?? 0);
     // Between the rows of a grid or the lines of a cluster (row-gap), when it differs from the column gap.
@@ -1271,8 +1359,38 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let escaped: FlowResult | undefined;
     let grows: StackGrow | undefined;
     let gridArr: ((contentH: number) => void) | undefined;
+    /** A table's border box height, captions included (table.ts). */
+    let tableH: number | undefined;
 
-    if (kids.length && pattern === "grid" && fullGrid(props, kids)) {
+    if (grid) {
+      // Given its width by a flex or grid container (not shrunk to fit): its columns share exactly that.
+      const fixedW = forcedW !== undefined && (parent === "cluster" || parent === "grid" || parent === "layer" || parent === "stack");
+      const cssH = props.height || props.minHeight ? Math.max(props.height?.value ?? 0, props.minHeight?.value ?? 0) : undefined;
+      const stretchedW = fixedW || ((parent === "stack" || parent === "grid" || parent === "layer") && pw === undefined);
+      let t = layoutTable(grid, w, stretchedW, cssH);
+      // A flex or grid item is laid out again at the height its container gives it (its own, here):
+      // a table then shares that height between its row groups, which (as Chromium sums them before
+      // rowspans grow their rows) may make some taller.
+      if (!grid.why && t.gridH > (cssH ?? 0) && (parent === "stack" || parent === "grid" || parent === "layer" || parent === "cluster")) {
+        const again = layoutTable(grid, w, stretchedW, t.gridH);
+        // In a column flexbox it always is (its box keeps that height; rows a rowspan grew may then
+        // overflow it); in a row or a grid only when stretched (not modelled here).
+        if (parent === "stack") t = { ...again, h: t.h };
+        else if (Math.abs(again.h - t.h) > EPS) t.assumptions.push("a table stretched by its flex or grid container shares its height between its row groups again, which isn't modelled when rowspans grew its rows");
+      }
+      w = t.w;
+      innerW = Math.max(0, w - insX);
+      tableH = t.h;
+      assumptions.push(...t.assumptions);
+      if (grid.why) for (const k of kids) notLaidOut(k.node);
+      // Children are placed from the content box (place() adds the insets back).
+      for (const b of t.children) {
+        b.x -= ins.left;
+        b.y -= ins.top;
+      }
+      children.push(...t.children);
+      contentH = Math.max(0, t.h - insY);
+    } else if (kids.length && pattern === "grid" && fullGrid(props, kids)) {
       const tg = templateGrid({ props }, kids, innerW, gap, assumptions);
       children.push(...tg.boxes);
       contentH = tg.contentH;
@@ -1317,7 +1435,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       kids.forEach((k, i) => {
         // Its own alignment (align-self) wins over the stack's.
         const own = resolveElement(model, k.comp, k.slot, width).place?.value.align ?? align;
-        const b = measure(k.node, k.comp, k.slot, innerW, "stack", undefined, undefined, own);
+        const b = measure(k.node, k.comp, k.slot, innerW, "stack", undefined, undefined, undefined, own);
         const km = marginOf(b.props);
         // Aligned across the stack by its margin box (auto inline margins win over align-items).
         const free = U(innerW) - U(b.w) - U(km.left) - U(km.right);
@@ -1371,7 +1489,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     if (sizeContained && (rows || grows || (kids.length && !containsLayout(props.contain!.value) && (throughTop || throughBottom))))
       assumptions.push("size containment on a flex, grid or block container without layout containment: how its content sizes against its empty height isn't modelled");
     const ownH = sizeContained ? 0 : contentH;
-    let h = props.height?.value ?? ownH + insY;
+    let h = tableH ?? props.height?.value ?? ownH + insY;
     if (props.aspect && !props.height) {
       const ratioH = w / props.aspect.value;
       const contentMin = parent === "stack" ? Math.min(ownH + insY, maxW / props.aspect.value) : ownH + insY;
@@ -1382,7 +1500,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       if (gridArr && contentMin > ratioH + EPS) assumptions.push("a grid with an aspect ratio whose content is taller than the ratio: its height isn't modelled");
     }
     // min-height: never shorter (border-box; content taller than it makes the box taller as usual).
-    if (props.minHeight) h = Math.max(h, props.minHeight.value);
+    if (props.minHeight && tableH === undefined) h = Math.max(h, props.minHeight.value);
     h = Math.max(h, insY);
     // A box shorter than its content shrinks the items that may shrink: an <hr> clips its overflow
     // (overflow: hidden), so its automatic minimum height is 0 and a stack, grid or layer that is
@@ -1543,6 +1661,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     // A height of its own is definite: percentages of it resolve.
     if (props.height) fillPct(box);
+    if (formatsKids) flexAncestors--;
     return box;
   }
 
@@ -1640,6 +1759,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   /** A box stretched taller after its own layout: its rows (if any) are placed again. */
   function grow(b: Box, newH: number) {
     if (newH <= b.h) return;
+    // A table stretched taller shares the height between its rows, which isn't modelled.
+    if (b.props.pattern?.value === "table" && newH > b.h + EPS) b.assumptions.push("a table stretched taller than its rows (by a flex or grid container) shares the extra height between them, which isn't modelled");
     b.h = newH;
     arrange(b);
   }

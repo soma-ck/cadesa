@@ -3,7 +3,9 @@ import {
   PROP_ORDER,
   tokenKey,
   type Breakpoint,
+  type CellAlign,
   type Component,
+  type TablePart,
   type Contain,
   type Justify,
   type MarginSide,
@@ -146,6 +148,10 @@ export interface ResolvedProps {
   grid?: Resolved<GridSpec>;
   /** A grid item's lines and its own alignment. */
   place?: Resolved<{ row: LinePair; column: LinePair; align?: "start" | "center" | "end" | "stretch"; justify?: "start" | "center" | "end" | "stretch" }>;
+  /** A table: collapsed borders, fixed layout (its border spacing is gap and rowGap). */
+  table?: Resolved<{ collapse: boolean; fixed: boolean }>;
+  /** A table part (see Props.part). */
+  part?: Resolved<{ part: TablePart; align?: CellAlign; side?: "top" | "bottom"; contentBox?: boolean }>;
   /** Positioning and its offsets (px, or a percentage of the containing block). */
   position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct; height?: number | Pct }>;
   fit?: Resolved<"cover" | "contain">;
@@ -160,7 +166,7 @@ export interface ResolvedProps {
   padding?: Resolved<Sides> & { pct?: PctSides };
   background?: Resolved<string>;
   /** The color, and each side's width as Chromium draws it. */
-  border?: Resolved<{ color: string; widths: Sides }>;
+  border?: Resolved<{ color: string; widths: Sides; styled?: Record<keyof Sides, boolean> }>;
   radius?: Resolved<number>;
   margin?: Resolved<Margins> & { pct?: PctSides };
   maxWidth?: Resolved<number | Pct>;
@@ -292,7 +298,8 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const rowPct = l.rowGap?.kind === "size" ? model.tokens.get(tokenKey("size", l.rowGap.name))!.pct : undefined;
         // A percentage of the grid's height: 0 while its rows are sized, then of its final content height.
         if (l.rowGap) out.rowGap = rowPct !== undefined ? { ...sizeOf(l.rowGap), value: 0, pct: rowPct, display: `${rowPct}% of the content height (0 while the rows are sized)` } : lengthOf(l.rowGap);
-        if (l.pattern !== "flow" && (l.pattern !== "stack" || l.align)) {
+        if (l.pattern === "table") out.table = { value: { collapse: !!l.collapse, fixed: !!l.fixed }, display: [l.collapse ? "collapse" : "separate", ...(l.fixed ? ["fixed"] : [])].join(", "), steps: [...pre, src(l.path)] };
+        if (l.pattern !== "flow" && l.pattern !== "table" && (l.pattern !== "stack" || l.align)) {
           const def = l.pattern === "cluster" ? "center" : "stretch";
           const a = l.align ?? def;
           out.align = { value: a, display: l.align ? a : `${def} (default)`, steps: [...pre, src(l.align ? `${l.path}.align` : l.path)] };
@@ -375,6 +382,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
         if (c.layout || c.paint || c.size) out.contain = { value: { layout: c.layout, paint: c.paint, ...(c.size && { size: c.size }) }, display: c.raw, steps: [...pre, src(c.path)] };
         break;
       }
+      case "part": {
+        const t = p.part!;
+        out.part = { value: { part: t.value, ...(t.align && { align: t.align }), ...(t.side && { side: t.side }), ...(t.contentBox && { contentBox: true }) }, display: t.raw, steps: [...pre, src(t.path)] };
+        break;
+      }
       case "textAlign": {
         const t = p.textAlign!;
         out.textAlign = { value: t.value, display: t.value, steps: [...pre, src(t.path)] };
@@ -439,7 +451,8 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const widths = { top: w(0), right: w(1), bottom: w(2), left: w(3) };
         const tokens = sides.filter((x) => x).map((x) => x!.steps[0]);
         out.border = {
-          value: { color: c.value, widths },
+          // Which sides the source gives (a table's collapsed borders count a 0-wide side that has a style).
+          value: { color: c.value, widths, styled: { top: !b.sides || !!b.sides.top, right: !b.sides || !!b.sides.right, bottom: !b.sides || !!b.sides.bottom, left: !b.sides || !!b.sides.left } },
           display: `${sidesDisplay(widths)} solid ${c.value}`,
           steps: [c.steps[0], ...tokens.filter((t, k) => tokens.findIndex((u) => u.path === t.path) === k), ...pre, src(b.path)],
         };

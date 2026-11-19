@@ -154,9 +154,34 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
     for (let p = parentOf.get(cur); p; cur = p, p = parentOf.get(cur)) {
       // An absolutely positioned or fixed box neither moves its siblings nor resizes its parent.
       if (outOfFlow(cur)) return;
-      const i = p.children.indexOf(cur);
       const moved = `moved by #${b.id}: ${why}`;
       const pattern = p.props.pattern?.value;
+      // A table's cells share its columns and rows: a change in one may move and resize all of it.
+      // Only its row's height changes (its cells' too) and what's below moves when the change can't
+      // reach the columns (table-layout: fixed reads widths only, or only a height changes) and no
+      // row's height moves another's (no rowspan, no height the rows share).
+      if ((p.props.part && !/^(cell|caption)$/.test(p.props.part.value.part)) || pattern === "table") {
+        let t: Box | undefined = p;
+        while (t && t.props.pattern?.value !== "table") t = parentOf.get(t);
+        if (t) {
+          let row: Box | undefined = cur.props.part?.value.part === "row" ? cur : p.props.part?.value.part === "row" ? p : undefined;
+          const section = row && parentOf.get(row);
+          const parts = [...walk([t])];
+          const fixed = !!t.props.table?.value.fixed && !!t.props.width && t.props.width.value !== "fit";
+          const shared = !!t.props.height || !!t.props.minHeight || parts.some((x) => (x.props.part?.value.part === "cell" && x.attrs?.rowspan !== undefined && !/^\s*1?\s*$/.test(x.attrs.rowspan)) || (/^(header|body|footer)$/.test(x.props.part?.value.part ?? "") && !!x.props.height));
+          if (!row || !section || !section.props.part || shared || !(heightOnly || fixed)) row = undefined;
+          if (row && section) {
+            subtree(row, "size", `resized with #${b.id}: ${why}`);
+            for (const r of section.children.slice(section.children.indexOf(row) + 1)) subtree(r, "position", moved);
+            mark(section, "size", `resized by #${b.id}: ${why}`);
+            for (const s of t.children.slice(t.children.indexOf(section) + 1)) subtree(s, s.props.part?.value.part?.startsWith("column") ? "size" : "position", moved);
+            mark(t, "size", `resized by #${b.id}: ${why}`);
+          } else subtree(t, "size", `resized with #${b.id}: ${why}`);
+          p = t;
+          continue;
+        }
+      }
+      const i = p.children.indexOf(cur);
       const grows = pattern === "stack" && p.children.some((c) => c.props.grow);
       if (heightOnly && pattern === "cluster" && !stretched(p)) {
         const lines = linesOf(p);

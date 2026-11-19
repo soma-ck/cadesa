@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: plain tables</title>
+    <link rel="stylesheet" href="tables.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <h1 class="title">Inspection reports</h1>
+
+      <table class="report">
+        <caption>Sites visited in May, by region</caption>
+        <colgroup><col class="col-site" /><col span="2" class="col-dates" /><col /></colgroup>
+        <thead>
+          <tr><th rowspan="2">Site</th><th colspan="2">Visit</th><th rowspan="2">Inspector</th></tr>
+          <tr><th>From</th><th>To</th></tr>
+        </thead>
+        <tbody>
+          <tr><td>North depot, loading bays and the yard behind them</td><td>2 May</td><td>3 May</td><td>A. Moreau</td></tr>
+          <tr><td>Harbor office</td><td colspan="2">One day, 9 May</td><td>B. Okafor</td></tr>
+          <tr><td>Ridge workshop</td><td>12 May</td><td>16 May</td><td>C. Lindqvist and D. Park</td></tr>
+        </tbody>
+        <tfoot>
+          <tr><td colspan="3">Sites</td><td class="num">3</td></tr>
+        </tfoot>
+      </table>
+
+      <table class="grid" cellspacing="4" cellpadding="6">
+        <tr>
+          <td class="top">Top</td>
+          <td class="middle">Middle</td>
+          <td class="bottom">Bottom</td>
+          <td valign="top" width="160">A longer note that wraps onto a few lines in its narrow column</td>
+        </tr>
+        <tr>
+          <td class="base">Baseline</td>
+          <td class="base big">Big</td>
+          <td class="base" nowrap>No wrap here</td>
+          <td><p class="note">A paragraph in a cell, with margins.</p></td>
+        </tr>
+      </table>
+
+      <div class="cards">
+        <div class="cards-row">
+          <div class="card-cell"><strong class="label">Open</strong> 12 inspections waiting for a report</div>
+          <div class="card-cell">Closed this week: 31</div>
+          <div class="card-cell">Overdue: 2</div>
+        </div>
+      </div>
+
+      <table class="fixed">
+        <colgroup><col class="c1" /><col class="c2" /><col /></colgroup>
+        <tr><td>Code</td><td>Region</td><td>Comment that is long enough to wrap when the table is narrow</td></tr>
+        <tr><td>N-1</td><td>Northern coast and islands</td><td>Fine</td></tr>
+      </table>
+
+      <table class="pct">
+        <tr><td class="w30">Thirty percent</td><td>The rest of the row, shared by what is left</td><td class="w20">Twenty</td></tr>
+      </table>
+    </main>
+  </body>
+</html>

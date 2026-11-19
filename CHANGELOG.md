@@ -76,6 +76,46 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   counts as `≈` in every report (`check --verify` too).
 - The differential fuzzer generates the new constructs too. Three grid cases it found are kept in
   `fixtures/fuzz`. `conformance:css` checks four new pages: spacing, transforms, grid and icons.
+- Tables are laid out, as Chromium's LayoutNG lays them out, instead of as one box of unknown
+  height: their captions, column groups and columns, row groups, rows and cells all get boxes and
+  are checked. Column widths come from the cells' min-content and max-content widths (padding and
+  borders included), fixed and percentage widths on cells and `<col>`s, and cells spanning columns,
+  shared out by the auto layout's width distribution (or, with `table-layout: fixed`, from the
+  columns and the first row). `border-collapse: separate` with `border-spacing`, and `collapse`, where
+  each cell gets half of the widest border on each of its edges (Chromium's edge bookkeeping
+  included); row heights from the cells' content, their heights and rowspans, a table's height
+  shared between its row groups and rows, and `vertical-align: top`, `middle`, `bottom` and
+  `baseline` (from the fonts' vertical metrics) inside cells. Bootstrap's `.table`, `.table-sm`,
+  `.table-bordered`, `.table-striped`, `.table-group-divider`, `.align-middle`, `.text-nowrap` cells and
+  `.table-responsive` are exact, and so are `width: 100%` and `min-width` on a table, the parser's
+  implied `<tbody>`, the attributes `width`, `height`, `valign`, `align`, `nowrap`, `cellspacing`,
+  `cellpadding` and `border`, and `display: table`, `table-row` and `table-cell` on `<div>`s. In a
+  source: `layout: { pattern: table, collapse: true, fixed: true, min: <size> }` with the border
+  spacing as `gap` and `rowGap`, and `part: row`, `part: "cell middle"`, `part: "caption bottom"`...
+  on its children.
+  A cell's `max-width` caps its column (the `max-width: 0` truncation trick included), a
+  content-box cell's width and height leave out its padding and the borders it gets, `rowspan="0"`
+  spans the rows left in its row group. A table in a flex row is never narrower than its columns,
+  and inside a flex or grid container or a table cell its column percentages don't size it. Under
+  Tailwind's preflight a table's borders collapse, its cells sit in the middle of their rows and a
+  `<th>` is bold. In a column flexbox a table is laid out again at the height the flexbox gives it,
+  as Chromium does (rows a rowspan grew may then get taller).
+- What stays `≈`: a table with something the browser wraps in an anonymous cell or row (text
+  straight in a row, a `<div>` among rows, `display: contents` in it), `visibility: collapse`,
+  `border-style: hidden` in a collapsed table, percentage heights on cells, rows and row groups,
+  right-to-left and vertical tables, `display: inline-table`: those tables are still one box, as
+  before. Inside a laid-out table, a doubt stays where it is: content Cadesa can't measure in a cell
+  (an inline run in another font size, say) makes the table `≈` when it sizes the columns (auto
+  layout), but only its row and what's below with `table-layout: fixed`, which reads widths only;
+  likewise a cell aligned to its row's baseline whose first line Cadesa can't place, or a percentage
+  height inside a cell. A rowspan or a height the rows share makes such a doubt the whole table's. Also
+  `≈`: a table stretched by a flex row or a grid when that would move its rows, a table's minimum
+  contribution to a grid column, a content-box table with collapsed borders and a size, a cell width
+  in `calc()` with a percentage, the baseline of a wrapped inline-block alone in a cell.
+- `npm run fuzz:tables` compares random tables (structure, borders, spacing, widths, spans,
+  alignment, fixed layout, attributes, `<div>` tables, flex and grid parents) with Chromium.
+  `conformance:css` gains `fixtures/css/tables.html` and `tables-edge.html` (what the fuzzer
+  found), `conformance:bootstrap` `fixtures/bootstrap/tables.html`.
 
 ## 0.1.14 (2026-11-19)
 

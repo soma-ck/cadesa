@@ -181,6 +181,32 @@ const BLOCK_TAGS = new Set(["html", "body", "div", "p", "section", "article", "h
 export const INLINE_BLOCK = new Set(["button", "input", "select", "textarea", "meter", "progress"]);
 export const REPLACED_BLOCK = new Set(["img", "svg", "video", "canvas", "audio", "iframe", "embed", "object"]);
 const CONTROL = new Set(["input", "select", "textarea"]);
+/** Table elements' default display. */
+const TABLE_DISPLAY: Record<string, string> = {
+  table: "table",
+  caption: "table-caption",
+  colgroup: "table-column-group",
+  col: "table-column",
+  thead: "table-header-group",
+  tbody: "table-row-group",
+  tfoot: "table-footer-group",
+  tr: "table-row",
+  td: "table-cell",
+  th: "table-cell",
+};
+/** What a table display makes a box: its part (Cadesa's part prop). */
+const TABLE_PART: Record<string, string> = {
+  "table-caption": "caption",
+  "table-column-group": "column-group",
+  "table-column": "column",
+  "table-header-group": "header",
+  "table-row-group": "body",
+  "table-footer-group": "footer",
+  "table-row": "row",
+  "table-cell": "cell",
+};
+/** Inherited properties that only tables read: nothing else is laid out differently. */
+const TABLE_INHERITED = new Set(["border-collapse", "border-spacing", "caption-side", "empty-cells"]);
 /** Inline tags whose browser defaults change how text measures. */
 const UA_TEXT: Record<string, string> = {
   strong: "is bold (font-weight: bolder)",
@@ -744,6 +770,8 @@ export abstract class PageLifter {
     };
     // Browser defaults that preflight leaves in place (headings and links inherit; these don't).
     if (el.tag === "strong" || el.tag === "b") t.weight = bolder(parent.weight);
+    // A table header cell is bold (font-weight: bold): in the stylesheet's cascade when the browser's defaults are in it.
+    if (el.tag === "th" && !this.uaInCascade) t.weight = 700;
     if (el.tag === "small") t.size = parent.size * 0.8;
     const fs = val("font-size");
     if (fs) {
@@ -804,7 +832,7 @@ export abstract class PageLifter {
       if (o) {
         const v = this.resolve(el, si, o.value);
         // inherit (and unset, for an inherited property) keeps the parent's value.
-        if (v !== undefined && !/^(inherit|unset)$/.test(v)) t.inherited.set(p, { value: v, utility: o.utility });
+        if (v !== undefined && !/^(inherit|unset|-webkit-match-parent)$/.test(v)) t.inherited.set(p, { value: v, utility: o.utility });
       }
     }
     el.text[si] = t;
@@ -881,8 +909,7 @@ export abstract class PageLifter {
     if (INLINE_BLOCK.has(el.tag)) return "inline-block";
     if (REPLACED_BLOCK.has(el.tag)) return this.preflight ? "block" : "inline";
     if (el.tag === "li") return "list-item";
-    if (["table"].includes(el.tag)) return "table";
-    if (["tr", "td", "th", "thead", "tbody", "tfoot", "caption", "colgroup", "col"].includes(el.tag)) return "table-part";
+    if (el.tag in TABLE_DISPLAY) return TABLE_DISPLAY[el.tag];
     return BLOCK_TAGS.has(el.tag) || el === this.bodyEl || el === this.htmlEl ? "block" : "inline";
   }
 
@@ -1002,7 +1029,7 @@ export abstract class PageLifter {
   aloneOnLine(el: El, si: number): boolean {
     const parent = el.parent;
     if (!parent || (el.roles[si] !== "text" && el.roles[si] !== "leaf") || el.pseudo) return false;
-    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|inline-block)$/.test(this.displayOf(parent, si))) return false;
+    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|inline-block|table-cell|table-caption)$/.test(this.displayOf(parent, si))) return false;
     if (parent.ownText || (parent.children.some((k) => k.pseudo && !this.outOfFlow(k, si) && this.displayOf(k, si) !== "none"))) return false;
     const shown0 = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
     const sibs0 = parent.children.filter((k) => k !== el && shown0(k));
@@ -1046,7 +1073,7 @@ export abstract class PageLifter {
       return o ? this.resolve(k, si, o.value) : undefined;
     };
     if (!/^(baseline)?$/.test(res(el, "vertical-align") ?? "") || !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "") || this.containOf(el, si)) return false;
-    if (parent !== this.bodyEl && !/^(block|flow-root|list-item)$/.test(this.displayOf(parent, si))) return false;
+    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|table-cell|table-caption)$/.test(this.displayOf(parent, si))) return false;
     const t = this.textOf(el, si);
     const pt = this.textOf(parent, si);
     const lh = (x: TextCtx) => (x.lineHeight === "normal" ? NaN : "num" in x.lineHeight ? lineHeightPx(x.size, x.lineHeight.num) : x.lineHeight.px);
@@ -1089,7 +1116,7 @@ export abstract class PageLifter {
     const prev = (i < 0 ? sibs : sibs.slice(0, i)).at(-1);
     const next = i < 0 ? undefined : sibs[i];
     const parentDisplay = parent.parent ? this.displayOf(parent.parent, si) : "block";
-    const ownContext = /^(inline-block|flow-root)$/.test(this.displayOf(parent, si)) || !/^(visible|clip)?$/.test(res(parent, "overflow-x") ?? "") || containsLayout(this.containOf(parent, si));
+    const ownContext = /^(inline-block|flow-root|table-cell|table-caption)$/.test(this.displayOf(parent, si)) || !/^(visible|clip)?$/.test(res(parent, "overflow-x") ?? "") || containsLayout(this.containOf(parent, si));
     const contained = (side: "top" | "bottom") => parent !== this.bodyEl && (edge(parent, side) || ownContext || /flex|grid/.test(parentDisplay));
     for (const side of ["top", "bottom"] as const) {
       const m = px(el, `margin-${side}`);
@@ -1112,7 +1139,7 @@ export abstract class PageLifter {
    */
   inlineRow(p: El, si: number): void {
     if (p.ownText || p.pseudo) return;
-    if (p !== this.bodyEl && !/^(block|flow-root|list-item|inline-block)$/.test(this.displayOf(p, si))) return;
+    if (p !== this.bodyEl && !/^(block|flow-root|list-item|inline-block|table-cell|table-caption)$/.test(this.displayOf(p, si))) return;
     const shown = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
     const items = p.children.filter(shown);
     if (items.length < 2 || items.some((k) => k.pseudo || k.anonymous !== undefined || k.tag === "br" || this.ownDisplay(k, si) !== "inline-block" || (k.roles[si] !== "text" && k.roles[si] !== "leaf"))) return;
@@ -1179,7 +1206,7 @@ export abstract class PageLifter {
   inlineLine(el: El, si: number): number | undefined {
     const parent = el.parent;
     if (!parent || el.pseudo || el.tag === "br" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag)) return undefined;
-    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|inline-block)$/.test(this.displayOf(parent, si))) return undefined;
+    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|inline-block|table-cell|table-caption)$/.test(this.displayOf(parent, si))) return undefined;
     const shown = (k: El) => k.anonymous !== undefined || (this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si));
     const i = parent.children.indexOf(el);
     const near = [parent.children.slice(0, i).filter(shown).at(-1), parent.children.slice(i + 1).find(shown)];
@@ -1721,6 +1748,125 @@ export abstract class PageLifter {
     return /^(inline-)?table$/.test(this.ownDisplay(el, si));
   }
 
+  /** An inherited property only tables read (border-collapse, border-spacing, caption-side), as computed at `el`. */
+  tableProp(el: El, si: number, p: string): string | undefined {
+    for (let a: El | undefined = el; a; a = a.parent) {
+      const o = a.own[si]?.get(p);
+      const v = o ? this.resolve(a, si, o.value)?.trim() : undefined;
+      if (v === "initial") return undefined;
+      if (v && !/^(inherit|unset)$/.test(v)) return v;
+    }
+    // Tailwind: its preflight collapses a table's borders (the browser's defaults aren't in that cascade).
+    if (!this.uaInCascade && p === "border-collapse" && this.preflight) return "collapse";
+    return undefined;
+  }
+
+  /** A cell's vertical-align: its own, else (where the browser's defaults aren't in the cascade) its row's or row group's, else middle. */
+  cellAlign(el: El, si: number): string | undefined {
+    const own = (k: El | undefined) => {
+      const o = k?.own[si]?.get("vertical-align");
+      const v = o ? this.resolve(k!, si, o.value)?.trim() : undefined;
+      return v && v !== "inherit" ? v : undefined;
+    };
+    if (this.uaInCascade) return own(el);
+    if (el.tag !== "td" && el.tag !== "th") return own(el);
+    const row = el.parent;
+    const group = row?.parent && /^(thead|tbody|tfoot)$/.test(row.parent.tag) ? row.parent : undefined;
+    return own(el) ?? own(row) ?? own(group) ?? "middle";
+  }
+
+  tableWhys = new Map<El, string | undefined>();
+  /**
+   * Why a table (display: table) isn't laid out as one, or undefined when it is: in every state it
+   * holds only captions, columns, row groups, rows and cells where the browser expects them (anything
+   * else gets anonymous boxes around it, which aren't modelled), left to right, nothing collapsed.
+   */
+  tableWhy(el: El): string | undefined {
+    if (this.tableWhys.has(el)) return this.tableWhys.get(el);
+    const why = this.computeTableWhy(el);
+    this.tableWhys.set(el, why);
+    return why;
+  }
+
+  computeTableWhy(table: El): string | undefined {
+    for (let si = 0; si < this.states.length; si++) {
+      const d = this.ownDisplay(table, si);
+      if (this.displayOf(table, si) === "none" || !this.isTable(table, si)) continue;
+      if (d === "inline-table") return "display: inline-table (a table on a line of text) isn't modelled";
+      if (!this.uaInCascade && !this.preflight) return "a table without Tailwind's preflight keeps the browser's defaults for tables (cell padding, border spacing), which aren't read here";
+      const res = (k: El, p: string) => {
+        const o = k.own[si]?.get(p);
+        return o ? this.resolve(k, si, o.value)?.trim() : undefined;
+      };
+      const collapse = this.tableProp(table, si, "border-collapse") === "collapse";
+      const shown = (k: El) => k.anonymous !== undefined || (this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si));
+      const part = (k: El) => TABLE_PART[this.displayOf(k, si)];
+      const check = (k: El): string | undefined => {
+        if (k.pseudo) return `generated content (::${k.pseudo}) in a table part gets an anonymous box, which isn't modelled`;
+        if (k.anonymous !== undefined) return "text directly in a table, row group or row gets an anonymous cell, which isn't modelled";
+        if (res(k, "visibility") === "collapse") return "visibility: collapse on a table part isn't modelled";
+        if ((res(k, "direction") ?? this.textOf(k, si).inherited.get("direction")?.value) === "rtl") return "a right-to-left table isn't modelled";
+        if (!/^(horizontal-tb)?$/.test(res(k, "writing-mode") ?? "")) return "a vertical writing mode in a table isn't modelled";
+        if (collapse && ["top", "right", "bottom", "left"].some((s) => res(k, `border-${s}-style`) === "hidden")) return "border-style: hidden in a table with collapsed borders isn't modelled";
+        if (/%/.test(res(k, "height") ?? "") && k !== table) return "a percentage height on a table part isn't modelled";
+        return undefined;
+      };
+      const own = check(table);
+      if (own) return own;
+      if (table.ownText) return "text directly in a table gets an anonymous cell, which isn't modelled";
+      const kids = (k: El) => k.children.filter(shown);
+      const cells = (row: El): string | undefined => {
+        if (row.ownText) return "text directly in a table row gets an anonymous cell, which isn't modelled";
+        for (const c of kids(row)) {
+          const w = check(c) ?? (part(c) !== "cell" ? `<${c.tag}> in a table row gets an anonymous cell around it, which isn't modelled` : undefined);
+          if (w) return w;
+        }
+        return undefined;
+      };
+      const rows = (group: El): string | undefined => {
+        if (group.ownText) return "text directly in a table row group gets an anonymous cell, which isn't modelled";
+        for (const r of kids(group)) {
+          const w = check(r) ?? (part(r) === "row" ? cells(r) : part(r) === "cell" ? undefined : `<${r.tag}> in a table row group gets an anonymous row around it, which isn't modelled`);
+          if (w) return w;
+        }
+        return undefined;
+      };
+      for (const k of kids(table)) {
+        const p = part(k);
+        const w =
+          check(k) ??
+          (p === "header" || p === "body" || p === "footer"
+            ? rows(k)
+            : p === "row"
+              ? cells(k)
+              : p === "column-group"
+                ? kids(k).find((c) => part(c) !== "column") && `<${kids(k).find((c) => part(c) !== "column")!.tag}> in a column group isn't modelled`
+                : p === "caption" || p === "column" || p === "cell"
+                  ? undefined
+                  : `<${k.tag}> in a table gets an anonymous cell around it, which isn't modelled`);
+        if (w) return w;
+      }
+    }
+    return undefined;
+  }
+
+  /** What `el` is in a table Cadesa lays out (cell, row, body...), or undefined. */
+  tablePart(el: El, si: number): string | undefined {
+    const part = TABLE_PART[this.displayOf(el, si)];
+    if (!part || !el.parent) return undefined;
+    const table = this.tableOf(el.parent, si);
+    return table && !this.tableWhy(table) ? part : undefined;
+  }
+
+  /** The table whose parts' parent `el` is: the table itself, or a row group, row or column group in it. */
+  tableOf(el: El, si: number): El | undefined {
+    for (let a: El | undefined = el; a; a = a.parent) {
+      if (this.isTable(a, si)) return a;
+      if (!/^table-(row|row-group|header-group|footer-group|column-group)$/.test(this.displayOf(a, si))) return undefined;
+    }
+    return undefined;
+  }
+
   isInlineLevel(el: El, si: number) {
     return /^(inline|inline-block|inline-flex|inline-grid|inline-flow-root|contents)$/.test(this.displayOf(el, si));
   }
@@ -1787,8 +1933,10 @@ export abstract class PageLifter {
   classify(el: El) {
     // Parents decide first (a text box's descendants are inline content, not boxes).
     if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length && el.parent.roles.every((r) => r === "text" || r === "hidden" || r === "out")) return;
-    // A table is one box; what's inside it isn't laid out.
-    if (el.parent && el.parent !== this.bodyEl && this.states.some((_, si) => this.ownDisplay(el.parent!, si) === "table" || el.parent!.roles[si] === "leaf" && this.isTable(el.parent!, si))) return;
+    // A table Cadesa can't lay out as one is one box; what's inside it isn't laid out. (Its parts
+    // hold only parts, or a cell's content: a column's children aren't laid out either.)
+    if (el.parent && el.parent !== this.bodyEl && this.states.some((_, si) => this.isTable(el.parent!, si)) && this.tableWhy(el.parent)) return;
+    if (el.parent && el.parent !== this.bodyEl && this.states.some((_, si) => this.displayOf(el.parent!, si) === "table-column")) return;
     if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length === 0) return;
     if (el.anonymous !== undefined) {
       // A text run beside element children: an anonymous text box (or, in a text box, part of its text).
@@ -1816,7 +1964,9 @@ export abstract class PageLifter {
       let role: Role;
       if (d === "none" || (el.parent && el.parent.roles[si] === "hidden")) role = "hidden";
       else if (this.asideFloat(el, si)) role = "out";
-      else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || this.isTable(el, si)) role = "leaf";
+      else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || (this.isTable(el, si) && (!!this.tableWhy(el) || !el.children.some((k) => !this.ignorable(k))))) role = "leaf";
+      // A column's (or an empty row's) children aren't laid out.
+      else if (d === "table-column" || (/^table-(row|row-group|header-group|footer-group|column-group)$/.test(d) && !el.children.some((k) => !this.ignorable(k)))) role = "leaf";
       else if (hasText && el.children.length === 0 && this.textOf(el, si).size === 0 && !CONTROL.has(el.tag)) {
         // Text in a font size of 0 (an icon button hiding its label): no width, one line of its line height.
         const t = this.textOf(el, si);
@@ -1874,7 +2024,15 @@ export abstract class PageLifter {
       const pos = res("position");
       if (pos === "sticky") this.note(el, si, { decl: own.get("position")!.utility, reason: "position: sticky; predicted at scroll position 0", kind: "none" });
 
+      // A part of a table Cadesa lays out: margins apply to none but a caption, padding only to cells
+      // and captions, widths not to rows and row groups, heights not to columns.
+      const tpart = this.tablePart(el, si);
       const skipProp = (p: string) =>
+        TABLE_INHERITED.has(p) || (p === "table-layout" && !this.isTable(el, si)) ||
+        (!!tpart && /^margin-/.test(p) && tpart !== "caption") ||
+        (!!tpart && /^padding-/.test(p) && tpart !== "caption" && tpart !== "cell") ||
+        (!!tpart && /^(width|min-width|max-width)$/.test(p) && /^(row|header|body|footer)$/.test(tpart)) ||
+        (!!tpart && /^(height|min-height|max-height)$/.test(p) && /^column/.test(tpart)) ||
         // Flex item properties do nothing outside a flex container (align-self: outside flex and grid).
         (/^(flex|flex-grow|flex-shrink|flex-basis|order)$/.test(p) && !(/flex/.test(parentDisplay) && parentRole === "container" && !abs)) ||
         (p === "align-self" && !inFlexOrGrid) ||
@@ -2008,7 +2166,7 @@ export abstract class PageLifter {
             }
             if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins in a grid are not modelled", kind: "geometry" });
           }
-        } else if (/^(block|flow-root|list-item|inline-block)$/.test(display) && el.inlineRow?.[si]) {
+        } else if (/^(block|flow-root|list-item|inline-block|table-cell|table-caption)$/.test(display) && (!/^table-/.test(display) || !!this.tablePart(el, si)) && el.inlineRow?.[si]) {
           // Inline-blocks sharing its lines: a wrapping row, the space between them its gap (see inlineRow).
           const row = el.inlineRow[si]!;
           const why = "inline-blocks on its lines";
@@ -2020,7 +2178,7 @@ export abstract class PageLifter {
           decl("row-gap", "0px", `${why}: line boxes stack`);
           if (row.justify !== "start") decl("justify-content", row.justify === "center" ? "center" : "flex-end", `${why}: text-align`);
           if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins between inline-blocks are not modelled", kind: "geometry" });
-        } else if (/^(block|flow-root|list-item|inline-block)$/.test(display)) {
+        } else if (/^(block|flow-root|list-item|inline-block|table-cell|table-caption)$/.test(display) && (!/^table-/.test(display) || !!this.tablePart(el, si))) {
           if (this.blockFlow === "flow") {
             // Block flow, margins and all ("flow" is lift's own marker for layout: { pattern: flow }).
             decl("display", "flow", own.get("display")?.utility ?? "block flow");
@@ -2031,6 +2189,24 @@ export abstract class PageLifter {
           }
           if (space?.axis === "y" && spaceVal !== undefined) decl("row-gap", spaceVal, space.utility);
           else if (space) this.note(el, si, { decl: space.utility, reason: "space-x in block flow is not modelled", kind: "geometry" });
+        } else if (display === "table" && !this.tableWhy(el)) {
+          // A table laid out as one (engine/table.ts): its children are table parts.
+          decl("display", "table", own.get("display")?.utility ?? "browser default (<table>)");
+          // Without a width, as wide as its columns want (in block flow; a flex column or grid stretches it).
+          if (!own.has("width") && !inFlexOrGrid) decl("width", "fit-content", "a table is as wide as its content");
+          const collapse = this.tableProp(el, si, "border-collapse") === "collapse";
+          if (collapse) decl("border-collapse", "collapse", own.get("border-collapse")?.utility ?? "border-collapse: collapse (inherited)");
+          else {
+            const sp = this.tableProp(el, si, "border-spacing") ?? "0px";
+            const parts = sp.split(/\s+/).map((x) => lengthPx(x, this.textOf(el, si).size));
+            if (parts.some((x) => x === undefined || x < 0) || parts.length > 2) this.note(el, si, { decl: `border-spacing: ${sp}`, reason: "border-spacing must be one or two lengths", kind: "geometry" });
+            else decl("border-spacing", parts.map((x) => `${fmtNum(x!)}px`).join(" "), own.get("border-spacing")?.utility ?? "border-spacing (inherited)");
+          }
+          if (res("table-layout") === "fixed") decl("table-layout", "fixed", own.get("table-layout")!.utility);
+          if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins in a table are not modelled", kind: "geometry" });
+        } else if (TABLE_PART[display] && this.tablePart(el, si)) {
+          // Row groups, rows and column groups hold table parts (table.ts places them).
+          if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins in a table are not modelled", kind: "geometry" });
         } else {
           this.note(el, si, { decl: `display: ${display}`, reason: `display: ${display} has no Cadesa pattern`, kind: "geometry" });
         }
@@ -2053,7 +2229,7 @@ export abstract class PageLifter {
           this.note(el, si, { decl: "display: table", reason: "a table is laid out as one box; its height comes from its rows, which Cadesa doesn't lay out", kind: "height" });
           if (!own.has("width")) this.note(el, si, { decl: "display: table", reason: "a table without a width is as wide as its columns, which Cadesa doesn't lay out", kind: "geometry" });
           for (const p of ["border-collapse", "border-spacing", "caption-side", "table-layout", "vertical-align", "empty-cells"]) handled.add(p);
-        } else if (!/^(block|flow-root|list-item|inline|inline-block|flex|inline-flex|grid|inline-grid)$/.test(display))
+        } else if (!/^(block|flow-root|list-item|inline|inline-block|flex|inline-flex|grid|inline-grid)$/.test(display) && !(TABLE_PART[display] && this.tablePart(el, si)))
           this.note(el, si, { decl: `display: ${display}`, reason: `display: ${display} has no Cadesa pattern`, kind: "geometry" });
       }
       if (role !== "container") for (const p of ["flex-direction", "flex-wrap", "align-items", "justify-content", "row-gap", "column-gap", "grid-template-columns", "justify-items"]) handled.add(p);
@@ -2245,6 +2421,19 @@ export abstract class PageLifter {
         else decl("margin-top", `${fmtNum(px + shift)}px`, `align-items: baseline on the parent (its first line on the row's baseline)`);
       }
 
+      // A content-box cell: its width and height don't include its padding and the borders it gets (its
+      // own, or in a table with collapsed borders its half of theirs); table.ts adds them.
+      const cellContentBox =
+        tpart === "cell" && !this.preflight && (res("box-sizing") ?? "content-box") === "content-box" && (out.has("width") || out.has("height") || out.has("max-width"));
+      if (tpart) {
+        const va = this.cellAlign(el, si);
+        const align = tpart === "cell" ? (va === "top" || va === "middle" || va === "bottom" ? va : "baseline") : undefined;
+        const side = tpart === "caption" && this.tableProp(el, si, "caption-side") === "bottom" ? "bottom" : undefined;
+        const value = [tpart, align, side, cellContentBox ? "content-box" : undefined].filter(Boolean).join(" ");
+        decl("table-part", value, own.get("display")?.utility ?? `browser default (<${el.tag}>)`);
+        handled.add("vertical-align");
+      }
+
       // Without a reset, boxes are content-box: lengths in px take the padding and border in, so the
       // source can stay border-box. Anything else is left content-box (lift notes it).
       if (!this.preflight) {
@@ -2264,11 +2453,21 @@ export abstract class PageLifter {
         const extraX = [expr("padding-left"), expr("padding-right"), border("left"), border("right")];
         const extraY = [expr("padding-top"), expr("padding-bottom"), border("top"), border("bottom")];
         let ok = true;
-        if (sizing !== "border-box")
+        // A table's rows, row groups and columns take their sizes as they are; a cell's are converted
+        // in table.ts (see cellContentBox).
+        const tableTable = tpart !== undefined && tpart !== "caption";
+        // A content-box table with collapsed borders: its border is half of its outer collapsed
+        // borders (and it has no padding), which only table.ts knows.
+        const collapsedTable = sizing !== "border-box" && this.isTable(el, si) && role === "container" && this.tableProp(el, si, "border-collapse") === "collapse";
+        if (collapsedTable && ["width", "height", "min-height", "min-width", "max-width"].some((p) => out.has(p) && !/^(auto|none)$/.test(out.get(p)!.value.trim()))) {
+          this.note(el, si, { decl: own.get("box-sizing")?.utility ?? "browser default (content-box)", reason: "a content-box table with collapsed borders: its size doesn't include the half borders it gets, which isn't modelled", kind: "geometry" });
+          ok = false;
+        } else if (sizing !== "border-box" && !tableTable)
           for (const [p, extra] of [["width", extraX], ["max-width", extraX], ["height", extraY], ["min-height", extraY], ["max-height", extraY], ["min-width", extraX]] as const) {
             const d = out.get(p);
             const e = sumOf(extra);
-            if (!d || (e && !e.fluid && e.at(0) === 0) || /^(auto|none)$/.test(d.value.trim())) continue;
+            // (A width from the content, fit-content, comes out the same in either box sizing.)
+            if (!d || (e && !e.fluid && e.at(0) === 0) || /^(auto|none|fit-content|min-content|max-content)$/.test(d.value.trim())) continue;
             // A form control's height from its line is a border-box height already.
             if (p === "height" && controlH !== undefined) continue;
             // The length plus the padding and border, in px when both are (an expression in px and vw when either follows the viewport).
@@ -3195,6 +3394,18 @@ export abstract class PageLifter {
         if (el.tag === "svg" && loc.startTag && loc.endTag) edits.push({ at: loc.startTag.endOffset, end: loc.endTag.startOffset, text: "" });
       }
       if (!el.className) continue;
+      // An element the HTML parser made up (the <tbody> around rows written straight in a <table>):
+      // written out around its children, so the fixture has it with its class and id.
+      if (!loc && el.tag === "tbody") {
+        const kids = (el.node.childNodes ?? []).filter((c) => c.sourceCodeLocation);
+        const first = kids[0]?.sourceCodeLocation;
+        const last = kids.at(-1)?.sourceCodeLocation;
+        if (first && last) {
+          edits.push({ at: first.startOffset, end: first.startOffset, text: `<tbody class="${[...el.classes, el.className].join(" ")}" data-fixture="${el.id}">` });
+          edits.push({ at: last.endOffset, end: last.endOffset, text: "</tbody>" });
+        }
+        continue;
+      }
       if (!loc?.startTag) continue;
       const cls = loc.attrs?.class;
       const value = [...el.classes, el.className].join(" ");
