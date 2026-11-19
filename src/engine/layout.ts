@@ -64,8 +64,6 @@ export interface Layout {
    * layout, or not a slot or component the engine knows. Their boxes are missing from `boxes`.
    */
   notLaidOut?: { id: string; tag: string; line?: number }[];
-  /** Elements the page has at this width: the boxes laid out (not anonymous text runs) plus notLaidOut. */
-  elements?: number;
   /** The page background from the source, if declared. */
   page?: { background: string; path: string };
 }
@@ -1350,7 +1348,6 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     issues,
     page: pageBg ? { background: model.tokens.get(`color.${pageBg.name}`)!.raw, path: pageBg.path } : undefined,
     notLaidOut: [...skippedEls.values()],
-    elements: [...walk(boxes)].filter((b) => !b.anonymous).length + skippedEls.size,
   };
 }
 

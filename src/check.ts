@@ -189,18 +189,6 @@ export function sizeUncertainty(l: Layout, imp?: WidthImpact): { width: Set<stri
   return { width: out, size };
 }
 
-/**
- * Elements not laid out at all at this layout's width, and how many elements the page has there:
- * the engine's (under a box with no layout, or not a component or slot it knows) and, on a lifted
- * page, the lift's (inside a table, a form control, or another box laid out as one leaf). For the
- * coverage line's "N of M elements not laid out".
- */
-export function elementsNotLaidOut(l: Layout, page?: Partial<Pick<PageLift, "notLaidOut">>): { notLaidOut: { id?: string; tag: string; line?: number }[]; elements: number } {
-  const lifted = page?.notLaidOut?.(l.width) ?? [];
-  const engine = l.notLaidOut ?? [];
-  return { notLaidOut: [...engine, ...lifted], elements: (l.elements ?? [...walk(l.boxes)].filter((b) => !b.anonymous).length + engine.length) + lifted.length };
-}
-
 export const widthUncertainty =(l: Layout, imp?: WidthImpact) => sizeUncertainty(l, imp).width;
 
 /**
