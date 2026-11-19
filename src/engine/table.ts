@@ -138,6 +138,8 @@ export interface TableResult {
   /** Boxes of captions, row groups (rows, cells) and columns, relative to the table's border box. */
   children: Box[];
   assumptions: string[];
+  /** The table box's height (without captions). */
+  gridH: number;
 }
 
 export interface TableIntrinsic {
@@ -1108,7 +1110,7 @@ export function tableIntrinsic(g: Grid, allowPercent: boolean): TableIntrinsic {
 export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | undefined): TableResult {
   const h = g.h;
   const assumptions: string[] = [...g.notes];
-  if (g.why) return { w, h: 0, children: [], assumptions: [g.why] };
+  if (g.why) return { w, h: 0, children: [], assumptions: [g.why], gridH: 0 };
   const cols = columnConstraints(g);
   const capMin = captionMin(g);
   assumptions.push(...g.doubts);
@@ -1435,7 +1437,7 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
     y += U(c.b.h) + U(c.m.bottom);
     children.push(c.b);
   }
-  return { w: PX(tableW), h: PX(y), children, assumptions };
+  return { w: PX(tableW), h: PX(y), children, assumptions, gridH: PX(gridH) };
 }
 
 /** Anything in a cell that gives it a baseline (its text, or a child box). */
@@ -1448,6 +1450,9 @@ const hasContent = (b: Box) => !!b.lines?.length || b.children.length > 0;
 function firstBaseline(h: TableHooks, b: Box): LU | undefined | "unknown" {
   const ins = insets(b.props);
   if (b.lines?.length) {
+    // An inline-block alone on its line (lifted as a fit-content block): the line's baseline is its
+    // last line's, which Cadesa doesn't place when it wraps.
+    if (b.lines.length > 1 && b.props.width?.value === "fit") return "unknown";
     const t = b.props.text?.value;
     if (!t) return "unknown";
     const v = metricsFor(t.font)?.vertical(t.sizePx, t.weight);

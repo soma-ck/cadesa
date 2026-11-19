@@ -828,6 +828,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         const kp = resolveElement(model, k.comp, k.slot, width);
         // A scroll container's automatic minimum is 0.
         if (scrolls(kp.overflow?.value)) continue;
+        // A table's contribution to a grid column isn't its min-content width in Chromium (not modelled).
+        if (kp.pattern?.value === "table") notes.push("a table's minimum contribution to a grid column isn't modelled");
         const it = intrinsic(k.node, k.comp, k.slot);
         if (it.why) {
           notes.push(`a ${t.fr}fr column is at least as wide as its items' min-content width, which can't be measured here (${it.why})`);
@@ -1088,7 +1090,18 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // Given its width by a flex or grid container (not shrunk to fit): its columns share exactly that.
       const fixedW = forcedW !== undefined && (parent === "cluster" || parent === "grid" || parent === "layer" || parent === "stack");
       const cssH = props.height || props.minHeight ? Math.max(props.height?.value ?? 0, props.minHeight?.value ?? 0) : undefined;
-      const t = layoutTable(grid, w, fixedW || ((parent === "stack" || parent === "grid" || parent === "layer") && pw === undefined), cssH);
+      const stretchedW = fixedW || ((parent === "stack" || parent === "grid" || parent === "layer") && pw === undefined);
+      let t = layoutTable(grid, w, stretchedW, cssH);
+      // A flex or grid item is laid out again at the height its container gives it (its own, here):
+      // a table then shares that height between its row groups, which (as Chromium sums them before
+      // rowspans grow their rows) may make some taller.
+      if (!grid.why && t.gridH > (cssH ?? 0) && (parent === "stack" || parent === "grid" || parent === "layer" || parent === "cluster")) {
+        const again = layoutTable(grid, w, stretchedW, t.gridH);
+        // In a column flexbox it always is (its box keeps that height; rows a rowspan grew may then
+        // overflow it); in a row or a grid only when stretched (not modelled here).
+        if (parent === "stack") t = { ...again, h: t.h };
+        else if (Math.abs(again.h - t.h) > EPS) t.assumptions.push("a table stretched by its flex or grid container shares its height between its row groups again, which isn't modelled when rowspans grew its rows");
+      }
       w = t.w;
       innerW = Math.max(0, w - insX);
       tableH = t.h;
