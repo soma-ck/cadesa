@@ -101,6 +101,36 @@ export interface LayoutProp {
   justify?: Justify;
   /** Cluster only: false keeps every item on one line, shrinking them to fit (flex-wrap: nowrap). */
   wrap?: boolean;
+  /**
+   * Grid only, instead of min or columns: CSS's grid template as written (tracks in px, %, fr,
+   * auto, min-content, max-content, minmax(), fit-content(), repeat() and [line names]), placed
+   * and sized as Chromium's grid does. Items may place themselves (`place`).
+   */
+  template?: GridTemplateProp;
+}
+
+export interface GridTemplateProp {
+  columns?: string;
+  rows?: string;
+  /** grid-template-areas, one string per row. */
+  areas?: string[];
+  autoColumns?: string;
+  autoRows?: string;
+  /** grid-auto-flow (row only; dense fills earlier holes). */
+  dense?: boolean;
+  /** justify-content / align-content: where the tracks sit when they don't fill the grid. */
+  justifyContent?: string;
+  alignContent?: string;
+}
+
+/** Where an item sits in its grid: grid-row and grid-column as CSS writes them ("1 / -1", "span 2", "sidebar"), and its own alignment. */
+export interface PlaceProp {
+  path: string;
+  row?: string;
+  column?: string;
+  /** align-self and justify-self in a grid (start, center, end, stretch). */
+  align?: "start" | "center" | "end" | "stretch";
+  justify?: "start" | "center" | "end" | "stretch";
 }
 
 /**
@@ -205,6 +235,8 @@ export interface Props {
    * are drawn mapped by it.
    */
   transform?: { value: string; origin?: string; path: string };
+  /** In a grid: the lines it spans (grid-row, grid-column) and its own alignment in its area. */
+  place?: PlaceProp;
   /** Removed by this override (`maxWidth: none`), with the YAML path. */
   unset?: Partial<Record<Unsettable, string>>;
 }
@@ -268,6 +300,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "position",
   "contain",
   "transform",
+  "place",
 ];
 
 export interface Slot {

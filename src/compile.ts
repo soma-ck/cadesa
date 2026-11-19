@@ -63,10 +63,23 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
       out.push(
         "display: grid",
         l.pattern === "grid"
-          ? l.columns
-            ? `grid-template-columns: ${template}`
-            : `grid-template-columns: repeat(auto-fill, minmax(min(${v(l.min!)}, 100%), 1fr))`
+          ? l.template
+            ? `grid-template-columns: ${l.template.columns ?? "none"}`
+            : l.columns
+              ? `grid-template-columns: ${template}`
+              : `grid-template-columns: repeat(auto-fill, minmax(min(${v(l.min!)}, 100%), 1fr))`
           : "grid-template-columns: minmax(0, 1fr)",
+        ...(l.template
+          ? [
+              `grid-template-rows: ${l.template.rows ?? "none"}`,
+              `grid-template-areas: ${l.template.areas ? l.template.areas.map((a) => JSON.stringify(a)).join(" ") : "none"}`,
+              `grid-auto-columns: ${l.template.autoColumns ?? "auto"}`,
+              `grid-auto-rows: ${l.template.autoRows ?? "auto"}`,
+              `grid-auto-flow: ${l.template.dense ? "row dense" : "row"}`,
+              `justify-content: ${l.template.justifyContent ?? "normal"}`,
+              `align-content: ${l.template.alignContent ?? "normal"}`,
+            ]
+          : []),
         `align-items: ${GRID_ALIGN[l.align ?? "stretch"]}`,
         `justify-items: ${GRID_ALIGN[l.justifyItems ?? "stretch"]}`,
         l.pattern === "grid" ? gap : "gap: 0",
@@ -113,6 +126,11 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   else if (unset("shadow")) out.push("box-shadow: none");
   if (p.radius) out.push(`border-radius: ${v(p.radius)}`);
   else if (unset("radius")) out.push("border-radius: 0");
+  if (p.place) {
+    const pl = p.place;
+    const SELF: Record<string, string> = { start: "start", center: "center", end: "end", stretch: "stretch" };
+    out.push(`grid-row: ${pl.row ?? "auto"}`, `grid-column: ${pl.column ?? "auto"}`, ...(pl.align ? [`align-self: ${SELF[pl.align]}`] : []), ...(pl.justify ? [`justify-self: ${SELF[pl.justify]}`] : []));
+  }
   if (p.transform) out.push(`transform: ${p.transform.value}`, `transform-origin: ${p.transform.origin ?? "50% 50%"}`);
   else if (unset("transform")) out.push("transform: none");
   // max-width + auto margins. width: 100% so a flex or grid parent doesn't shrink-wrap the box

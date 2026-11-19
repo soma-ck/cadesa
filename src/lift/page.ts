@@ -256,6 +256,17 @@ export function longhands(prop: string, value: string): [string, string][] {
     return [["row-gap", p[0]], ["column-gap", p[1] ?? p[0]]];
   }
   if (prop === "inset") return boxSides(value).map((v, i) => [SIDES[i], v]);
+  // grid-area, grid-row and grid-column: their line longhands (a lone name ends where it starts: at that area's edge).
+  if (/^grid-(area|row|column)$/.test(prop) && !/\bvar\(/.test(value)) {
+    const parts = value.split("/").map((p) => p.trim());
+    const named = (x: string | undefined) => (x !== undefined && /^-?[a-zA-Z_][\w-]*$/.test(x) && !/^(span|auto)$/i.test(x) ? x : "auto");
+    if (prop === "grid-area") {
+      const [rs, cs = named(rs), re = named(rs), ce = named(cs)] = parts;
+      return [["grid-row-start", rs], ["grid-column-start", cs], ["grid-row-end", re], ["grid-column-end", ce]];
+    }
+    const [s, e = named(s)] = parts;
+    return [[`${prop}-start`, s], [`${prop}-end`, e]];
+  }
   if (prop === "overflow") {
     const p = value.trim().split(/\s+/);
     return [["overflow-x", p[0]], ["overflow-y", p[1] ?? p[0]]];
@@ -1648,6 +1659,8 @@ export abstract class PageLifter {
         // Flex item properties do nothing outside a flex container (align-self: outside flex and grid).
         (/^(flex|flex-grow|flex-shrink|flex-basis|order)$/.test(p) && !(/flex/.test(parentDisplay) && parentRole === "container" && !abs)) ||
         (p === "align-self" && !inFlexOrGrid) ||
+        // Grid lines place only a grid item.
+        (/^grid-(row|column)-(start|end)$/.test(p) && !(inFlexOrGrid && /grid/.test(parentDisplay))) ||
         p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p) || p === "display" ||
         (pos === "sticky" && /^(top|right|bottom|left)$/.test(p)) || p === "z-index" ||
         // Offsets do nothing on a box that isn't positioned.
@@ -1752,9 +1765,18 @@ export abstract class PageLifter {
           // A set height or min-height stretches a grid's rows (a stack's items don't).
           const sized = ["height", "min-height"].some((p) => own.has(p) && !/^(auto|0(px)?)$/.test(res(p) ?? "auto"));
           const single = !cols || cols === "none" || (n && n[1] === "1");
+          const kids = el.children.filter((c) => c.roles[si] && c.roles[si] !== "hidden" && c.roles[si] !== "out");
+          // A template beyond columns (rows, areas, implicit tracks, dense flow, content alignment) or
+          // items placed on lines, aligned on their own or with auto margins: CSS Grid's own algorithm.
+          const TEMPLATE: [string, RegExp][] = [["grid-template-rows", /^none$/], ["grid-template-areas", /^none$/], ["grid-auto-rows", /^auto$/], ["grid-auto-columns", /^auto$/], ["grid-auto-flow", /^row$/], ["justify-content", /^(normal|stretch)$/], ["align-content", /^(normal|stretch)$/]];
+          const template = TEMPLATE.filter(([p, def]) => own.has(p) && !def.test(res(p) ?? ""));
+          const placedKids = kids.some((k) => {
+            const kr = (p: string) => (k.own[si]?.has(p) ? this.resolve(k, si, k.own[si].get(p)!.value) : undefined);
+            return ["grid-row-start", "grid-row-end", "grid-column-start", "grid-column-end"].some((p) => !/^(auto)?$/.test(kr(p) ?? "")) || !/^(auto|normal|stretch)?$/.test(kr("justify-self") ?? "") || !/^(auto|normal|stretch)?$/.test(kr("align-self") ?? "") || ["margin-top", "margin-bottom", "margin-left", "margin-right"].some((p) => kr(p) === "auto");
+          });
           // (A percentage row gap is a grid's own: of its final height.)
           // (Nor with an absolutely positioned child: its static position is the grid's padding box corner.)
-          if (single && plainItems && !sized && !/%$/.test(rowGap ?? "") && !el.children.some((k) => this.positioned(k, si))) {
+          if (single && plainItems && !sized && !template.length && !placedKids && !/%$/.test(rowGap ?? "") && !el.children.some((k) => this.positioned(k, si))) {
             // One column: a stack with the row gap.
             decl("display", "flex", own.get("display")!.utility);
             decl("flex-direction", "column", own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
@@ -1766,7 +1788,11 @@ export abstract class PageLifter {
             if (rowGap) decl("row-gap", rowGap, gapOrigin!.utility);
             if (colGap) decl("column-gap", colGap, own.get("column-gap")!.utility);
             // No template: one implicit auto column, stretched across the grid (like 1fr: never narrower than its items).
-            decl("grid-template-columns", !cols || cols === "none" ? "1fr" : cols, own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
+            decl("grid-template-columns", !cols || cols === "none" ? (template.length || placedKids ? "none" : "1fr") : /\dem\b/.test(cols) ? (this.resolveBox(el, si, own.get("grid-template-columns")!.value) ?? cols) : cols, own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
+            for (const [p] of TEMPLATE) {
+              handled.add(p);
+              if (template.some(([q]) => q === p)) decl(p, this.resolveBox(el, si, own.get(p)!.value) ?? res(p)!, own.get(p)!.utility);
+            }
             if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins in a grid are not modelled", kind: "geometry" });
           }
         } else if (/^(block|flow-root|list-item|inline-block)$/.test(display) && el.inlineRow?.[si]) {
@@ -1959,6 +1985,11 @@ export abstract class PageLifter {
         }
         if (v === undefined) continue;
         if (p === "aspect-ratio") v = v.replace(/^([\d.]+)\s*\/\s*([\d.]+)$/, "$1 / $2");
+        // A grid item's align-self is its alignment in its area (lift reads it as such).
+        if (p === "align-self" && inFlexOrGrid && /grid/.test(parentDisplay)) {
+          decl("grid-align-self", v, o.utility);
+          continue;
+        }
         if ((p === "box-shadow" && v === "none") || (p === "background-image" && v === "none")) continue;
         decl(p, v, o.utility);
       }

@@ -11,9 +11,10 @@
 import { closest } from "../diagnostics.js";
 import type { Fixture, FixtureNode } from "../fixture.js";
 import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
-import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
+import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, sizeAt, type GridSpec, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 import { boxMatrix, mapRect, multiply, type Matrix } from "./transform.js";
+import { expandTracks, place as gridPlace, sizeTracks, trackStarts, type Contribution, type Explicit, type TrackList, type TrackSize } from "./grid.js";
 
 const EPS = 0.001;
 
@@ -529,6 +530,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       if (kids.some((k) => k.comp === null)) return unknown(`<${n.tag}> has children the engine doesn't lay out`);
       const pat = p.pattern?.value;
       if (!pat) return unknown(`<${n.tag}> has children but no layout`);
+      if (pat === "grid" && fullGrid(p, kids as Kid[])) {
+        const r = gridIntrinsic(p, kids as Kid[]);
+        if ("why" in r) return unknown(r.why);
+        return { min: Math.max(insX, Math.min(cap, up(r.min) + insX)), max: Math.max(insX, Math.min(cap, up(Math.max(r.max, r.min)) + insX)) };
+      }
       if (pat === "grid") {
         // Explicit tracks: under a min-content constraint a minmax(0, <n>fr) column is 0 and an
         // <n>fr one its items' min-content width; at max-content every flexible column is its
@@ -813,6 +819,209 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     return { colW, colX };
   }
 
+  // ---- grids with a template, placed items or auto margins (CSS Grid's own algorithm, in grid.ts)
+
+  type Kid = { node: FixtureNode; comp: Component; slot: string | undefined };
+  /** A grid laid out by templateGrid: places its items again once its height is final. */
+  const gridArrange = new WeakMap<Box, (contentH: number) => void>();
+
+  /** Whether a grid needs CSS Grid's full algorithm (a template, placed items, auto margins on an item). */
+  const fullGrid = (p: ResolvedProps, kids: Kid[]) =>
+    !!p.grid ||
+    kids.some((k) => {
+      const kp = resolveElement(model, k.comp, k.slot, width);
+      const m = marginOf(kp);
+      return !!kp.place || m.autoLeft || m.autoRight || m.autoTop || m.autoBottom;
+    });
+
+  /** The template of a grid, its items' placements and the explicit grid (old-style columns and min as track lists too). */
+  function gridSetup(p: ResolvedProps, kids: Kid[], innerW: number | undefined, colGap: number, rowGap: number, innerH: number | undefined) {
+    const spec: GridSpec = p.grid?.value ?? { autoColumns: [{ min: "auto", max: "auto" }], autoRows: [{ min: "auto", max: "auto" }], dense: false, justifyContent: "normal", alignContent: "normal" };
+    let columns: TrackList | undefined = spec.columns;
+    if (!columns && p.columns) {
+      const tracks: TrackSize[] = p.columns.value.map((t) => ("size" in t ? { min: { len: t.size }, max: { len: t.size } } : { min: t.auto ? "auto" : { len: 0 }, max: { fr: t.fr } }));
+      columns = { tracks, names: tracks.map(() => []).concat([[]]) };
+    } else if (!columns && p.min) {
+      const min = Math.min(p.min.value, innerW ?? p.min.value);
+      columns = { tracks: [], names: [[], []], repeat: { type: "auto-fill", at: 0, tracks: [{ min: { len: min }, max: { fr: 1 } }], names: [[], []] } };
+    }
+    const cols = columns ? expandTracks(columns, innerW, colGap) : { tracks: [], names: [[]] };
+    const rowsT = spec.rows ? expandTracks(spec.rows, innerH, rowGap) : { tracks: [], names: [[]] };
+    const areas = spec.areas;
+    const ex: Explicit = {
+      cols: Math.max(cols.tracks.length, areas?.cols ?? 0),
+      rows: Math.max(rowsT.tracks.length, areas?.rows ?? 0),
+      colNames: cols.names,
+      rowNames: rowsT.names,
+      ...(areas && { areas: areas.areas }),
+    };
+    const places = kids.map((k) => resolveElement(model, k.comp, k.slot, width).place?.value);
+    const auto = { start: { auto: true as const }, end: { auto: true as const } };
+    const placed = gridPlace(ex, places.map((pl) => ({ row: pl?.row ?? auto, column: pl?.column ?? auto })), spec.dense);
+    return { spec, cols, rowsT, ex, places, placed };
+  }
+
+  /** The track list of one axis: implicit tracks before, the explicit ones, implicit tracks after (grid-auto-*, cycled). */
+  const axisTracks = (explicit: TrackSize[], count: number, offset: number, auto: TrackSize[]) =>
+    Array.from({ length: count }, (_, i) => {
+      const e = i - offset;
+      if (e >= 0 && e < explicit.length) return explicit[e];
+      const k = e < 0 ? ((e % auto.length) + auto.length) % auto.length : (e - explicit.length) % auto.length;
+      return auto[k] ?? { min: "auto" as const, max: "auto" as const };
+    });
+
+  /** An item's column contributions (outer: margins in; percentages of the grid area count as 0 here). */
+  function colContribution(k: Kid, a: number, b: number): Contribution & { why?: string } {
+    const kp = resolveElement(model, k.comp, k.slot, width);
+    const m = marginOf(kp);
+    const it = intrinsic(k.node, k.comp, k.slot);
+    if (it.why) return { a, b, minContent: 0, maxContent: 0, minimum: 0, why: it.why };
+    const ins = insets(kp);
+    const mx = m.left + m.right;
+    // A scroll container's automatic minimum width is 0 (its padding and border remain).
+    const minimum = scrolls(kp.overflow?.value) ? ins.left + ins.right : it.min;
+    return { a, b, minContent: it.min + mx, maxContent: it.max + mx, minimum: minimum + mx };
+  }
+
+  /** A grid's own min-content and max-content widths (its columns sized under that constraint). */
+  function gridIntrinsic(p: ResolvedProps, kids: Kid[]): { min: number; max: number } | { why: string } {
+    const gap = p.gap?.pct !== undefined ? 0 : (p.gap?.value ?? 0);
+    const g = gridSetup(p, kids, undefined, gap, 0, undefined);
+    if ("why" in g.placed) return { why: g.placed.why };
+    const { placed, spec } = g;
+    const tracks = axisTracks(g.cols.tracks, placed.cols, placed.colOffset, spec.autoColumns);
+    const items = kids.map((k, i) => colContribution(k, placed.areas[i].c0, placed.areas[i].c1));
+    const bad = items.find((it, i) => it.why && tracks.slice(placed.areas[i].c0, placed.areas[i].c1).some((t) => !(typeof t.min === "object" && "len" in t.min && typeof t.max === "object" && "len" in t.max)));
+    if (bad) return { why: bad.why! };
+    const sum = (s: number[]) => s.reduce((t, x) => t + x, 0) + gap * Math.max(0, s.length - 1);
+    return { min: sum(sizeTracks(tracks, items, gap, "min-content", false)), max: sum(sizeTracks(tracks, items, gap, "max-content", false)) };
+  }
+
+  /**
+   * A grid by CSS Grid's algorithm: items placed (template, lines, areas, auto-placement), columns
+   * sized from the items' widths, items laid out in their columns, rows sized from their heights,
+   * then each item aligned in its area (stretched, or start, center or end; auto margins). The rows
+   * are sized again once the grid's height is final (gridArrange).
+   */
+  function templateGrid(box: { props: ResolvedProps }, kids: Kid[], innerW: number, colGap: number, notes: string[]): { boxes: Box[]; contentH: number; arrange: (contentH: number) => void } {
+    const p = box.props;
+    const rowGapPct = p.rowGap?.pct;
+    const rowGap = rowGapPct !== undefined ? 0 : (p.rowGap?.value ?? (p.gap?.pct !== undefined ? 0 : colGap));
+    const innerH = p.height ? Math.max(0, p.height.value - insets(p).top - insets(p).bottom) : undefined;
+    let g = gridSetup(p, kids, innerW, colGap, rowGap, innerH);
+    if ("why" in g.placed) {
+      notes.push(`its grid placement isn't modelled (${g.placed.why})`);
+      const auto = { start: { auto: true as const }, end: { auto: true as const } };
+      g = { ...g, placed: gridPlace(g.ex, kids.map(() => ({ row: auto, column: auto })), g.spec.dense) };
+    }
+    const placed = g.placed as Exclude<typeof g.placed, { why: string }>;
+    const { spec } = g;
+    // auto-fit: repeated tracks no item is in collapse (they and their gaps take no space).
+    let colTracks = axisTracks(g.cols.tracks, placed.cols, placed.colOffset, spec.autoColumns);
+    let areas = placed.areas.map((a) => ({ ...a }));
+    if (g.cols.autoFit) {
+      const fit = new Set(g.cols.autoFit.map((i) => i + placed.colOffset));
+      const empty = new Set([...fit].filter((i) => !areas.some((a) => a.c0 <= i && i < a.c1)));
+      if (empty.size) {
+        const keep = colTracks.map((_, i) => !empty.has(i));
+        const idx = (line: number) => keep.slice(0, line).filter(Boolean).length;
+        areas = areas.map((a) => ({ ...a, c0: idx(a.c0), c1: idx(a.c1) }));
+        colTracks = colTracks.filter((_, i) => keep[i]);
+      }
+    }
+    const rowTracks = axisTracks(g.rowsT.tracks, placed.rows, placed.rowOffset, spec.autoRows);
+    const fixed = (t: TrackSize) => typeof t.min === "object" && "len" in t.min && typeof t.max === "object" && "len" in t.max;
+
+    // Columns.
+    const colItems = kids.map((k, i) => colContribution(k, areas[i].c0, areas[i].c1));
+    colItems.forEach((it, i) => {
+      if (it.why && colTracks.slice(it.a, it.b).some((t) => !fixed(t) && !(typeof t.max === "object" && "fr" in t.max && typeof t.min === "object" && "len" in t.min)))
+        notes.push(`a grid column sized by its items is as wide as their content, which can't be measured here (${it.why})`);
+    });
+    const colW = sizeTracks(colTracks, colItems, colGap, innerW, /^(normal|stretch)$/.test(spec.justifyContent));
+    const colX = trackStarts(colW, colGap, innerW, spec.justifyContent);
+    const span = (x: number[], w: number[], a: number, b: number) => x[b - 1] + w[b - 1] - x[a];
+
+    // Items at their area's width (stretched, or fit-content when aligned or with auto inline margins).
+    const justify = (i: number) => g.places[i]?.justify ?? p.justifyItems?.value ?? "stretch";
+    const boxes = kids.map((k, i) => {
+      const a = areas[i];
+      const cw = span(colX, colW, a.c0, a.c1);
+      const kp = atBase(resolveElement(model, k.comp, k.slot, width), cw);
+      const km = marginOf(kp);
+      const j = justify(i);
+      const own = kp.width?.value !== undefined && kp.width.value !== "fit";
+      let b: Box;
+      if ((j === "stretch" && !km.autoLeft && !km.autoRight && !kp.aspect) || own || kp.maxWidth) b = measure(k.node, k.comp, k.slot, cw, "grid");
+      else {
+        const raw = resolveElement(model, k.comp, k.slot, width);
+        const it = withOwnPct(intrinsic(k.node, k.comp, k.slot, true), raw, kp);
+        if (it.why) {
+          b = measure(k.node, k.comp, k.slot, cw, "grid");
+          b.assumptions.push(`it is as wide as its content in its grid area, which can't be measured (${it.why})`);
+        } else {
+          const cap = kp.measure ? sizeAt(kp.measure.value, cw) : Infinity;
+          const ins = insets(kp);
+          b = measure(k.node, k.comp, k.slot, cw, "grid", Math.max(ins.left + ins.right, Math.min(cap, it.max, Math.max(it.min, cw - km.left - km.right))));
+          if (it.wraps && b.w < it.max - EPS) b.assumptions.push("its width comes from its content, and a row inside it wraps there: the browser sizes it from the wrapped lines");
+        }
+      }
+      // Across its area: auto margins, else justify-self.
+      const m = marginOf(b.props);
+      const free = U(cw) - U(b.w) - U(m.left) - U(m.right);
+      const autos = (m.autoLeft ? 1 : 0) + (m.autoRight ? 1 : 0);
+      const off = autos ? (free > 0 ? (autos === 2 ? Math.trunc(free / 2) : m.autoLeft ? free : 0) : 0) : j === "center" ? Math.trunc(free / 2) : j === "end" ? free : 0;
+      b.x = colX[a.c0] + m.left + PX(off);
+      return b;
+    });
+    // The natural (content) heights the rows are sized from.
+    const natural = boxes.map((b) => b.h);
+    const rowItems = (): Contribution[] =>
+      boxes.map((b, i) => {
+        const m = marginOf(b.props);
+        const iy = insets(b.props);
+        const h = natural[i] + m.top + m.bottom;
+        return { a: areas[i].r0, b: areas[i].r1, minContent: h, maxContent: h, minimum: scrolls(b.props.overflow?.value) && !b.props.height ? iy.top + iy.bottom + m.top + m.bottom : h };
+      });
+    const stretchRows = /^(normal|stretch)$/.test(spec.alignContent);
+    const sizeRows = (avail: number | undefined) => sizeTracks(rowTracks, rowItems(), rowGap, avail ?? "max-content", stretchRows);
+    let rowH = sizeRows(innerH);
+    const sum = (s: number[], gap: number) => s.reduce((t, x) => t + x, 0) + gap * Math.max(0, s.length - 1);
+    const contentH = sum(rowH, rowGap);
+    const alignOf = (i: number) => g.places[i]?.align ?? p.align?.value ?? "stretch";
+
+    const arrangeAt = (finalH: number) => {
+      // A taller grid (a set or stretched height, a min-height): its rows are sized for it.
+      if (innerH === undefined && finalH > contentH + EPS) rowH = sizeRows(finalH);
+      const gap = rowGapPct !== undefined ? sizeAt({ pct: rowGapPct }, Math.max(0, finalH)) : rowGap;
+      const rowY = trackStarts(rowH, gap, finalH, spec.alignContent);
+      boxes.forEach((b, i) => {
+        const a = areas[i];
+        const areaH = rowY[a.r1 - 1] + rowH[a.r1 - 1] - rowY[a.r0];
+        const m = marginOf(b.props);
+        const al = alignOf(i);
+        if (m.autoTop || m.autoBottom) {
+          const space = Math.max(0, U(areaH) - U(outerH(b)));
+          b.y = rowY[a.r0] + m.top + PX(m.autoTop && m.autoBottom ? Math.trunc(space / 2) : m.autoTop ? space : 0);
+          return;
+        }
+        if (al === "stretch" && !b.props.height && !b.props.aspect) {
+          const target = areaH - m.top - m.bottom;
+          // In tracks with no auto minimum an item may be stretched shorter than its content (which overflows).
+          const autoMin = rowTracks.slice(a.r0, a.r1).some((t) => t.min === "auto");
+          if (target < b.h && !autoMin) {
+            b.h = Math.max(target, insets(b.props).top + insets(b.props).bottom);
+            arrange(b);
+          } else grow(b, target);
+          fillPct(b);
+        }
+        const space = U(areaH) - U(outerH(b));
+        b.y = rowY[a.r0] + m.top + PX(al === "center" ? Math.trunc(space / 2) : al === "end" ? space : 0);
+      });
+    };
+    return { boxes, contentH, arrange: arrangeAt };
+  }
+
   /**
    * Absolute and fixed boxes, once every box is in place (page coordinates): the containing block
    * is the padding box of the nearest positioned ancestor (fixed, or none: the window). Offsets in
@@ -918,7 +1127,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         path: props.margin!.steps.at(-1)!.path,
         message: say(`#${id} has maxWidth (centered by auto inline margins) and a left or right margin; keep one of them`, `#${id} has a max-width centered by auto margins and a left or right margin, which Cadesa doesn't combine`),
       });
-    if ((parent === "grid" || parent === "layer") && (m.autoLeft || m.autoRight))
+    if (parent === "layer" && (m.autoLeft || m.autoRight))
       issues.push({ severity: "error", id, path: props.margin!.steps.at(-1)!.path, message: `#${id} has an auto margin in a ${parent}; auto margins are modelled in block flow, stacks and clusters` });
 
     // ---- width
@@ -1017,8 +1226,14 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.minHeight && !props.aspect && !scroller;
     let escaped: FlowResult | undefined;
     let grows: StackGrow | undefined;
+    let gridArr: ((contentH: number) => void) | undefined;
 
-    if (kids.length && pattern === "grid") {
+    if (kids.length && pattern === "grid" && fullGrid(props, kids)) {
+      const tg = templateGrid({ props }, kids, innerW, gap, assumptions);
+      children.push(...tg.boxes);
+      contentH = tg.contentH;
+      gridArr = tg.arrange;
+    } else if (kids.length && pattern === "grid") {
       const { colW, colX } = props.columns ? tracks(props.columns.value, kids, innerW, gap, assumptions) : autoFill(props.min!.value, innerW, gap);
       const cols = colW.length;
       const justify = props.justifyItems?.value ?? "stretch";
@@ -1202,7 +1417,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         flexLines: pattern === "cluster",
         oneLine: pattern === "cluster" && props.wrap?.value === false,
       });
-    if (rows || grows) arrange(box);
+    if (gridArr) gridArrange.set(box, gridArr);
+    if (rows || grows || gridArr) arrange(box);
     for (const k of outKids) {
       // Its static position (where it would be with no offsets): in block flow, below the in-flow
       // boxes before it and the margins pending there (those before it only: what follows can't
@@ -1289,6 +1505,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
    * flex container (align-content: normal). Children are then aligned within their row.
    */
   function arrange(b: Box) {
+    const ga = gridArrange.get(b);
+    if (ga) {
+      const ib = insets(b.props);
+      ga(Math.max(0, b.h - ib.top - ib.bottom));
+      return;
+    }
     placeStack(b);
     const a = arrangement.get(b);
     if (!a) return;

@@ -15,6 +15,7 @@ import { validate } from "../validate.js";
 import { lengthExpr } from "../fluid.js";
 import { parseContain } from "../model.js";
 import { originOf, transformList } from "../engine/transform.js";
+import { parseAreas, parseLinePair, parseTrackList } from "../engine/grid.js";
 
 /**
  * What an unmodelled declaration can change: a box's size and everything that follows (geometry,
@@ -687,9 +688,43 @@ export function liftElements(input: LiftInput): LiftResult {
         if (justify && j !== "stretch") note(e, s, justify, "a layer's children always stretch across it", "geometry");
         out.layout = { pattern: "layer", ...(a && a !== "stretch" && { align: a }) };
       } else {
-        const tracks = cols ? gridTracks(cv) : undefined;
-        if (!tracks) note(e, s, cols ?? display, cols ? `grid-template-columns: ${cv} has no Cadesa pattern (fixed lengths, percentages, <n>fr and minmax(0, <n>fr) tracks, or repeat(auto-fill, minmax(<min>, 1fr)))` : "a grid without columns or layered children has no Cadesa pattern", "geometry");
-        else {
+        const tracks = cols && cv !== "none" ? gridTracks(cv) : undefined;
+        // The rest of a grid's template: CSS Grid's own algorithm (layout.template).
+        const more = (["grid-template-rows", "grid-template-areas", "grid-auto-rows", "grid-auto-columns", "grid-auto-flow", "justify-content", "align-content"] as const).map((p) => [p, take(p)] as const);
+        if (cols && cv !== "none" && !tracks && !parseTrackList(cv.replace(/(-?\d*\.?\d+)rem\b/g, (_, n) => `${parseFloat(n) * 16}px`)))
+          note(e, s, cols, `grid-template-columns: ${cv} has no Cadesa pattern`, "geometry");
+        else if (!tracks || more.some(([, d]) => d)) {
+          const template: Record<string, unknown> = {};
+          const px = (v: string) => (resolveVar(v)?.raw ?? v).replace(/(-?\d*\.?\d+)rem\b/g, (_, n) => `${Math.round(parseFloat(n) * 16 * 1e6) / 1e6}px`).trim();
+          const KEY: Record<string, string> = { "grid-template-rows": "rows", "grid-auto-rows": "autoRows", "grid-auto-columns": "autoColumns" };
+          const list = (d: Decl, key: string) => {
+            const v = px(d.value);
+            if (v === "none" || (key.startsWith("auto") && v === "auto")) return;
+            if (parseTrackList(v) && !(key.startsWith("auto") && parseTrackList(v)!.repeat)) template[key] = v;
+            else note(e, s, d, `${d.prop}: ${v} isn't a track list Cadesa reads`, "geometry");
+          };
+          if (cols && cv !== "none") list({ ...cols, value: cv }, "columns");
+          const CONTENT: Record<string, string> = { normal: "", stretch: "", start: "start", "flex-start": "start", left: "start", center: "center", end: "end", "flex-end": "end", right: "end", "space-between": "space-between", "space-around": "space-around", "space-evenly": "space-evenly" };
+          for (const [p, d] of more) {
+            if (!d) continue;
+            const v = px(d.value);
+            if (KEY[p]) list(d, KEY[p]);
+            else if (p === "grid-template-areas") {
+              const rows = v === "none" ? [] : [...v.matchAll(/"([^"]*)"|'([^']*)'/g)].map((m) => m[1] ?? m[2]);
+              if (rows.length && parseAreas(rows)) template.areas = rows;
+              else if (v !== "none") note(e, s, d, `grid-template-areas: ${v} isn't a template Cadesa reads`, "geometry");
+            } else if (p === "grid-auto-flow") {
+              if (/^(row\s+dense|dense\s+row|dense)$/.test(v)) template.dense = true;
+              else if (v !== "row") note(e, s, d, `grid-auto-flow: ${v} isn't modelled (row and dense are)`, "geometry");
+            } else {
+              const c = CONTENT[v];
+              if (c === undefined) note(e, s, d, `${p}: ${v} has no Cadesa equivalent`, "geometry");
+              else if (c) template[p === "justify-content" ? "justifyContent" : "alignContent"] = c;
+            }
+          }
+          if (justify && !j) note(e, s, justify, `justify-items: ${justify.value.trim()} has no Cadesa equivalent`, "geometry");
+          out.layout = { pattern: "grid", template, ...gapOf(), ...(a && a !== "stretch" && { align: a }), ...(j && j !== "stretch" && { justify: j }) };
+        } else {
           if (justify && !j) note(e, s, justify, `justify-items: ${justify.value.trim()} has no Cadesa equivalent`, "geometry");
           const all = tracks.every((t) => t === "minmax(0, 1fr)");
           out.layout = { pattern: "grid", columns: all ? tracks.length : tracks, ...gapOf(), ...(a && a !== "stretch" && { align: a }), ...(j && j !== "stretch" && { justify: j }) };
@@ -817,6 +852,29 @@ export function liftElements(input: LiftInput): LiftResult {
     }
     if (alignSelf && !["auto", "stretch", "normal"].includes(alignSelf.value.trim()))
       note(e, s, alignSelf, `align-self: ${alignSelf.value.trim()} has no Cadesa equivalent`, "geometry");
+    // A grid item: its lines (grid-row, grid-column) and its own alignment in its area.
+    {
+      const lines = ["grid-row-start", "grid-row-end", "grid-column-start", "grid-column-end"].map((p) => take(p));
+      const js = take("justify-self");
+      const gas = take("grid-align-self");
+      const SELF: Record<string, string> = { auto: "", normal: "", stretch: "stretch", start: "start", "self-start": "start", "flex-start": "start", left: "start", center: "center", end: "end", "self-end": "end", "flex-end": "end", right: "end" };
+      const place: Record<string, string> = {};
+      const v = (d?: Decl) => (d ? (resolveVar(d.value)?.raw ?? d.value).trim() : "auto");
+      for (const [axis, i] of [["row", 0], ["column", 2]] as const) {
+        if (!lines[i] && !lines[i + 1]) continue;
+        const pair = `${v(lines[i])} / ${v(lines[i + 1])}`;
+        if (pair === "auto / auto") continue;
+        if (parseLinePair(pair)) place[axis] = pair;
+        else note(e, s, (lines[i] ?? lines[i + 1])!, `grid-${axis}: ${pair} isn't a placement Cadesa reads`, "geometry");
+      }
+      for (const [k, d] of [["justify", js], ["align", gas]] as const) {
+        if (!d) continue;
+        const a = SELF[v(d)];
+        if (a === undefined) note(e, s, { ...d, prop: k === "align" ? "align-self" : "justify-self" }, `${k}-self: ${v(d)} has no Cadesa equivalent`, "geometry");
+        else if (a) place[k] = a;
+      }
+      if (Object.keys(place).length) out.place = place;
+    }
     // flex: <grow> <shrink> <basis>. A grow factor maps to grow (basis 0 or auto); shrinking is
     // Cadesa's own (a lone item too wide for its line), which flex-shrink: 0 switches off: page.ts
     // decides per width whether that matters.

@@ -15,6 +15,19 @@ import {
   type Ref,
   type Unsettable,
 } from "./model.js";
+import { parseAreas, parseLinePair, parseTrackList, type LinePair, type TrackList, type TrackSize } from "./engine/grid.js";
+
+/** A grid template, parsed. */
+export interface GridSpec {
+  columns?: TrackList;
+  rows?: TrackList;
+  areas?: ReturnType<typeof parseAreas>;
+  autoColumns: TrackSize[];
+  autoRows: TrackSize[];
+  dense: boolean;
+  justifyContent: string;
+  alignContent: string;
+}
 
 /** One link in the chain that explains where a computed value came from. */
 export interface Step {
@@ -129,6 +142,10 @@ export interface ResolvedProps {
   contain?: Resolved<Contain>;
   /** A 2D transform about its origin (CSS transform and transform-origin): where the box and its content are drawn. */
   transform?: Resolved<{ list: string; origin?: string }>;
+  /** A grid's template (CSS grid-template-*, grid-auto-*, content alignment), sized by Chromium's grid algorithm. */
+  grid?: Resolved<GridSpec>;
+  /** A grid item's lines and its own alignment. */
+  place?: Resolved<{ row: LinePair; column: LinePair; align?: "start" | "center" | "end" | "stretch"; justify?: "start" | "center" | "end" | "stretch" }>;
   /** Positioning and its offsets (px, or a percentage of the containing block). */
   position?: Resolved<{ type: PositionType; top?: number | Pct; right?: number | Pct; bottom?: number | Pct; left?: number | Pct; height?: number | Pct }>;
   fit?: Resolved<"cover" | "contain">;
@@ -289,6 +306,26 @@ export function resolveElement(model: Model, component: Component, slot: string 
           const tokens = l.columns.filter((t) => "size" in t).map((t) => tokenStep((t as { size: Ref }).size));
           out.columns = { value: tracks, display, steps: [...tokens.filter((t, k) => tokens.findIndex((u) => u.path === t.path) === k), ...pre, src(`${l.path}.columns`)] };
         }
+        if (l.template) {
+          const t = l.template;
+          const list = (s?: string) => (s === undefined ? undefined : parseTrackList(s));
+          const auto = (s?: string) => (s === undefined ? [{ min: "auto" as const, max: "auto" as const }] : parseTrackList(s)!.tracks);
+          const shown = [t.columns && `columns ${t.columns}`, t.rows && `rows ${t.rows}`, t.areas && `areas ${t.areas.map((a) => JSON.stringify(a)).join(" ")}`, t.autoRows && `auto rows ${t.autoRows}`, t.autoColumns && `auto columns ${t.autoColumns}`].filter(Boolean).join(", ");
+          out.grid = {
+            value: {
+              columns: list(t.columns),
+              rows: list(t.rows),
+              areas: t.areas ? parseAreas(t.areas) : undefined,
+              autoColumns: auto(t.autoColumns),
+              autoRows: auto(t.autoRows),
+              dense: !!t.dense,
+              justifyContent: t.justifyContent ?? "normal",
+              alignContent: t.alignContent ?? "normal",
+            },
+            display: shown || "an implicit grid",
+            steps: [...pre, src(`${l.path}.template`)],
+          };
+        }
         if (l.pattern === "grid") {
           const j = l.justifyItems ?? "stretch";
           out.justifyItems = { value: j, display: l.justifyItems ? j : "stretch (default)", steps: [...pre, src(l.justifyItems ? `${l.path}.justify` : l.path)] };
@@ -316,6 +353,16 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "overflow": {
         const o = p.overflow!;
         out.overflow = { value: { x: o.x, y: o.y }, display: o.raw, steps: [...pre, src(o.path)] };
+        break;
+      }
+      case "place": {
+        const pl = p.place!;
+        const auto = { start: { auto: true as const }, end: { auto: true as const } };
+        out.place = {
+          value: { row: pl.row ? parseLinePair(pl.row)! : auto, column: pl.column ? parseLinePair(pl.column)! : auto, ...(pl.align && { align: pl.align }), ...(pl.justify && { justify: pl.justify }) },
+          display: [pl.row && `row ${pl.row}`, pl.column && `column ${pl.column}`, pl.align && `align ${pl.align}`, pl.justify && `justify ${pl.justify}`].filter(Boolean).join(", "),
+          steps: [...pre, src(pl.path)],
+        };
         break;
       }
       case "transform": {

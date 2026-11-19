@@ -1,6 +1,7 @@
 import { closest, type Diagnostic } from "./diagnostics.js";
 import { lengthExpr } from "./fluid.js";
 import { originOf, transformList } from "./engine/transform.js";
+import { parseAreas, parseLinePair, parseTrackList } from "./engine/grid.js";
 import type { PathSeg, Source } from "./load.js";
 import {
   DEFAULT_PREFIX,
@@ -29,6 +30,8 @@ import {
   type Props,
   type Ref,
   type GridTrack,
+  type GridTemplateProp,
+  type PlaceProp,
   type Slot,
   type TextRole,
   type Token,
@@ -261,6 +264,45 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
    * token (a fixed column), "<n>fr" (CSS's <n>fr: at least its items' min-content width) or
    * "minmax(0, <n>fr)" (a share of what's left, however narrow); "repeat(<n>, <track>)" repeats one.
    */
+  /** A grid template as CSS writes it: track lists, areas, implicit tracks, dense flow and content alignment. */
+  const gridTemplate = (v: unknown, path: PathSeg[]): GridTemplateProp | undefined => {
+    const o = obj(v, path, "a grid template");
+    if (!o) return undefined;
+    keys(o, path, ["columns", "rows", "areas", "autoColumns", "autoRows", "dense", "justifyContent", "alignContent"]);
+    const out: GridTemplateProp = {};
+    let ok = true;
+    for (const k of ["columns", "rows", "autoColumns", "autoRows"] as const) {
+      if (o[k] === undefined) continue;
+      const l = typeof o[k] === "string" ? parseTrackList(o[k] as string) : undefined;
+      if (!l || (k.startsWith("auto") && (l.repeat || !l.tracks.length))) {
+        err([...path, k], `invalid ${k}`, { expected: 'a CSS track list, e.g. "1fr auto 1fr", "repeat(3, minmax(0, 1fr))" or "[full-start] 16px [content-start] 1fr"', got: o[k] });
+        ok = false;
+      } else out[k] = o[k] as string;
+    }
+    if (o.areas !== undefined) {
+      const rows = Array.isArray(o.areas) && o.areas.every((r) => typeof r === "string") ? (o.areas as string[]) : undefined;
+      if (!rows || !parseAreas(rows)) {
+        err([...path, "areas"], "invalid areas", { expected: 'one string per row, every row as many cells, each name a rectangle, e.g. ["head head", "side main"]', got: o.areas });
+        ok = false;
+      } else out.areas = rows;
+    }
+    if (o.dense !== undefined) {
+      if (typeof o.dense !== "boolean") {
+        err([...path, "dense"], "invalid dense", { expected: "true or false", got: o.dense });
+        ok = false;
+      } else if (o.dense) out.dense = true;
+    }
+    const CONTENT = ["start", "center", "end", "stretch", "space-between", "space-around", "space-evenly"];
+    for (const k of ["justifyContent", "alignContent"] as const) {
+      if (o[k] === undefined) continue;
+      if (!CONTENT.includes(o[k] as string)) {
+        err([...path, k], `invalid ${k}`, { expected: CONTENT.join(", "), got: o[k] });
+        ok = false;
+      } else out[k] = o[k] as string;
+    }
+    return ok ? out : undefined;
+  };
+
   const gridTracks = (v: unknown, path: PathSeg[]): GridTrack[] | undefined => {
     const expected = 'a column count (3), or a list of size tokens and "1fr" / "minmax(0, 1fr)" tracks, e.g. [sidebar, "minmax(0, 1fr)"]';
     if (typeof v === "number") {
@@ -451,7 +493,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "layout": {
           const l = obj(v, p, "a layout");
           if (!l) break;
-          keys(l, p, ["pattern", "gap", "align", "min", "columns", "justify", "wrap", "rowGap"]);
+          keys(l, p, ["pattern", "gap", "align", "min", "columns", "justify", "wrap", "rowGap", "template"]);
           const PATTERNS = ["stack", "cluster", "grid", "layer", "flow"];
           if (!PATTERNS.includes(l.pattern as string)) {
             err([...p, "pattern"], l.pattern === undefined ? 'missing required key "pattern"' : "unsupported layout pattern", {
@@ -463,7 +505,18 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           }
           let min: Ref | undefined;
           let columns: GridTrack[] | undefined;
-          if (l.pattern === "grid") {
+          let template: GridTemplateProp | undefined;
+          if (l.pattern === "grid" && l.template !== undefined) {
+            if (l.min !== undefined || l.columns !== undefined) {
+              err(p, 'a grid takes "min", "columns" or "template", only one of them', { expected: "layout: { pattern: grid, template: { columns: \"1fr auto 1fr\" } }" });
+              break;
+            }
+            template = gridTemplate(l.template, [...p, "template"]);
+            if (!template) break;
+          } else if (l.template !== undefined) {
+            err([...p, "template"], "template only applies to a grid", { expected: "remove template, or use pattern: grid" });
+            break;
+          } else if (l.pattern === "grid") {
             if ((l.min === undefined) === (l.columns === undefined)) {
               err(p, l.min === undefined ? 'a grid needs "min" (the minimum column width, a size token) or "columns" (its column tracks)' : 'a grid takes "min" or "columns", not both', {
                 expected: "layout: { pattern: grid, min: <size token>, gap: <space token> }, or layout: { pattern: grid, columns: 3 } (or [<size token>, 1fr, ...])",
@@ -531,6 +584,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             ...(rowGap && { rowGap }),
             min,
             ...(columns && { columns }),
+            ...(template && { template }),
             ...(l.justify !== undefined && l.pattern === "grid" && { justifyItems: l.justify as LayoutProp["justifyItems"] }),
             ...(l.justify !== undefined && l.pattern !== "grid" && { justify: l.justify as LayoutProp["justify"] }),
             ...(l.wrap === false && { wrap: false }),
@@ -578,6 +632,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
               if (r) (m as unknown as Record<string, MarginSide>)[s] = r;
             }
             if (ok) out.margin = m;
+          } else if (v === "auto") {
+            const a = { auto: true as const, path: p.join(".") };
+            out.margin = { path: p.join("."), top: a, right: a, bottom: a, left: a };
           } else {
             const r = sideRef(v, p, "a margin", true);
             if (r) out.margin = { path: p.join("."), top: r, right: r, bottom: r, left: r };
@@ -693,6 +750,33 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           const fix = (a: Overflow, other: Overflow): Overflow => (scrolling(other) && !scrolling(a) ? (a === "visible" ? "auto" : "hidden") : a);
           [x, y] = [fix(x, y), fix(y, x)];
           out.overflow = { x, y, raw: x === y ? x : `x ${x}, y ${y}`, path: p.join(".") };
+          break;
+        }
+        case "place": {
+          // place: { row: "1 / -1", column: "span 2", align: center, justify: start }: where a grid item sits.
+          const o = obj(v, p, "a grid placement");
+          if (!o) break;
+          keys(o, p, ["row", "column", "align", "justify"]);
+          const ALIGN = ["start", "center", "end", "stretch"];
+          let ok = true;
+          for (const k of ["align", "justify"] as const)
+            if (o[k] !== undefined && !ALIGN.includes(o[k] as string)) {
+              err([...p, k], `invalid ${k}`, { expected: "start, center, end or stretch", got: o[k] });
+              ok = false;
+            }
+          for (const k of ["row", "column"] as const)
+            if (o[k] !== undefined && (typeof o[k] !== "string" || !parseLinePair(o[k] as string))) {
+              err([...p, k], `invalid grid ${k}`, { expected: 'grid lines as CSS writes them, e.g. "1 / -1", "2", "span 2" or an area name', got: o[k] });
+              ok = false;
+            }
+          if (!ok) break;
+          out.place = {
+            path: p.join("."),
+            ...(o.row !== undefined && { row: o.row as string }),
+            ...(o.column !== undefined && { column: o.column as string }),
+            ...(o.align !== undefined && { align: o.align as PlaceProp["align"] }),
+            ...(o.justify !== undefined && { justify: o.justify as PlaceProp["justify"] }),
+          };
           break;
         }
         case "transform": {
