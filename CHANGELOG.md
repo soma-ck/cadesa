@@ -33,6 +33,22 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   `position: relative` offsets shift the box and what it holds; sticky is predicted at scroll
   position 0 and contains absolute children. In a source: `position: { type, top, right, ... }`
   and `page.windowHeight`.
+- `::before` and `::after` are laid out from their own cascade. Positioned ones (decorative
+  layers, ribbons) move nothing. An empty table or block (the clearfix) is a box of no height:
+  the table keeps the last child's margin inside, the block lets it through, and `clear` does
+  nothing where nothing floats. Text content (`"/"`, `"\2022"`) is an inline run at the start or
+  end of the element's text, with its own weight and padding; a `::before` floated to the start
+  of a text box (Bootstrap's breadcrumb divider) shortens its first line. A sized `::before` is a
+  flex item or a grid cell. Text in a font without metrics (an icon font), and `counter()`,
+  `attr()` or `url()` content, stay `≈`.
+- Inline runs in another weight (`<strong>`, `<b>`, `.fw-semibold`) are measured at their weight,
+  with lines broken across runs as Chromium does (no kerning across a change of font, or across
+  an inline box's margin, border or padding, which take room on the line). Italic text is exact
+  when the page loads no italic face of its font (it is the upright face slanted).
+- A percentage `column-gap` in a flex row or grid is a share of the content width (and counts as
+  0 in intrinsic sizes, as in Chromium). A percentage row gap of a flex container whose height is
+  auto is 0; a grid's percentage row gap stays `≈`. In a source: a cluster or grid `gap` may name
+  a percentage size token.
 - More selectors are decided from the page: `:lang()`, `:dir()`, `:open`, `:placeholder-shown`,
   `:read-only` / `:read-write`, `:valid` / `:invalid` for required controls, `:in-range`,
   `:nth-child(An+B of S)`, `:scope`, `:host`; vendor pseudo-classes Chromium rejects match

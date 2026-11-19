@@ -99,7 +99,8 @@ export interface ResolvedProps {
   shadow?: Resolved<string>;
   align?: Resolved<"start" | "center" | "end" | "stretch">;
   textAlign?: Resolved<"start" | "center" | "end">;
-  gap?: Resolved<number>;
+  /** `pct`: the gap between columns is this percentage of the content width (value is 0: what intrinsic sizes count). */
+  gap?: Resolved<number> & { pct?: number };
   /** A grid's or cluster's gap between rows, when it differs from `gap`. */
   rowGap?: Resolved<number>;
   padding?: Resolved<Sides>;
@@ -211,7 +212,8 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "layout": {
         const l = p.layout!;
         out.pattern = { value: l.pattern, display: l.pattern, steps: [...pre, src(`${l.path}.pattern`)] };
-        out.gap = l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
+        const gapPct = l.gap?.kind === "size" ? model.tokens.get(tokenKey("size", l.gap.name))!.pct : undefined;
+        out.gap = gapPct !== undefined ? { ...sizeOf(l.gap!), value: 0, pct: gapPct, display: `${gapPct}% of the content width` } : l.gap ? lengthOf(l.gap) : { value: 0, display: "0px (no gap)", steps: [...pre, src(l.path)] };
         if (l.rowGap) out.rowGap = lengthOf(l.rowGap);
         if (l.pattern !== "stack" && l.pattern !== "flow") {
           const def = l.pattern === "cluster" ? "center" : "stretch";

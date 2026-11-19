@@ -58,11 +58,17 @@ describe("text that runs together", () => {
     expect(f.map((x) => x.width)).toEqual([800]);
   });
 
-  it("is inconclusive when generated content may separate them", () => {
-    const f = spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: "" }`);
+  it("is inconclusive when generated content Cadesa can't read may separate them", () => {
+    const f = spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: counter(item) }`);
     expect(f).toHaveLength(1);
     expect(f[0].inconclusive).toBe(true);
-    expect(f[0].message).toMatch(/may run together as "Total42" in #a: t\.css:2 \.sep::after adds content Cadesa doesn't model$/);
+    expect(f[0].message).toMatch(/may run together as "Total42" in #a: \.sep::after \(t\.css:2\) adds content Cadesa doesn't model$/);
+  });
+
+  it("reads generated text and its padding: an empty ::after separates nothing, a \":\" or padding does", () => {
+    expect(spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: "" }`).map((x) => x.inconclusive)).toEqual([undefined]);
+    expect(spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: ":" }`)).toEqual([]);
+    expect(spacing(`<div class="a"><span class="sep">Total</span><span>42</span></div>`, `.sep::after { content: ""; padding-right: 4px }`)).toEqual([]);
   });
 });
 

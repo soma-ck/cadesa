@@ -525,11 +525,14 @@ interface Sheet {
   rules: CssRuleIn[];
   /** At-rules and nested rules that were not read. */
   skipped: { file: string; line: number; text: string; reason: string }[];
+  /** @font-face rules: the family and style of each face. */
+  faces: { family: string; style: string }[];
 }
 
 function readSheet(file: string, text: string, origin: Origin3, start: number, lineOffset = 0): Sheet {
   const rules: CssRuleIn[] = [];
   const skipped: Sheet["skipped"] = [];
+  const faces: Sheet["faces"] = [];
   let order = start;
   const root = postcss.parse(text, { from: file });
   const declsOf = (r: Container) => {
@@ -556,13 +559,17 @@ function readSheet(file: string, text: string, origin: Origin3, start: number, l
       if (name === "media") a.each((c) => visit(c, [...media, parseMediaQuery(a.params)]));
       // @supports: modern features hold in Chromium. @layer: read in source order (layer order is not modelled).
       else if (name === "supports" || name === "layer") a.each((c) => visit(c, media));
-      else if (name === "import") skipped.push({ file, line, text: `@import ${a.params}`, reason: "@import is not followed; lift the imported file too" });
+      else if (name === "font-face") {
+        const get = (prop: string) => a.nodes?.find((d): d is import("postcss").Declaration => d.type === "decl" && d.prop.toLowerCase() === prop)?.value.trim();
+        const family = get("font-family")?.replace(/^["']|["']$/g, "");
+        if (family) faces.push({ family: family.toLowerCase(), style: (get("font-style") ?? "normal").toLowerCase() });
+      } else if (name === "import") skipped.push({ file, line, text: `@import ${a.params}`, reason: "@import is not followed; lift the imported file too" });
       else if (!/^(font-face|keyframes|-webkit-keyframes|charset|namespace|property|page|counter-style|font-feature-values)$/.test(name))
         skipped.push({ file, line, text: `@${a.name} ${a.params}`.trim(), reason: `@${a.name} is not modelled` });
     }
   };
   root.each((n) => visit(n, []));
-  return { rules, skipped };
+  return { rules, skipped, faces };
 }
 
 // ---------------------------------------------------------------- the lifter
@@ -591,6 +598,7 @@ class CssLifter extends PageLifter {
   readonly label: string;
   rules: CssRuleIn[] = [];
   skipped: Sheet["skipped"] = [];
+  faces: Sheet["faces"] = [];
 
   constructor(page: string, html: string, files: SheetFile[]) {
     super(page, html, files.map((f) => f.file).join(","));
@@ -654,11 +662,23 @@ class CssLifter extends PageLifter {
       if (!("rules" in src)) order += s.rules.length + 1;
       this.rules.push(...s.rules);
       this.skipped.push(...s.skipped);
+      this.faces.push(...s.faces);
     }
     // Token names come from the custom properties declared on :root / html.
     for (const r of this.rules)
       if (r.origin === "author" && !r.media.length && /^(:root|html)$/.test(r.selector.trim()))
         for (const d of r.decls) if (d.prop.startsWith("--")) this.theme.set(d.prop, d.value);
+  }
+
+  italicFace(family: string): boolean | undefined {
+    const f = family.toLowerCase();
+    const faces = this.faces.filter((x) => x.family === f);
+    if (faces.length) return faces.some((x) => /^(italic|oblique)/.test(x.style));
+    // A Google Fonts stylesheet serves italic faces only when its URL asks for them (ital).
+    const google = [...this.html.matchAll(/<link\b[^>]*href\s*=\s*["']([^"']*fonts\.googleapis\.com[^"']*)["']/gi)].map((m) => m[1].replace(/&amp;/g, "&"));
+    const asks = google.filter((u) => decodeURIComponent(u.replace(/\+/g, " ")).toLowerCase().includes(f));
+    if (asks.length) return asks.some((u) => /ital|italic|[0-9]i\b/i.test(u));
+    return undefined;
   }
 
   declarationCount() {
@@ -748,6 +768,8 @@ class CssLifter extends PageLifter {
       el.own[si] = own;
       el.space[si] = undefined;
       const apply: { rule: CssRuleIn; d: CssRuleIn["decls"][number]; t: number }[] = [];
+      /** ::before and ::after: their own cascades. */
+      const generated: Record<"before" | "after", typeof apply> = { before: [], after: [] };
       for (const { rule, m, pseudoElement } of matched) {
         const props = rule.decls.filter((d) => !d.prop.startsWith("--"));
         const k: ImpactKind = props.length ? worst(props.map((d) => kindOf(d.prop))) : "none";
@@ -764,9 +786,12 @@ class CssLifter extends PageLifter {
         }
         if (skip) continue;
         if (pseudoElement) {
-          if (/^(before|after)$/.test(pseudoElement) && rule.decls.some((d) => d.prop === "content" && !/^(none|normal)$/.test(d.value.trim())))
-            this.note(el, si, { decl: `${where} ${declText}`, reason: `::${pseudoElement} content is not modelled`, kind: "geometry" });
-          else if (/^(first-line|first-letter)$/.test(pseudoElement)) this.note(el, si, { decl: `${where} ${declText}`, reason: `::${pseudoElement} styles are not modelled`, kind: "text" });
+          if (pseudoElement === "before" || pseudoElement === "after") {
+            // In an interactive state it doesn't apply by default; a selector that may match can't be decided.
+            if (m === "unknown" && rule.decls.some((d) => d.prop === "content" && !/^(none|normal)$/.test(d.value.trim())))
+              this.note(el, si, { decl: `${where} ${declText}`, reason: `::${pseudoElement} content under a selector Cadesa can't decide is not modelled`, kind: "geometry" });
+            else if (m === "yes") for (const d of rule.decls) generated[pseudoElement].push({ rule, d, t: tier(rule, d.important) });
+          } else if (/^(first-line|first-letter)$/.test(pseudoElement)) this.note(el, si, { decl: `${where} ${declText}`, reason: `::${pseudoElement} styles are not modelled`, kind: "text" });
           continue;
         }
         if (m === "state") {
@@ -779,12 +804,18 @@ class CssLifter extends PageLifter {
         }
         for (const d of rule.decls) apply.push({ rule, d, t: tier(rule, d.important) });
       }
-      apply.sort((a, b) => a.t - b.t || a.rule.spec[0] - b.rule.spec[0] || a.rule.spec[1] - b.rule.spec[1] || a.rule.spec[2] - b.rule.spec[2] || a.rule.order - b.rule.order);
-      for (const { rule, d } of apply) {
-        const label = rule.origin === "ua" ? `browser default (${rule.selector})` : rule.origin === "inline" ? rule.selector : `${rule.selector} (${rule.file}:${rule.line})`;
-        // Sorted by the cascade, so a later declaration always wins (important ones come last).
-        this.apply(own, { ...d, important: false }, label);
-      }
+      const cascade = (list: typeof apply, into: Map<string, Origin>) => {
+        list.sort((a, b) => a.t - b.t || a.rule.spec[0] - b.rule.spec[0] || a.rule.spec[1] - b.rule.spec[1] || a.rule.spec[2] - b.rule.spec[2] || a.rule.order - b.rule.order);
+        for (const { rule, d } of list) {
+          const label = rule.origin === "ua" ? `browser default (${rule.selector})` : rule.origin === "inline" ? rule.selector : `${rule.selector} (${rule.file}:${rule.line})`;
+          // Sorted by the cascade, so a later declaration always wins (important ones come last).
+          this.apply(into, { ...d, important: false }, label);
+        }
+      };
+      cascade(apply, own);
+      (el.pseudoOwn ??= [])[si] = {};
+      for (const pe of ["before", "after"] as const)
+        if (generated[pe].some(({ d }) => d.prop === "content")) cascade(generated[pe], (el.pseudoOwn[si][pe] = new Map()));
     });
   }
 }

@@ -453,7 +453,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
             err([...p, "gap"], "a flow has no gap (block flow spaces its children with their margins)", { expected: "remove gap, or give the children margin: { top/bottom }, or use pattern: stack" });
             break;
           }
-          const gap = l.gap === undefined ? undefined : spaceRef(l.gap, [...p, "gap"], "a gap");
+          // A cluster's or grid's gap between columns may be a percentage of its width (a size token).
+          const pctGap = typeof l.gap === "string" && (l.pattern === "cluster" || l.pattern === "grid") && tokens.get(tokenKey("size", l.gap))?.pct !== undefined && !tokens.has(tokenKey("space", l.gap));
+          const gap = l.gap === undefined ? undefined : pctGap ? ref(l.gap, [...p, "gap"], "size") : spaceRef(l.gap, [...p, "gap"], "a gap");
           if (l.gap !== undefined && !gap) break;
           if (l.rowGap !== undefined && l.pattern !== "grid" && l.pattern !== "cluster") {
             err([...p, "rowGap"], "rowGap only applies to a grid or a cluster (the gap between its rows)", { expected: "remove rowGap, or use gap" });

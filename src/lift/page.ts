@@ -18,11 +18,12 @@
  */
 import { parse } from "parse5";
 import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
-import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type P5Node } from "../fixture.js";
+import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type Generated, type InlineInfo, type P5Node } from "../fixture.js";
 import { ABSOLUTE, lengthExpr, MATHY } from "../fluid.js";
 import { borderPx, insets } from "../resolve.js";
 import { lineHeightPx } from "../engine/layout.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
+import { firstFamily } from "../fonts.js";
 import type { Decl } from "./css.js";
 import { linesOf } from "./impact.js";
 import { emitYaml, kindOf, liftElements, parseFlex, type ImpactKind, type LiftedElement, type LiftResult, type Unlifted } from "./lift.js";
@@ -143,6 +144,15 @@ export interface El {
   anonymous?: string;
   /** The (shared) slot or root this element's styles are emitted under. */
   signature?: string;
+  /** Per state, from the front end: the declarations the cascade gives the element's ::before and ::after (when content is set). */
+  pseudoOwn?: { before?: Map<string, Origin>; after?: Map<string, Origin> }[];
+  /** A ::before or ::after box (added after the cascade, as the first or last child of its element). */
+  pseudo?: "before" | "after";
+  /**
+   * A ::before / ::after's content per state: its text ("" for content: ""), undefined where it
+   * generates no box, or `{ unknown }` for content Cadesa can't read (counters, attr(), images).
+   */
+  content?: (string | { unknown: string } | undefined)[];
 }
 
 export const SKIP = new Set(["script", "style", "template", "noscript", "head", "title", "meta", "link", "base"]);
@@ -450,6 +460,13 @@ export abstract class PageLifter {
   registered(_name: string): { inherits: boolean; initial?: string } | undefined {
     return undefined;
   }
+  /**
+   * Whether the page loads an italic face of the family (undefined: unknown, a system font). Without
+   * one, italic text is the upright face slanted, as wide as upright text.
+   */
+  italicFace(_family: string): boolean | undefined {
+    return undefined;
+  }
   /** A component (root) or slot name for an element, before the data-fixture id or tag. */
   nameOf(_el: El, _root: boolean): string | undefined {
     return undefined;
@@ -469,6 +486,7 @@ export abstract class PageLifter {
     this.computeRootText();
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.evaluate(el);
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.expandDeferred(el);
+    this.pseudoElements();
     this.anonymousText();
     this.inlineBlocks();
     for (const el of this.els) this.classify(el);
@@ -852,6 +870,153 @@ export abstract class PageLifter {
   }
 
   /**
+   * ::before and ::after with content become the first and last children of their element (after
+   * the cascade, so no selector sees them), with the declarations their own cascade gives them.
+   * One that is never laid out (no content, display: none, or absolutely positioned at every width)
+   * moves nothing and isn't added.
+   */
+  pseudoElements() {
+    for (const el of [...this.els]) {
+      if (!el.pseudoOwn || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || el.tag === "br" || el.tag === "wbr") continue;
+      for (const which of ["before", "after"] as const) {
+        const owns = this.states.map((_, si) => el.pseudoOwn![si]?.[which]);
+        if (!owns.some(Boolean)) continue;
+        const p: El = {
+          node: { nodeName: `::${which}` },
+          tag: `::${which}`,
+          classes: [],
+          line: el.line,
+          parent: el,
+          children: [],
+          index: -1,
+          siblings: 0,
+          ownText: false,
+          roles: [],
+          own: owns.map((o) => new Map(o ?? [])),
+          text: [],
+          decls: [],
+          notes: new Map(),
+          space: [],
+          nowrap: [],
+          rowGap: [],
+          noShrink: [],
+          asBlock: [],
+          alone: [],
+          baselineShift: [],
+          pseudo: which,
+        };
+        this.expandDeferred(p);
+        p.content = this.states.map((_, si) => {
+          const o = p.own[si].get("content");
+          const v = o ? this.resolve(p, si, o.value) : undefined;
+          const c = v === undefined ? undefined : contentText(v);
+          if (c === undefined) p.own[si] = new Map([["display", { value: "none", utility: "content: none" }]]);
+          return c;
+        });
+        if (this.states.every((_, si) => p.content![si] === undefined || this.displayOf(p, si) === "none" || this.positioned(p, si))) continue;
+        p.ownText = p.content.some((c) => c !== undefined && (typeof c !== "string" || !isWs(c)));
+        if (which === "before") el.children.unshift(p);
+        else el.children.push(p);
+        this.els.push(p);
+      }
+    }
+  }
+
+  /** Whether anything floats in state si, beside generated content floated to the start of a text box's line and floats beside their parent's content. */
+  floats(si: number): boolean {
+    const cache = (this.floatCache ??= []);
+    return (cache[si] ??= this.els.some((e) => {
+      const o = e.own[si]?.get("float");
+      const v = o ? this.resolve(e, si, o.value) : undefined;
+      if (!v || !/^(left|right|inline-start|inline-end)$/.test(v) || this.displayOf(e, si) === "none" || this.positioned(e, si)) return false;
+      const parentDisplay = e.parent ? this.displayOf(e.parent, si) : "block";
+      if (/flex|grid/.test(parentDisplay)) return false;
+      return !(e.pseudo && this.floatsAtStart(e, si)) && !this.asideFloat(e, si);
+    }));
+  }
+  floatCache?: boolean[];
+
+  /** A ::before / ::after floated to the start of its element's first line (Bootstrap's breadcrumb divider), when that is exact: see inlineContent. */
+  floatsAtStart(p: El, si: number): boolean {
+    const v = (q: string) => {
+      const o = p.own[si].get(q);
+      return o ? this.resolve(p, si, o.value) : undefined;
+    };
+    return p.pseudo === "before" && v("float") === "left" && !this.positioned(p, si);
+  }
+
+  /** Margin, border and padding at an inline box's start and end (px), or undefined when one isn't a length. */
+  inlineEdges(el: El, si: number): { open: number; close: number } | undefined {
+    const size = this.textOf(el, si).size;
+    const px = (p: string) => {
+      const o = el.own[si].get(p);
+      if (!o) return 0;
+      const v = this.resolveBox(el, si, o.value);
+      if (v === undefined || v === "auto") return v === "auto" && p.startsWith("margin") ? 0 : NaN;
+      return lengthPx(v, size) ?? NaN;
+    };
+    const border = (side: string) => (/^(none|hidden)$/.test(this.resolve(el, si, el.own[si].get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+    const open = px("margin-left") + border("left") + px("padding-left");
+    const close = px("margin-right") + border("right") + px("padding-right");
+    return isFinite(open) && isFinite(close) ? { open, close } : undefined;
+  }
+
+  /** Whether the element's text is italic (or oblique): its own font-style, its tag's default (em, i...), or its parent's. */
+  italic(el: El | undefined, si: number): boolean {
+    if (!el) return false;
+    const o = el.own[si]?.get("font-style");
+    const v = o ? this.resolve(el, si, o.value) : undefined;
+    if (v && v !== "inherit") return /^(italic|oblique)/.test(v);
+    if (/^(em|i|cite|dfn|var|address)$/.test(el.tag)) return true;
+    return this.italic(el.parent, si);
+  }
+
+  /** Whether a text box has inline elements with a weight or edges of their own (its text is then measured run by run). */
+  styledInline(el: El, si: number): boolean {
+    const visit = (k: El): boolean => {
+      if (k.pseudo || k.anonymous !== undefined || k.tag === "br" || this.displayOf(k, si) === "none" || this.outOfFlow(k, si) || this.displayOf(k, si) !== "inline") return false;
+      if (this.textOf(k, si).weight !== this.textOf(k.parent, si).weight) return true;
+      const e = this.inlineEdges(k, si);
+      if (e && (e.open || e.close)) return true;
+      return k.children.some(visit);
+    };
+    return el.children.some(visit);
+  }
+
+  /**
+   * What each inline element of a text box adds to its text in state si: a weight of its own,
+   * margin, border and padding at its edges, and ::before / ::after content.
+   */
+  inlineInfo(root: El, si: number, byNode: Map<P5, El>): (n: P5Node) => InlineInfo | undefined {
+    return (n) => {
+      const el = byNode.get(n as unknown as P5);
+      if (!el) return undefined;
+      const out: InlineInfo = {};
+      if (el !== root && this.displayOf(el, si) === "inline") {
+        if (this.textOf(el, si).weight !== this.textOf(el.parent, si).weight) out.weight = this.textOf(el, si).weight;
+        const e = this.inlineEdges(el, si);
+        if (e?.open) out.open = e.open;
+        if (e?.close) out.close = e.close;
+      }
+      for (const p of el.children) {
+        if (!p.pseudo) continue;
+        const c = p.content?.[si];
+        if (c === undefined || this.displayOf(p, si) === "none" || this.outOfFlow(p, si)) continue;
+        const e = this.inlineEdges(p, si);
+        const g: Generated = {
+          text: typeof c === "string" ? c : "",
+          ...(this.textOf(p, si).weight !== this.textOf(el, si).weight && { weight: this.textOf(p, si).weight }),
+          ...(e?.open && { open: e.open }),
+          ...(e?.close && { close: e.close }),
+          ...(this.floatsAtStart(p, si) && { float: true }),
+        };
+        out[p.pseudo!] = g;
+      }
+      return out;
+    };
+  }
+
+  /**
    * Text directly inside an element that also has element children: each text node becomes an
    * anonymous child (after the cascade, so no selector matches it and :first-child etc. are
    * unchanged). In a flex or grid container it is an anonymous item; in block flow an anonymous
@@ -862,9 +1027,10 @@ export abstract class PageLifter {
       const nodes = el.node.childNodes ?? [];
       if (el.children.length && el.ownText && el.tag !== "svg") {
         const out: El[] = [];
+        const real = el.children.filter((c) => !c.pseudo);
         let k = 0;
         for (const n of nodes) {
-          if (n.tagName && !SKIP.has(n.tagName)) out.push(el.children[k++]);
+          if (n.tagName && !SKIP.has(n.tagName)) out.push(real[k++]);
           else if (n.nodeName === "#text" && !isWs(n.value ?? "")) {
             const text = (n.value ?? "").replace(/[ \t\n\r\f]+/g, " ").trim();
             const a: El = {
@@ -896,7 +1062,9 @@ export abstract class PageLifter {
           }
         }
         el.children.forEach(add);
-        el.children = out;
+        const before = el.children.filter((c) => c.pseudo === "before");
+        const after = el.children.filter((c) => c.pseudo === "after");
+        el.children = [...before, ...out, ...after];
       } else el.children.forEach(add);
     };
     if (this.bodyEl) this.bodyEl.children.forEach(add);
@@ -990,7 +1158,7 @@ export abstract class PageLifter {
    */
   asideFloat(el: El, si: number): boolean {
     const o = el.own[si].get("float");
-    if (!o || this.resolve(el, si, o.value) !== "left" || !el.parent) return false;
+    if (!o || this.resolve(el, si, o.value) !== "left" || !el.parent || el.pseudo) return false;
     const parent = el.parent;
     if (parent.ownText && !(parent.node.childNodes ?? []).slice(0, (parent.node.childNodes ?? []).indexOf(el.node)).every((c) => c.nodeName !== "#text" || /^\s*$/.test(c.value ?? ""))) return false;
     if (parent.children[0] !== el) return false;
@@ -1105,7 +1273,11 @@ export abstract class PageLifter {
         // Offsets do nothing on a box that isn't positioned.
         (/^(top|right|bottom|left)$/.test(p) && !/^(relative|absolute|fixed|sticky)$/.test(pos ?? "static")) || p === "box-sizing" ||
         // vertical-align moves only inline-level boxes on a line (noted above) and table cells.
-        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline"));
+        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline")) ||
+        // A flex or grid item doesn't float; clear does nothing where nothing floats.
+        (p === "float" && inFlexOrGrid) ||
+        (p === "clear" && (inFlexOrGrid || abs || !this.floats(si))) ||
+        p === "content";
 
       // Layout
       const display = this.displayOf(el, si);
@@ -1123,7 +1295,7 @@ export abstract class PageLifter {
           // A row that doesn't wrap is a one-line cluster (wrap: false): its items shrink to fit.
           decl("flex-wrap", dir === "row" && wrap === "nowrap" ? "nowrap" : wrap, own.get("flex-wrap")?.utility ?? "flex (no wrap)");
           handled.add("flex-direction").add("flex-wrap");
-          let rowGap = own.get("row-gap");
+          let rowGap = this.pctRowGap(el, si, own.get("row-gap"));
           let colGap = own.get("column-gap");
           if (space && spaceVal !== undefined) {
             const axisMain = dir === "column" ? "y" : "x";
@@ -1174,8 +1346,8 @@ export abstract class PageLifter {
           }
         } else if (grid) {
           const cols = res("grid-template-columns");
-          const gapOrigin = own.get("row-gap");
-          const rowGap = own.has("row-gap") ? this.len(el, si, own.get("row-gap")!) : undefined;
+          const gapOrigin = this.pctRowGap(el, si, own.get("row-gap"), true);
+          const rowGap = gapOrigin ? this.len(el, si, gapOrigin) : undefined;
           const colGap = own.has("column-gap") ? this.len(el, si, own.get("column-gap")!) : undefined;
           const n = cols ? /^repeat\(\s*(\d+)\s*,\s*minmax\(\s*0(?:px)?\s*,\s*1fr\s*\)\s*\)$/.exec(cols) : null;
           handled.add("grid-template-columns").add("row-gap").add("column-gap").add("align-items").add("justify-items");
@@ -1221,7 +1393,14 @@ export abstract class PageLifter {
           this.note(el, si, { decl: space.utility, reason: "space-y with hidden children (:last-child) is not modelled", kind: "geometry" });
       } else {
         if (space) this.note(el, si, { decl: space.utility, reason: "space-* without children", kind: "none" });
-        if (display === "table") {
+        if (display === "table" && el.pseudo && role === "leaf") {
+          // Generated content with no text in a table box (the clearfix): a table with no rows, as
+          // tall as its padding and border, as wide as nothing. It holds the margins of what's beside
+          // it apart (a block of no height would let them collapse through it).
+          if (!own.has("height")) decl("height", "0px", "an empty table (no rows)");
+          if (!own.has("width")) decl("width", "fit-content", "an empty table (no columns)");
+          for (const p of ["border-collapse", "border-spacing", "caption-side", "table-layout", "vertical-align", "empty-cells"]) handled.add(p);
+        } else if (display === "table") {
           // One box as wide as its width says; its height comes from its rows, which aren't laid out.
           this.note(el, si, { decl: "display: table", reason: "a table is laid out as one box; its height comes from its rows, which Cadesa doesn't lay out", kind: "height" });
           if (!own.has("width")) this.note(el, si, { decl: "display: table", reason: "a table without a width is as wide as its columns, which Cadesa doesn't lay out", kind: "geometry" });
@@ -1606,12 +1785,59 @@ export abstract class PageLifter {
     return h && /^-?[\d.]+px$/.test(v) && parseFloat(v) !== 0 ? this.varValue(h, v) : v;
   }
 
+  /**
+   * A percentage row gap: of the container's height, so 0 where that height is auto (a flex
+   * container outside flex and grid); in a grid, or a flex container whose height is set or may be
+   * stretched, it isn't modelled (noted, and left out).
+   */
+  pctRowGap(el: El, si: number, o: Origin | undefined, grid = false): Origin | undefined {
+    if (!o) return o;
+    const v = this.resolve(el, si, o.value);
+    if (!v || !/^(\d+\.?\d*|\.\d+)%$/.test(v) || parseFloat(v) === 0) return o;
+    if (!grid && this.definiteHeight(el, si) === "auto") return { ...o, value: "0px", utility: `${o.utility} (row-gap: ${v} of an auto height is 0)` };
+    this.note(el, si, { decl: `${o.utility} (row-gap: ${v})`, reason: `a percentage row gap of a ${grid ? "grid's" : "container's set or stretched"} height is not modelled`, kind: "geometry" });
+    return undefined;
+  }
+
   /** Notes for a text box's inline descendants whose own styles change how the text measures. */
   inlineContent(el: El, si: number) {
+    const base = this.textOf(el, si);
+    const lh = (x: TextCtx) => (x.lineHeight === "normal" ? NaN : "num" in x.lineHeight ? lineHeightPx(x.size, x.lineHeight.num) : x.lineHeight.px);
     const visit = (k: El) => {
       if (k.tag === "br" || this.outOfFlow(k, si) || this.displayOf(k, si) === "none") return;
       const own = k.own[si];
       const ua = UA_TEXT[k.tag];
+      const where = k.pseudo ? `::${k.pseudo}` : `<${k.tag}>`;
+      // An inline box (not inline-block): its margin, border and padding at its start and end take
+      // room on the line; above and below they move nothing.
+      const inline = this.displayOf(k, si) === "inline" || (k.pseudo !== undefined && this.ownDisplay(k, si) === "inline");
+      const edges = inline ? this.inlineEdges(k, si) : undefined;
+      // Generated content: text (a breadcrumb's "/", a bullet), or a float at the start of the first line.
+      const lead = k.pseudo !== undefined && this.floatsAtStart(k, si);
+      if (k.pseudo) {
+        const c = k.content?.[si];
+        const kt0 = this.textOf(k, si);
+        const res = (p: string) => {
+          const o = own.get(p);
+          return o ? this.resolve(k, si, o.value) : undefined;
+        };
+        if (c !== undefined && typeof c !== "string")
+          this.note(el, si, { decl: `${where} { content: ${c.unknown} }`, reason: `${where} content other than text (counters, attr(), images) is not modelled`, kind: "geometry" });
+        if (lead) {
+          // As tall as the first line (one line of the same font, size and line height, nothing above
+          // or below it), at the start of a text box with text after it: the first line is shortened
+          // by its width, and the lines below it aren't.
+          const flat = ["top", "bottom"].every((side) => {
+            const v = (p: string) => lengthPx(res(p) ?? "0", kt0.size);
+            return v(`margin-${side}`) === 0 && v(`padding-${side}`) === 0 && (v(`border-${side}-width`) === 0 || /^(none|hidden)$/.test(res(`border-${side}-style`) ?? "none"));
+          });
+          const ok =
+            k.parent === el && flat && edges !== undefined && kt0.size === base.size && kt0.family.value === base.family.value && lh(kt0) === lh(base) && kt0.letterSpacing === base.letterSpacing &&
+            (el.ownText || el.children.some((c) => !c.pseudo && !this.ignorable(c) && this.inlineChild(c) && this.visibleText(c))) && /^(start|left|unset|initial|-webkit-auto)?$/.test(base.inherited.get("text-align")?.value ?? "") && base.inherited.get("direction")?.value !== "rtl";
+          if (!ok) this.note(el, si, { decl: `${where} { float: left }`, reason: `a floated ${where} is modelled only at the start of a text box, as tall as its first line`, kind: "geometry" });
+        } else if (/^(left|right|inline-start|inline-end)$/.test(res("float") ?? "none"))
+          this.note(el, si, { decl: `${where} { float: ${res("float")} }`, reason: `a floated ${where} is modelled only at the start of a text box, as tall as its first line`, kind: "geometry" });
+      }
       const changes: { prop: string; utility: string; kind: ImpactKind }[] = [];
       for (const [p, o] of own) {
         if (p.startsWith("--") || (p === "vertical-align" && this.resolve(k, si, o.value) === "baseline")) continue;
@@ -1621,10 +1847,17 @@ export abstract class PageLifter {
       const kt = this.textOf(k, si);
       const pt = this.textOf(k.parent, si);
       const textChanges = changes.filter((c) => c.kind !== "paint");
-      if (ua && !textChanges.some((c) => c.prop === "font-weight" || c.prop === "font-style" || c.prop === "font-family" || c.prop === "font-size")) {
-        const same = (k.tag === "strong" || k.tag === "b") && kt.weight === pt.weight;
-        if (!same) this.note(el, si, { decl: `<${k.tag}>`, reason: `inline <${k.tag}> ${ua}; text runs in another style aren't measured`, kind: "text" });
-      }
+      // Bold runs are measured at their weight (strong, b); italic runs too when the font has no
+      // italic face (it is slanted, not redrawn); other defaults change the font or its size.
+      const synthetic = this.italicFace(firstFamily(kt.family.value)) === false;
+      if (ua === "is italic" && (!this.italic(k, si) || synthetic)) {
+        /* measured upright */
+      } else if (ua && k.tag !== "strong" && k.tag !== "b" && !textChanges.some((c) => c.prop === "font-weight" || c.prop === "font-style" || c.prop === "font-family" || c.prop === "font-size"))
+        this.note(el, si, { decl: `<${k.tag}>`, reason: `inline <${k.tag}> ${ua}; text runs in another style aren't measured`, kind: "text" });
+      // Text in another font family (an icon font) or size sits on the line with its own metrics.
+      const famDiff = kt.family.value !== pt.family.value;
+      if (famDiff && changes.some((c) => c.prop === "font-family") === false && k.pseudo)
+        this.note(el, si, { decl: `${where} (font-family: ${kt.family.value})`, reason: "inline runs in another style aren't measured", kind: "text" });
       // box-sizing changes nothing on a box with no width, height, padding or border.
       const boxy = ["width", "height", "min-width", "min-height", "max-width", "max-height"].some((p) => own.has(p)) || SIDES.some((s) => own.has(`padding-${s}`) || own.has(`border-${s}-width`) || own.has(`margin-${s}`));
       // An inline-block that is all the text box holds, with no box of its own and the same text
@@ -1634,18 +1867,27 @@ export abstract class PageLifter {
       const whole = k.parent === el && shown.length === 1 && shown[0] === k && !el.ownText && !boxy && sameText && this.displayOf(k, si) === "inline-block";
       for (const c of changes) {
         // display: inline on an inline run (Bootstrap's d-md-inline where it shows) is what it was anyway.
-        if ((c.prop === "box-sizing" && !boxy) || (c.prop === "display" && (whole || this.displayOf(k, si) === "inline"))) continue;
+        if ((c.prop === "box-sizing" && (!boxy || inline)) || (c.prop === "display" && (whole || this.displayOf(k, si) === "inline"))) continue;
+        // Generated content's own properties: its text is measured; clear does nothing to inline content.
+        if (k.pseudo && (c.prop === "content" || c.prop === "clear" || (c.prop === "float" && lead) || (c.prop === "display" && (lead || inline)))) continue;
+        // Margin, border and padding at an inline box's start and end are measured with its text; above and below they move nothing.
+        if (edges && /^(margin|padding)-(left|right)$|^border-(left|right)-(width|style)$/.test(c.prop)) continue;
+        if (inline && !lead && /^(margin|padding)-(top|bottom)$|^border-(top|bottom)-(width|style)$/.test(c.prop)) continue;
+        if (lead && /^(margin|padding)-(top|bottom)$|^border-(top|bottom)-(width|style)$/.test(c.prop)) continue;
+        // A weight of its own is measured run by run.
+        if (c.prop === "font-weight" && (inline || lead || kt.weight === pt.weight)) continue;
         if (c.kind === "paint" || c.kind === "none" || c.kind === "state") {
           // Its color and background are checked run by run (coloredRuns); other paint (opacity, images) isn't known.
           const checked = c.prop === "color" || (c.prop === "background-color" && (this.ownBackground(k, si) !== undefined || /^(transparent|none)$/.test(this.resolve(k, si, own.get(c.prop)!.value) ?? "")));
-          if (c.kind === "paint" && !checked) this.note(el, si, { decl: `${c.utility} on <${k.tag}>`, reason: "inline paint; no effect on layout", kind: "paint" });
+          if (c.kind === "paint" && !checked && c.prop !== "content") this.note(el, si, { decl: `${c.utility} on ${where}`, reason: "inline paint; no effect on layout", kind: "paint" });
           continue;
         }
         // Text properties equal to what the run inherits anyway change nothing.
-        if (c.prop === "font-weight" && kt.weight === pt.weight) continue;
         if (c.prop === "font-size" && kt.size === pt.size) continue;
+        if (c.prop === "font-family" && !famDiff) continue;
+        if (c.prop === "font-style" && (synthetic || this.italic(k, si) === this.italic(k.parent!, si))) continue;
         if (c.prop === "line-height" && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight)) continue;
-        this.note(el, si, { decl: `${c.utility} on <${k.tag}> (${c.prop})`, reason: "inline runs in another style aren't measured", kind: c.kind === "visual" ? "visual" : c.kind === "geometry" ? "geometry" : "text" });
+        this.note(el, si, { decl: `${c.utility} on ${where} (${c.prop})`, reason: "inline runs in another style aren't measured", kind: c.kind === "visual" ? "visual" : c.kind === "geometry" ? "geometry" : "text" });
       }
       for (const n of k.notes.values()) if (n.states.has(si)) this.note(el, si, n.note);
       k.children.forEach(visit);
@@ -1856,6 +2098,16 @@ export abstract class PageLifter {
       k.className && (si === undefined || k.roles[si] === "text")
         ? { tag: "#text", classes: [k.className], attrs: {}, fixtureId: k.id, line: k.line, text: k.anonymous!, ownText: k.anonymous!, runs: [k.anonymous!], runMeta: [{ inBlock: false, underlined: false, items: [] }], children: [], anonymous: true }
         : undefined;
+    /** A ::before / ::after laid out as a box of its own: a text box of its content, or an empty box. */
+    const pseudoNode = (k: El, si: number | undefined): FixtureNode | undefined => {
+      if (!k.className || (si !== undefined && (k.roles[si] === "hidden" || k.roles[si] === "out"))) return undefined;
+      const c = k.content?.[si ?? 0];
+      const text = typeof c === "string" ? c.replace(/[ \t\n\r\f]+/g, " ").trim() : "";
+      const isText = si === undefined ? k.roles.includes("text") : k.roles[si] === "text";
+      return { tag: k.tag, classes: [k.className], attrs: {}, fixtureId: k.id, line: k.line, text: isText ? text : "", ownText: isText ? text : "", runs: isText && text ? [text] : [], runMeta: isText && text ? [{ inBlock: false, underlined: false, items: [] }] : [], children: [], anonymous: true };
+    };
+    const byNodeAll = new Map(this.els.filter((e) => e.anonymous === undefined && !e.pseudo).map((e) => [e.node, e] as const));
+    const hasGenerated = this.els.some((e) => e.pseudo);
     const fixtureFor = (si: number | undefined): Fixture => {
       const keep = (n: FixtureNode): FixtureNode | undefined => {
         const el = n.fixtureId ? byId.get(n.fixtureId) : undefined;
@@ -1867,12 +2119,15 @@ export abstract class PageLifter {
         const children =
           isText || el.tag === "svg"
             ? el.tag === "svg" ? [] : n.children
-            : (el.children.map((k) => (k.anonymous !== undefined ? anonNode(k, si) : byEl.has(k) ? keep(byEl.get(k)!) : undefined)).filter(Boolean) as FixtureNode[]);
+            : (el.children.map((k) => (k.anonymous !== undefined ? anonNode(k, si) : k.pseudo ? pseudoNode(k, si) : byEl.has(k) ? keep(byEl.get(k)!) : undefined)).filter(Boolean) as FixtureNode[]);
         if (!isText && el.children.some((k) => k.anonymous !== undefined)) return { ...n, children, ownText: "" };
         // A replaced element or form control has no text box (a textarea's text is its value).
         if (el.roles.every((r) => r !== "text" && r !== "container") && n.text) return { ...n, children, text: "", runs: [] };
         const hidden = si === undefined ? hiddenNodes : hiddenAt[si];
-        if (isText && hidden.size) return { ...n, children, ...textAndRuns(el.node as unknown as P5Node, (x) => hidden.has(x as unknown as P5)) };
+        // Inline boxes with a weight or edges of their own, and generated content, are part of the text.
+        const inline = this.inlineInfo(el, si ?? 0, byNodeAll);
+        if (isText && (hidden.size || hasGenerated || this.styledInline(el, si ?? 0)))
+          return { ...n, children, ...textAndRuns(el.node as unknown as P5Node, (x) => hidden.has(x as unknown as P5), inline) };
         return { ...n, children };
       };
       return { ...fixture, body: fixture.body.map(keep).filter(Boolean) as FixtureNode[] };
@@ -1954,11 +2209,13 @@ export abstract class PageLifter {
    */
   runTogether(si: number): (Issue & { inconclusive?: boolean })[] {
     const out: (Issue & { inconclusive?: boolean })[] = [];
-    const byNode = new Map(this.els.filter((e) => e.anonymous === undefined).map((e) => [e.node, e] as const));
+    const byNode = new Map(this.els.filter((e) => e.anonymous === undefined && !e.pseudo).map((e) => [e.node, e] as const));
     const res = (el: El, p: string) => {
       const o = el.own[si]?.get(p);
       return o ? this.resolve(el, si, o.value) : undefined;
     };
+    /** An element's ::before or ::after where it generates a box. */
+    const generated = (n: P5, which: "before" | "after") => byNode.get(n)?.children.find((c) => c.pseudo === which && c.content?.[si] !== undefined && !gone(c));
     const px = (el: El, p: string) => {
       const v = res(el, p);
       return v === undefined || v === "normal" ? 0 : (lengthPx(v, this.textOf(el, si).size) ?? NaN);
@@ -1972,21 +2229,28 @@ export abstract class PageLifter {
     /** Element and text children as rendered: hidden and out-of-flow elements left out. */
     const kids = (n: P5): P5[] =>
       (n.childNodes ?? []).filter((c) => (c.nodeName === "#text" ? !!c.value : !!c.tagName && !SKIP.has(c.tagName) && !(byNode.has(c) && gone(byNode.get(c)!))));
-    const textOf = (n: P5): string => (n.nodeName === "#text" ? (n.value ?? "") : n.tagName === "br" ? "\n" : kids(n).map(textOf).join(""));
+    const genText = (g: El | undefined) => (typeof g?.content?.[si] === "string" ? (g.content[si] as string) : "");
+    const textOf = (n: P5): string => (n.nodeName === "#text" ? (n.value ?? "") : n.tagName === "br" ? "\n" : genText(generated(n, "before")) + kids(n).map(textOf).join("") + genText(generated(n, "after")));
     /** Margin, padding and border on one side of an element and of the descendants whose text ends there. */
     const edge = (n: P5, side: "left" | "right"): number => {
       const el = byNode.get(n);
       if (!el) return 0;
       const k = side === "right" ? kids(n).at(-1) : kids(n)[0];
-      return px(el, `margin-${side}`) + px(el, `padding-${side}`) + border(el, side) + (k?.tagName ? edge(k, side) : 0);
+      const g = generated(n, side === "right" ? "after" : "before");
+      const ge = g ? this.inlineEdges(g, si) : undefined;
+      // Generated content on that side: its text is part of the element's, its edges sit between.
+      if (g && genText(g)) return px(el, `margin-${side}`) + px(el, `padding-${side}`) + border(el, side) + (ge ? ge.open + ge.close : NaN);
+      return px(el, `margin-${side}`) + px(el, `padding-${side}`) + border(el, side) + (g ? (ge ? ge.open + ge.close : NaN) : 0) + (k?.tagName ? edge(k, side) : 0);
     };
     /** Notes that make the answer unsure: generated content on the touching side, or a selector Cadesa can't decide. */
     const unsure = (n: P5, side: "left" | "right"): string | undefined => {
       const el = byNode.get(n);
       if (!el) return undefined;
+      const g = generated(n, side === "right" ? "after" : "before");
+      if (g && (typeof g.content![si] !== "string" || this.displayOf(g, si) !== "inline")) return `${g.own[si].get("content")?.utility ?? `::${g.pseudo}`} adds content Cadesa doesn't model`;
+      if (g && genText(g)) return undefined;
       for (const { note, states } of el.notes.values()) {
         if (!states.has(si)) continue;
-        if (note.reason.includes(side === "right" ? "::after" : "::before")) return `${note.decl.split(" {")[0]} adds content Cadesa doesn't model`;
         if (/may match; Cadesa can't decide it/.test(note.reason) && note.kind !== "paint" && note.kind !== "none") return note.reason;
       }
       const k = side === "right" ? kids(n).at(-1) : kids(n)[0];
@@ -2185,4 +2449,45 @@ function hexifyPaint(v: string, current: string): string {
     const c = parseColor(h);
     return c ? hexOf(c) : h;
   });
+}
+
+/**
+ * The text of a `content` value: its strings, with CSS escapes ("\\2022") decoded, before any
+ * alternative text ("/ ..."). undefined for none and normal (no box); `{ unknown }` for anything
+ * else Cadesa can't read (counter(), attr(), url(), quotes).
+ */
+export function contentText(v: string): string | { unknown: string } | undefined {
+  const t = v.trim();
+  if (/^(none|normal|initial|unset)$/.test(t)) return undefined;
+  let out = "";
+  let i = 0;
+  const unknown = { unknown: t.slice(0, 60) };
+  while (i < t.length) {
+    const ch = t[i];
+    if (/\s/.test(ch)) {
+      i++;
+      continue;
+    }
+    if (ch === "/") break;
+    if (ch !== '"' && ch !== "'") return unknown;
+    let j = i + 1;
+    let str = "";
+    while (j < t.length && t[j] !== ch) {
+      if (t[j] === "\\") {
+        const m = /^\\([0-9a-fA-F]{1,6})\s?/.exec(t.slice(j));
+        if (m) {
+          str += String.fromCodePoint(parseInt(m[1], 16));
+          j += m[0].length;
+        } else if (t[j + 1] === "\n") j += 2;
+        else {
+          str += t[j + 1] ?? "";
+          j += 2;
+        }
+      } else str += t[j++];
+    }
+    if (j >= t.length) return unknown;
+    out += str;
+    i = j + 1;
+  }
+  return out;
 }

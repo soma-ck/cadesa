@@ -10,6 +10,7 @@
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Span } from "../fixture.js";
 import { metricsFileName, readMetrics, type MetricsFace } from "../metrics.js";
 import { BREAK_CHARS, BREAKS } from "./breaks.generated.js";
 
@@ -380,15 +381,53 @@ export function layoutText(
     breakWord?: boolean;
     /** Inline element edges (character offsets): the text between them is shaped separately. */
     items?: number[];
+    /** Inline boxes with text at another weight, or margin, border and padding at their edges. */
+    spans?: Span[];
+    /** A float at the start of the text, this wide: the first line fits beside it. */
+    lead?: number;
   } = {},
 ): TextLayout {
   // letter-spacing is added after every character, including the last one on a line (or, with
   // spacesOnly, after every U+0020 and U+00A0 only).
   const ls = opts.letterSpacing ?? 0;
-  // Letter-spaced text is shaped without contextual alternates.
-  const measure = (s: string) => m.measure(s, sizePx, weight, ls !== 0) ?? 0;
-  const spaceW = measure(" ");
-  const w = (s: string, hangKern = opts.hangKern !== false) => {
+  const spans = opts.spans ?? [];
+  /** The weight of the character at `at` (its innermost span with a weight, or the text's). */
+  const weightAt = (at: number | undefined) => {
+    if (at === undefined || !spans.length) return weight;
+    let wt = weight;
+    for (const sp of spans) if (sp.weight !== undefined && sp.from <= at && at < sp.to) wt = sp.weight;
+    return wt;
+  };
+  // Letter-spaced text is shaped without contextual alternates. Text at another weight is another
+  // font: measured on its own, with no kerning across the edge.
+  const measure = (s: string, at?: number) => m.measure(s, sizePx, weightAt(at), ls !== 0) ?? 0;
+  /**
+   * Whether kerning applies between the characters before and at `at`: both in one font, with no
+   * margin, border or padding of an inline box between them (Chromium shapes them apart then).
+   */
+  const kerns = (at: number) => weightAt(at - 1) === weightAt(at) && !spans.some((sp) => (sp.open && sp.from === at) || (sp.close && sp.to === at));
+  /** Margin, border and padding of inline boxes that open in [a, b) or close in (a, b]. */
+  const edgesIn = (a: number, b: number) => {
+    let px = 0;
+    for (const sp of spans) {
+      // An empty inline box (generated content "" with padding) goes with the text after it, or at the very end with the text before.
+      if (sp.from === sp.to) {
+        if ((sp.from >= a && sp.from < b) || (sp.from === b && b === all.length && a < b)) px += (sp.open ?? 0) + (sp.close ?? 0);
+        continue;
+      }
+      if (sp.open && sp.from >= a && sp.from < b) px += sp.open;
+      if (sp.close && sp.to > a && sp.to <= b) px += sp.close;
+    }
+    return px;
+  };
+  const spaceWs = new Map<number, number>();
+  const spaceWAt = (at?: number) => {
+    const wt = weightAt(at);
+    let v = spaceWs.get(wt);
+    if (v === undefined) spaceWs.set(wt, (v = measure(" ", at)));
+    return v;
+  };
+  const w = (s: string, hangKern = opts.hangKern !== false, at?: number) => {
     const t = trimSpaces(s);
     const body = t.replaceAll(SHY, "");
     // A line broken at a soft hyphen ends in a "-" that Chromium shapes on its own: no kerning
@@ -399,10 +438,10 @@ export function layoutText(
     // underlined, it measures the line without that kerning (hangKern: false). Its min-content
     // width keeps the kerning either way.
     const shaped = t.endsWith(SHY)
-      ? measure(body) + measure("-")
+      ? measure(body, at) + measure("-", at)
       : hangKern && s.endsWith(" ") && body
-        ? measure(body + " ") - spaceW
-        : measure(body);
+        ? measure(body + " ", at) - spaceWAt(at)
+        : measure(body, at);
     const spaced = opts.spacesOnly ? [...body].filter((c) => c === " " || c === "\u00a0").length : [...body].length;
     return shaped + (ls ? spaced * ls : 0);
   };
@@ -418,7 +457,7 @@ export function layoutText(
     if (at === from) return 0;
     const before = all.slice(from, at).join("").replaceAll(SHY, "");
     const next = edges.includes(at) ? "" : (all[at] ?? "").replaceAll(SHY, "");
-    return measure(before + next) - measure(next);
+    return measure(before + next, from) - measure(next, from);
   };
   /** The letter-spacing a line or piece adds (what w() adds to the shaped width). */
   const spacing = (s: string) => {
@@ -427,10 +466,10 @@ export function layoutText(
     return (opts.spacesOnly ? [...body].filter((c) => c === " " || c === "\u00a0").length : [...body].length) * ls;
   };
   /** The full width of text inside a line (spaces included). */
-  const full = (s: string) => {
+  const full = (s: string, at?: number) => {
     const body = s.replaceAll(SHY, "");
     const spaced = opts.spacesOnly ? [...body].filter((c) => c === " " || c === "\u00a0").length : [...body].length;
-    return measure(body) + (ls ? spaced * ls : 0);
+    return measure(body, at) + (ls ? spaced * ls : 0);
   };
   const floor64 = (v: number) => Math.floor(v * 64 + TEXT_EPS) / 64;
   const ceil64 = (v: number) => Math.ceil(v * 64 - TEXT_EPS) / 64;
@@ -440,21 +479,29 @@ export function layoutText(
   // before the last on the line count their widths rounded up. A line that starts after a break
   // inside a word (after a hyphen or dash) sometimes counts its width rounded up instead: when
   // that would decide, the break is reported as approximate.
-  const fits = (s: string) => {
+  /** The float at the start of the text, while the first line is still open. */
+  let lead = opts.lead ?? 0;
+  /** A line's width, measured item by item (see fits), and the width of its last item. */
+  const lineWidth = (s: string) => {
     const cs = [...s];
     const cuts = edges.filter((b) => b > consumed && b < consumed + cs.length).map((b) => b - consumed);
-    let used = 0;
+    let used = lead + edgesIn(consumed, consumed + cs.length);
     let from = 0;
     for (const cut of cuts) {
-      // Kerning still applies across the element's edge (counted with the item before it).
-      const next = (cs[cut] ?? "").replaceAll(SHY, "");
-      used += ceil64(full(cs.slice(from, cut).join("") + next) - full(next));
+      // Kerning still applies across the element's edge (counted with the item before it), when
+      // both sides are shaped in one font.
+      const next = kerns(consumed + cut) ? (cs[cut] ?? "").replaceAll(SHY, "") : "";
+      used += ceil64(full(cs.slice(from, cut).join("") + next, consumed + from) - full(next, consumed + from));
       from = cut;
     }
     const last = cs.slice(from).join("");
     // A line that ends where an inline element starts or ends keeps its hanging space's kerning
     // even in a painted block: its item needs no reshaping there.
-    const lw = edges.includes(consumed + cs.length) ? w(last, true) : w(last);
+    const lw = edges.includes(consumed + cs.length) ? w(last, true, consumed + from) : w(last, undefined, consumed + from);
+    return { used, lw, last, from };
+  };
+  const fits = (s: string) => {
+    const { used, lw, last, from } = lineWidth(s);
     // A line ending in a soft hyphen's "-" gets no slack (and how much isn't pinned down: flagged).
     const hyphenated = trimSpaces(last).endsWith(SHY);
     const ok = used + lw <= maxWidth + (hyphenated ? 0 : 1 / 64) + TEXT_EPS / 64;
@@ -479,6 +526,7 @@ export function layoutText(
     // that follows it (Chromium measures it as shaped with the rest of the word); one that starts
     // the word is measured on its own.
     if (p.includes(SHY)) approximate ??= "a word with a soft hyphen breaks between characters";
+    if (spans.length || lead) approximate ??= "a word breaks between characters in text with inline boxes of their own";
     const chars: string[] = [];
     let pending = "";
     for (const ch of trimSpaces(p)) {
@@ -519,6 +567,12 @@ export function layoutText(
     line = "";
     return cur + p.slice(trimSpaces(p).length);
   };
+  /** A line's width as reported: measured item by item where inline boxes have edges or weights of their own. */
+  const reported = (s: string) => {
+    if (!spans.length && !lead) return w(s);
+    const { used, lw } = lineWidth(s);
+    return used + lw;
+  };
   let queue = ps;
   let mid = false;
   for (let i = 0; i < queue.length; i++) {
@@ -526,12 +580,19 @@ export function layoutText(
     // A piece ending in a soft hyphen that can't fit a line of its own is broken between
     // characters together with the rest of its word.
     while (opts.wrapAnywhere && p.endsWith(SHY) && i + 1 < queue.length && !fits(p)) p += queue[++i];
+    // A first piece that doesn't fit beside the float at the start goes below it, on a line of its
+    // own (the float is as tall as one line).
+    if (!line && lead && !fits(p)) {
+      lines.push({ text: "", width: lead });
+      lead = 0;
+    }
     let open: string | undefined;
     if (!line) open = start(p, mid);
     else if (fits(line + p)) line += p;
     else {
-      lines.push({ text: trimSpaces(line), width: w(line) });
+      lines.push({ text: trimSpaces(line), width: reported(line) });
       consumed += [...line].length;
+      lead = 0;
       open = start(p, mid);
     }
     mid = open !== undefined;
@@ -540,7 +601,7 @@ export function layoutText(
       i = -1;
     }
   }
-  if (line || !lines.length) lines.push({ text: trimSpaces(line), width: w(line) });
+  if (line || !lines.length) lines.push({ text: trimSpaces(line), width: reported(line) });
   let widestPiece = "";
   let minContent = 0;
   const piecesAt: { p: string; at: number }[] = [];
@@ -562,8 +623,27 @@ export function layoutText(
         // Positions include the letter-spacing of the characters before.
         const from = Math.max(0, ...edges.filter((b) => b <= at));
         const x0 = startOf(at) + spacing(all.slice(from, at).join("") + "x") - spacing("x");
-        return { text: trimSpaces(p), width: ceil64(x0 + w(p, true)) - ceil64(x0) };
+        const len = [...p].length;
+        const extra = edgesIn(at, at + len);
+        // A piece in text of several weights: each part measured in its own font.
+        const cs = [...p];
+        const changes = cs.map((_, k) => k).filter((k) => k > 0 && !kerns(at + k));
+        if (changes.length) {
+          let width = 0;
+          let a = 0;
+          for (const c of [...changes, len]) {
+            const seg = cs.slice(a, c).join("");
+            width += c === len ? w(seg, true, at + a) : ceil64(full(seg, at + a));
+            a = c;
+          }
+          return { text: trimSpaces(p), width: ceil64(width + extra) };
+        }
+        return { text: trimSpaces(p), width: ceil64(x0 + w(p, true, at)) - ceil64(x0) + extra };
       });
+  if (opts.lead && opts.lead > minContent) {
+    minContent = opts.lead;
+    widestPiece = "";
+  }
   for (const u of units) {
     if (u.width > minContent) {
       minContent = u.width;
@@ -573,11 +653,11 @@ export function layoutText(
   // Max-content: like a line, each inline item before the last rounded up to a layout unit (with
   // its kerning to the next character, which applies across the element's edge).
   const cuts = [0, ...edges, all.length];
-  let maxContent = 0;
+  let maxContent = (opts.lead ?? 0) + edgesIn(0, all.length);
   for (let k = 0; k + 1 < cuts.length; k++) {
     const seg = all.slice(cuts[k], cuts[k + 1]).join("");
-    const next = (all[cuts[k + 1]] ?? "").replaceAll(SHY, "");
-    maxContent += k + 2 < cuts.length ? ceil64(full(seg + next) - full(next)) : w(seg);
+    const next = kerns(cuts[k + 1]) ? (all[cuts[k + 1]] ?? "").replaceAll(SHY, "") : "";
+    maxContent += k + 2 < cuts.length ? ceil64(full(seg + next, cuts[k]) - full(next, cuts[k])) : w(seg, undefined, cuts[k]);
   }
   return { lines, maxContent, minContent, widestPiece, ...(approximate && { approximate }) };
 }

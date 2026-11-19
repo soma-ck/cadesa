@@ -38,7 +38,8 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.layout) {
     const l = p.layout;
     const gap = `gap: ${l.gap ? v(l.gap) : "0"}`;
-    const rowGap = l.rowGap ? [`row-gap: ${v(l.rowGap)}`] : [];
+    // A percentage gap is between columns only.
+    const rowGap = l.rowGap ? [`row-gap: ${v(l.rowGap)}`] : l.gap?.kind === "size" ? ["row-gap: 0"] : [];
     // Block flow: children stack in normal flow and their vertical margins collapse.
     if (l.pattern === "flow") out.push("display: block");
     else if (l.pattern === "stack" || l.pattern === "cluster") {

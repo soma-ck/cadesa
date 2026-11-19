@@ -286,12 +286,12 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const m = metricsFor(t.font);
     const raw = n.runs.length ? n.runs : [n.text];
     const runs = raw.map((r) => (t.uppercase ? r.toUpperCase() : r));
-    const shown = runs.join(" ");
+    const shown = [...runs, ...n.runMeta.flatMap((r) => (r.lead ? [r.lead.text] : []))].join(" ");
     const why = !m
       ? `font "${(t.font ?? "inherited").split(",")[0]}" has no Cadesa metrics; cadesa fonts (MCP: cadesa_fonts) finds the page's fonts and measures them`
       : m.unsupported(shown).length
         ? `characters outside the measured set: ${m.unsupported(shown).map((c) => `U+${c.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`).join(" ")}`
-        : m.weightIssue(t.weight);
+        : [t.weight, ...n.runMeta.flatMap((r) => (r.spans ?? []).flatMap((sp) => (sp.weight === undefined ? [] : [sp.weight])))].map((wt) => m.weightIssue(wt)).find(Boolean);
     if (why) {
       assumptions.push(`text height assumes a single line (${why})`);
       return undefined;
@@ -315,10 +315,15 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const painted = (props.background && !transparent(props.background.value)) || props.backdrop || props.border || props.shadow;
     const meta = runs.map((_, i) => n.runMeta[i] ?? { inBlock: false, underlined: false, items: [] });
     // Inline element edges, moved for uppercasing that changes lengths ("ß" is "SS").
-    const items = raw.map((r, i) => {
-      if (!t.uppercase) return meta[i].items;
-      const cs = [...r];
-      return meta[i].items.map((b) => [...cs.slice(0, b).join("").toUpperCase()].length);
+    const moved = (r: string, b: number) => (t.uppercase ? [...[...r].slice(0, b).join("").toUpperCase()].length : b);
+    const items = raw.map((r, i) => meta[i].items.map((b) => moved(r, b)));
+    const spans = raw.map((r, i) => meta[i].spans?.map((sp) => ({ ...sp, from: moved(r, sp.from), to: moved(r, sp.to) })));
+    // A float at the start of a run: as wide as its text (rounded up to a layout unit) plus its edges.
+    const leads = meta.map((r) => {
+      if (!r.lead) return undefined;
+      const lt = t.uppercase ? r.lead.text.toUpperCase() : r.lead.text;
+      const one = layoutText(m!, lt, t.sizePx, r.lead.weight ?? t.weight, Infinity, { letterSpacing: t.letterSpacing, hangKern: false });
+      return Math.ceil(one.maxContent * 64 - TEXT_EPS) / 64 + r.lead.extra;
     });
     let ambiguous = false;
     let anywhereFlagged = false;
@@ -327,7 +332,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     return (maxWidth: number) => {
       const parts = runs.map((r, i) => {
-        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i] };
+        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i] };
         // white-space: nowrap: the paragraph is one line, and its min-content is its whole width.
         if (t.nowrap) {
           const one = layoutText(m!, r, t.sizePx, t.weight, Infinity, { ...opts, wrapAnywhere: false, hangKern: false });
@@ -919,9 +924,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let contentW = 0;
     let lines: Line[] | undefined;
     const pattern = props.pattern?.value;
-    const gap = props.gap?.value ?? 0;
+    // A percentage gap: of the content width (intrinsic sizes count it as 0, as Chromium does).
+    const gap = props.gap?.pct !== undefined ? sizeAt({ pct: props.gap.pct }, innerW) : (props.gap?.value ?? 0);
     // Between the rows of a grid or the lines of a cluster (row-gap), when it differs from the column gap.
-    const rowGap = props.rowGap?.value ?? gap;
+    const rowGap = props.rowGap?.value ?? (props.gap?.pct !== undefined ? 0 : gap);
     const allKids = isText ? [] : n.children.map((k) => ({ node: k, ...childOf(k, c) }));
     const placed = allKids.filter((k) => k.comp !== null) as { node: FixtureNode; comp: Component; slot: string | undefined }[];
     // Absolute and fixed children are out of flow: placed once everything else is (see placeAbsolute).

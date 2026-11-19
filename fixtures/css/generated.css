@@ -1,0 +1,246 @@
+/*
+ * Generated content (::before and ::after), text in another weight, and percentage gaps, as
+ * component libraries write them: breadcrumb dividers floated to the start of each item, bullets
+ * between inline runs, decorative layers positioned over a card, clearfixes, a status dot as a
+ * flex item, a grid that counts a ::before as its first cell, bold and semibold runs inside
+ * paragraphs, and rows whose column gap is a percentage of their width.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+h1,
+h2,
+p,
+ol,
+ul {
+  margin: 0;
+}
+
+/* Breadcrumbs: each divider floats to the start of its item's first line. */
+.trail {
+  padding: 12px 16px;
+  background: #f5f7fa;
+}
+
+.crumbs {
+  --divider-gap: 0.5rem;
+  display: flex;
+  flex-wrap: wrap;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.crumb + .crumb {
+  padding-left: var(--divider-gap);
+}
+
+.crumb + .crumb::before {
+  float: left;
+  padding-right: var(--divider-gap);
+  color: #616e7c;
+  content: var(--crumb-divider, "/");
+}
+
+.current {
+  font-weight: 600;
+}
+
+.page {
+  padding: 16px;
+}
+
+.intro {
+  margin-bottom: 16px;
+}
+
+.title {
+  font-size: 28px;
+  line-height: 1.25;
+  margin-bottom: 8px;
+}
+
+.semi {
+  font-weight: 600;
+}
+
+/* Bullets between inline runs, with room on both sides. */
+.meta {
+  color: #52606d;
+  font-size: 14px;
+}
+
+.meta span + span::before {
+  content: "\2022";
+  padding: 0 6px;
+  color: #9aa5b1;
+}
+
+/* A row whose column gap is a share of its width (row gap: 0, its height is auto). */
+.tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2%;
+  padding: 0;
+  margin-bottom: 16px;
+  list-style: none;
+}
+
+.tag {
+  padding: 2px 10px;
+  border: 1px solid #cbd2d9;
+  font-size: 14px;
+}
+
+.tag::before {
+  content: "#";
+  color: #9aa5b1;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(220px, 100%), 1fr));
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+/* A decorative layer and a ribbon: positioned, they move nothing. */
+.card {
+  position: relative;
+  padding: 16px;
+  border: 1px solid #e4e7eb;
+}
+
+.card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-top: 4px solid #3e7c17;
+}
+
+.card::after {
+  content: "new";
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  font-size: 12px;
+}
+
+.card-title {
+  font-size: 18px;
+  margin-bottom: 4px;
+}
+
+.pill {
+  padding: 1px 6px;
+  margin: 0 2px;
+  border: 1px solid #9aa5b1;
+  background: #f5f7fa;
+  font-weight: 500;
+}
+
+/* A status dot: a fixed-size flex item before the label. */
+.legend {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: 5%;
+  margin-bottom: 16px;
+}
+
+.key {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.key::before {
+  content: "";
+  display: block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #3e7c17;
+}
+
+.warn::before {
+  background: #cb6e17;
+}
+
+.bad::before {
+  width: 14px;
+  height: 14px;
+  background: #ab091e;
+}
+
+/* A grid counts its ::before as the first cell. */
+.table-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.table-grid::before {
+  content: "";
+  display: block;
+  height: 20px;
+  background: #e4e7eb;
+}
+
+/* Clearfixes: an empty table keeps the last paragraph's margin inside; an empty block doesn't. */
+.notes {
+  background: #f5f7fa;
+}
+
+.notes::after {
+  content: "";
+  display: table;
+  clear: both;
+}
+
+.notes.plain::after {
+  display: block;
+}
+
+.note {
+  margin-bottom: 12px;
+}
+
+/* A column gap of 8% of the row's width. */
+.split {
+  display: flex;
+  column-gap: 8%;
+  margin-top: 16px;
+}
+
+.half {
+  flex: 1;
+}
+
+/* A percentage row gap of an auto height is 0. */
+.stacked {
+  display: flex;
+  flex-direction: column;
+  row-gap: 10%;
+  margin-top: 16px;
+}
+
+@media (max-width: 600px) {
+  .split {
+    flex-direction: column;
+  }
+
+  .crumbs {
+    font-size: 13px;
+  }
+}
