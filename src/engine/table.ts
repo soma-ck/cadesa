@@ -96,6 +96,8 @@ interface Cell {
   colspan: number;
   /** Rowspan clamped to the rows left in its section. */
   rowspan: number;
+  /** Its rowspan attribute (at least 1). */
+  rawRowspan: number;
   section: number;
   align: CellAlign;
   contentBox: boolean;
@@ -206,7 +208,7 @@ class Grid {
     };
     const addCell = (row: Row, k: Kid, p: ResolvedProps) => {
       const part = p.part!.value;
-      row.cells.push({ k, p, row: -1, col: -1, colspan: 1, rowspan: 1, section: -1, align: part.align ?? "baseline", contentBox: false, border: ZERO, padding: ZERO });
+      row.cells.push({ k, p, row: -1, col: -1, colspan: 1, rowspan: 1, rawRowspan: 1, section: -1, align: part.align ?? "baseline", contentBox: false, border: ZERO, padding: ZERO });
     };
     const rowKids = (row: Row, n: FixtureNode, c: Component) => {
       for (const x of h.kids(n, c)) {
@@ -321,7 +323,8 @@ class Grid {
           cell.colspan = td ? attrInt(cell.k.node, "colspan", 1, 1000) : 1;
           const rs = td ? attrInt(cell.k.node, "rowspan", 1, 65534, 0) : 1;
           if (rs === 0) this.why ??= "rowspan=\"0\" (to the end of the row group) isn't modelled";
-          cell.rowspan = Math.min(Math.max(1, rs), s.rows.length - i);
+          cell.rawRowspan = Math.max(1, rs);
+          cell.rowspan = Math.min(cell.rawRowspan, s.rows.length - i);
           cell.row = ri;
           cell.col = col;
           cell.section = this.rows[ri].section;
@@ -366,63 +369,106 @@ class Grid {
       this.padding = { top: U(pd.top), right: U(pd.right), bottom: U(pd.bottom), left: U(pd.left) };
       return;
     }
-    // Collapsed: every edge between rows (h) and columns (v) takes the widest border on it (a tie
-    // keeps the width either way). Edges inside a cell that spans rows or columns stay empty.
+    // Collapsed: TableBorders::ComputeTableBorders. Edges live in one array, a row of them after
+    // another (two per column: the one on its left, the one on its top, and two more for the last
+    // line), grown only as far as a border with a style needs; the widest border on an edge wins (a
+    // tie keeps the width either way). Edges inside a cell spanning rows or columns are left empty.
+    // Reads past a row's last edge land on the next row's first ones, as Chromium's do.
     const R = this.rows.length;
     const C = Math.max(this.columnCount, this.colElementColumns());
     this.columnCount = C;
-    const hE = Array.from({ length: R + 1 }, () => new Array<number>(C).fill(0));
-    const vE = Array.from({ length: R }, () => new Array<number>(C + 1).fill(0));
-    const hDead = Array.from({ length: R + 1 }, () => new Array<boolean>(C).fill(false));
-    const vDead = Array.from({ length: R }, () => new Array<boolean>(C + 1).fill(false));
-    const hSet = Array.from({ length: R + 1 }, () => new Array<boolean>(C).fill(false));
-    const vSet = Array.from({ length: R }, () => new Array<boolean>(C + 1).fill(false));
-    const merge = (r0: number, c0: number, rs: number, cs: number, w: Sides, has: (side: keyof Sides) => boolean, cell: boolean) => {
-      cs = Math.min(cs, C - c0);
+    const set: boolean[] = [];
+    const wid: number[] = [];
+    const dead: boolean[] = [];
+    let per = 0;
+    let lastColumn = Infinity;
+    const fitColumn = (col: number) => {
+      const want = (col + 2) * 2;
+      if (want <= per) return;
+      const rows = per === 0 ? 1 : set.length / per;
+      const os = set.slice();
+      const ow = wid.slice();
+      const od = dead.slice();
+      set.length = wid.length = dead.length = 0;
+      for (let r = 0; r < rows; r++)
+        for (let e = 0; e < want; e++) {
+          const old = e < per ? r * per + e : -1;
+          set.push(old >= 0 ? os[old] : false);
+          wid.push(old >= 0 ? ow[old] : 0);
+          dead.push(old >= 0 ? od[old] : false);
+        }
+      per = want;
+    };
+    const fitRow = (row: number) => {
+      const want = row + 2;
+      if (want <= set.length / per) return;
+      while (set.length < want * per) {
+        set.push(false);
+        wid.push(0);
+        dead.push(false);
+      }
+    };
+    const fill = (i: number, w: number) => {
+      if (dead[i]) return;
+      if (!set[i] || w > wid[i]) {
+        set[i] = true;
+        wid[i] = w;
+      }
+    };
+    const sectionOf = new Map<number, { start: number; count: number }>();
+    this.sections.forEach((s, si) => sectionOf.set(si, { start: s.rows[0] ?? 0, count: s.rows.length }));
+    const merge = (r0: number, c0: number, rs: number, cs: number, p: ResolvedProps | undefined, cell: { section: number } | undefined) => {
       if (rs <= 0 || cs <= 0) return;
+      const b = p?.border?.value;
+      const w = own(p);
+      const has = (s: keyof Sides) => !!b && (w[s] > 0 || !!b.styled?.[s]);
+      cs = Math.min(cs, lastColumn - c0);
+      if (cell && rs > 1) {
+        const s = sectionOf.get(cell.section)!;
+        rs = Math.min(rs, s.count - (r0 - s.start));
+      }
+      const inner = !!cell && (rs > 1 || cs > 1);
+      if (inner) {
+        fitColumn(c0 + cs - 1);
+        fitRow(r0 + rs - 1);
+      } else {
+        if (!has("top") && !has("right") && !has("bottom") && !has("left")) return;
+        fitColumn(!has("right") && !has("top") && !has("bottom") ? c0 : c0 + cs - 1);
+        fitRow(!has("left") && !has("right") && !has("bottom") ? r0 : r0 + rs - 1);
+      }
       const hor = (r: number, side: keyof Sides) => {
         if (!has(side)) return;
-        for (let c = c0; c < c0 + cs; c++)
-          if (!hDead[r][c]) {
-            hE[r][c] = Math.max(hE[r][c], w[side]);
-            hSet[r][c] = true;
-          }
+        const start = per * r + c0 * 2 + 1;
+        for (let e = start; e < start + cs * 2; e += 2) fill(e, w[side]);
       };
       const ver = (c: number, side: keyof Sides) => {
         if (!has(side)) return;
-        for (let r = r0; r < r0 + rs; r++)
-          if (!vDead[r][c]) {
-            vE[r][c] = Math.max(vE[r][c], w[side]);
-            vSet[r][c] = true;
-          }
+        const start = per * r0 + c * 2;
+        for (let e = start; e < start + rs * per; e += per) fill(e, w[side]);
       };
       hor(r0, "top");
       hor(r0 + rs, "bottom");
       ver(c0, "left");
       ver(c0 + cs, "right");
-      if (cell && (rs > 1 || cs > 1)) {
-        for (let r = r0; r < r0 + rs; r++) for (let c = c0 + 1; c < c0 + cs; c++) if (!vSet[r][c]) vDead[r][c] = true;
-        for (let r = r0 + 1; r < r0 + rs; r++) for (let c = c0; c < c0 + cs; c++) if (!hSet[r][c]) hDead[r][c] = true;
+      if (inner) {
+        let start = c0 * 2 + 2;
+        let end = start + (cs - 1) * 2;
+        for (let r = r0; r < r0 + rs && start !== end; r++) for (let e = r * per + start; e < r * per + end; e += 2) if (!set[e]) dead[e] = true;
+        start = c0 * 2 + 1;
+        end = start + cs * 2;
+        for (let r = r0 + 1; r < r0 + rs; r++) for (let e = r * per + start; e < r * per + end; e += 2) if (!set[e]) dead[e] = true;
       }
     };
-    const sides = (p?: ResolvedProps) => {
-      const w = own(p);
-      // A side with a border (Cadesa keeps a border's sides that are drawn: width > 0, style other than none).
-      return { w, has: (s: keyof Sides) => w[s] > 0 };
-    };
+    // Cells, until one spans rows or columns; then (with the column count known) all of them again.
+    let multi = false;
     for (const cell of this.cells) {
-      const s = sides(cell.p);
-      merge(cell.row, cell.col, cell.rowspan, cell.colspan, s.w, s.has, true);
+      multi ||= cell.rawRowspan > 1 || cell.colspan > 1;
+      if (!multi) merge(cell.row, cell.col, cell.rawRowspan, cell.colspan, cell.p, cell);
     }
-    this.rows.forEach((row, ri) => {
-      const s = sides(row.p);
-      merge(ri, 0, 1, C, s.w, s.has, false);
-    });
-    for (const sec of this.sections) {
-      if (!sec.rows.length) continue;
-      const s = sides(sec.p);
-      merge(sec.rows[0], 0, sec.rows.length, C, s.w, s.has, false);
-    }
+    lastColumn = C;
+    if (multi) for (const cell of this.cells) merge(cell.row, cell.col, cell.rawRowspan, cell.colspan, cell.p, cell);
+    this.rows.forEach((row, ri) => merge(ri, 0, 1, C, row.p, undefined));
+    for (const sec of this.sections) merge(sec.rows[0] ?? 0, 0, sec.rows.length, C, sec.p, undefined);
     // Columns, then column groups.
     const visit = (fn: (el: ColEl, start: number, span: number, group: boolean) => void) => {
       let at = 0;
@@ -446,35 +492,39 @@ class Grid {
       }
     };
     visit((el, start, span, group) => {
-      if (group) return;
-      const s = sides(el.p);
-      for (let i = 0; i < span; i++) merge(0, start + i, R, 1, s.w, s.has, false);
+      if (!group) for (let i = 0; i < span; i++) merge(0, start + i, R, 1, el.p, undefined);
     });
     visit((el, start, span, group) => {
-      if (!group) return;
-      const s = sides(el.p);
-      merge(0, start, R, span, s.w, s.has, false);
+      if (group) merge(0, start, R, span, el.p, undefined);
     });
-    const t = sides(this.props);
-    merge(0, 0, R, C, t.w, t.has, false);
+    merge(0, 0, R, C, this.props, undefined);
+    const paint = (i: number) => (i < set.length && set[i] ? wid[i] : 0);
     const half = (u: number) => Math.trunc(u / 2);
-    const cellBorders = (r0: number, c0: number, rs: number, cs: number): Sides => {
-      cs = Math.min(cs, Math.max(1, C - c0));
+    // TableBorders::GetCellBorders.
+    const cellBorders = (row: number, col: number, rs: number, cs: number): Sides => {
+      if (per === 0 || col * 2 >= per || row >= set.length / per) return ZERO;
       let top = 0;
       let bottom = 0;
       let left = 0;
       let right = 0;
-      for (let r = r0; r < r0 + rs && r < R; r++) {
-        if (c0 <= C) left = Math.max(left, vE[r][c0] ?? 0);
-        if (c0 + cs <= C) right = Math.max(right, vE[r][c0 + cs] ?? 0);
+      const firstStart = row * per + col * 2;
+      const firstEnd = firstStart + cs * 2;
+      for (let i = 0; i < rs; i++) {
+        const s = firstStart + i * per;
+        left = Math.max(left, paint(s));
+        if (s >= set.length) break;
+        right = Math.max(right, paint(firstEnd + i * per));
       }
-      for (let c = c0; c < c0 + cs && c < C; c++) {
-        top = Math.max(top, hE[r0]?.[c] ?? 0);
-        bottom = Math.max(bottom, hE[Math.min(R, r0 + rs)]?.[c] ?? 0);
+      for (let i = 0; i < cs; i++) {
+        const c = col * 2 + 1 + i * 2;
+        if (c >= per) break;
+        const s = row * per + c;
+        top = Math.max(top, paint(s));
+        bottom = Math.max(bottom, paint(s + rs * per));
       }
       return { top: half(top), right: half(right), bottom: half(bottom), left: half(left) };
     };
-    for (const cell of this.cells) cell.border = cellBorders(cell.row, cell.col, cell.rowspan, cell.colspan);
+    for (const cell of this.cells) cell.border = cellBorders(cell.row, cell.col, cell.rowspan, Math.min(cell.colspan, C - cell.col));
     this.border = R && C ? cellBorders(0, 0, R, C) : ZERO;
     this.padding = ZERO;
   }
@@ -1026,8 +1076,10 @@ export function tableIntrinsic(g: Grid, allowPercent: boolean): TableIntrinsic {
   if (typeof cap === "string") return { min: 0, max: 0, why: cap };
   const und = undistributableSpace(g, cols);
   const mm = gridMinMax(cols, und, g.fixed, allowPercent);
-  let min = Math.max(mm.min, cap);
-  let max = Math.max(mm.max, cap);
+  // Its min-width counts as content: it is never narrower.
+  const minW = g.props.min ? U(g.props.min.value) : 0;
+  let min = Math.max(mm.min, cap, minW);
+  let max = Math.max(mm.max, cap, minW);
   const w = g.props.width?.value;
   if (g.fixed && w !== undefined && typeof w === "object") max = TABLE_MAX;
   // An empty table: its border and padding (collapsed: nothing).
@@ -1053,10 +1105,11 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
   const bpX = g.border.left + g.border.right + g.padding.left + g.padding.right;
   const und = undistributableSpace(g, cols);
   let assignable: LU;
-  if (fixedW) assignable = Math.max(0, U(w) - und);
+  const minW = g.props.min ? U(g.props.min.value) : 0;
+  if (fixedW) assignable = Math.max(0, Math.max(U(w), minW) - und);
   else {
     const mm = gridMinMax(cols, und, g.fixed, true);
-    const used = Math.max(U(w), mm.min, capMin);
+    const used = Math.max(U(w), mm.min, capMin, minW);
     assignable = used - und;
   }
   const sizes = !cols.length ? [] : g.fixed ? distributeFixed(assignable, cols) : distributeAuto(assignable, cols, true);
@@ -1309,7 +1362,8 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
       b.x = PX(gm.x - parentX);
       b.y = 0;
       b.w = PX(gm.w);
-      b.h = PX(colH);
+      // (A column of no width has no height either.)
+      b.h = gm.w ? PX(colH) : 0;
       return b;
     };
     for (const el of g.colEls) {

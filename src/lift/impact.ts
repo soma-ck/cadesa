@@ -127,9 +127,19 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
     for (let p = parentOf.get(cur); p; cur = p, p = parentOf.get(cur)) {
       // An absolutely positioned or fixed box neither moves its siblings nor resizes its parent.
       if (outOfFlow(cur)) return;
-      const i = p.children.indexOf(cur);
       const moved = `moved by #${b.id}: ${why}`;
       const pattern = p.props.pattern?.value;
+      // A table's cells share its columns and rows: a change in one may move and resize all of it.
+      if (p.props.part || pattern === "table") {
+        let t: Box | undefined = p;
+        while (t && t.props.pattern?.value !== "table") t = parentOf.get(t);
+        if (t) {
+          subtree(t, "size", `resized with #${b.id}: ${why}`);
+          p = t;
+          continue;
+        }
+      }
+      const i = p.children.indexOf(cur);
       const grows = pattern === "stack" && p.children.some((c) => c.props.grow);
       if (heightOnly && pattern === "cluster" && !stretched(p)) {
         const lines = linesOf(p);

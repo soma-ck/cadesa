@@ -121,7 +121,7 @@ export interface ResolvedProps {
   padding?: Resolved<Sides>;
   background?: Resolved<string>;
   /** The color, and each side's width as Chromium draws it. */
-  border?: Resolved<{ color: string; widths: Sides }>;
+  border?: Resolved<{ color: string; widths: Sides; styled?: Record<keyof Sides, boolean> }>;
   radius?: Resolved<number>;
   margin?: Resolved<Margins>;
   maxWidth?: Resolved<number | Pct>;
@@ -352,7 +352,8 @@ export function resolveElement(model: Model, component: Component, slot: string 
         const widths = { top: w(0), right: w(1), bottom: w(2), left: w(3) };
         const tokens = sides.filter((x) => x).map((x) => x!.steps[0]);
         out.border = {
-          value: { color: c.value, widths },
+          // Which sides the source gives (a table's collapsed borders count a 0-wide side that has a style).
+          value: { color: c.value, widths, styled: { top: !b.sides || !!b.sides.top, right: !b.sides || !!b.sides.right, bottom: !b.sides || !!b.sides.bottom, left: !b.sides || !!b.sides.left } },
           display: `${sidesDisplay(widths)} solid ${c.value}`,
           steps: [c.steps[0], ...tokens.filter((t, k) => tokens.findIndex((u) => u.path === t.path) === k), ...pre, src(b.path)],
         };

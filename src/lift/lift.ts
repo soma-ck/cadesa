@@ -686,7 +686,11 @@ export function liftElements(input: LiftInput): LiftResult {
       const tok = (x?: string) => (x && !isZero(x) ? lengthToken("space", x) : undefined);
       const gap = tok(h);
       const rowGap = v !== h ? (tok(v) ?? (gap ? lengthToken("space", "0px") : undefined)) : undefined;
-      out.layout = { pattern: "table", ...(gap && { gap }), ...(rowGap && { rowGap }), ...(collapse && { collapse: true }), ...(fixed && { fixed: true }) };
+      // Its min-width: a table is never narrower (as it is never narrower than its columns).
+      const mw = take("min-width");
+      const min = mw && !isZero(mw.value) && !/^auto$/.test(mw.value.trim()) ? lengthToken("size", mw.value) : undefined;
+      if (mw && !isZero(mw.value) && !/^auto$/.test(mw.value.trim()) && !min) note(e, s, mw, "a table's min-width must be a px or rem length", "geometry");
+      out.layout = { pattern: "table", ...(min && { min }), ...(gap && { gap }), ...(rowGap && { rowGap }), ...(collapse && { collapse: true }), ...(fixed && { fixed: true }) };
     } else if (display && !["block", "flow-root"].includes(display.value.trim())) {
       note(e, s, display, `display: ${display.value.trim()} has no Cadesa pattern`, "geometry");
     }
@@ -716,14 +720,16 @@ export function liftElements(input: LiftInput): LiftResult {
     if (bw.some(Boolean)) {
       const widths = bw.map((d) => (d ? d.value.trim() : "0"));
       const styles = bs.map((d) => (d ? d.value.trim() : "none"));
-      const visible = widths.map((w, i) => !isZero(w) && !/^(none|hidden)$/.test(styles[i]));
+      // In a table, a side with a style but no width still counts when borders collapse: it's given as 0.
+      const tablePart = !!part || (out.layout as { pattern?: string } | undefined)?.pattern === "table";
+      const visible = widths.map((w, i) => (!isZero(w) || tablePart) && !/^(none|hidden)$/.test(styles[i]));
       const first = visible.indexOf(true);
       if (first < 0) {
         /* no border */
       } else {
         const onePx = widths.every((w, i) => visible[i] && resolveVar(w)?.raw === "1px");
         const keyword = (w: string) => (/^thin$/.test(w) ? "1px" : /^medium$/.test(w) ? "3px" : /^thick$/.test(w) ? "5px" : w);
-        const t = onePx ? [] : widths.map((w, i) => (visible[i] ? lengthToken("space", keyword(w)) : undefined));
+        const t = onePx ? [] : widths.map((w, i) => (visible[i] ? lengthToken("space", isZero(w) ? "0px" : keyword(w)) : undefined));
         const bad = onePx ? -1 : widths.findIndex((_, i) => visible[i] && !t[i]);
         const c = colorToken(bc[first]?.value ?? "currentcolor");
         if (bad >= 0) note(e, s, bw[bad] ?? bw.find(Boolean)!, "a border width must be a px or rem length", "geometry");

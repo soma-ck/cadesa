@@ -453,9 +453,13 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
               columns = gridTracks(l.columns, [...p, "columns"]);
               if (!columns) break;
             }
+          } else if (l.pattern === "table" && l.min !== undefined && l.columns === undefined) {
+            // A table's min-width: it is never narrower.
+            min = fixedRef(l.min, [...p, "min"], "the table's minimum width");
+            if (!min) break;
           } else if (l.min !== undefined || l.columns !== undefined) {
             const k = l.min !== undefined ? "min" : "columns";
-            err([...p, k], `${k} only applies to a grid`, { expected: `remove ${k}, or use pattern: grid` });
+            err([...p, k], `${k} only applies to a grid${k === "min" ? " or a table" : ""}`, { expected: `remove ${k}, or use pattern: grid` });
             break;
           }
           if (l.pattern === "flow" && l.gap !== undefined) {

@@ -90,7 +90,7 @@ export interface LayoutProp {
   rowGap?: Ref;
   /** Cross-axis alignment: cluster (default center), grid and layer (default stretch). Not for stack. */
   align?: Align;
-  /** Grid only: minimum column width; columns auto-fill the row. */
+  /** Grid: minimum column width; columns auto-fill the row. Table: its minimum width (min-width). */
   min?: Ref;
   /**
    * Grid only, instead of min: the column tracks (grid-template-columns). A size token is a fixed
