@@ -200,7 +200,6 @@ class Grid {
     const h = this.h;
     const header: Section[] = [];
     const footer: Section[] = [];
-    const bodies: Section[] = [];
     let anon: Section | undefined;
     let anonRow: Row | undefined;
     const sectionRows = new Map<Section, Row[]>();
@@ -271,14 +270,14 @@ class Grid {
         this.colEls.push({ k, p, span: attrInt(x.node, "span", 1, 1000), group: true, ...(cols.length && { cols }) });
       } else if (part === "header" || part === "body" || part === "footer") {
         const s = newSection(part, k, p);
-        (part === "header" ? header : part === "footer" ? footer : bodies).push(s);
+        if (part === "header") header.push(s);
+        else if (part === "footer") footer.push(s);
         order.push(s);
         sectionKids(s, x.node, x.comp);
       } else if (part === "row") {
         anonRow = undefined;
         if (!anon) {
           anon = newSection("body");
-          bodies.push(anon);
           order.push(anon);
         }
         const row: Row = { k, p, cells: [], section: -1 };
@@ -287,7 +286,6 @@ class Grid {
       } else if (part === "cell") {
         if (!anon) {
           anon = newSection("body");
-          bodies.push(anon);
           order.push(anon);
         }
         if (!anonRow) rowsOf(anon).push((anonRow = { cells: [], section: -1 }));
@@ -1070,7 +1068,7 @@ function captionMin(g: Grid): LU {
   return min;
 }
 
-/** Cache of each table's width-independent analysis, per laid out width. */
+/** A table's width-independent analysis (its structure and borders); the engine keeps one per table and width. */
 export function tableGrid(h: TableHooks, n: FixtureNode, c: Component, props: ResolvedProps): Grid {
   return new Grid(h, n, c, props);
 }
@@ -1161,8 +1159,6 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
     if (d) assumptions.push(`its width and height depend on its caption #${b.id}, which the engine can't guarantee (${d})`);
     return { cap, b, x, m, side: cap.p.part?.value.side ?? "top" };
   });
-  const capsH = capBoxes.reduce((s, c) => s + U(c.b.h) + U(c.m.top) + U(c.m.bottom), 0);
-  void capsH;
 
   // Row heights: each cell laid out at its columns' width, its content's height (CSS height aside).
   const cellW = (cell: Cell) => {
@@ -1301,7 +1297,6 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
   y += g.border.top + g.padding.top;
   const sectionX = g.border.left + g.padding.left + spacingX;
   const sectionW = Math.max(0, tableW - bpX - 2 * spacingX);
-  let started = false;
   g.sections.forEach((s, si) => {
     const sc = sectionsC[si];
     const at = y;
@@ -1364,9 +1359,7 @@ export function layoutTable(g: Grid, w: number, fixedW: boolean, cssH: number | 
         children.push(b);
       }
     y = sy + size;
-    started = true;
   });
-  void started;
   const sectionsEnd = y;
   const after = g.sections.length ? spacingY : 0;
   const gridH = Math.max(sectionsEnd + after + g.border.bottom + g.padding.bottom - gridTop, minimalGrid);
