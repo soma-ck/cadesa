@@ -221,3 +221,23 @@ p {
 .starts-last {
   margin-top: auto;
 }
+
+.starts-wide {
+  align-self: stretch;
+  padding: 4px 8px;
+  background: #fee2e2;
+}
+
+.row-end {
+  align-self: flex-end;
+}
+
+.row-mid {
+  align-self: center;
+}
+
+.note {
+  justify-self: end;
+  padding: 4px 8px;
+  background: #e0f2fe;
+}

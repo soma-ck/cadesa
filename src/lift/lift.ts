@@ -851,8 +851,6 @@ export function liftElements(input: LiftInput): LiftResult {
         else note(e, s, width, "width must be a px/rem length, a percentage, or auto", "geometry");
       }
     }
-    if (alignSelf && !["auto", "stretch", "normal"].includes(alignSelf.value.trim()))
-      note(e, s, alignSelf, `align-self: ${alignSelf.value.trim()} has no Cadesa equivalent`, "geometry");
     // A grid item: its lines (grid-row, grid-column) and its own alignment in its area.
     {
       const lines = ["grid-row-start", "grid-row-end", "grid-column-start", "grid-column-end"].map((p) => take(p));
@@ -868,7 +866,8 @@ export function liftElements(input: LiftInput): LiftResult {
         if (parseLinePair(pair)) place[axis] = pair;
         else note(e, s, (lines[i] ?? lines[i + 1])!, `grid-${axis}: ${pair} isn't a placement Cadesa reads`, "geometry");
       }
-      for (const [k, d] of [["justify", js], ["align", gas]] as const) {
+      // A flex item's align-self (a grid item's comes as grid-align-self) is its own alignment across the line too.
+      for (const [k, d] of [["justify", js], ["align", gas ?? alignSelf]] as const) {
         if (!d) continue;
         const a = SELF[v(d)];
         if (a === undefined) note(e, s, { ...d, prop: k === "align" ? "align-self" : "justify-self" }, `${k}-self: ${v(d)} has no Cadesa equivalent`, "geometry");

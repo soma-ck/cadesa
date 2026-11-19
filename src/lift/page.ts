@@ -1941,12 +1941,6 @@ export abstract class PageLifter {
           if (dir === "column" && ai && /^(center|start|end|flex-start|flex-end|self-start|self-end|left|right|baseline|first baseline)$/.test(ai)) {
             decl("align-items", ai, own.get("align-items")!.utility);
             handled.add("align-items");
-            for (const c of kids) {
-              const self = c.own[si].get("align-self");
-              const sv = self ? this.resolve(c, si, self.value) : undefined;
-              if (sv && !/^(auto|normal)$/.test(sv) && sv !== ai)
-                this.note(c, si, { decl: `${self!.utility} (align-self: ${sv})`, reason: `align-self in a column whose items are aligned ${ai} isn't modelled`, kind: "geometry" });
-            }
           } else if (dir === "column" && ai && !/^(normal|stretch)$/.test(ai)) {
             handled.add("align-items");
             for (const c of kids) {
