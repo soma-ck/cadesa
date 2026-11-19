@@ -38,7 +38,7 @@ export interface TableHooks {
   /** Element children in order: laid out (comp), or not (comp null), and whether out of flow. */
   kids(n: FixtureNode, c: Component): { node: FixtureNode; comp: Component | null; slot: string | undefined; out: boolean }[];
   /** The min-content and max-content width of a box's content, without its padding and border. */
-  content(k: Kid): { min: number; max: number; why?: string };
+  content(k: Kid, cell: boolean): { min: number; max: number; why?: string };
   /** Lay out a cell or caption `w` wide (its props changed by `over`): its box, content placed, at 0,0. */
   measure(k: Kid, avail: number, w: number | undefined, over: Partial<ResolvedProps>): Box;
   /** A box of its own for a row, row group or column, at 0,0 and 0×0. */
@@ -588,7 +588,7 @@ function cellConstraint(g: Grid, cell: Cell): CellC {
   let content: { min: number; max: number } | undefined;
   const sizes = () => {
     if (!content) {
-      const c = g.h.content(cell.k);
+      const c = g.h.content(cell.k, true);
       // Content it can't measure counts as none (the table is then approximate).
       if (c.why) g.doubts.add(`its width comes from its cells' content, which can't be measured (${c.why})`);
       content = c.why ? { min: bp, max: bp } : { min: U(c.min) + bp, max: U(c.max) + bp };
@@ -1056,7 +1056,7 @@ function undistributableSpace(g: Grid, cols: Column[]): LU {
 function captionMin(g: Grid): LU {
   let min = 0;
   for (const cap of g.captions) {
-    const c = g.h.content(cap.k);
+    const c = g.h.content(cap.k, false);
     if (c.why) {
       g.doubts.add(`its caption's width can't be measured (${c.why})`);
       continue;

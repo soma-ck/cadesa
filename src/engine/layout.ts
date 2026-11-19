@@ -404,8 +404,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         const r = childOf(k, c);
         return { node: k, comp: r.comp, slot: r.slot, out: !!r.comp && outOfFlow(r.comp, r.slot) };
       }),
-    content: (k) => {
+    content: (k, cell) => {
+      // (A cell's content is measured inside the cell: a table in it doesn't count its column percentages.)
+      if (cell) flexAncestors++;
       const it = intrinsic(k.node, k.comp, k.slot, true);
+      if (cell) flexAncestors--;
       if (it.why) return it;
       const ins = insets(resolveElement(model, k.comp, k.slot, width));
       return { min: it.min - ins.left - ins.right, max: it.max - ins.left - ins.right };
@@ -437,6 +440,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       return undefined;
     },
   };
+  /** Flex and grid containers and table cells being laid out around what's measured now. */
+  let flexAncestors = 0;
   const gridOf = (n: FixtureNode, c: Component, props: ResolvedProps) => {
     let g = grids.get(n);
     if (!g) grids.set(n, (g = tableGrid(tableHooks, n, c, props)));
@@ -545,7 +550,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     const pw = contentOnly || (typeof p.width?.value === "object") ? undefined : p.width?.value;
     // A table: its columns' widths (never narrower than their minimum, whatever its width says).
     if (p.pattern?.value === "table") {
-      const t = tableIntrinsic(gridOf(n, c, p), true);
+      // (Its column percentages count only where no flex or grid container or table cell is around it.)
+      const t = tableIntrinsic(gridOf(n, c, p), flexAncestors === 0);
       if (t.why) return unknown(t.why);
       const w = typeof pw === "number" ? Math.max(pw, t.min) : undefined;
       return w !== undefined ? { min: w, max: w } : { min: t.min, max: Math.max(t.min, Math.min(t.max, cap)) };
@@ -712,7 +718,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       min = Math.min(min, Math.max(cap, insX));
       // The flex base size is never below the padding and border (its content size is at least 0).
       base = Math.max(base, insX);
-      const hyp = Math.max(Math.min(base, cap), g?.basis === "zero" ? min : 0, insX);
+      // A table is never narrower than its columns' minimum, whatever its width or flex basis says.
+      const tableMin = p.pattern?.value === "table" && !content().why ? content().min : 0;
+      if (tableMin) {
+        min = Math.max(min, tableMin);
+        minKnown = true;
+      }
+      const hyp = Math.max(Math.min(base, cap), g?.basis === "zero" ? min : 0, insX, tableMin);
       // An aspect box that grows: its minimum width also follows its height, which isn't modelled.
       if (g && p.aspect) notes.push("grow on a box with an aspect ratio: its minimum width also follows its height, which isn't modelled");
       // flex-shrink: 1 unless a width is set (Cadesa compiles flex: none with it).
@@ -1012,6 +1024,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     let contentW = 0;
     let lines: Line[] | undefined;
     const pattern = props.pattern?.value;
+    // Inside a flex or grid container or a table cell, a table's column percentages don't size it (table_node.cc).
+    const formatsKids = (!!pattern && pattern !== "flow" && pattern !== "table") || props.part?.value.part === "cell";
+    if (formatsKids) flexAncestors++;
     // A percentage gap: of the content width (intrinsic sizes count it as 0, as Chromium does).
     const gap = props.gap?.pct !== undefined ? sizeAt({ pct: props.gap.pct }, innerW) : (props.gap?.value ?? 0);
     // Between the rows of a grid or the lines of a cluster (row-gap), when it differs from the column gap.
@@ -1341,6 +1356,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     }
     // A height of its own is definite: percentages of it resolve.
     if (props.height) fillPct(box);
+    if (formatsKids) flexAncestors--;
     return box;
   }
 

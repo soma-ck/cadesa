@@ -2183,7 +2183,13 @@ export abstract class PageLifter {
         // A table's rows, row groups and columns take their sizes as they are; a cell's are converted
         // in table.ts (see cellContentBox).
         const tableTable = tpart !== undefined && tpart !== "caption";
-        if (sizing !== "border-box" && !tableTable)
+        // A content-box table with collapsed borders: its border is half of its outer collapsed
+        // borders (and it has no padding), which only table.ts knows.
+        const collapsedTable = sizing !== "border-box" && this.isTable(el, si) && role === "container" && this.tableProp(el, si, "border-collapse") === "collapse";
+        if (collapsedTable && ["width", "height", "min-height", "min-width", "max-width"].some((p) => out.has(p) && !/^(auto|none)$/.test(out.get(p)!.value.trim()))) {
+          this.note(el, si, { decl: own.get("box-sizing")?.utility ?? "browser default (content-box)", reason: "a content-box table with collapsed borders: its size doesn't include the half borders it gets, which isn't modelled", kind: "geometry" });
+          ok = false;
+        } else if (sizing !== "border-box" && !tableTable)
           for (const [p, extra] of [["width", extraX], ["max-width", extraX], ["height", extraY], ["min-height", extraY], ["max-height", extraY], ["min-width", extraX]] as const) {
             const d = out.get(p);
             const e = sumOf(extra);
