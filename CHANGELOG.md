@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.11 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.11 mcp
+npx -y cadesa@0.1.12 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.12 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -18,7 +18,7 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## Unreleased
+## 0.1.12 (2026-11-19)
 
 - The window height is an input like the widths: `--height <px>` (MCP `height`), 800 by
   default. `vh`, `dvh`, `svh` and `lvh`, percentage heights of the root and `min-height` /
@@ -39,6 +39,10 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   nothing. Still undecided: interactive states (`:hover`, `:focus`..., which don't apply in the
   default state), `:valid` with a pattern or a typed value, and an argument of `:is()` the
   matcher can't parse.
+- `:has()` on a page with svg icons is decided: an icon's insides can't match when nothing in
+  them has the id, class or attribute the selector needs.
+- `color-scheme` counts as paint (it moves nothing), and `env()` resolves as in a desktop
+  window: safe-area and keyboard insets are 0, anything else takes its fallback.
 
 ## 0.1.11 (2026-11-19)
 
