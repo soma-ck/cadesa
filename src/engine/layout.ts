@@ -464,7 +464,28 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       if (kids.some((k) => k.comp === null)) return unknown(`<${n.tag}> has children the engine doesn't lay out`);
       const pat = p.pattern?.value;
       if (!pat) return unknown(`<${n.tag}> has children but no layout`);
-      if (pat === "grid") return unknown("a grid's width from its content isn't modelled");
+      if (pat === "grid") {
+        // Explicit tracks: under a min-content constraint a minmax(0, <n>fr) column is 0 and an
+        // <n>fr one its items' min-content width; at max-content every flexible column is its
+        // share of the widest item per fr (CSS Grid §12.7.1, an indefinite free space).
+        const ts = p.columns?.value;
+        if (!ts || ts.some((t) => "size" in t && typeof t.size !== "number")) return unknown("a grid's width from its content isn't modelled (repeat(auto-fill), or a percentage column)");
+        const n = ts.length;
+        const cols = ts.map(() => ({ min: 0, max: 0 }));
+        for (const [j, k] of kids.entries()) {
+          const ki = intrinsic(k.node, k.comp!, k.slot);
+          if (ki.why) return ki;
+          const km = marginOf(resolveElement(model, k.comp!, k.slot, width));
+          const c = cols[j % n];
+          c.min = Math.max(c.min, ki.min + km.left + km.right);
+          c.max = Math.max(c.max, ki.max + km.left + km.right);
+        }
+        const gaps = (p.gap?.value ?? 0) * (n - 1);
+        const fraction = Math.max(0, ...ts.map((t, i) => ("fr" in t ? Math.max(t.auto ? cols[i].min : 0, cols[i].max) / Math.max(1, t.fr) : 0)));
+        min = gaps + ts.reduce((s, t, i) => s + ("size" in t ? (t.size as number) : t.auto ? cols[i].min : 0), 0);
+        max = gaps + ts.reduce((s, t, i) => s + ("size" in t ? (t.size as number) : Math.max(t.auto ? cols[i].min : 0, fraction * t.fr)), 0);
+        return { min: Math.max(insX, Math.min(cap, up(min) + insX)), max: Math.max(insX, Math.min(cap, up(Math.max(max, min)) + insX)) };
+      }
       let row = 0;
       let rowMin = 0;
       for (const k of kids) {
