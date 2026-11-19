@@ -720,6 +720,8 @@ export abstract class PageLifter {
     };
     // Browser defaults that preflight leaves in place (headings and links inherit; these don't).
     if (el.tag === "strong" || el.tag === "b") t.weight = bolder(parent.weight);
+    // A table header cell is bold (font-weight: bold): in the stylesheet's cascade when the browser's defaults are in it.
+    if (el.tag === "th" && !this.uaInCascade) t.weight = 700;
     if (el.tag === "small") t.size = parent.size * 0.8;
     const fs = val("font-size");
     if (fs) {
