@@ -133,7 +133,12 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
     const js = p.props.place?.value.justify ?? gp.props.justifyItems?.value;
     const content = gp.props.grid?.value;
     if (pat === "grid" || pat === "layer") return /^(center|end)$/.test(al ?? "") || /^(center|end)$/.test(js ?? "") || (!!content && (!/^(normal|stretch|start)$/.test(content.justifyContent) || !/^(normal|stretch|start)$/.test(content.alignContent)));
-    if (pat === "cluster") return /^(center|end)$/.test(al ?? "center") || (gp.props.justify?.value ?? "start") !== "start";
+    if (pat === "cluster") {
+      // Alone on its line (whose height is its own, unless the row is one line of a set height), it isn't moved by its height.
+      const line = linesOf(gp).find((ln) => ln.includes(p)) ?? [];
+      const alone = line.filter((x) => !outOfFlow(x)).length === 1 && !gp.props.height && !gp.props.minHeight && !stretched(gp);
+      return (!alone && /^(center|end)$/.test(al ?? "center")) || (gp.props.justify?.value ?? "start") !== "start";
+    }
     if (pat === "stack") return /^(center|end)$/.test(al ?? "stretch");
     return false;
   };

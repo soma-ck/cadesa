@@ -59,8 +59,8 @@ Cadesa is for the **structural** part of CSS: everything that decides where a bo
 | --- | --- |
 | layout (stack, wrapping rows, grids, layers), gaps, padding, margins | colors, gradients, background images |
 | widths, max-widths, heights, aspect ratios | shadows, border colors, border radius, opacity |
-| breakpoints | hover, focus and active states |
-| font family, size, weight, line height, letter spacing, case | transitions, animations, transforms |
+| breakpoints, 2D transforms (where a box is drawn) | hover, focus and active states |
+| font family, size, weight, line height, letter spacing, case | transitions, animations |
 | text wrapping, long words | cursor, outlines, text color (but run `check` for contrast) |
 
 The rule of thumb: **if it can move a box, it's structure.** Some things that look like decoration are structural for that reason. A border's *width*, a heavier font weight, letter spacing or uppercase all change sizes or line breaks, so they belong on the left.
@@ -100,7 +100,7 @@ $ cadesa check fixtures/bootstrap/dashboard.html --css fixtures/bootstrap/bootst
 
 Each finding names the element (its line in the page, tag, classes and the start of its text) and the rules in your stylesheets that set the property behind it, following `var()` to where the variable is set. `--json` has the same, plus the path in the generated Cadesa source (`path`).
 
-`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths and inherited text. It also understands what Bootstrap 5 and Angular pages are built from: the grid (negative gutters, `.col` growth, `col-*` and `row-cols-*` widths), `.container` max-widths that disappear on phones, `d-flex` rows with `justify-content` and auto margins, per-side padding and borders, form controls, and Angular's component elements. Anything it can't model (tables' heights, floats, and buttons aligned to a line of text in a font without vertical metrics) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
+`check` sweeps every 20px from 320 to 1440px by default. With `--css`, Cadesa reads the page the way the browser does: your stylesheet, `<style>` blocks, `style` attributes and the browser's own defaults, matched with real selectors and ordered by specificity at every breakpoint, with block flow, collapsing margins, percentage widths, padding and margins, inherited text, CSS Grid templates and placement, aligned flex items, auto margins, 2D transforms and icons inline in text. It also understands what Bootstrap 5 and Angular pages are built from: the grid (negative gutters, `.col` growth, `col-*` and `row-cols-*` widths), `.container` max-widths that disappear on phones, `d-flex` rows with `justify-content` and auto margins, per-side padding and borders, form controls, and Angular's component elements. Anything it can't model (tables' heights, floats, and buttons aligned to a line of text in a font without vertical metrics) is marked `≈` with the rule responsible, and findings there are reported as *inconclusive* rather than guessed. `render`, `whatif`, `explain` and `critique` take `--css` and `--tailwind` too.
 
 ### Pages rendered by JavaScript: `capture`
 
@@ -323,16 +323,18 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `layout.pattern: stack` | | `display:flex; flex-direction:column; align-items:stretch` |
 | `layout.pattern: cluster` | | `display:flex; flex-wrap:wrap; align-items:center` |
 | `layout.pattern: grid` + `min` | size token | `grid-template-columns: repeat(auto-fill, minmax(min(<min>, 100%), 1fr))` |
+| `layout.template` (grid) | `{ columns, rows, areas, autoRows, autoColumns, dense, justifyContent, alignContent }`, track lists as CSS writes them | `grid-template-*`, `grid-auto-*`, `grid-auto-flow`, content alignment; placed and sized by CSS Grid's algorithm (`auto`, `min-content`, `max-content`, `fit-content()`, `minmax()`, `fr`, `repeat()`, line names, areas) |
+| `place` | `{ row, column, align, justify }` (`"1 / -1"`, `"span 2"`, an area name) | `grid-row`, `grid-column`, `align-self`, `justify-self` |
 | `layout.pattern: layer` | | one grid cell holding every child: text over a photo, a badge over a card |
 | `layout.pattern: flow` | | ordinary block flow (`display: block`): children stack, vertical margins collapse as in the browser |
 | `layout.gap` | space token (cluster, grid: or a percentage size token, between columns) | `gap` |
-| `layout.align` | `start`, `center`, `end`, `stretch` | `align-items` (cluster defaults to `center`, grid and layer to `stretch`; not for stack) |
+| `layout.align` | `start`, `center`, `end`, `stretch` | `align-items` (cluster defaults to `center`, grid, layer and stack to `stretch`; a stack aligned otherwise sizes its items to their content) |
 | `layout.justify` | `start`, `end`, `center`, `between`, `around`, `evenly` | `justify-content` in a cluster, distributed as Chromium does |
 | `layout.wrap` | `false` | a one-line row (`flex-wrap: nowrap`) whose items shrink to fit |
 | `grow` | `{ factor, basis: zero \| auto }` | `flex: <factor> …`: items share a row's free space (Bootstrap's `.col`, Tailwind's `flex-1`) |
-| `padding` | space token, or `{ block, inline }` | `padding` (a missing axis is 0) |
-| `margin` | space token (negative allowed), `auto`, `{ block, inline }` or `{ top, right, bottom, left }` | `margin`; collapses between blocks in `flow`, adds to the outer size in stacks, rows and grids |
-| `width` | size token (px, rem, `"50%"` or `"min(440px, 100%)"`), `fill` or `fit` | fixed width, stretch in a stack, or `fit-content`. Unset: stretch in a stack, sized to its content in a cluster |
+| `padding` | space token or percentage size token (of the parent's width), or `{ block, inline }` | `padding` (a missing axis is 0) |
+| `margin` | space token (negative allowed), percentage size token, `auto`, `{ block, inline }` or `{ top, right, bottom, left }` | `margin`; collapses between blocks in `flow`, adds to the outer size in stacks, rows and grids; `auto` takes free space (top and bottom: in stacks, rows and grids) |
+| `width` | size token (px, rem, `"50%"` or `"min(440px, 100%)"`), `fill`, `fit`, `max-content` or `min-content` | fixed width, stretch in a stack, `fit-content` or a content width. Unset: stretch in a stack, sized to its content in a cluster |
 | `height` | size token (a percentage: of a stretched or set parent height) | `height` |
 | `maxWidth` | size token | a centered column (`max-width` + `margin-inline: auto`), e.g. content inside a full-bleed band |
 | `measure` | size token | a left-aligned `max-width`: a comfortable line length |
@@ -342,6 +344,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `contain` | `"layout paint"`, `content`, `strict`, `size`, `inline-size`, `none` | `contain`: layout or paint keeps the children's margins inside and places absolute and fixed children in the box; size sizes it as if empty |
 | `textAlign` | `start`, `center`, `end` | `text-align` (fixed-height text is also centered vertically) |
 | `border` | color token, or `{ color, width, top, right, bottom, left }` | `border` with per-side widths (they count in layout, so it's structure) |
+| `transform` | `"rotate(3deg)"`, or `{ value, origin }` (2D functions in px or %) | `transform`, `transform-origin`: where the box and its content are drawn; nothing else moves |
 | `background`, `radius`, `backdrop`, `shadow`, `fit` | tokens | polish: `background-color`, `border-radius`, `background-image`, `box-shadow`, `object-fit` |
 | `when.<breakpoint>` | any of the above, plus `slots` | `@media (max-width: …)`; each listed property replaces its base value, and the narrowest active breakpoint wins |
 | `none` in `when` | e.g. `maxWidth: none` | removes a base value at a breakpoint (`.container` below 576px) |
@@ -352,7 +355,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 ## Roadmap
 
 - **Inline layout beyond one box per line:** inline-blocks of different heights sharing a line, text beside inline-blocks, and the rectangle of an inline span (its lines are exact; its own content-area box is `≈`).
-- **Tables, floats,** explicit grid templates and percentage padding, which are reported as `≈` today.
+- **Tables, floats,** 3D transforms and subgrid, which are reported as `≈` today.
 - **More of Tailwind:** `dark:` and container queries.
 
 ## Development
