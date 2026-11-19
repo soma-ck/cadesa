@@ -644,7 +644,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const p = resolveElement(model, k.comp, k.slot, width);
       const km: Margins = { ...marginOf(p) };
       const out = km.left + km.right;
-      const kins = insets(p);
+      // (A table with collapsed borders: half its outer collapsed borders, and no padding.)
+      const tg = p.pattern?.value === "table" ? gridOf(k.node, k.comp, p) : undefined;
+      const kins = tg?.collapse ? insets({ border: { value: { color: "", widths: tableInsets(tg).border }, display: "", steps: [] } }) : insets(p);
       const insX = kins.left + kins.right;
       /** Errors, reported against the item's box once it's laid out (its id is known then). */
       const errors: { path: string; message: (id: string) => string }[] = [];
