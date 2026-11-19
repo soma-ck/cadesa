@@ -547,6 +547,10 @@ export abstract class PageLifter {
   italicFace(_family: string): boolean | undefined {
     return undefined;
   }
+  /** Whether the page loads the family as a web font (@font-face, Google Fonts), rather than using an installed one. */
+  webFont(_family: string): boolean {
+    return false;
+  }
   /** A component (root) or slot name for an element, before the data-fixture id or tag. */
   nameOf(_el: El, _root: boolean): string | undefined {
     return undefined;
@@ -1253,7 +1257,14 @@ export abstract class PageLifter {
     const ctype = el.tag === "input" ? (attr(el.node, "type") ?? "text").toLowerCase() : el.tag;
     const look = (res(el, "appearance") ?? res(el, "-webkit-appearance") ?? "auto") !== "none";
     const ch = CONTROL.has(el.tag) && !el.own[si].has("height") ? this.controlHeight(el, si) : undefined;
-    if (ch !== undefined && (/^(checkbox|radio|range|textarea|submit|reset|button)$/.test(ctype) || (ctype === "select" && !look))) {
+    const nativeSelect = ch !== undefined && ctype === "select" && look ? this.nativeSelectBaseline(el, si) : undefined;
+    if (nativeSelect !== undefined) {
+      hm = mt + ch! + mb;
+      a = mt + nativeSelect;
+    } else if (ctype === "select" && look) {
+      // A native select whose baseline isn't known (in a web font, or of a size of its own).
+      return undefined;
+    } else if (ch !== undefined && (/^(checkbox|radio|range|textarea|submit|reset|button)$/.test(ctype) || (ctype === "select" && !look))) {
       // Its baseline (measured in Chromium): a checkbox's, radio's or range's border-box bottom; a
       // textarea's bottom margin edge (it scrolls); a button input's line of text at line-height:
       // normal, a select without native appearance its line. (A native select's line sits half a
@@ -1276,6 +1287,10 @@ export abstract class PageLifter {
       if (h === undefined || !own || normal === undefined || own.lh < normal || !/^(text|email|password|search|tel|url|number)$/.test((attr(el.node, "type") ?? "text").toLowerCase())) return undefined;
       hm = mt + h + mb;
       a = mt + bt + pt + own.sa;
+    } else if (this.defaultColorInput(el, si)) {
+      // A color input at the browser's size (50×27): its baseline 21px below its top (measured in Chromium, at any font).
+      hm = mt + 27 + mb;
+      a = mt + 21;
     } else if (el.roles[si] === "leaf") {
       // No line boxes: as tall as its height says, its baseline at its bottom margin edge.
       const h = px("height");
@@ -1676,9 +1691,92 @@ export abstract class PageLifter {
     if (!v || !own || normal === undefined || !isFinite(top)) return NaN;
     const native = (res("appearance") ?? res("-webkit-appearance") ?? "auto") !== "none";
     if (/^(submit|reset|button)$/.test(type)) return this.lineAtLeastNormal(t) ? top + v.ascent + Math.floor(v.lineGap / 2) : NaN;
-    if (type === "select") return native ? NaN : top + own.sa;
+    if (type === "select") return native ? this.nativeSelectBaseline(el, si) ?? NaN : top + own.sa;
     if (/^(text|email|password|search|tel|url|number)$/.test(type)) return own.lh >= normal ? top + own.sa : NaN;
     return NaN;
+  }
+
+  /**
+   * A form control on a line of text, of its own size (no width or height set) on the baseline: its
+   * margin-box width (its intrinsic width, controlWidth, or the theme's 13px checkbox and radio and
+   * 129px range), its baseline from its margin box's top and its margin box's height (lineExtents),
+   * and its line's strut. undefined when one of them isn't known.
+   */
+  controlAtom(k: El, si: number): { width: number; a: number; hm: number; strut: { sa: number; sd: number } } | undefined {
+    if (!CONTROL.has(k.tag) || !k.parent) return undefined;
+    const res = (p: string) => {
+      const o = k.own[si].get(p);
+      return o ? this.resolve(k, si, o.value) : undefined;
+    };
+    const color = this.defaultColorInput(k, si);
+    if (!color && ["width", "height", "min-width", "max-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
+    if ((res("vertical-align") ?? "baseline") !== "baseline") return undefined;
+    // Its height known (controlHeight): its line box is then lineExtents'.
+    if (!color && this.controlHeight(k, si) === undefined) return undefined;
+    const ex = this.lineExtents(k, si);
+    if (!ex) return undefined;
+    const t = this.textOf(k, si);
+    const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
+    const type = k.tag === "input" ? (attr(k.node, "type") ?? "text").toLowerCase() : k.tag;
+    const themed = /^(checkbox|radio|range)$/.test(type) && (res("appearance") ?? res("-webkit-appearance") ?? "auto") !== "none";
+    let bw: number;
+    if (themed) bw = type === "range" ? 129 : 13;
+    else if (color) bw = 50;
+    else {
+      const cw = this.controlWidth(k, si);
+      if (cw === undefined) return undefined;
+      const bdr = (side: string) => (/^(none|hidden)$/.test(res(`border-${side}-style`) ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+      bw = cw + px("padding-left") + px("padding-right") + bdr("left") + bdr("right");
+    }
+    const width = px("margin-left") + bw + px("margin-right");
+    return isFinite(width) ? { width, a: ex.a, hm: ex.hm, strut: ex.strut } : undefined;
+  }
+
+  /** For a native select on a line in a web font: why its place there isn't known. */
+  webFontSelect(el: El, si: number): Note | undefined {
+    if (el.tag !== "select") return undefined;
+    const fam = firstFamily(this.textOf(el, si).family.value);
+    const o = el.own[si].get("appearance") ?? el.own[si].get("-webkit-appearance");
+    if (!this.webFont(fam) || (o && this.resolve(el, si, o.value) === "none")) return undefined;
+    return { decl: `<select> (font-family: ${fam})`, reason: "a native select laid out before its web font loads keeps a baseline up to half a pixel off (Chromium), so its place on its line depends on when the font loads", kind: "geometry" };
+  }
+
+  /** An <input type=color> of the browser's size and look (50×27, border-box: nothing of its own sets them). */
+  defaultColorInput(el: El, si: number): boolean {
+    if (el.tag !== "input" || (attr(el.node, "type") ?? "").toLowerCase() !== "color") return false;
+    const ua = (p: string) => !el.own[si].has(p) || el.own[si].get(p)!.utility.startsWith("browser default");
+    return ["width", "height", "min-width", "max-width", "min-height", "max-height", "padding-top", "padding-bottom", "border-top-width", "border-bottom-width", "box-sizing", "appearance", "-webkit-appearance"].every(ua);
+  }
+
+  /**
+   * A native (menulist) select's baseline from its border box's top, measured with probe pages in
+   * Chromium: its line, at its line height, centered on a line of line-height: normal that starts
+   * 1px inside its padding box (the select is that line plus 2px tall): border and padding top,
+   * 1px, half of what normal exceeds its line height by (half a pixel when that is odd), its
+   * half-leading floored to a layout unit, and its font's ascent. Only for a single-row select of
+   * auto height in an installed font.
+   */
+  nativeSelectBaseline(el: El, si: number): number | undefined {
+    if (el.tag !== "select" || attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1) return undefined;
+    const res = (p: string) => {
+      const o = el.own[si].get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    if ((res("appearance") ?? res("-webkit-appearance") ?? "auto") === "none") return undefined;
+    if (["height", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
+    const t = this.textOf(el, si);
+    // In a web font: Chromium keeps the baseline a select had when it was laid out before the font
+    // loaded (up to half a pixel off, measured with probe pages), so it depends on when the font loads.
+    if (this.webFont(firstFamily(t.family.value))) return undefined;
+    const v = metricsFor(t.family.value, t.italic)?.vertical(t.size, t.weight);
+    const own = this.strutOf(el, si);
+    const normal = this.normalLine(t);
+    if (!v || !own || normal === undefined) return undefined;
+    const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
+    const top = px("padding-top") + (/^(none|hidden)$/.test(res("border-top-style") ?? "none") ? 0 : borderPx(px("border-top-width")));
+    const lead = own.lh - v.ascent - v.descent;
+    const b = top + 1 + (normal - own.lh) / 2 + Math.floor((lead / 2) * 64 + 1e-6) / 64 + v.ascent;
+    return isFinite(b) ? b : undefined;
   }
 
   /**
@@ -1880,6 +1978,12 @@ export abstract class PageLifter {
     if (k.pseudo || k.anonymous !== undefined || !k.parent || this.outOfFlow(k, si)) return undefined;
     const d = this.displayOf(k, si);
     if (!(d === "inline-block" || (d === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
+    if (CONTROL.has(k.tag)) {
+      // A form control on a line of text: its own size and baseline (controlAtom).
+      const c = this.controlAtom(k, si);
+      if (!c) return undefined;
+      return (c.a <= c.strut.sa + 1e-6 && c.hm - c.a <= c.strut.sd + 1e-6) || this.atomicExtent(k, si) ? c.width : undefined;
+    }
     if (!REPLACED_BLOCK.has(k.tag) && (k.ownText || k.children.length)) return this.atomicText(k, si);
     const g = this.atomicSized(k, si);
     if (!g) return undefined;
@@ -2134,6 +2238,7 @@ export abstract class PageLifter {
     }
     const dd = this.displayOf(k, si);
     if (!(dd === "inline-block" || (dd === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
+    if (CONTROL.has(k.tag)) return this.controlAtom(k, si);
     if (!REPLACED_BLOCK.has(k.tag) && (k.ownText || k.children.length)) {
       const g = this.atomicTextBox(k, si);
       return g && { width: g.width, a: g.a0, hm: g.hm };
@@ -2583,7 +2688,7 @@ export abstract class PageLifter {
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline box's own rectangle is its text's content area; Cadesa lays out its lines (exact), not that rectangle", kind: "visual" });
         if (!own.has("width")) decl("width", "fit-content", "an inline element alone between blocks");
       } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && !el.rowLine?.[si] && el.anonymous === undefined)
-        this.note(el, si, this.staleFont([el, el.parent], si) ?? { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
+        this.note(el, si, this.staleFont([el, el.parent], si) ?? this.webFontSelect(el, si) ?? { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
       // An empty inline (zero size where the next block starts) or a lone inline-block: as wide as its content.
       if (((el.asBlock[si] === "empty" && !inFlexOrGrid) || el.alone[si]) && !own.has("width")) decl("width", "fit-content", el.alone[si] ? "inline-block (alone on its line)" : "empty inline element");
       const lineAlign = el.alone[si] ? el.lineAlign?.[si] : undefined;
@@ -3403,6 +3508,8 @@ export abstract class PageLifter {
       // An atomic inline of known size whose line box stays the same: one object on the line, measured.
       if (this.atomicInline(k, si) !== undefined) return;
       if (k.pseudo && this.ownDisplay(k, si) === "inline-block" && !this.floatsAtStart(k, si) && this.atomicText(k, si) !== undefined) return;
+      const select = this.webFontSelect(k, si);
+      if (select) return this.note(el, si, select);
       const own = k.own[si];
       const ua = UA_TEXT[k.tag];
       const where = k.pseudo ? `::${k.pseudo}` : `<${k.tag}>`;

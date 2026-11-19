@@ -59,6 +59,8 @@ export interface RunMeta {
 export interface Span extends RunStyle {
   from: number;
   to: number;
+  /** The box opens before `from`, right after a kept space (its own leading space collapsed away): it is on the line that space ends too. */
+  lead?: boolean;
   open?: number;
   close?: number;
   /** An atomic inline whose width follows the font size (em): its width at a font size, instead of `open`. */
@@ -166,17 +168,21 @@ const CLOSE = "\u0004";
 const END = "\u0003";
 
 /** collapse(), also returning where the EDGE marks fall (in characters of the collapsed text). */
-function collapseItems(raw: string): { text: string; items: number[]; marks: { id: number; open: boolean; at: number }[] } {
+function collapseItems(raw: string): { text: string; items: number[]; marks: { id: number; open: boolean; at: number; lead?: boolean }[] } {
   let out = "";
   let n = 0;
   let pending = false;
   const items: number[] = [];
-  const marks: { id: number; open: boolean; at: number }[] = [];
+  const marks: { id: number; open: boolean; at: number; lead?: boolean }[] = [];
   const space = () => {
     // A collapsible space after another one (even across an element edge) disappears.
     if (pending && n > 0 && !out.endsWith(" ")) {
       out += " ";
       n++;
+    } else if (pending && n > 0) {
+      // Removed right after a box opened behind a kept space: the box starts with it (LayoutNG keeps
+      // its start on the line that space ends).
+      for (const m of marks) if (m.open && m.at === n) m.lead = true;
     }
     pending = false;
   };
@@ -235,15 +241,15 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
       const out: Span[] = [];
       // Which span opened first: an inner span with the same range as its parent comes after it.
       const order = new Map<Span, number>();
-      const from = new Map<number, { at: number; opened: boolean }>();
+      const from = new Map<number, { at: number; opened: boolean; lead?: boolean }>();
       for (const id of carried) from.set(id, { at: 0, opened: false });
       for (const m of marks) {
-        if (m.open) from.set(m.id, { at: m.at, opened: true });
+        if (m.open) from.set(m.id, { at: m.at, opened: true, lead: m.lead });
         else {
           const f = from.get(m.id) ?? { at: 0, opened: false };
           from.delete(m.id);
           const sp = spans[m.id];
-          const s: Span = { from: f.at, to: m.at, ...style(sp), ...(f.opened && sp.open && { open: sp.open }), ...(f.opened && sp.openAt && { openAt: sp.openAt }), ...(sp.close && { close: sp.close }) };
+          const s: Span = { from: f.at, to: m.at, ...style(sp), ...(f.opened && f.lead && { lead: true }), ...(f.opened && sp.open && { open: sp.open }), ...(f.opened && sp.openAt && { openAt: sp.openAt }), ...(sp.close && { close: sp.close }) };
           out.push(s);
           order.set(s, m.id);
         }
@@ -251,7 +257,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
       const len = [...t].length;
       for (const [id, f] of from) {
         const sp = spans[id];
-        const s: Span = { from: f.at, to: len, ...style(sp), ...(f.opened && sp.open && { open: sp.open }) };
+        const s: Span = { from: f.at, to: len, ...style(sp), ...(f.opened && f.lead && { lead: true }), ...(f.opened && sp.open && { open: sp.open }) };
         out.push(s);
         order.set(s, id);
       }

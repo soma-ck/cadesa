@@ -48,6 +48,15 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   it can't be split across lines (no break opportunity in it). An inline element made a flex or grid
   item that holds text and a block is blockified. Still `≈`: an inline-block holding blocks on a line
   of text, and such a run that can be split across lines (each line's piece has its own extent).
+- Form controls on lines of text: a select, text field, button input, checkbox, radio, range or
+  color input of its own size sits on the line as Chromium places it. A native select's baseline,
+  pinned down with probe pages, is 1px inside its padding box plus its font's ascent and half its
+  line gap (its own line height is always `normal`); in a web font it stays `≈`, as Chromium keeps
+  the baseline a select had when it was laid out before the font loaded (up to half a pixel off,
+  which depends on when the font arrives). `<input type=color>` is 50×27 with its baseline 21px
+  down, at any font. Date, time and file inputs stay `≈` (their inner fields aren't modelled).
+- An inline box whose leading space collapses into the space before it opens on the line that space
+  ends: in a font size or line height of its own, that line is as tall as its strut.
 - A line height in px with a font size that isn't a whole number of 1/64 px (`40px` at `16.8px`) is
   exactly that many px (it came out 1/64 px short).
 

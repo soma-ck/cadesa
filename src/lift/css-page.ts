@@ -63,6 +63,7 @@ input { padding: 1px 2px; border: 2px inset #767676 }
 input[type=checkbox i] { margin: 3px 3px 3px 4px; padding: 0; border: none; box-sizing: border-box }
 input[type=radio i] { margin: 3px 3px 0px 5px; padding: 0; border: none; box-sizing: border-box }
 input[type=range i] { margin: 2px; padding: 0; border: none }
+input[type=color i] { width: 50px; height: 27px; border-width: 1px; padding: 1px 2px }
 select { border: 1px solid #767676 }
 textarea { padding: 2px; border: 1px solid #767676; font-family: monospace }
 `;
@@ -758,6 +759,13 @@ class CssLifter extends PageLifter {
     const asks = google.filter((u) => decodeURIComponent(u.replace(/\+/g, " ")).toLowerCase().includes(f));
     if (asks.length) return asks.some((u) => /ital|italic|[0-9]i\b/i.test(u));
     return undefined;
+  }
+
+  webFont(family: string): boolean {
+    const f = family.toLowerCase();
+    if (this.faces.some((x) => x.family === f)) return true;
+    const google = [...this.html.matchAll(/<link\b[^>]*href\s*=\s*["']([^"']*fonts\.googleapis\.com[^"']*)["']/gi)].map((m) => decodeURIComponent(m[1].replace(/&amp;/g, "&").replace(/\+/g, " ")).toLowerCase());
+    return google.some((u) => u.includes(`family=${f}`));
   }
 
   declarationCount() {

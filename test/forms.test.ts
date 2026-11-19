@@ -58,8 +58,25 @@ input[type=submit], input[type=button], input[type=reset] { line-height: normal 
     expect([geo(r.box("s9")), geo(r.box("li1"))]).toEqual([[0, 430, 138, 24], [0, 454, 102, 34]]);
     for (const id of ["s2", "f-2", "t1", "t2", "t4", "a1", "a2", "g1", "b1", "b2", "b3", "s9", "li1"]) expect(r.approx(id)).toBeUndefined();
   });
-  it("leaves a native select's place on its line approximate (its baseline sits half a pixel off at some sizes)", () => {
-    expect(r.approx("s1")).toBeDefined();
+  it("places a native select on its line (its line centered on one of line-height: normal)", () => {
+    expect(r.approx("s1")).toBeUndefined();
+  });
+});
+
+describe("native selects on lines of text", () => {
+  const body = `<div data-fixture="d"><select data-fixture="s1"><option>English</option><option>Español</option></select></div>
+<p data-fixture="p">Sail on <select><option>Monday</option></select> with the pilot.</p>
+<p data-fixture="q" class="t">Moor at <select class="pad"><option>the quay</option></select> after.</p>`;
+  const css = `select { font: inherit } p { margin: 0 } .t { line-height: 1.15 } .pad { padding: 3px 5px; border: 2px solid #889 }`;
+  it("sit on their line: 1px inside their padding box, their font's ascent and half its line gap down", () => {
+    const r = run(body, css, [600]);
+    // Chromium, with the font installed (or loaded before the selects are laid out).
+    expect([r.box("d").h, r.box("s1").y, r.box("p").h, r.box("q").h]).toEqual([24, 0, 24, 32]);
+    for (const id of ["d", "s1", "p", "q"]) expect(r.approx(id)).toBeUndefined();
+  });
+  it("stay approximate in a web font: laid out before it loads, Chromium keeps a baseline half a pixel off", () => {
+    const r = run(body, css, [600], { head: `<style>@font-face { font-family: "Inter"; src: url(Inter.woff2) }</style>` });
+    expect(r.approx("d")).toMatch(/web font/);
   });
 });
 

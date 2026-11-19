@@ -693,7 +693,7 @@ export function layoutText(
       let below = opts.strut!.below;
       const pending: typeof spans = [];
       for (const sp of spans) {
-        const on = sp.from === sp.to ? sp.from >= a && (sp.from < b || (b === all.length && sp.from === b)) : sp.from < b && sp.to > a;
+        const on = sp.from === sp.to ? sp.from >= a && (sp.from < b || (b === all.length && sp.from === b)) : (sp.lead ? sp.from - 1 : sp.from) < b && sp.to > a;
         if (!on) continue;
         if (sp.align) pending.push(sp);
         else {

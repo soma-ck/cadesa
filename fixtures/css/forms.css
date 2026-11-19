@@ -162,3 +162,21 @@ button {
 .inline {
   display: inline-block;
 }
+
+.pick {
+  margin: 0 0 12px;
+  line-height: 1.5;
+}
+
+.pick--tight {
+  line-height: 1.15;
+}
+
+.pick-big {
+  font-size: 19px;
+}
+
+.pick-pad {
+  padding: 3px 5px;
+  border: 2px solid #8899aa;
+}
