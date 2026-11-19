@@ -147,6 +147,7 @@ function genCase(seed: number): { html: string; css: string; widths: number[] } 
           if (r.chance(0.08)) decls.push(`height: ${px(10, 90)}`);
           if (r.chance(0.25)) decls.push(`vertical-align: ${r.pick(["top", "middle", "bottom", "baseline"])}`);
           if (r.chance(0.15)) decls.push("box-sizing: border-box");
+          if (r.chance(0.05)) decls.push(r.chance(0.5) ? "max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap" : `max-width: ${px(20, 160)}`);
           const cc = dcls("td", cls(decls));
           const t = tag(th ? "th" : "td");
           const content = r.chance(0.08) ? "" : r.chance(0.15) ? `<div>${words(r, 1, 6)}</div><div>${words(r, 1, 6)}</div>` : r.chance(0.06) ? `<span class="pill">${words(r, 1, 2)}</span>` : words(r, 0, r.chance(0.3) ? 14 : 4) || "x";

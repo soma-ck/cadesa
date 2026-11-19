@@ -2152,7 +2152,7 @@ export abstract class PageLifter {
       // A content-box cell: its width and height don't include its padding and the borders it gets (its
       // own, or in a table with collapsed borders its half of theirs); table.ts adds them.
       const cellContentBox =
-        tpart === "cell" && !this.preflight && (res("box-sizing") ?? "content-box") === "content-box" && (out.has("width") || out.has("height"));
+        tpart === "cell" && !this.preflight && (res("box-sizing") ?? "content-box") === "content-box" && (out.has("width") || out.has("height") || out.has("max-width"));
       if (tpart) {
         const va = this.cellAlign(el, si);
         const align = tpart === "cell" ? (va === "top" || va === "middle" || va === "bottom" ? va : "baseline") : undefined;

@@ -575,7 +575,12 @@ function cellConstraint(g: Grid, cell: Cell): CellC | string {
     percent = f32(w.pct);
   } else if (w === "fill") percent = 100;
   else if (w === "fit") return "a cell with width: fit-content isn't modelled";
-  if (p.maxWidth || p.measure) return "a cell with a max-width isn't modelled";
+  // Its max-width (fixed: caps both sizes; a percentage only caps a percentage width).
+  const mw = p.measure?.value ?? p.maxWidth?.value;
+  let cssMax: LU | undefined;
+  if (typeof mw === "number") cssMax = cell.contentBox ? U(mw) + bp : Math.max(U(mw), bp);
+  else if (mw !== undefined && mw.of) return "a cell max-width with a percentage inside calc(), min() or max() isn't modelled";
+  else if (mw !== undefined && percent !== undefined) percent = Math.min(percent, f32(mw.pct));
   let content: { min: number; max: number } | undefined;
   const sizes = () => {
     if (!content) {
@@ -586,8 +591,12 @@ function cellConstraint(g: Grid, cell: Cell): CellC | string {
     return content;
   };
   try {
-    const min = g.fixed ? 0 : sizes().min;
-    const contentMax = css ?? sizes().max;
+    let min = g.fixed ? 0 : sizes().min;
+    let contentMax = css ?? sizes().max;
+    if (cssMax !== undefined) {
+      contentMax = Math.min(contentMax, cssMax);
+      min = Math.min(min, cssMax);
+    }
     const max = Math.max(min, contentMax);
     const pbp = g.fixed && percent !== undefined && cell.contentBox ? bp : 0;
     return { min, max, ...(percent !== undefined && { percent }), pbp, constrained: css !== undefined };
