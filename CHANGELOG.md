@@ -53,6 +53,13 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   (both fall back to greedy breaks otherwise), so the boxes are exact (outside a flex row); the
   reported lines are the greedy ones. The `text-wrap` shorthand is read as its mode and style:
   `nowrap` is `white-space: nowrap`, `stable` lays out as `auto`.
+- Several inline-blocks sharing lines (a button group, tags or badges in a row) are laid out: a
+  block whose only content is inline-blocks wraps them between each other, one collapsed space of
+  its font apart (none when there is no whitespace between them), each line placed by `text-align`
+  (start, center or end). With vertical metrics, when every item reaches as far above and below
+  the baseline (`baseline` or `middle`: one line of the same text style, or the same height), each
+  line box is the union of that and the block's strut. Text that wraps inside an item is flagged at
+  the widths where it does; items that differ in extent stay `≈`.
 - A top or bottom `auto` margin is 0 in block flow and in a column flexbox with no free space. A
   transform that moves nothing (`translateZ(0)`, `scale(1)`) is no longer `≈`.
 

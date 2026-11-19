@@ -307,3 +307,55 @@ p {
   width: 1px;
   height: 1px;
 }
+
+/* Several inline-blocks sharing lines: a button group, tags with no space between them, centered pills, middle-aligned chips. */
+.actions {
+  margin-top: 16px;
+}
+
+.action {
+  display: inline-block;
+  font: inherit;
+  font-size: 14px;
+  line-height: 20px;
+  padding: 6px 12px;
+  margin: 0 4px 6px 0;
+  border: 1px solid #3e4c59;
+  background: none;
+}
+
+.tags {
+  margin-top: 12px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 8px;
+  margin: 0 6px 6px 0;
+  font-size: 13px;
+  line-height: 1.4;
+  border: 1px solid #9aa5b1;
+}
+
+.pills {
+  text-align: center;
+}
+
+.pill {
+  display: inline-block;
+  padding: 8px 16px;
+  border: 1px solid #0b69a3;
+  border-radius: 999px;
+}
+
+.chips {
+  line-height: 2;
+}
+
+.chip {
+  display: inline-block;
+  vertical-align: middle;
+  padding: 2px 10px;
+  font-size: 14px;
+  line-height: 1.2;
+}

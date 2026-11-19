@@ -148,6 +148,10 @@ export interface El {
   lineAlign?: ("center" | "end" | undefined)[];
   /** Padding the line box of a lone inline-block adds above and below it (its strut, its margins), per state: see aloneOnLine. */
   linePad?: ({ top: number; bottom: number } | undefined)[];
+  /** Inline-blocks sharing the lines of this block (per state): the space between them and where each line's free space goes, see inlineRow. */
+  inlineRow?: ({ gap: number; justify: "start" | "center" | "end" } | undefined)[];
+  /** An inline-block on a shared line: px its line box reaches above and below its margin box (per state), see inlineRow. */
+  rowLine?: ({ top: number; bottom: number } | undefined)[];
   /** A flex row aligns baselines: px its item is pushed down to put its first baseline on the line's (per state). */
   baselineShift: (number | undefined)[];
   /** A run of text among element children (added after the cascade): its anonymous box. */
@@ -1043,6 +1047,55 @@ export abstract class PageLifter {
     return true;
   }
 
+  /**
+   * A block whose only content is two or more inline-blocks (a button group, badges in a row): they
+   * share line boxes, wrapping between them, which is a wrapping flex row with the space between
+   * them (one collapsed space of the block's font, or none) as its gap. On each line their baselines
+   * (or middles) align with the block's strut; when every item reaches as far above and below the
+   * baseline (one line of the same text style, or the same height), each line box is the union of
+   * that and the strut, which their vertical margins take up. Text that wraps inside an item is
+   * flagged at the widths where it does (dynamic()).
+   */
+  inlineRow(p: El, si: number): void {
+    if (p.ownText || p.pseudo) return;
+    if (p !== this.bodyEl && !/^(block|flow-root|list-item|inline-block)$/.test(this.displayOf(p, si))) return;
+    const shown = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
+    const items = p.children.filter(shown);
+    if (items.length < 2 || items.some((k) => k.pseudo || k.anonymous !== undefined || k.tag === "br" || this.ownDisplay(k, si) !== "inline-block" || (k.roles[si] !== "text" && k.roles[si] !== "leaf"))) return;
+    const pt = this.textOf(p, si);
+    if (pt.fluid || pt.inherited.get("direction")?.value === "rtl") return;
+    if (!/^(normal)?$/.test(pt.inherited.get("white-space")?.value ?? "") || !/^(wrap)?$/.test(pt.inherited.get("text-wrap-mode")?.value ?? "")) return;
+    if (!/^(0|0px)?$/.test(pt.inherited.get("text-indent")?.value ?? "") || !/^(normal|0|0px)?$/.test(pt.inherited.get("word-spacing")?.value ?? "")) return;
+    const ta = pt.inherited.get("text-align")?.value ?? "";
+    const justify = /^(start|left|unset|initial|-webkit-auto)?$/.test(ta) ? "start" : /^(center|-webkit-center)$/.test(ta) ? "center" : /^(right|end|-webkit-right)$/.test(ta) ? "end" : undefined;
+    if (!justify) return;
+    // Whitespace between two items collapses to one space; none: no space.
+    const nodes = p.node.childNodes ?? [];
+    const at = items.map((k) => nodes.indexOf(k.node));
+    const spaced = at.slice(1).map((j, i) => nodes.slice(at[i] + 1, j).some((c) => c.nodeName === "#text" && /[ \t\n\r\f]/.test(c.value ?? "")));
+    if (spaced.some((x) => x !== spaced[0])) return;
+    let gap = 0;
+    if (spaced[0]) {
+      const w = metricsFor(pt.family.value)?.measure(" ", pt.size, pt.weight);
+      if (w === undefined) return;
+      gap = w + pt.letterSpacing;
+    }
+    const ex = items.map((k) => this.lineExtents(k, si));
+    if (ex.some((x) => !x)) return;
+    const a = ex[0]!.a;
+    const d = ex[0]!.hm - a;
+    if (ex.some((x) => Math.abs(x!.a - a) > 1e-6 || Math.abs(x!.hm - x!.a - d) > 1e-6)) return;
+    const strut = ex[0]!.strut;
+    const eps = 1e-6;
+    const top = strut.sa - a > eps ? strut.sa - a : 0;
+    const bottom = strut.sd - d > eps ? strut.sd - d : 0;
+    for (const k of items) {
+      (k.rowLine ??= [])[si] = { top, bottom };
+      if (k.roles[si] === "text" && !/^(nowrap|pre)$/.test(this.textOf(k, si).inherited.get("white-space")?.value ?? "")) (k.oneLine ??= [])[si] = true;
+    }
+    (p.inlineRow ??= [])[si] = { gap, justify };
+  }
+
   /** Inline-blocks alone on their line, laid out as blocks (before any element is synthesized: a parent may take padding from one). */
   lineBoxes() {
     for (const el of this.els) {
@@ -1054,6 +1107,7 @@ export abstract class PageLifter {
         const parentDisplay = el.parent !== this.bodyEl ? this.displayOf(el.parent!, si) : "block";
         if (/flex|grid/.test(parentDisplay) && parentRole === "container") return;
         if (this.ownDisplay(el, si) === "inline-block" && this.aloneOnLine(el, si)) el.alone[si] = true;
+        if (role === "container") this.inlineRow(el, si);
         if (this.ownDisplay(el, si) === "inline" && role === "text") {
           const lh = this.inlineLine(el, si);
           if (lh !== undefined) (el.inlineLine ??= [])[si] = lh;
@@ -1526,10 +1580,10 @@ export abstract class PageLifter {
     // Children of a flex or grid container are blockified: never inline content.
     const formatsChildren = this.states.some((_, si) => /^(inline-)?(flex|grid)$/.test(this.displayOf(el, si)));
     const allInline = el.children.length > 0 && !formatsChildren && el.children.every((c) => this.inlineChild(c));
-    // Its only content an inline-block (a badge alone in a div): a box of its own on the line (see aloneOnLine).
+    // Its only content inline-blocks (a badge alone in a div, buttons in a row): boxes on its lines (see aloneOnLine, inlineRow).
     const shownKids = el.children.filter((c) => !this.ignorable(c));
     const loneBlock =
-      !el.ownText && shownKids.length === 1 && !shownKids[0].pseudo && shownKids[0].anonymous === undefined && this.states.every((_, si) => this.displayOf(shownKids[0], si) === "none" || this.ownDisplay(shownKids[0], si) === "inline-block");
+      !el.ownText && shownKids.length >= 1 && shownKids.every((k) => !k.pseudo && k.anonymous === undefined && k.tag !== "br" && this.states.every((_, si) => this.displayOf(k, si) === "none" || this.ownDisplay(k, si) === "inline-block"));
     const hasText = !loneBlock && (el.ownText || (allInline && this.visibleText(el)));
     this.states.forEach((_, si) => {
       const d = this.displayOf(el, si);
@@ -1573,7 +1627,7 @@ export abstract class PageLifter {
       if (inlineLine !== undefined) {
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline box's own rectangle is its text's content area; Cadesa lays out its lines (exact), not that rectangle", kind: "visual" });
         if (!own.has("width")) decl("width", "fit-content", "an inline element alone between blocks");
-      } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && el.anonymous === undefined)
+      } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && !el.rowLine?.[si] && el.anonymous === undefined)
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
       // An empty inline (zero size where the next block starts) or a lone inline-block: as wide as its content.
       if (((el.asBlock[si] === "empty" && !inFlexOrGrid) || el.alone[si]) && !own.has("width")) decl("width", "fit-content", el.alone[si] ? "inline-block (alone on its line)" : "empty inline element");
@@ -1598,7 +1652,7 @@ export abstract class PageLifter {
         // Offsets do nothing on a box that isn't positioned.
         (/^(top|right|bottom|left)$/.test(p) && !/^(relative|absolute|fixed|sticky)$/.test(pos ?? "static")) || p === "box-sizing" ||
         // vertical-align moves only inline-level boxes on a line (noted above, or alone on it) and table cells.
-        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline" || el.alone[si])) ||
+        (p === "vertical-align" && (!this.isInlineLevel(el, si) || inFlexOrGrid || res(p) === "baseline" || el.alone[si] || !!el.rowLine?.[si])) ||
         // Alone on a centered or end-aligned line, auto margins place it.
         (/^margin-(left|right)$/.test(p) && !!el.alone[si] && !!el.lineAlign?.[si]) ||
         // Alone in its parent on a line, its vertical margins are in the parent's padding.
@@ -1704,6 +1758,18 @@ export abstract class PageLifter {
             decl("grid-template-columns", !cols || cols === "none" ? "1fr" : cols, own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
             if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins in a grid are not modelled", kind: "geometry" });
           }
+        } else if (/^(block|flow-root|list-item|inline-block)$/.test(display) && el.inlineRow?.[si]) {
+          // Inline-blocks sharing its lines: a wrapping row, the space between them its gap (see inlineRow).
+          const row = el.inlineRow[si]!;
+          const why = "inline-blocks on its lines";
+          decl("display", "flex", why);
+          decl("flex-direction", "row", why);
+          decl("flex-wrap", "wrap", why);
+          decl("align-items", "flex-start", `${why}: their baselines align`);
+          decl("column-gap", `${fmtNum(row.gap)}px`, row.gap ? `${why}: the space between them` : `${why}: no space between them`);
+          decl("row-gap", "0px", `${why}: line boxes stack`);
+          if (row.justify !== "start") decl("justify-content", row.justify === "center" ? "center" : "flex-end", `${why}: text-align`);
+          if (space) this.note(el, si, { decl: space.utility, reason: "space-* margins between inline-blocks are not modelled", kind: "geometry" });
         } else if (/^(block|flow-root|list-item|inline-block)$/.test(display)) {
           if (this.blockFlow === "flow") {
             // Block flow, margins and all ("flow" is lift's own marker for layout: { pattern: flow }).
@@ -1784,6 +1850,15 @@ export abstract class PageLifter {
       }
       for (const s of SIDES) handled.add(`border-${s}-width`).add(`border-${s}-style`).add(`border-${s}-color`);
 
+      // On a line shared with other inline-blocks: its vertical margins take up what the line box adds around it.
+      const rl = el.rowLine?.[si];
+      if (rl)
+        for (const side of ["top", "bottom"] as const) {
+          const o = own.get(`margin-${side}`);
+          const base = o ? (lengthPx(this.resolveBox(el, si, o.value) ?? "0", this.textOf(el, si).size) ?? 0) : 0;
+          decl(`margin-${side}`, `${fmtNum(base + rl[side])}px`, `${o ? `${o.utility} and ` : ""}the line box around it`);
+          handled.add(`margin-${side}`);
+        }
       // A lone inline-block's line box reaches past it: the parent's padding takes the difference.
       const lp = el.linePad?.[si];
       if (lp)
@@ -2563,7 +2638,7 @@ export abstract class PageLifter {
         const el = byId.get(b.id);
         if (!el) continue;
         const sel = `[data-fixture="${b.id}"]`;
-        if (el.oneLine?.[si] && el.alone[si] && b.lines && b.lines.length > 1)
+        if (el.oneLine?.[si] && (el.alone[si] || el.rowLine?.[si]) && b.lines && b.lines.length > 1)
           out.push({ file: this.page, line: el.line, selector: sel, decl: "display: inline-block", reason: `its text takes ${b.lines.length} lines at ${layout.width}px; its line box is modelled for one line`, kind: "geometry" });
         if (el.rowGap[si] && this.lineCount(b) > 1)
           out.push({ file: this.page, line: el.line, selector: sel, decl: el.rowGap[si], reason: `the row wraps at ${layout.width}px and its row gap differs from its column gap; a cluster has one gap`, kind: "geometry" });

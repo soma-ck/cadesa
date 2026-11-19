@@ -129,8 +129,24 @@ describe("containment", () => {
     expect(geo(wide.box("card-rule-4"))).toEqual([17, 2218.188, 48, 3]);
   });
 
+  it("several inline-blocks share line boxes: they wrap between them, a space apart, baselines aligned", () => {
+    // Buttons a space (4.5px of Inter at 16px) apart beside their 4px margins; the fourth wraps.
+    expect(geo(wide.box("action-2"))).toEqual([117.828, 2573.188, 78.5, 34]);
+    expect(geo(wide.box("action-4"))).toEqual([16, 2613.188, 143.266, 34]);
+    expect(geo(wide.box("actions"))).toEqual([16, 2573.188, 368, 80]);
+    // Tags with no whitespace between them: no space; the strut reaches 1px above them.
+    expect(geo(wide.box("tag-2"))).toEqual([62.438, 2666.188, 73.563, 24.188]);
+    expect(geo(wide.box("tag-5"))).toEqual([16, 2697.375, 72.922, 24.188]);
+    // text-align: center centers each line.
+    expect(geo(wide.box("pill"))).toEqual([28.453, 2727.563, 83.391, 42]);
+    // vertical-align: middle in a taller line.
+    expect(geo(wide.box("chip"))).toEqual([16, 2776.781, 116.906, 20.797]);
+    expect(wide.box("chips").h).toBe(32);
+    for (const id of ["action", "tag-3", "pill-2", "chip-2"]) expect(wide.approx(id)).toBeUndefined();
+  });
+
   it("a page-level absolute box after the content sits below it", () => {
-    expect(geo(wide.box("announcer"))).toEqual([0, 2557.188, 1, 1]);
+    expect(geo(wide.box("announcer"))).toEqual([0, 2801.563, 1, 1]);
     expect(wide.approx("announcer")).toBeUndefined();
   });
 
