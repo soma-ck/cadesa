@@ -249,3 +249,34 @@ p {
   background: #fcd34d;
   margin: auto;
 }
+
+.story {
+  display: grid;
+  grid-template-columns: 0.72fr 1.28fr;
+  align-items: center;
+  gap: 8%;
+  min-height: 240px;
+  padding: 24px 7%;
+  background: #f5f5f4;
+}
+
+.story-art {
+  height: 120px;
+  background: #d6d3d1;
+}
+
+.widths {
+  padding: 16px;
+}
+
+.widths-max {
+  width: max-content;
+  padding: 4px 8px;
+  background: #e0f2fe;
+}
+
+.widths-min {
+  width: min-content;
+  padding: 4px 8px;
+  background: #fae8ff;
+}

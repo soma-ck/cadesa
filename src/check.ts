@@ -171,7 +171,7 @@ export function sizeUncertainty(l: Layout, imp?: WidthImpact): { width: Set<stri
     const fixed = (typeof w === "number" || (typeof w === "object" && "pct" in w)) && !b.props.grow;
     const cluster = parent?.props.pattern?.value === "cluster" && !fixed;
     const unknown =
-      own.has(b.id) || parentUnknown || (cluster && parent!.children.some(anyInside)) || (b.props.width?.value === "fit" && anyInside(b));
+      own.has(b.id) || parentUnknown || (cluster && parent!.children.some(anyInside)) || (/^(fit|max-content|min-content)$/.test(String(b.props.width?.value)) && anyInside(b));
     if (unknown) out.add(b.id);
     for (const k of b.children) visit(k, b, unknown);
   };

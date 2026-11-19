@@ -165,7 +165,7 @@ export interface ResolvedProps {
   margin?: Resolved<Margins> & { pct?: PctSides };
   maxWidth?: Resolved<number | Pct>;
   measure?: Resolved<number | Pct>;
-  width?: Resolved<number | "fill" | "fit" | Pct>;
+  width?: Resolved<number | "fill" | "fit" | "max-content" | "min-content" | Pct>;
   height?: Resolved<number>;
   minHeight?: Resolved<number>;
   /** A height that is a percentage of the parent's content height, once that is definite (stretched or set); auto until then. */

@@ -844,6 +844,7 @@ export function liftElements(input: LiftInput): LiftResult {
       const v = width.value.trim();
       if ((v === "100%" && !input.fullWidthAsPercent) || (v === "auto" && alignSelf?.value.trim() === "stretch")) out.width = "fill";
       else if (v === "fit-content") out.width = "fit";
+      else if (v === "max-content" || v === "min-content") out.width = v;
       else if (v !== "auto") {
         const t = sizeToken(v);
         if (t) out.width = t;

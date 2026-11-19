@@ -2592,6 +2592,8 @@ export abstract class PageLifter {
     // final content height apart (they may overflow). A min-height or max-height isn't modelled.
     const limited = ["min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(this.resolve(el, si, el.own[si].get(p)?.value ?? "") ?? ""));
     if (of === "auto" && !limited) return o;
+    // A grid whose height may be stretched, or that has a min-height: the engine decides (exact while it has one row).
+    if (grid) return o;
     this.note(el, si, { decl: `${o.utility} (row-gap: ${v})`, reason: `a percentage row gap of a ${grid ? "grid's" : "container's set or stretched"} height is not modelled`, kind: "geometry" });
     return undefined;
   }

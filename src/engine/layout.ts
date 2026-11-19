@@ -509,6 +509,13 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       const w = Math.max(insX, Math.min(pw, cap));
       return { min: w, max: w };
     }
+    // width: max-content or min-content: that content width, whatever the room.
+    if (pw === "max-content" || pw === "min-content") {
+      const it = intrinsic(n, c, slot, true);
+      if (it.why) return it;
+      const v = Math.max(insX, Math.min(cap, pw === "max-content" ? it.max : it.min));
+      return { min: v, max: v };
+    }
     if (pw !== undefined && pw !== "fit") return unknown(`<${n.tag}> has a ${pw === "fill" ? "fill" : "percentage"} width, which depends on the box being sized`);
     if (p.aspect && !contentOnly) return unknown(`<${n.tag}> has an aspect ratio`);
     // Size containment (size or inline-size): as wide as if it were empty.
@@ -628,10 +635,10 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       else if (pw === "fill") {
         if (p.width) errors.push({ path: p.width.steps.at(-1)!.path, message: (id) => say(`#${id} has width: fill inside a cluster; fill only stretches inside a stack`, `#${id} is as wide as its flex row (width: 100%) next to other items`) });
         base = innerW;
-      } else if (pw === "fit") {
+      } else if (pw === "fit" || pw === "max-content" || pw === "min-content") {
         const it = content();
         if (it.why) cannot(it.why);
-        else base = Math.min(it.max, Math.max(it.min, innerW - out));
+        else base = pw === "max-content" ? it.max : pw === "min-content" ? it.min : Math.min(it.max, Math.max(it.min, innerW - out));
       } else if (p.aspect) {
         // aspect compiles to width: 100%. With inline margins (or siblings, in a row that doesn't
         // wrap) the line is too full, and the item shrinks, but no narrower than its automatic
@@ -678,7 +685,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       // An aspect box that grows: its minimum width also follows its height, which isn't modelled.
       if (g && p.aspect) notes.push("grow on a box with an aspect ratio: its minimum width also follows its height, which isn't modelled");
       // flex-shrink: 1 unless a width is set (Cadesa compiles flex: none with it).
-      const shrinkable = !(typeof pw === "number" || (pw !== undefined && typeof pw === "object") || (pw === "fill" && p.width) || pw === "fit");
+      const shrinkable = !(typeof pw === "number" || (pw !== undefined && typeof pw === "object") || (pw === "fill" && p.width) || pw === "fit" || pw === "max-content" || pw === "min-content");
       return { k, p, km, out, base, hyp, min, cap, insX, shrink: shrinkable, shrinkUnknown: shrinkable && !minKnown, wraps, intr, factor: g?.factor ?? 0, notes, errors };
     });
 
@@ -829,6 +836,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   /** Whether a grid needs CSS Grid's full algorithm (a template, placed items, auto margins on an item). */
   const fullGrid = (p: ResolvedProps, kids: Kid[]) =>
     !!p.grid ||
+    p.rowGap?.pct !== undefined ||
     kids.some((k) => {
       const kp = resolveElement(model, k.comp, k.slot, width);
       const m = marginOf(kp);
@@ -993,7 +1001,11 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
 
     const arrangeAt = (finalH: number) => {
       // A taller grid (a set or stretched height, a min-height): its rows are sized for it.
-      if (innerH === undefined && finalH > contentH + EPS) rowH = sizeRows(finalH);
+      if (innerH === undefined && finalH > contentH + EPS) {
+        rowH = sizeRows(finalH);
+        // A percentage row gap of a grid stretched past its content, or held up by a min-height, between rows: not modelled.
+        if (rowGapPct !== undefined && rowH.length > 1 && !notes.some((x) => x.startsWith("a percentage row gap"))) notes.push("a percentage row gap of a grid whose height is stretched or set by a min-height is not modelled");
+      }
       const gap = rowGapPct !== undefined ? sizeAt({ pct: rowGapPct }, Math.max(0, finalH)) : rowGap;
       const rowY = trackStarts(rowH, gap, finalH, spec.alignContent);
       boxes.forEach((b, i) => {
@@ -1057,9 +1069,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
       let w: number;
       if (typeof pw === "number" || (pw !== undefined && typeof pw === "object")) w = sizeAt(pw, cb.w);
       else if (pw === "fill") w = cb.w;
-      else if (l !== undefined && r !== undefined && pw !== "fit") w = cb.w - l - r - m.left - m.right;
+      else if (l !== undefined && r !== undefined && pw === undefined) w = cb.w - l - r - m.left - m.right;
       else {
-        const avail = cb.w - (l ?? 0) - (r ?? 0) - m.left - m.right;
+        const avail = pw === "max-content" ? Infinity : pw === "min-content" ? 0 : cb.w - (l ?? 0) - (r ?? 0) - m.left - m.right;
         const it = withOwnPct(intrinsic(a.k.node, a.k.comp, a.k.slot, true), p0, p);
         if (it.why) {
           notes.push(`an absolutely positioned box is as wide as its content, which can't be measured here (${it.why})`);
@@ -1150,8 +1162,8 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     else {
       if (typeof pw === "number") w = pw;
       else if (pw !== undefined && typeof pw === "object") w = sizeAt(pw, avail);
-      else if (pw === "fit") {
-        w = fit(Math.max(0, avail - m.left - m.right), "is as wide as its content (width: fit)");
+      else if (pw === "fit" || pw === "max-content" || pw === "min-content") {
+        w = fit(pw === "max-content" ? Infinity : pw === "min-content" ? 0 : Math.max(0, avail - m.left - m.right), `is as wide as its content (width: ${pw})`);
         if (props.aspect) assumptions.push("width: fit with an aspect ratio: the browser also sizes it from its height, which isn't modelled");
       }
       // Auto margins across a stack (a column flexbox) switch off stretching: it's as wide as its content.

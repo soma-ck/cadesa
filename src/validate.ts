@@ -686,7 +686,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           out.text = ref(v, p, "text");
           break;
         case "width":
-          if (v === "fill" || v === "fit") out.width = { keyword: v, path: p.join(".") };
+          if (v === "fill" || v === "fit" || v === "max-content" || v === "min-content") out.width = { keyword: v, path: p.join(".") };
           else if (typeof v === "string" && /^(?:100%|auto|stretch|full)$/.test(v))
             err(p, `width "${v}" is spelled fill in Cadesa`, {
               expected: "fill (stretch across the parent stack), fit (as wide as its content, at most the parent), or a size token",

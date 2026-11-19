@@ -187,7 +187,7 @@ export interface Props {
   /** Max width that stays left-aligned (a line length), unlike maxWidth, which centers. */
   measure?: Ref;
   /** fill: the parent's full width; fit: shrink-to-fit (its content's width, at most the parent's). */
-  width?: Ref | { keyword: "fill" | "fit"; path: string };
+  width?: Ref | { keyword: "fill" | "fit" | "max-content" | "min-content"; path: string };
   height?: Ref;
   /** The least height (min-height): the box is as tall as its content or its height, and never less. */
   minHeight?: Ref;

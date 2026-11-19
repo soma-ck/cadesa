@@ -138,7 +138,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   // (in this rule or merged from an earlier one), the smaller wins.
   const e = ctx.eff;
   // A width the box sets itself (a size, or fit): maxWidth then only caps it.
-  const fixedWidth = !!e.width && (!("keyword" in e.width) || e.width.keyword === "fit");
+  const fixedWidth = !!e.width && (!("keyword" in e.width) || e.width.keyword !== "fill");
   if (p.maxWidth || p.measure || unset("maxWidth") || unset("measure")) {
     if (p.maxWidth && !fixedWidth) out.push("width: 100%");
     const caps = [e.maxWidth, e.measure].filter((r): r is Ref => !!r).map(v);
@@ -155,7 +155,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.width) {
     // fill: the full width of the parent. Not align-self: stretch, which in a grid or layer stretches
     // the height instead. fit: shrink-to-fit (its content's width, at most the parent's).
-    if ("keyword" in p.width) out.push(`width: ${p.width.keyword === "fit" ? "fit-content" : "100%"}`, "align-self: auto", "flex: none");
+    if ("keyword" in p.width) out.push(`width: ${p.width.keyword === "fit" ? "fit-content" : p.width.keyword === "fill" ? "100%" : p.width.keyword}`, "align-self: auto", "flex: none");
     else out.push(`width: ${v(p.width)}`, "align-self: auto", "flex: none");
   } else if (unset("width")) out.push(`width: ${e.maxWidth || e.aspect ? "100%" : "auto"}`, "flex: 0 1 auto");
   // grow: flex-grow from a basis of 0 (equal shares) or auto (its own size); with a width it never
