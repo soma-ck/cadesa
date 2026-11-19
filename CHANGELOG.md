@@ -20,6 +20,8 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
 ## Unreleased
 
+- Fewer boxes marked exact that weren't: a page whose root font size isn't 16px (`html { font-size:
+  10pt }`) is `≈`, as rem lengths are lifted as 16px each.
 - A table given its width by a grid track or a stretching flex container is never narrower than its
   caption: its columns fill the caption's width (it laid them out in the track's).
 - Inline runs in another size, font, line height or vertical-align are measured: `<small>`,
