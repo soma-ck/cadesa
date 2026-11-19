@@ -50,7 +50,7 @@ export interface FontMetrics {
    * The font's ascent, descent and line gap at a size, as Chromium rounds them (whole px), and its
    * x-height (px); undefined for a table measured before vertical metrics were recorded.
    */
-  vertical(sizePx: number, weight: number): { ascent: number; descent: number; lineGap: number; xHeight: number } | undefined;
+  vertical(sizePx: number, weight: number): { ascent: number; descent: number; lineGap: number; xHeight: number; avgChar?: number; maxChar?: number } | undefined;
 }
 
 const registry = new Map<string, FontMetrics | undefined>();
@@ -207,7 +207,9 @@ function load(file: string): FontMetrics {
       const f = Math.fround;
       const px = (u: number) => f(f(u / v.size) * f(sizePx));
       const round = (x: number) => Math.floor(x + 0.5);
-      return { ascent: round(px(face.ascent)), descent: round(px(face.descent)), lineGap: round(px(face.lineGap)), xHeight: px(face.xHeight) };
+      // A text field's average and maximum character widths: rounded to whole px (roundf) too.
+      const chars = face.avgChar !== undefined && face.maxChar !== undefined ? { avgChar: round(px(face.avgChar)), maxChar: round(px(face.maxChar)) } : {};
+      return { ascent: round(px(face.ascent)), descent: round(px(face.descent)), lineGap: round(px(face.lineGap)), xHeight: px(face.xHeight), ...chars };
     },
     weightIssue(weight) {
       if (kind !== "static") return undefined;

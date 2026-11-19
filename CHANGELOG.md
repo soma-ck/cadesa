@@ -36,6 +36,18 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   a source: a cluster's `align: baseline`.
 - A space before an inline element's end is measured in that element's font (it was measured in the
   text box's).
+- Form controls are sized as Chromium sizes them on Linux, measured with probe pages: a `<select>`
+  is as wide as its widest option in its font (rounded up to a px) plus the menulist's internal
+  padding (4px + 16px for the arrow with native appearance, none with `appearance: none`), and with
+  native appearance as tall as its font's normal line plus 2px; a text field (`size=` too) is
+  `ceil(average character width × size) + maximum − average character width`, from the font's
+  OS/2 and bounding-box widths, now measured into metrics tables (`avgChar`, `maxChar`; the bundled
+  ones have them); a `<textarea>` is its `cols` of average characters plus a 15px scrollbar, and
+  `rows` lines tall; submit, reset and button inputs are their label at `line-height: normal`;
+  checkboxes and radios are 13×13 and ranges 129×16, with the browser's margins, on the baseline at
+  their border box's bottom. A `<button>` with a set height centers its text. Bootstrap's
+  `.form-select`, `.form-control-sm/lg`, `.form-check` and `.input-group` are exact. A native
+  select's place on a line of text, date, color and file inputs stay `≈`.
 - `cadesa metrics` measures fonts with contextual alternates almost everywhere (Caveat, and Inter 4
   as Google Fonts serves it) instead of failing with "Set maximum size exceeded": the search for
   runs the font shapes in context is bounded, and a table where it stopped short says so; text in

@@ -60,6 +60,9 @@ button { text-align: center }
 button, select, input[type=button], input[type=submit], input[type=reset], input[type=image], input[type=checkbox], input[type=radio], input[type=color], input[type=file] { box-sizing: border-box }
 button, input[type=button], input[type=submit], input[type=reset] { padding: 1px 6px; border: 2px outset #767676 }
 input { padding: 1px 2px; border: 2px inset #767676 }
+input[type=checkbox i] { margin: 3px 3px 3px 4px; padding: 0; border: none; box-sizing: border-box }
+input[type=radio i] { margin: 3px 3px 0px 5px; padding: 0; border: none; box-sizing: border-box }
+input[type=range i] { margin: 2px; padding: 0; border: none }
 select { border: 1px solid #767676 }
 textarea { padding: 2px; border: 1px solid #767676; font-family: monospace }
 `;

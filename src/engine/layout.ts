@@ -618,7 +618,7 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
     // A form field or replaced element with a percentage width or max-width is compressible: its
     // min-content contribution is its padding and border; its max-content one, its intrinsic size, isn't known.
     if (!contentOnly && /^(input|select|textarea|img|svg|video|canvas|iframe|object|embed)$/.test(n.tag) && (typeof p.width?.value === "object" || p.width?.value === "fill" || typeof p.maxWidth?.value === "object"))
-      return { min: insX, max: insX, why: `<${n.tag}> has an intrinsic size of its own`, minKnown: true };
+      return n.controlWidth !== undefined ? { min: insX, max: Math.max(insX, Math.min(cap, n.controlWidth + insX)) } : { min: insX, max: insX, why: `<${n.tag}> has an intrinsic size of its own`, minKnown: true };
     if (pw !== undefined && pw !== "fit") return unknown(`<${n.tag}> has a ${pw === "fill" ? "fill" : "percentage"} width, which depends on the box being sized`);
     if (p.aspect && !contentOnly) return unknown(`<${n.tag}> has an aspect ratio`);
     // Size containment (size or inline-size): as wide as if it were empty.
@@ -698,6 +698,9 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
         const m = Math.max(insX, Math.min(cap, Math.max(0, min) + insX));
         return { min: m, max: m, why: partial, minKnown: true };
       }
+    } else if (CONTROLS.has(n.tag) && n.controlWidth !== undefined) {
+      // A form control of known intrinsic width (a select's widest option, a field's characters...).
+      min = max = n.controlWidth;
     } else if (MEDIA.has(n.tag) || CONTROLS.has(n.tag)) return unknown(`<${n.tag}> has an intrinsic size of its own`);
     min = Math.max(0, min);
     max = Math.max(max, min);

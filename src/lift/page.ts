@@ -1137,7 +1137,24 @@ export abstract class PageLifter {
     if (["min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(el, p) ?? ""))) return undefined;
     let hm: number;
     let a: number;
-    if (el.tag === "input" && !el.own[si].has("height")) {
+    const ctype = el.tag === "input" ? (attr(el.node, "type") ?? "text").toLowerCase() : el.tag;
+    const look = (res(el, "appearance") ?? res(el, "-webkit-appearance") ?? "auto") !== "none";
+    const ch = CONTROL.has(el.tag) && !el.own[si].has("height") ? this.controlHeight(el, si) : undefined;
+    if (ch !== undefined && (/^(checkbox|radio|range|textarea|submit|reset|button)$/.test(ctype) || (ctype === "select" && !look))) {
+      // Its baseline (measured in Chromium): a checkbox's, radio's or range's border-box bottom; a
+      // textarea's bottom margin edge (it scrolls); a button input's line of text at line-height:
+      // normal, a select without native appearance its line. (A native select's line sits half a
+      // pixel off its font's rounded ascent at some sizes, not modelled.)
+      hm = mt + ch + mb;
+      if (ctype === "textarea") a = hm;
+      else if (/^(checkbox|radio|range)$/.test(ctype)) a = mt + ch;
+      else {
+        const v = metricsFor(t.family.value)?.vertical(t.size, t.weight);
+        const own = this.strutOf(el, si);
+        if (!v || !own) return undefined;
+        a = mt + bt + pt + (ctype === "select" ? own.sa : v.ascent + Math.floor(v.lineGap / 2));
+      }
+    } else if (el.tag === "input" && !el.own[si].has("height")) {
       // A text field: one line of its text (never shorter than line-height: normal), its baseline
       // that line's (exactly so when its line height is at least normal: the line fills the field).
       const h = this.controlHeight(el, si);
@@ -1157,17 +1174,24 @@ export abstract class PageLifter {
       const own = this.strutOf(el, si);
       if (!own) return undefined;
       hm = mt + bt + pt + own.lh + pb + bb + mb;
-      // A set height (one line of text in it, at its top; a <button> centers its content instead).
+      // A set height (one line of text in it, at its top; a <button> centers its content instead,
+      // never above its content box's top, as Chromium does).
+      let centered = 0;
       if (el.own[si].has("height") && !/^auto$/.test(res(el, "height") ?? "auto")) {
         const h = px("height");
-        if (el.tag === "button" || !(h >= 0)) return undefined;
-        hm = mt + (res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb) + mb;
+        if (!(h >= 0)) return undefined;
+        const border = res(el, "box-sizing") === "border-box";
+        hm = mt + (border ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb) + mb;
+        if (el.tag === "button") {
+          const content = border ? Math.max(0, h - pt - pb - bt - bb) : h;
+          centered = Math.max(0, Math.trunc(Math.round((content - own.lh) * 64) / 2) / 64);
+        }
       }
       // Clipping its overflow, or layout containment, leaves it no baseline: its bottom margin edge is.
       const contained = this.containOf(el, si);
       if ((contained?.paint && !contained.layout) || contained?.size) return undefined;
       const clips = !/^(visible)?$/.test(res(el, "overflow-x") ?? "") || !/^(visible)?$/.test(res(el, "overflow-y") ?? "") || !!contained?.layout;
-      a = clips ? hm : mt + bt + pt + own.sa;
+      a = clips ? hm : mt + bt + pt + centered + own.sa;
     }
     const va = res(el, "vertical-align") ?? "baseline";
     if (va === "middle") {
@@ -1406,8 +1430,78 @@ export abstract class PageLifter {
   }
 
   /**
-   * A text field, select or textarea without native appearance: its line height (× rows for a
-   * textarea) plus padding and border (border-box px), or undefined when that isn't its height.
+   * A form control's intrinsic content width (px), as Chromium (Linux) sizes it, or undefined when
+   * that isn't known:
+   * - a select (one row): its widest option label in its font, rounded up to a whole px, plus the
+   *   menulist's internal padding: 4px at the start and 16px at the end with native appearance
+   *   (LayoutThemeDefault: the arrow's room), none with appearance: none;
+   * - a text field: ceil(average character width × size) + maximum - average character width
+   *   (LayoutTextControlSingleLine, size 20 unless the size attribute says otherwise), from the font;
+   * - a textarea: ceil(average character width × cols) + 15px for its vertical scrollbar;
+   * - a submit, reset or button input: its label in its font (value, else "Submit" or "Reset");
+   * - a checkbox or radio with native appearance: 13px, a range: 129px (border box).
+   * All measured in Chromium with probe pages (see test/forms.test.ts).
+   */
+  controlWidth(el: El, si: number): number | undefined {
+    if (!CONTROL.has(el.tag)) return undefined;
+    const res = (p: string) => {
+      const o = el.own[si].get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    const t = this.textOf(el, si);
+    if (t.fluid) return undefined;
+    const native = (res("appearance") ?? res("-webkit-appearance") ?? "auto") !== "none";
+    const type = el.tag === "input" ? (attr(el.node, "type") ?? "text").toLowerCase() : el.tag;
+    const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
+    const bdr = (side: string) => (/^(none|hidden)$/.test(res(`border-${side}-style`) ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+    const insX = px("padding-left") + px("padding-right") + bdr("left") + bdr("right");
+    // Fixed sizes from the theme (border box).
+    if ((type === "checkbox" || type === "radio") && native) return isFinite(insX) ? Math.max(0, 13 - insX) : undefined;
+    if (type === "range" && native) return isFinite(insX) ? Math.max(0, 129 - insX) : undefined;
+    const m = metricsFor(t.family.value);
+    if (!m || m.weightIssue(t.weight) || t.letterSpacing || !/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "")) return undefined;
+    if (el.tag === "select") {
+      if (attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1) return undefined;
+      const labels: string[] = [];
+      for (const c of el.node.childNodes ?? []) {
+        if (c.tagName === "optgroup") return undefined;
+        if (c.tagName !== "option") continue;
+        const label = attr(c, "label") ?? (c.childNodes ?? []).map((x) => x.value ?? "").join("");
+        labels.push(label.replace(/[ \t\n\r\f]+/g, " ").trim());
+      }
+      if (labels.some((l) => m.unsupported(l).length)) return undefined;
+      const widest = Math.max(0, ...labels.map((l) => m.measure(l, t.size, t.weight) ?? NaN));
+      if (!isFinite(widest)) return undefined;
+      return Math.ceil(widest - 1e-9) + (native ? 20 : 0);
+    }
+    const v = m.vertical(t.size, t.weight);
+    if (el.tag === "textarea") {
+      const cols = Number(attr(el.node, "cols") ?? "20");
+      if (!v || v.avgChar === undefined || !Number.isInteger(cols) || cols < 1 || res("overflow-y") !== undefined || res("overflow-x") !== undefined) return undefined;
+      return v.avgChar * cols + 15;
+    }
+    if (/^(text|email|password|tel|url)$/.test(type) || (type === "number" && attr(el.node, "size") === undefined)) {
+      const n = Number(attr(el.node, "size") ?? "20");
+      const size = Number.isInteger(n) && n > 0 ? n : 20;
+      if (!v || v.avgChar === undefined || v.maxChar === undefined) return undefined;
+      return v.avgChar * size + v.maxChar - v.avgChar;
+    }
+    if (/^(submit|reset|button)$/.test(type)) {
+      const label = (attr(el.node, "value") ?? (type === "submit" ? "Submit" : type === "reset" ? "Reset" : "")).replace(/[ \t\n\r\f]+/g, " ").trim();
+      if (m.unsupported(label).length) return undefined;
+      const w = m.measure(label, t.size, t.weight);
+      return w === undefined ? undefined : Math.ceil(w * 64 - 1e-6) / 64;
+    }
+    return undefined;
+  }
+
+  /**
+   * A form control's border-box height (px), or undefined when that isn't known: a text field,
+   * select or textarea without native appearance, one line of its line height (× rows for a
+   * textarea) plus padding and border; a text field with native appearance too, its line never
+   * shorter than line-height: normal; with native appearance, a select's line at line-height:
+   * normal plus 2px and a submit, reset or button input's line at line-height: normal (Chromium
+   * sets both lines' height itself), plus padding and border; a checkbox or radio, 13px; a range, 16px.
    */
   controlHeight(el: El, si: number): number | undefined {
     const res = (p: string) => {
@@ -1416,11 +1510,21 @@ export abstract class PageLifter {
     };
     const type = (attr(el.node, "type") ?? "text").toLowerCase();
     const t = this.textOf(el, si);
+    const nativeLook = (res("appearance") ?? res("-webkit-appearance") ?? "auto") !== "none";
+    const limited = ["min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""));
+    if (el.tag === "input" && nativeLook && /^(checkbox|radio|range)$/.test(type)) return limited ? undefined : type === "range" ? 16 : 13;
+    const pxY = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
+    const edgesY = () => ["top", "bottom"].reduce((h, side) => h + pxY(`padding-${side}`) + (/^(none|hidden)$/.test(res(`border-${side}-style`) ?? "none") ? 0 : borderPx(pxY(`border-${side}-width`))), 0);
+    if (nativeLook && !limited && ((el.tag === "select" && attr(el.node, "multiple") === undefined && Number(attr(el.node, "size") ?? "1") <= 1) || (el.tag === "input" && /^(submit|reset|button)$/.test(type)))) {
+      const normal = this.normalLine(t);
+      const h = normal === undefined ? NaN : normal + (el.tag === "select" ? 2 : 0) + edgesY();
+      return isFinite(h) ? h : undefined;
+    }
     // A text field's line, with or without native appearance, is never shorter than line-height:
     // normal (its font's ascent, descent and line gap). Otherwise only without native appearance.
     const field = el.tag === "input" && /^(text|email|password|search|tel|url|number)$/.test(type);
     const normal = this.normalLine(t);
-    if (!(field && normal !== undefined) && (res("appearance") ?? res("-webkit-appearance")) !== "none") return undefined;
+    if (!(field && normal !== undefined) && el.tag !== "textarea" && (res("appearance") ?? res("-webkit-appearance")) !== "none") return undefined;
     if (el.tag === "input" && !/^(text|email|password|search|tel|url)$/.test(type) && !(field && normal !== undefined)) return undefined;
     if (el.tag === "select" && (attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1)) return undefined;
     const set = t.lineHeight === "normal" ? normal : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
@@ -1625,9 +1729,12 @@ export abstract class PageLifter {
       return v === undefined ? undefined : v.replace(/(-?\d*\.?\d+)rem\b/g, (_, n) => `${parseFloat(n) * 16}px`);
     };
     const lu = (x: number) => Math.floor(x * 64 + 1e-6) / 64;
-    const border = raw("box-sizing") === "border-box";
-    const hv = raw("height");
-    const wv = raw("width") ?? "auto";
+    // A checkbox, radio or range drawn by the theme: its size (border box), its baseline at its border box's bottom.
+    const ctype = k.tag === "input" ? (attr(k.node, "type") ?? "text").toLowerCase() : "";
+    const themed = /^(checkbox|radio|range)$/.test(ctype) && (raw("appearance") ?? raw("-webkit-appearance") ?? "auto") !== "none" && !own.has("width") && !own.has("height");
+    const border = themed || raw("box-sizing") === "border-box";
+    const hv = themed ? `${ctype === "range" ? 16 : 13}px` : raw("height");
+    const wv = themed ? `${ctype === "range" ? 129 : 13}px` : (raw("width") ?? "auto");
     if (!hv || hv === "auto") return undefined;
     if (["min-width", "max-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(raw(p) ?? ""))) return undefined;
     const ar = raw("aspect-ratio");
@@ -1663,7 +1770,8 @@ export abstract class PageLifter {
       const strut = { sa: v.ascent + above0, sd: v.descent + leading / 64 - above0, xh2: Math.round((v.xHeight / 2) * 64) / 64 };
       // Vertically: its margin box's bottom edge on the baseline (raised by a vertical-align length, or its middle on the x-height's).
       const hm = mt + bh + mb;
-      let a = hm;
+      const a0 = themed ? hm - mb : hm;
+      let a = a0;
       if (va === "middle") {
         const u = (x: number) => Math.round(x * 64);
         a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
@@ -1671,9 +1779,9 @@ export abstract class PageLifter {
         const r = lengthPx(va, size);
         // A keyword (text-top, sub...) or percentage: placed by atomicExtent, never inside the strut here.
         if (r === undefined) a = Infinity;
-        else a = hm + r;
+        else a = a0 + r;
       }
-      return { width: ml + bw + mr, above: a, below: hm - a, a0: hm, hm, strut };
+      return { width: ml + bw + mr, above: a, below: hm - a, a0, hm, strut };
     };
     return { at, size: t.size, fluid: t.fluid };
   }
@@ -2466,13 +2574,13 @@ export abstract class PageLifter {
       // field, select or textarea drawn without native appearance: one line (rows lines) of its
       // line height, plus its padding and border.
       const controlH = CONTROL.has(el.tag) && !own.has("height") ? this.controlHeight(el, si) : undefined;
-      if (controlH !== undefined) decl("height", `${fmtNum(controlH)}px`, `<${el.tag}>: its line height${el.tag === "textarea" ? " × rows" : ""}, padding and border`);
+      if (controlH !== undefined) decl("height", `${fmtNum(controlH)}px`, `<${el.tag}>: ${/^(checkbox|radio|range)$/.test((attr(el.node, "type") ?? "").toLowerCase()) && el.tag === "input" ? "the theme's size" : `its line height${el.tag === "textarea" ? " × rows" : ""}, padding and border`}`);
       else if (CONTROL.has(el.tag) && !own.has("height"))
         this.note(el, si, { decl: `<${el.tag}>`, reason: `a form control's height comes from its font and the browser's internals; give it a height${this.uaInCascade ? "" : " (h-*)"} to predict it`, kind: "geometry" });
       // Replaced elements and controls have an intrinsic width (the file, 300×150 for svg, ~20ch for inputs).
       const parentAlign = el.parent && el.parent !== this.bodyEl ? this.resolve(el.parent, si, el.parent.own[si].get("align-items")?.value ?? "normal") ?? "normal" : "normal";
       const stretched = parentRole === "container" && /flex/.test(parentDisplay) && el.parent && this.isColumn(el.parent, si) && !own.has("align-self") && /^(normal|stretch)$/.test(parentAlign);
-      if ((CONTROL.has(el.tag) || REPLACED_BLOCK.has(el.tag)) && !own.has("width") && !stretched)
+      if ((CONTROL.has(el.tag) || REPLACED_BLOCK.has(el.tag)) && !own.has("width") && !stretched && this.controlWidth(el, si) === undefined)
         this.note(el, si, { decl: `<${el.tag}>`, reason: `<${el.tag}> without a width${this.uaInCascade ? "" : " (w-*)"} takes its intrinsic width, which Cadesa doesn't know`, kind: "geometry" });
 
       // Borders: preflight makes every side `0 solid currentcolor`.
@@ -3354,6 +3462,9 @@ export abstract class PageLifter {
         if (!isText && el.children.some((k) => k.anonymous !== undefined)) return { ...n, children, ownText: "" };
         // A replaced element or form control has no text box (a textarea's text is its value).
         const textless = si === undefined ? el.roles.every((r) => r !== "text" && r !== "container") : el.roles[si] !== "text" && el.roles[si] !== "container";
+        // A form control's intrinsic width, as Chromium sizes it (controlWidth).
+        const cw = this.controlWidth(el, si ?? 0);
+        if (cw !== undefined) n = { ...n, controlWidth: cw };
         if (textless && n.text) return { ...n, children, text: "", runs: [] };
         const hidden = si === undefined ? hiddenNodes : hiddenAt[si];
         // Inline boxes with a weight or edges of their own, and generated content, are part of the text.

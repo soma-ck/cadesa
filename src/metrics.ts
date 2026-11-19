@@ -97,6 +97,14 @@ export interface VerticalMetrics {
   descent: number;
   lineGap: number;
   xHeight: number;
+  /**
+   * What a text field's width is made of: the font's average character width (OS/2
+   * xAvgCharWidth, or the "0" glyph's advance) and its maximum character width (the font's bounding
+   * box), as Chromium reads them, measured from <input size=1> and <input size=2> at the same size.
+   * Tables from before they were measured leave them out.
+   */
+  avgChar?: number;
+  maxChar?: number;
 }
 
 /**
@@ -117,6 +125,20 @@ export async function measureVertical(page: import("playwright-core").Page, fami
     document.body.appendChild(box);
     const out = { ascent: m.fontBoundingBoxAscent, descent: m.fontBoundingBoxDescent, lineGap: box.getBoundingClientRect().height - m.fontBoundingBoxAscent - m.fontBoundingBoxDescent, xHeight: box.lastChild.getBoundingClientRect().width };
     box.remove();
+    // A text field's content width is ceil(average × size) + maximum - average, each rounded to px
+    // (LayoutTextControlSingleLine): at a size of the units per em, both are whole font units.
+    const field = (n) => {
+      const i = document.createElement("input");
+      i.size = n;
+      i.style.cssText = "position:absolute;left:0;top:0;padding:0;border:0;box-sizing:content-box;font:" + font;
+      document.body.appendChild(i);
+      const w = i.getBoundingClientRect().width;
+      i.remove();
+      return w;
+    };
+    const one = field(1), two = field(2);
+    out.avgChar = two - one;
+    out.maxChar = one;
     return out;
   })(${JSON.stringify({ FAMILY: family, W: weight, S: size })})`)) as VerticalMetrics;
 }

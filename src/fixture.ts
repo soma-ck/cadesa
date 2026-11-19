@@ -25,6 +25,11 @@ export interface FixtureNode {
   runMeta: RunMeta[];
   children: FixtureNode[];
   /**
+   * A form control's intrinsic content width (px), as Chromium sizes it: a select's widest option,
+   * a text field's characters, a textarea's columns, a button input's label. Set by the lift.
+   */
+  controlWidth?: number;
+  /**
    * Not an element: a run of text between block-level children (an anonymous block, or an
    * anonymous flex or grid item), laid out as a text box of its own. It has no box in the DOM.
    */
