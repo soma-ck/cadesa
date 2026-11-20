@@ -35,6 +35,21 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   it sits at the top of its line when it reaches above the strut (an svg pointer with
   `position: relative` in a positioned box of set size). `fixtures/css/icons.html` covers them.
 
+- Text in a handwriting font (Caveat) that wraps is exact. Chromium's line breaker reshapes a line's
+  ends where the run's shaping isn't safe to break, so a line's width is neither its standalone
+  width nor its width within the whole run (probed: 520 lines, a third of them neither). `cadesa
+  fonts --measure` now also lays out every line each of the page's runs in such a font can break
+  into, in Chromium: from each break opportunity a line can start at (a two-line layout,
+  `text-indent` ending the first line there), the least room in which it reaches each later one, and
+  its width there. Lines are then broken greedily from those (probed at every quarter pixel from
+  60 to 600px in four sizes and weights: a line fits where its width is at most the room plus a
+  layout unit, which predicts all but one of 121,722 breaks, at that edge; the least room
+  measured decides those too). A run with
+  inline elements of its own, letter-spacing or other break opportunities than spaces stays `≈`.
+  Lines measured for a font are kept when the same file is measured again for other text.
+  `fixtures/css/handwriting.html` adds wrapping notes (bold, smaller, centered, in a box as wide
+  as its lines).
+
 ## 0.1.23 (2026-11-20)
 
 - Correction: the README said the Bootstrap suite also passes with classic 15px scrollbars

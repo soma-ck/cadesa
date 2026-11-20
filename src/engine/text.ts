@@ -30,6 +30,12 @@ export interface MetricsInfo {
 
 const BUNDLED = fileURLToPath(new URL("../../fonts/", import.meta.url));
 
+export interface Wraps {
+  opps: number[];
+  fit: number[][];
+  width: number[][];
+}
+
 export interface FontMetrics {
   family: string;
   file: string;
@@ -43,6 +49,13 @@ export interface FontMetrics {
    * (MetricsFile.lines); undefined otherwise.
    */
   lineWidth(text: string, sizePx: number, weight: number): number | undefined;
+  /**
+   * Where such text wraps, when that was measured (MetricsFile.wraps): its break opportunities
+   * (character offsets: 0, each word after spaces, its length), and for a line from opportunity a
+   * to b (a < b), `fit[a][b - a - 1]`, the least room (px) in which it reaches b, and `width`, its
+   * width there (px); a row ends where lines grew wider than were measured.
+   */
+  wraps(text: string, sizePx: number, weight: number): Wraps | undefined;
   /** Width in px, or undefined if the text has a character outside the measured set. */
   /** With `spaced`, as letter-spaced text (no contextual alternates); letter-spacing itself isn't added. */
   measure(text: string, sizePx: number, weight: number, spaced?: boolean): number | undefined;
@@ -125,6 +138,7 @@ function load(file: string): FontMetrics {
     return [a, b, (weight - a) / (b - a)];
   };
 
+  const wrapCache = new Map<string, Wraps | undefined>();
   // Exact advances at an integer weight of a variable font, built from the fine table on first use.
   const fineRows = new Map<number, number[]>();
   const fineDeltas = m.fine?.deltas.map((d) => d.split(",").map(Number));
@@ -245,6 +259,21 @@ function load(file: string): FontMetrics {
     },
     lineWidth(text, sizePx, weight) {
       return m.lines?.[`${sizePx}|${weight}`]?.[text];
+    },
+    wraps(text, sizePx, weight) {
+      const key = `${sizePx}|${weight}|${text}`;
+      if (wrapCache.has(key)) return wrapCache.get(key);
+      const enc = m.wraps?.[`${sizePx}|${weight}`]?.[text];
+      let out: Wraps | undefined;
+      if (enc !== undefined) {
+        const opps = [0];
+        for (let i = 1; i < text.length; i++) if (text[i - 1] === " " && text[i] !== " ") opps.push(i);
+        opps.push(text.length);
+        const rows = enc.split(";").map((r) => (r ? r.split(",").map((x) => x.split(":").map(Number)) : []));
+        if (rows.length === opps.length - 1) out = { opps, fit: rows.map((r) => r.map((x) => x[0] / 64)), width: rows.map((r) => r.map((x) => (x[1] ?? x[0]) / 64)) };
+      }
+      wrapCache.set(key, out);
+      return out;
     },
     measure(text, sizePx, weight, spaced) {
       // Text measured whole (a handwriting font's line): that width.

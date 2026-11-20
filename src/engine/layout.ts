@@ -12,7 +12,7 @@ import { closest } from "../diagnostics.js";
 import { styled, type Fixture, type FixtureNode, type Span } from "../fixture.js";
 import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
 import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, scrollbarPx, sizeAt, type GridSpec, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
-import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
+import { layoutText, metricsFor, pieces, TEXT_EPS, type Line } from "./text.js";
 import { boxMatrix4, multiply4, originOf, perspective4, projectRect, translate4, type Matrix4 } from "./transform.js";
 import { expandTracks, placeFlow as gridPlace, sizeTracks, trackStarts, type Contribution, type Explicit, type TrackList, type TrackSize } from "./grid.js";
 import { Exclusions } from "./floats.js";
@@ -681,6 +681,18 @@ function layoutWith(
     };
     const whole = m!.info.contextualIncomplete && /\S/.test(shown) && !t.letterSpacing && !t.wrapAnywhere ? runs.map(wholeRun) : undefined;
     const wholeOk = !!whole && whole.every((x) => x !== undefined);
+    // Where such a run wraps: every line it can break into, laid out in Chromium (FontMetrics.wraps),
+    // for a run of plain text (no inline elements, floats or other break opportunities).
+    const wraps = wholeOk && !t.nowrap && !t.breaks
+      ? runs.map((r, i) => {
+          const mt = n.runMeta[i];
+          if (mt && (mt.spans?.length || mt.items.length || mt.floats?.length || mt.lead)) return undefined;
+          const line = r.replace(/[ \t\n\r\f]+/g, " ").trim();
+          if (pieces(line).slice(0, -1).some((x) => !x.endsWith(" "))) return undefined;
+          const w = m!.wraps(line, t.sizePx, t.weight);
+          return w && { line, ...w };
+        })
+      : undefined;
     if (!contextual && m!.info.contextualIncomplete && /\S/.test(shown) && !wholeOk) assumptions.push(ctxWhy);
     // Whether a hanging space's kerning counts at a line end depends on the block that holds the
     // line: not when it paints a background, border or shadow (the text box itself; a <p> inside it
@@ -724,8 +736,10 @@ function layoutWith(
     return (maxWidth: number, band?: Band, inlineFloat?: (index: number) => { w: number; fitsAt: (top: number) => boolean; place: (top: number) => void }) => {
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
       let off = 0;
-      // Measured whole: exact while each run fits on one line (it wraps otherwise, in pieces not measured).
-      if (wholeOk && !assumptions.includes(ctxWhy) && (band || (isFinite(maxWidth) && whole!.some((x) => x! > maxWidth + 1 / 64 + TEXT_EPS)))) assumptions.push(ctxWhy);
+      // Measured whole: exact while each run fits on one line, or where it wraps was measured too.
+      if (wholeOk && !assumptions.includes(ctxWhy) && (band || (isFinite(maxWidth) && whole!.some((x, i) => x! > maxWidth + 1 / 64 + TEXT_EPS && !wraps?.[i])))) assumptions.push(ctxWhy);
+      // Its room in layout units (as Chromium's line breaker has it).
+      const room = Math.floor(maxWidth * 64 + 1e-6) / 64;
       const parts = runs.map((r, i) => {
         const runBand: Band | undefined = band && ((top, h, fits) => {
           const at = band(top + off, h, fits);
@@ -744,6 +758,35 @@ function layoutWith(
           if (last) off = last.top! + (last.h ?? lineH);
           return x;
         };
+        const wr = wraps?.[i];
+        if (wr && !runBand) {
+          // Greedy, as Chromium's line breaker: from each line's start, the farthest break
+          // opportunity it reaches in the room (at least one word).
+          const lines: Line[] = [];
+          let minContent = 0;
+          let widestPiece = "";
+          let unknown = false;
+          for (let a = 0; a < wr.opps.length - 1; ) {
+            const row = wr.fit[a];
+            let b = a + 1;
+            while (b + 1 < wr.opps.length && row[b - a] !== undefined && row[b - a] <= room + 1e-9) b++;
+            // A row cut short (wider lines than were measured) where the room is wider still.
+            if (b + 1 < wr.opps.length && row[b - a] === undefined) unknown = true;
+            const width = wr.width[a][b - a - 1];
+            if (width === undefined) unknown = true;
+            lines.push({ text: wr.line.slice(wr.opps[a], wr.opps[b]).trimEnd(), width: width ?? 0, at: wr.opps[a] });
+            a = b;
+          }
+          for (let a = 0; a < wr.opps.length - 1; a++) {
+            const w = wr.width[a][0];
+            if (w === undefined) unknown = true;
+            else if (w > minContent) (minContent = w), (widestPiece = wr.line.slice(wr.opps[a], wr.opps[a + 1]).trim());
+          }
+          if (unknown && !assumptions.includes(ctxWhy)) assumptions.push(ctxWhy);
+          // One line: as wide as the run measured whole.
+          if (lines.length === 1) lines[0].width = whole![i]!;
+          return done({ lines, maxContent: whole![i]!, minContent, widestPiece });
+        }
         // white-space: nowrap: the paragraph is one line, and its min-content is its whole width.
         if (t.nowrap) {
           const one = layoutText(m!, r, t.sizePx, t.weight, Infinity, { ...opts, band: undefined, wrapAnywhere: false, hangKern: false });

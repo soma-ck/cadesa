@@ -90,6 +90,16 @@ export interface MetricsFile {
    */
   lines?: Record<string, Record<string, number>>;
   /**
+   * With `lines`: where each of those texts that has spaces wraps, by font size and weight. Chromium
+   * reshapes a line's ends where the text's shaping isn't safe to break, so a line's width is
+   * neither the text's standalone width nor its width within the whole run: every line it can
+   * break into was laid out in Chromium. For each break opportunity (the text's start and each
+   * word after spaces) a line can start at, the lines from it to each later one, comma-separated
+   * (rows separated by ";"): the least room in layout units (1/64 px) in which the line reaches that
+   * far, then ":" and its width in layout units where that differs.
+   */
+  wraps?: Record<string, Record<string, string>>;
+  /**
    * Vertical metrics as Chromium uses them (its font's ascent, descent, line gap and x-height),
    * measured at a font size of `size` px (the units per em, so they are whole font units), per
    * face weight (a variable font: at 400). Chromium rounds the ascent, descent and line gap to
@@ -233,6 +243,14 @@ export async function launchChromium(): Promise<Browser> {
 }
 
 export const sha256 = (b: Buffer | string) => createHash("sha256").update(b).digest("hex");
+/**
+ * Text measured whole that may wrap (a space between words, none at its ends: a run of a text box,
+ * not a part of one between atomic inlines): its lines are measured too (MetricsFile.wraps).
+ */
+export const WRAPPABLE = /^\S.* .*\S$/;
+/** The widest line measured where such text wraps (px). */
+const WRAP_CAP = 2000;
+
 const FALLBACK_FONT = fileURLToPath(new URL("../fonts/InterVariable-latin.woff2", import.meta.url));
 
 export async function generateMetrics(opts: {
@@ -466,6 +484,88 @@ export async function generateMetrics(opts: {
         }
         return out;
       })(${JSON.stringify({ LINES: opts.lines.slice(0, 20000), FAMILY: family, ST: opts.italic ? "italic " : "" })})`)) as MetricsFile["lines"];
+    // And where it wraps: every line it can break into (see MetricsFile.wraps).
+    let wraps: MetricsFile["wraps"];
+    if (lines && opts.lines?.some((l) => WRAPPABLE.test(l.text)))
+      wraps = (await page.evaluate(`(async ({ LINES, FAMILY, ST, CAP }) => {
+        const out = {};
+        const P = document.createElement("p");
+        document.body.appendChild(P);
+        const rg = document.createRange();
+        for (const l of LINES) {
+          P.style.cssText = "margin: 0; white-space: normal; font: " + ST + l.weight + " " + l.size + "px " + FAMILY + "; font-kerning: normal; line-height: normal";
+          P.textContent = l.text;
+          const t = P.firstChild, s = l.text;
+          const rect = (a, z) => (rg.setStart(t, a), rg.setEnd(t, z), rg.getBoundingClientRect());
+          const top = (i) => (rg.setStart(t, i), rg.setEnd(t, i + 1), rg.getClientRects()[0].top);
+          // Where each character is in the text laid out on one line (to aim the widths tried).
+          P.style.whiteSpace = "nowrap";
+          const pos = [];
+          for (let i = 0; i <= s.length; i++) pos.push(i ? rect(0, i).width : 0);
+          P.style.whiteSpace = "normal";
+          // Break opportunities: after spaces (the line from one to the next holds its trailing spaces).
+          const opps = [0];
+          for (let i = 1; i < s.length; i++) if (s[i - 1] === " " && s[i] !== " ") opps.push(i);
+          opps.push(s.length);
+          const endOf = (j) => { let e = j; while (e > 0 && s[e - 1] === " ") e--; return e; };
+          const LU = 64;
+          // Line 1 ends at opps[a] (text-indent sets its room), line 2 has room X: how far line 2 reaches (an index into opps).
+          let room1 = 0;
+          const layout = (a, X) => {
+            P.style.width = X / LU + "px";
+            P.style.textIndent = a ? X / LU - room1 + "px" : "0px";
+          };
+          const reach = (a) => {
+            const i = opps[a], ti = top(i);
+            let lo = a + 1, hi = opps.length - 1;
+            if (opps[hi] === s.length && top(s.length - 1) === ti) return hi;
+            // The first opportunity after i on another line.
+            while (lo < hi) { const mid = (lo + hi) >> 1; if (top(opps[mid]) !== ti) hi = mid; else lo = mid + 1; }
+            return lo;
+          };
+          const rows = [];
+          for (let a = 0; a < opps.length - 1; a++) {
+            const i = opps[a];
+            if (a) {
+              // Line 1 must end at i: aim its room past the last word before i.
+              let ok = false;
+              for (const m of [3, 1.5, 5, 0.8, 8, 12]) {
+                room1 = pos[endOf(i)] + m;
+                layout(a, Math.round((pos[endOf(i)] + 100) * LU));
+                if (top(0) === top(endOf(i) - 1) && top(i) !== top(0)) { ok = true; break; }
+              }
+              if (!ok) { rows.push(""); continue; }
+            }
+            const row = [];
+            for (let z = a + 1; z < opps.length; z++) {
+              const e = endOf(opps[z]);
+              const est = pos[e] - pos[i];
+              if (est > CAP) break;
+              // The least room (in layout units) in which the line from i reaches opps[z].
+              const reaches = (X) => (layout(a, X), (!a || top(i) !== top(0)) && reach(a) >= z);
+              // (Its first word is on it in any room.)
+              if (z === a + 1) {
+                if (!reaches(1)) break;
+                row.push("0:" + Math.round(rect(i, e).width * LU));
+                continue;
+              }
+              let X = Math.ceil(est * LU) + 3 * LU;
+              if (!reaches(X)) { while (X < (est + 40) * LU && !reaches(X)) X += 16; if (!reaches(X)) break; }
+              // Down to the least that still reaches it (binary search, in layout units).
+              let lo = X - 6 * LU;
+              while (lo > 0 && reaches(lo)) lo -= 6 * LU;
+              while (X - lo > 1) { const mid = (X + lo) >> 1; if (reaches(mid)) X = mid; else lo = mid; }
+              layout(a, X);
+              const w = Math.round(rect(i, e).width * LU);
+              row.push(w === X ? String(X) : X + ":" + w);
+            }
+            rows.push(row.join(","));
+          }
+          (out[l.size + "|" + l.weight] ??= {})[l.text] = rows.join(";");
+        }
+        P.remove();
+        return out;
+      })(${JSON.stringify({ LINES: opts.lines.filter((l) => WRAPPABLE.test(l.text)).slice(0, 2000), FAMILY: family, ST: opts.italic ? "italic " : "", CAP: WRAP_CAP })})`)) as MetricsFile["wraps"];
     await page.close();
     if (!result.loaded)
       throw new Error(
@@ -493,6 +593,7 @@ export async function generateMetrics(opts: {
       ...(Object.values(result.contextual).some((c) => Object.keys(c).length) && { contextual: result.contextual }),
       ...(result.incomplete && { contextualIncomplete: true }),
       ...(lines && { lines }),
+      ...(wraps && { wraps }),
       vertical,
       ...(opts.italic && { style: "italic" as const }),
     };
@@ -592,10 +693,22 @@ export function writeMetrics(m: MetricsFile, dir: string, opts: { gzip?: boolean
         ...(missing && { missing }),
         ...((prev.contextualIncomplete || cur.contextualIncomplete) && { contextualIncomplete: true }),
         ...((prev.lines || cur.lines) && { lines: { ...prev.lines, ...cur.lines } }),
+        ...((prev.wraps || cur.wraps) && { wraps: { ...prev.wraps, ...cur.wraps } }),
       };
       delete out.upm;
       const upm = prev.upm && prev.upm === cur.upm ? cur.upm : unitsPerEm(out);
       if (upm) out.upm = upm;
+    }
+  } else if (existing && (m.lines || m.wraps)) {
+    // The same font file measured again for other text: the lines measured before still hold.
+    const prev = readMetrics(existing);
+    const sha = (x: MetricsFile) => (x.files ?? []).map((f) => f.sha256).join(",");
+    if (prev.kind === m.kind && sha(prev) && sha(prev) === sha(m)) {
+      const merge = <T>(a?: Record<string, Record<string, T>>, b?: Record<string, Record<string, T>>) =>
+        a || b ? Object.fromEntries([...new Set([...Object.keys(a ?? {}), ...Object.keys(b ?? {})])].map((k) => [k, { ...a?.[k], ...b?.[k] }])) : undefined;
+      const lines = merge(prev.lines, m.lines);
+      const wraps = merge(prev.wraps, m.wraps);
+      out = { ...m, ...(lines && { lines }), ...(wraps && { wraps }) };
     }
   }
   if (existing && existing !== file) rmSync(existing);

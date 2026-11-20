@@ -9,7 +9,7 @@ import { parse } from "parse5";
 import postcss, { type AtRule } from "postcss";
 import { walk, type Layout } from "./engine/layout.js";
 import { clearMetricsCache, metricsFor, type MetricsInfo } from "./engine/text.js";
-import { CHARS, generateMetrics, launchChromium, metricsFileName, sha256, writeMetrics, type Browser, type MetricsFile } from "./metrics.js";
+import { CHARS, WRAPPABLE, generateMetrics, launchChromium, metricsFileName, sha256, writeMetrics, type Browser, type MetricsFile } from "./metrics.js";
 
 // ------------------------------------------------------------------ what the text uses
 
@@ -363,7 +363,8 @@ export function fontReport(uses: FontUse[], sources: PageFontSources): FontRepor
       if (!r.remeasure && u.italicWeights?.length && !it) r.remeasure = `its italic text (${u.italicWeights.join(", ")}) is set in the italic face, which isn't measured`;
       else if (!r.remeasure && it?.outdated) r.remeasure = `the italic table was measured by an older Cadesa and has no ${it.outdated}`;
       // A font whose contextual forms the search can't cover (a handwriting font): the page's text, laid out whole.
-      const whole = m.info.contextualIncomplete ? (u.lines ?? []).filter((x) => m.lineWidth(x.text, x.size, x.weight) === undefined) : [];
+      // (Text that may wrap: where it wraps too, MetricsFile.wraps.)
+      const whole = m.info.contextualIncomplete ? (u.lines ?? []).filter((x) => m.lineWidth(x.text, x.size, x.weight) === undefined || (WRAPPABLE.test(x.text) && !m.wraps(x.text, x.size, x.weight))) : [];
       if (!r.remeasure && whole.length)
         r.remeasure = `its contextual forms are measured on whole lines, and ${whole.length} line${whole.length > 1 ? "s" : ""} of the page's text (${whole.slice(0, 2).map((x) => JSON.stringify(x.text.length > 30 ? `${x.text.slice(0, 30)}…` : x.text)).join(", ")}${whole.length > 2 ? "…" : ""}) ${whole.length > 1 ? "aren't" : "isn't"}`;
       // A table measured by an older Cadesa, without what it measures now: measured again.
