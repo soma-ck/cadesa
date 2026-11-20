@@ -521,6 +521,32 @@ export function layoutText(
     floats?: { at: number; w: number; fitsAt?: (top: number) => boolean; place: (top: number) => void }[];
   } = {},
 ): TextLayout {
+  // Beside floats, with inline boxes that may reach past the strut: each line's band must hold the
+  // line as tall as it turns out (LayoutNG lays the line out in a layout opportunity, then moves to
+  // the next one if the line box is taller than it). A line found taller than the band it was
+  // placed in is laid out again in the band for its height (`tall`), and so on.
+  if (opts.band && opts.strut && !opts.floats?.length) {
+    const tall: number[] = [];
+    for (let guard = 0; guard < 200; guard++) {
+      const r = layoutLines(m, text, sizePx, weight, maxWidth0, opts, tall);
+      if (!("retry" in r)) return r;
+      tall[r.retry] = r.h;
+    }
+  }
+  const r = layoutLines(m, text, sizePx, weight, maxWidth0, opts, []);
+  if ("retry" in r) throw new Error("unreachable");
+  return r;
+}
+
+function layoutLines(
+  m: FontMetrics,
+  text: string,
+  sizePx: number,
+  weight: number,
+  maxWidth0: number,
+  opts: Parameters<typeof layoutText>[5] & {},
+  tall: number[],
+): TextLayout | { retry: number; h: number } {
   /** The room for the line being filled (beside floats: that line's band). */
   let maxWidth = maxWidth0;
   // letter-spacing is added after every character, including the last one on a line (or, with
@@ -599,6 +625,65 @@ export function layoutText(
     const spaced = opts.spacesOnly ? [...body].filter((c) => c === " " || c === "\u00a0").length : [...body].length;
     return shaped + (ls ? spaced * ls : 0);
   };
+  /**
+   * A line box [a, b) (characters) of this width in a room this wide: the strut and every inline
+   * box with content on the line (an empty one where it stands), each placed by its vertical-align
+   * around the baseline. Its height, and its baseline from its top.
+   */
+  const lineBox = (a: number, b: number, lwidth: number, first: boolean, room: number): { h: number; base: number } => {
+    let above = opts.strut!.above;
+    let below = opts.strut!.below;
+    const pending: typeof spans = [];
+    const onLine: typeof spans = [];
+    for (const sp of spans) {
+      // A box whose own leading whitespace collapsed opens at the end of this line when the line is
+      // full there: the kept space before it doesn't fit, so LayoutNG takes the trailing whitespace
+      // (that collapsed space, and the box's start) onto this line.
+      const leads = sp.lead && sp.from === b && lwidth + measure(" ", sp.from - 1) + ls > room + 1e-6;
+      // An empty box where a line breaks stays with what is before it: it ends that line (probed:
+      // "dawn <a></a>quickly", the box on the line "dawn" ends whether or not its space fits).
+      const on = sp.from === sp.to ? (sp.from > a || first) && sp.from <= b : (leads ? sp.from - 1 : sp.from) < b && sp.to > a;
+      if (!on) continue;
+      onLine.push(sp);
+      if (sp.byExtent || sp.rel) continue;
+      if (sp.align) pending.push(sp);
+      else {
+        if (sp.above !== undefined) above = Math.max(above, sp.above);
+        if (sp.below !== undefined) below = Math.max(below, sp.below);
+      }
+    }
+    // A box placed by its extent (middle, text-top, text-bottom), split across lines: on each line
+    // by what of it is there (its strut and the boxes in it on this line, from its baseline), its
+    // shift (as Chromium computes it, in layout units) moving it and them.
+    for (const x of onLine) {
+      const e = x.byExtent;
+      if (!e) continue;
+      let sa = e.sa;
+      let sd = e.sd;
+      const inner = onLine.filter((c) => c.rel && c.from >= x.from && c.to <= x.to && c !== x);
+      for (const c of inner) {
+        if (c.above !== undefined) sa = Math.max(sa, c.above);
+        if (c.below !== undefined) sd = Math.max(sd, c.below);
+      }
+      const U = (v: number) => Math.round(v * 64);
+      const shift = e.mode === "middle" ? (Math.trunc((U(sa) - U(sd)) / 2) - U(e.xh2)) / 64 : e.mode === "text-top" ? sa - e.ascent : e.descent - sd;
+      const down = e.base + shift;
+      above = Math.max(above, e.sa - down);
+      below = Math.max(below, e.sd + down);
+      for (const c of inner) {
+        if (c.above !== undefined) above = Math.max(above, c.above - down);
+        if (c.below !== undefined) below = Math.max(below, c.below + down);
+      }
+    }
+    // vertical-align: top and bottom, in order, once the rest of the line is placed (LayoutNG's
+    // pending descendants): a taller box grows the line box below (top) or above (bottom).
+    for (const sp of pending) {
+      const h = (sp.above ?? 0) + (sp.below ?? 0);
+      if (sp.align === "top") below = Math.max(below, h - above);
+      else above = Math.max(above, h - below);
+    }
+    return { h: above + below, base: above };
+  };
   const ps = pieces(text);
   const lines: Line[] = [];
   const all = [...text];
@@ -670,10 +755,13 @@ export function layoutText(
   /** Beside floats: the band of the line being filled, and where the next line may start. */
   let place: { x: number; room: number; top: number } | undefined;
   let nextTop = 0;
+  /** The height the band of the line being filled was found for. */
+  let bandH = 0;
   /** Find the band of a new line that starts with piece p (beside floats). */
   const openLine = (p: string) => {
     if (!opts.band || place) return;
-    const at = opts.band(nextTop, opts.lineH ?? 0, (room) => {
+    bandH = Math.max(opts.lineH ?? 0, tall[lines.length] ?? 0);
+    const at = opts.band(nextTop, bandH, (room) => {
       maxWidth = room;
       return fits(p);
     });
@@ -682,11 +770,21 @@ export function layoutText(
   };
   /** Floats met on a line they didn't fit beside: placed below it. */
   let deferred: { place: (top: number) => void }[] = [];
-  const push = (l: Line) => {
+  /** A line that turned out taller than its band: laid out again (see layoutText). */
+  let retry: { retry: number; h: number } | undefined;
+  const push = (l: Line, end: number) => {
     if (opts.band) {
       openLine("");
       Object.assign(l, place);
-      nextTop = place!.top + (opts.lineH ?? 0);
+      let h = opts.lineH ?? 0;
+      if (opts.strut && !floats.length) {
+        // Its line box, as tall as what is on it.
+        const box = lineBox(l.at ?? 0, end, l.width, lines.length === 0, place!.room);
+        Object.assign(l, box);
+        h = box.h;
+        if (h > bandH + 1e-7 && !retry) retry = { retry: lines.length, h };
+      }
+      nextTop = place!.top + h;
       place = undefined;
     }
     lines.push(l);
@@ -791,7 +889,7 @@ export function layoutText(
     let cur = "";
     chars.forEach((ch, k) => {
       if (cur && !fitsFrag(cur + ch, k + 1)) {
-        push({ text: cur, width: fragW(cur, k), at: consumed });
+        push({ text: cur, width: fragW(cur, k), at: consumed }, consumed + [...cur].length);
         consumed += [...cur].length;
         broke = true;
         cur = ch;
@@ -825,14 +923,14 @@ export function layoutText(
     // A first piece that doesn't fit beside the float at the start goes below it, on a line of its
     // own (the float is as tall as one line).
     if (!line && lead && !fits(p)) {
-      push({ text: "", width: lead, at: consumed });
+      push({ text: "", width: lead, at: consumed }, consumed);
       lead = 0;
     }
     let open: string | undefined;
     if (!line) open = start(p, mid);
     else if (fits(line + p)) line += p;
     else {
-      push({ text: trimSpaces(line), width: reported(line), at: consumed });
+      push({ text: trimSpaces(line), width: reported(line), at: consumed }, consumed + [...line].length);
       consumed += [...line].length;
       lead = 0;
       open = start(p, mid);
@@ -844,70 +942,14 @@ export function layoutText(
     }
   }
   while (fq < floats.length) meetFloat(floats[fq++]);
-  if (line || !lines.length) push({ text: trimSpaces(line), width: reported(line), at: consumed });
+  if (line || !lines.length) push({ text: trimSpaces(line), width: reported(line), at: consumed }, consumed + [...line].length);
+  if (retry) return retry;
   for (const f of deferred) f.place(nextTop);
   deferred = [];
   // Each line box: the strut and every inline box with content on the line (an empty one where it
   // stands), each placed by its vertical-align around the baseline.
-  if (opts.strut && spans.some((sp) => sp.above !== undefined || sp.below !== undefined || sp.byExtent)) {
-    lines.forEach((l, i) => {
-      const a = l.at ?? 0;
-      const b = lines[i + 1]?.at ?? all.length;
-      let above = opts.strut!.above;
-      let below = opts.strut!.below;
-      const pending: typeof spans = [];
-      const onLine: typeof spans = [];
-      for (const sp of spans) {
-        // A box whose own leading whitespace collapsed opens at the end of this line when the line is
-        // full there: the kept space before it doesn't fit, so LayoutNG takes the trailing whitespace
-        // (that collapsed space, and the box's start) onto this line.
-        const leads = sp.lead && sp.from === b && l.width + measure(" ", sp.from - 1) + ls > maxWidth + 1e-6;
-        // An empty box where a line breaks stays with what is before it: it ends that line (probed:
-        // "dawn <a></a>quickly", the box on the line "dawn" ends whether or not its space fits).
-        const on = sp.from === sp.to ? (sp.from > a || i === 0) && sp.from <= b : (leads ? sp.from - 1 : sp.from) < b && sp.to > a;
-        if (!on) continue;
-        onLine.push(sp);
-        if (sp.byExtent || sp.rel) continue;
-        if (sp.align) pending.push(sp);
-        else {
-          if (sp.above !== undefined) above = Math.max(above, sp.above);
-          if (sp.below !== undefined) below = Math.max(below, sp.below);
-        }
-      }
-      // A box placed by its extent (middle, text-top, text-bottom), split across lines: on each line
-      // by what of it is there (its strut and the boxes in it on this line, from its baseline), its
-      // shift (as Chromium computes it, in layout units) moving it and them.
-      for (const x of onLine) {
-        const e = x.byExtent;
-        if (!e) continue;
-        let sa = e.sa;
-        let sd = e.sd;
-        const inner = onLine.filter((c) => c.rel && c.from >= x.from && c.to <= x.to && c !== x);
-        for (const c of inner) {
-          if (c.above !== undefined) sa = Math.max(sa, c.above);
-          if (c.below !== undefined) sd = Math.max(sd, c.below);
-        }
-        const U = (v: number) => Math.round(v * 64);
-        const shift = e.mode === "middle" ? (Math.trunc((U(sa) - U(sd)) / 2) - U(e.xh2)) / 64 : e.mode === "text-top" ? sa - e.ascent : e.descent - sd;
-        const down = e.base + shift;
-        above = Math.max(above, e.sa - down);
-        below = Math.max(below, e.sd + down);
-        for (const c of inner) {
-          if (c.above !== undefined) above = Math.max(above, c.above - down);
-          if (c.below !== undefined) below = Math.max(below, c.below + down);
-        }
-      }
-      // vertical-align: top and bottom, in order, once the rest of the line is placed (LayoutNG's
-      // pending descendants): a taller box grows the line box below (top) or above (bottom).
-      for (const sp of pending) {
-        const h = (sp.above ?? 0) + (sp.below ?? 0);
-        if (sp.align === "top") below = Math.max(below, h - above);
-        else above = Math.max(above, h - below);
-      }
-      l.h = above + below;
-      l.base = above;
-    });
-  }
+  if (opts.strut && spans.some((sp) => sp.above !== undefined || sp.below !== undefined || sp.byExtent))
+    lines.forEach((l, i) => Object.assign(l, lineBox(l.at ?? 0, lines[i + 1]?.at ?? all.length, l.width, i === 0, l.room ?? maxWidth)));
   let widestPiece = "";
   let minContent = 0;
   const piecesAt: { p: string; at: number }[] = [];

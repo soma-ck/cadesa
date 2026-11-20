@@ -4296,7 +4296,8 @@ export abstract class PageLifter {
       if (k.tag === "br" || this.outOfFlow(k, si) || this.displayOf(k, si) === "none") return;
       // A float among the text: a box of its own, placed on the line where it occurs (see textFloat).
       if (this.floated(k, si)) {
-        if (!this.textFloat(k)) this.note(el, si, { decl: `<${k.tag}> (float: ${this.floated(k, si)})`, reason: "a float inside an inline box isn't modelled", kind: "geometry" });
+        // (Only a float that is a child of the text box itself is placed among its lines.)
+        if (!this.textFloat(k) || k.parent !== el) this.note(el, si, { decl: `<${k.tag}> (float: ${this.floated(k, si)})`, reason: "a float inside an inline box isn't modelled", kind: "geometry" });
         return;
       }
       // An atomic inline of known size whose line box stays the same: one object on the line, measured.

@@ -656,7 +656,6 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     return (maxWidth: number, band?: Band, inlineFloat?: (index: number) => { w: number; fitsAt: (top: number) => boolean; place: (top: number) => void }) => {
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
       let off = 0;
-      if (band && strut) assumptions.push("lines beside a float, with inline boxes that reach past the text's strut, aren't modelled");
       // Measured whole: exact while each run fits on one line (it wraps otherwise, in pieces not measured).
       if (wholeOk && !assumptions.includes(ctxWhy) && (band || (isFinite(maxWidth) && whole!.some((x) => x! > maxWidth + 1 / 64 + TEXT_EPS)))) assumptions.push(ctxWhy);
       const parts = runs.map((r, i) => {
@@ -674,7 +673,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
           if (!band) return x;
           for (const l of x.lines) l.top = (l.top ?? 0) + off;
           const last = x.lines.at(-1);
-          if (last) off = last.top! + lineH;
+          if (last) off = last.top! + (last.h ?? lineH);
           return x;
         };
         // white-space: nowrap: the paragraph is one line, and its min-content is its whole width.
@@ -1939,7 +1938,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         const tl = measureText(innerW, band, fboxes.length ? inlineFloat : undefined);
         lines = tl.lines;
         const last = lines.at(-1);
-        contentH = band && last?.top !== undefined ? last.top + lineH : lines.reduce((s, l) => s + (l.h ?? lineH), 0);
+        contentH = band && last?.top !== undefined ? last.top + (last.h ?? lineH) : lines.reduce((s, l) => s + (l.h ?? lineH), 0);
         contentW = Math.max(...lines.map((l) => l.width));
         // Text in a box that clips or scrolls it (overflow-x other than visible) doesn't spill out: check reports it as clipped.
         if (tl.minContent > innerW + 0.5 && !t.nowrap && !t.wrapAnywhere && (!ov || ov.x === "visible") && !props.contain?.value.paint) {
