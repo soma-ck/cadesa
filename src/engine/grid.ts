@@ -520,8 +520,9 @@ export function sizeTracks(tracks: TrackSize[], items: Contribution[], gap: numb
       let extra = LU(size(it)) - span.reduce((s, i) => s + cur(i), 0) - gapsIn(it);
       if (extra <= 0) continue;
       const inc = new Map<number, number>(aff.map((i) => [i, 0]));
-      // Up to each track's limit (base sizes: its growth limit; growth limits: infinitely growable ones only up to... none).
-      const cap = (i: number) => (target === "base" ? (isFinite(limit[i]) ? limit[i] - base[i] : Infinity) : (fitCap(i) ?? Infinity) - cur(i));
+      // Up to each track's limit (base sizes: its growth limit; growth limits: none for an infinitely
+      // growable track, its own for any other, so it takes nothing until they are all frozen).
+      const cap = (i: number) => (target === "base" ? (isFinite(limit[i]) ? limit[i] - base[i] : Infinity) : growable.has(i) ? (fitCap(i) ?? Infinity) - cur(i) : 0);
       const share = (list: number[], capped: boolean) => {
         let open = list.filter((i) => !capped || inc.get(i)! < cap(i));
         while (extra > 0 && open.length) {
@@ -558,6 +559,7 @@ export function sizeTracks(tracks: TrackSize[], items: Contribution[], gap: numb
     }
   };
   const fitCap = (i: number) => (ts[i].fit !== undefined ? Math.max(LU(ts[i].fit!), base[i]) : undefined);
+  let growable = new Set<number>();
 
   // §12.5 step 3: spanning items that cross no flexible track, by span size.
   const spans = [...new Set(items.filter((it) => it.b - it.a > 1 && !spansFlex(it)).map((it) => it.b - it.a))].sort((a, b) => a - b);
@@ -567,7 +569,11 @@ export function sizeTracks(tracks: TrackSize[], items: Contribution[], gap: numb
     distribute(group, (i) => ts[i].min === "min-content" || ts[i].min === "max-content", (it) => it.minContent, "base", (i) => intrinsicMax(ts[i]));
     distribute(group, (i) => ts[i].min === "max-content" || (ts[i].min === "auto" && available === "max-content"), (it) => it.maxContent, "base", (i) => ts[i].max === "max-content" || ts[i].max === "auto");
     for (let i = 0; i < n; i++) if (limit[i] < base[i]) limit[i] = base[i];
+    // Infinitely growable (§12.5.1): a growth limit still infinite, or one this step made finite for the next.
+    growable = new Set(Array.from({ length: n }, (_, i) => i).filter((i) => !isFinite(limit[i])));
+    const wasInfinite = new Set(growable);
     distribute(group, (i) => intrinsicMax(ts[i]), (it) => it.minContent, "limit", () => true);
+    growable = new Set([...wasInfinite, ...Array.from({ length: n }, (_, i) => i).filter((i) => !isFinite(limit[i]))]);
     distribute(group, (i) => ts[i].max === "max-content" || ts[i].max === "auto", (it) => it.maxContent, "limit", () => true);
   }
   // §12.5 step 4: items crossing flexible tracks give their minimum to the flexible tracks' base sizes, in proportion to their flex factors.

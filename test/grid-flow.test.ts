@@ -66,3 +66,17 @@ describe("subgrids with edges and a gap of their own, and preserve-3d", () => {
     for (const id of ["deep", "face"]) expect(r.approx(id)).toBeUndefined();
   });
 });
+
+describe("an item spanning auto columns", () => {
+  it("grows the growth limit of the column no item sized first (it is infinitely growable), not the other's", () => {
+    // Chromium: the first column keeps its item's max-content as its limit, the second takes the
+    // spanning item's extra; then both stretch equally.
+    const r = run(
+      `<div class="g"><div class="a">leaving week</div><div class="b">notes along field and</div></div>`,
+      `.g { display: grid; grid-auto-flow: column dense; grid-template-rows: auto auto auto; grid-auto-columns: auto; gap: 9px } .a, .b { padding: 4px } .b { grid-column: span 2 }`,
+      [400],
+    );
+    expect(+r.box("a").w.toFixed(4)).toBe(223.9063);
+    expect(r.exact()).toBe(true);
+  });
+});
