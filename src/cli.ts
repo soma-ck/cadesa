@@ -40,6 +40,9 @@ Usage:
                     few others) and marks each finding confirmed or not reproduced; inconclusive
                     findings are decided by what Chromium shows (needs Chrome or Chromium)
   cadesa capture  <url> [--out capture] [--login-script login.mjs] [--wait <selector>] [--width 1280]
+                  [--before "click: text=Full log"] ...  steps run before saving, to capture a state reached by
+                  interaction (an open modal or accordion): click:, hover:, fill: <sel> = <text>, press: <key>,
+                  wait: <selector or ms>; repeat --before for several, in order
                     load a page in Chromium and save what it rendered: page.html (scripts
                     removed, one element per line), its stylesheets in cascade order as
                     css/01-…, 02-… (including CSS-in-JS) and the fonts it loaded; prints the check
@@ -121,6 +124,7 @@ async function main(argv: string[]) {
       verify: { type: "boolean", default: false },
       "login-script": { type: "string" },
       wait: { type: "string" },
+      before: { type: "string", multiple: true },
       width: { type: "string" },
       auto: { type: "boolean", default: false },
       system: { type: "boolean", default: false },
@@ -155,7 +159,7 @@ async function main(argv: string[]) {
     if (!input) throw new InputError("capture needs <url>");
     const width = values.width ? Number(values.width) : undefined;
     if (width !== undefined && !(width > 0)) throw new InputError(`invalid --width "${values.width}"`);
-    return asyncResult(captureCmd({ url: input, out: values.out, loginScript: values["login-script"], wait: values.wait, width }));
+    return asyncResult(captureCmd({ url: input, out: values.out, loginScript: values["login-script"], wait: values.wait, width, before: values.before }));
   }
   if (cmd === "fonts") {
     if (!input) throw new InputError("fonts needs <page.html>");

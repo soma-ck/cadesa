@@ -34,7 +34,7 @@ export interface VerifyReport {
 /** What to measure in Chromium for one finding, read from the finding the engine produced. */
 type Probe =
   | { kind: "tap"; id: string }
-  | { kind: "contrast"; id: string; run?: { tag: string; text: string } }
+  | { kind: "contrast"; id: string; run?: { tag: string; text: string }; icon?: boolean }
   | { kind: "overflow"; id: string; child: string }
   | { kind: "wrap"; id: string; textOnly?: boolean }
   | { kind: "height"; id: string }
@@ -45,7 +45,12 @@ export function probeOf(f: Finding): Probe | undefined {
   if (f.check === "contrast") {
     // An inline run (`"Apply now" (<a> in #card)`): found in Chromium by its tag and text inside the text box.
     const m = /^"(.*?)(…)?" \(<([\w-]+)> in /.exec(f.message);
-    return m ? { kind: "contrast", id: f.id, run: { tag: m[3], text: m[1] } } : { kind: "contrast", id: f.id };
+    // An icon (WCAG 1.4.11: 3:1): an icon run is named by its tag only (`<i.fa> in …`).
+    const icon = /needs 3:1 for icons/.test(f.message);
+    const iconRun = icon && !m ? /^<([\w-]+)[^>]*> in /.exec(f.message) : null;
+    if (m) return { kind: "contrast", id: f.id, run: { tag: m[3], text: m[1] }, ...(icon && { icon }) };
+    if (iconRun) return { kind: "contrast", id: f.id, run: { tag: iconRun[1], text: "" }, icon };
+    return { kind: "contrast", id: f.id, ...(icon && { icon }) };
   }
   if (f.check === "clipped") {
     // "the text of #k is cut off by #b": #b is the box that clips (and scrolls) it.
@@ -195,8 +200,9 @@ function judge(p: Probe, m: Measured): Verdict {
       for (const l of layers) bg = composite(l, bg);
       const color = composite(m.color!, bg);
       const ratio = contrast(color, bg);
-      const min = m.large ? 3 : 4.5;
-      return { shown: ratio < min, detail: `text ${hexOpaque(color)} on ${hexOpaque(bg)} is ${ratio.toFixed(2)}:1; WCAG AA needs ${min}:1`, severity: "error" };
+      const icon = p.kind === "contrast" && !!p.icon;
+      const min = icon || m.large ? 3 : 4.5;
+      return { shown: ratio < min, detail: `${icon ? "icon" : "text"} ${hexOpaque(color)} on ${hexOpaque(bg)} is ${ratio.toFixed(2)}:1; ${icon ? "WCAG 1.4.11 needs 3:1 for icons" : `WCAG AA needs ${min}:1`}`, severity: "error" };
     }
     case "clip": {
       const over = m.over!;

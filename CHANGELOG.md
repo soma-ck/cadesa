@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.19 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.19 mcp
+npx -y cadesa@0.1.20 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.20 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -72,6 +72,22 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   limits of the tracks that are infinitely growable (no item sized them yet) first, as CSS Grid
   §12.5.1 and Chromium do, not to every track it spans. A `grid-auto-flow: column dense` grid with
   an item spanning two auto columns had a column 25px off.
+
+## 0.1.20 (2026-11-20)
+
+From a field report on 0.1.19:
+
+- Icons drawn with an icon font (every character in a Private Use Area: Font Awesome, Bootstrap
+  Icons) are held to 3:1, as WCAG 1.4.11 asks of icons, not text's 4.5:1; findings and
+  `--verify` say "icon".
+- Contrast findings group by the rule that sets the text colour: the same grey on an active tab
+  and on the others is one entry, each element listed with its own background and ratio. Inline
+  runs (`<span>`, `<a>` in text) now name their colour rule too.
+- After `--verify`, the coverage line says what Chromium agreed on ("Chromium agrees on 161 of
+  396 boxes") instead of advising to treat the run as leads.
+- `capture --before "click: text=Full log"` (repeatable; also `hover:`, `fill: <sel> = <text>`,
+  `press:`, `wait: <selector or ms>`; MCP `before`) runs steps before saving, so an open modal,
+  panel or accordion can be checked.
 
 ## 0.1.19 (2026-11-20)
 

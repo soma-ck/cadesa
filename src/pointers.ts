@@ -191,6 +191,23 @@ export class Pointers {
     return rules.length ? { what: `background (on ${this.short(el!.id!)})`, rules } : undefined;
   }
 
+  /** An inline element inside a text box, by tag and the start of its text. */
+  private runElement(box: El, tag: string, text: string): El | undefined {
+    type N = { tagName?: string; value?: string; childNodes?: N[] };
+    const textOf = (n: N): string => (n.value ?? "") + (n.childNodes ?? []).map(textOf).join("");
+    const norm = (t: string) => t.replace(/[ \t\n\r\f]+/g, " ").trim();
+    const byNode = new Map(this.lift.elements.els.map((e) => [e.node as unknown, e] as const));
+    const find = (n: N): El | undefined => {
+      for (const k of n.childNodes ?? []) {
+        if (k.tagName === tag && norm(textOf(k)).startsWith(text) && byNode.has(k)) return byNode.get(k);
+        const deeper = find(k);
+        if (deeper) return deeper;
+      }
+      return undefined;
+    };
+    return find(box.node as unknown as N);
+  }
+
   /** The rules behind one finding. */
   sources(f: Finding): SourcePointer[] {
     const el = this.byId.get(f.id);
@@ -204,7 +221,14 @@ export class Pointers {
       return out;
     }
     // An inline run's contrast (`"late" (<span> in #p)`): its own color isn't the box's.
-    if (f.check === "contrast" && /^"/.test(f.message)) {
+    if (f.check === "contrast" && /^("|<[\w-]+[^>]*> in )/.test(f.message)) {
+      // The run's own element, found inside the text box by its tag and text: the rule setting its color.
+      const m = /^(?:"(.*?)(?:…)?" \()?<([\w-]+)[^>]*> in /.exec(f.message);
+      const run = el && m ? this.runElement(el, m[2], m[1] ?? "") : undefined;
+      if (run) {
+        const rules = this.rules(run, f.width, ["color"]);
+        if (rules.length) out.push({ what: "color", rules });
+      }
       const bg = this.background(f);
       if (bg) out.push(bg);
       return out;

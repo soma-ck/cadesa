@@ -398,7 +398,7 @@ export function coverage(layouts: Layout[], impacts?: WidthImpact[]): Coverage {
 }
 
 /** The first thing to read: how much of the page Cadesa actually predicted. */
-export function formatCoverage(c: Coverage): string {
+export function formatCoverage(c: Coverage, verify?: VerifyReport): string {
   if (!c.boxes) return "coverage: Cadesa laid out 0 boxes on this page, so nothing was checked. Check it in a browser.\n";
   const pct = (n: number) => `${Math.round((n / c.boxes) * 100)}%`;
   const perWidth = Math.round(c.boxes / Math.max(1, c.widths));
@@ -419,13 +419,21 @@ export function formatCoverage(c: Coverage): string {
     out.push(`  scrollbars: classic, ${sb.px}px (Chromium on Windows and Linux desktops)${sb.boxes ? `, in ${sb.boxes} scroll container${sb.boxes === 1 ? "" : "s"} (box × width)` : ""}; overlay scrollbars (macOS, phones) take 0, and those boxes differ there`);
   else if (sb?.boxes)
     out.push(`  scrollbars: ${sb.boxes} scroll container${sb.boxes === 1 ? "" : "s"} (box × width) predicted with overlay scrollbars, 0px (macOS, phones, headless Chromium); classic ones take 15px (Windows, Linux desktops): --scrollbars classic`);
-  if (nl && nl.count > nl.total / 2) out.push("  → most of this page's elements aren't laid out: the findings below cover only part of it; check the rest in a browser");
-  else if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat what follows as leads and confirm it in a browser");
+  if (verify) {
+    // Chromium has been asked: say what it found rather than advising to distrust the prediction.
+    const b = verify.boxes;
+    const total = b.exact + b.approximate;
+    const match = b.exact - b.exactDiffer + (b.approximate - b.approximateDiffer);
+    out.push(
+      `  verified: Chromium agrees on ${match} of ${total} boxes at the ${verify.widths.length} width${verify.widths.length === 1 ? "" : "s"} it loaded (${b.exact - b.exactDiffer} of ${b.exact} marked exact, ${b.approximate - b.approximateDiffer} of ${b.approximate} marked ≈); every finding below says whether Chromium confirmed it`,
+    );
+  } else if (nl && nl.count > nl.total / 2) out.push("  → most of this page's elements aren't laid out: the findings below cover only part of it; check the rest in a browser");
+  else if (c.approximate > c.exact) out.push("  → most of this page isn't predicted exactly: treat what follows as leads, or add --verify to have Chromium confirm them");
   return out.join("\n") + "\n";
 }
 
 export function formatCheck(findings: Finding[], widths: number[], cov?: Coverage, verify?: VerifyReport, opts: { css?: boolean } = {}): string {
-  const head = cov ? formatCoverage(cov) + "\n" : "";
+  const head = cov ? formatCoverage(cov, verify) + "\n" : "";
   if (!findings.length) return shortenPaths(`${head}✓ no findings at ${describeWidths(widths)}\n${verify ? "\n" + formatVerify(verify) : ""}`);
   // One line per issue (same check, element, severity and edit path), listing the widths it occurs at.
   const groups = new Map<string, { first: Finding; all: Finding[]; widths: number[] }>();
@@ -443,17 +451,28 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
   // The same issue on several elements (six step numbers in one color, set by one rule) is one
   // entry: same check, state, widths and rules, and the same message apart from quoted text and
   // which element it names.
-  type Group = { first: Finding; all: Finding[]; widths: number[]; others: Finding[] };
+  type Group = { first: Finding; all: Finding[]; widths: number[]; others: Finding[]; differ?: boolean };
   const clusters = new Map<string, Group>();
   for (const g of groups.values()) {
     const f = g.first;
     const rules = (f.source ?? []).map((x) => [x.what, x.rules.map((r) => `${r.file}:${r.line}`)]);
     const shape = f.message.replace(/"[^"]*"/g, '""').replace(/<[^>\s]+>/g, "<>").replace(/#[\w-]+/g, "#").replace(/\d+(?:\.\d+)?px/g, "px");
-    const key = f.check === "spacing" || (!rules.length && !f.path) ? `solo|${f.check}|${f.id}|${f.message}` : JSON.stringify([f.check, rank(f), g.widths, rules, f.path ?? "", shape]);
+    // Contrast: one entry per text colour and the rule that sets it, whatever the background (an
+    // active tab and the others, the same grey on two panels): each element then shows its own ratio.
+    const colorRules = (f.source ?? []).filter((x) => x.what === "color").map((x) => x.rules.map((r) => `${r.file}:${r.line}`));
+    const textColor = / (?:text|icon) (#[0-9a-f]+)/.exec(f.message)?.[1];
+    const byColor = f.check === "contrast" && colorRules.length > 0 && textColor;
+    const key =
+      f.check === "spacing" || (!rules.length && !f.path)
+        ? `solo|${f.check}|${f.id}|${f.message}`
+        : byColor
+          ? JSON.stringify([f.check, rank(f), colorRules, textColor, / icon /.test(f.message)])
+          : JSON.stringify([f.check, rank(f), g.widths, rules, f.path ?? "", shape]);
     const c = clusters.get(key);
     if (c && f.element) {
       c.others.push(f);
       c.all.push(...g.all);
+      c.widths = [...new Set([...c.widths, ...g.widths])].sort((a, b) => a - b);
     } else clusters.set(key, { ...g, others: [] });
   }
   const sorted = [...clusters.values()].sort((a, b) => rank(a.first) - rank(b.first));
@@ -477,11 +496,17 @@ export function formatCheck(findings: Finding[], widths: number[], cov?: Coverag
     const many = g.others.length ? ` · on ${g.others.length + 1} elements` : "";
     out.push(`${icon} [${f.check}] ${msg} · at ${widthRanges(g.widths, widths)}${many}`);
     if (f.element) {
-      const els = [f, ...g.others].map((x) => describeElement(x.element!));
+      // When the merged elements differ in background, each one says its own.
+      const onOf = (x: Finding) => / on (#[0-9a-f]+) is ([\d.]+:1)/.exec(x.message)?.slice(1).join(" is ");
+      const differ = f.check === "contrast" && new Set([f, ...g.others].map(onOf)).size > 1;
+      const els = [f, ...g.others].map((x) => describeElement(x.element!) + (differ && onOf(x) ? ` · on ${onOf(x)}` : ""));
+      g.differ = differ;
       out.push(`    element${els.length > 1 ? "s" : ""}: ${els[0]}`, ...els.slice(1, 6).map((e) => `              ${e}`));
       if (els.length > 6) out.push(`              +${els.length - 6} more`);
     }
     for (const s of f.source ?? []) {
+      // Elements on different backgrounds each named theirs above.
+      if (g.differ && s.what.startsWith("background")) continue;
       const [first, ...rest] = describeRules(s.rules);
       out.push(`    ${s.what}: ${first}`, ...rest.map((x) => `    ${" ".repeat(s.what.length + 2)}${x}`));
     }
