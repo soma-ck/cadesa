@@ -273,4 +273,14 @@ describe("fonts of text inside inline-blocks and runs", () => {
     expect(of("Roboto")?.chars).toContain("⋅");
     expect(of("Lato")?.italicWeights).toEqual([400]);
   });
+
+  it("counts only text that is laid out, not a positioned copy kept out of the way", () => {
+    const r = run(
+      `<p>Area <span class="m"><span class="b"><span class="copy">πr²</span><span class="v">A</span></span></span> of a circle</p>`,
+      `.m { font-family: Roboto } .b { display: inline-block; white-space: nowrap } .copy { position: absolute; clip: rect(1px, 1px, 1px, 1px); width: 1px; height: 1px; overflow: hidden }`,
+      [400],
+    );
+    const roboto = fontUses(r.layouts).find((u) => u.family === "Roboto");
+    expect(roboto?.chars ?? "").not.toMatch(/[π²]/);
+  });
 });

@@ -1248,7 +1248,8 @@ export abstract class PageLifter {
   innerFonts(k: El, si: number): { inner: { font: string; weight: number; italic: boolean; text: string }[] } | undefined {
     const out = new Map<string, { font: string; weight: number; italic: boolean; text: string }>();
     const visit = (e: El) => {
-      if (this.displayOf(e, si) === "none") return;
+      // Only text that is laid out on its lines: not a positioned copy kept out of the way (KaTeX's MathML).
+      if (this.displayOf(e, si) === "none" || (e !== k && this.outOfFlow(e, si))) return;
       const own = (e.node.childNodes ?? []).filter((c) => c.nodeName === "#text").map((c) => c.value ?? "").join("").replace(/[ \t\n\r\f]+/g, " ").trim();
       if (own) {
         const t = this.textOf(e, si);
