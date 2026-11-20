@@ -62,6 +62,12 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   `fuzz-css`, a flex row 236px narrower than Chromium's, marked exact).
 - Fixed: a subgrid with a width, `max-width` or alignment of its own was laid out by them; a
   subgrid fills the columns it spans (found by `npm run fuzz`). It is `≈` there.
+- Fixed: a length in `em` (padding, margins, sizes) under a font size that follows the viewport
+  width (`calc(1.275rem + .3vw)`, Bootstrap's headings) was taken at the size the font has at
+  1280px, at every width; Bootstrap's checkout example showed a badge in such a heading 3px wider
+  than Chromium draws it, its size claimed known. It is `≈` now, as such an em in `calc()` was.
+- Fixed: `check --css` stopped with an error on Wikipedia's article: a box without offsets after
+  boxes that weren't all laid out. Its place is unknown there (`≈`).
 - Fixed: `check --css` stopped with an error on a page with `line-height: 0` (a chevron's
   `::before` in Bootstrap's cheatsheet); the box is `≈` instead.
 

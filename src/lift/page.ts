@@ -3992,7 +3992,13 @@ export abstract class PageLifter {
           if (c) v = this.colorValue(hexOf(c), c.a >= 0.9995 ? hintOf(o.value, this.theme) : undefined);
         } else if (p === "background-image" || p === "box-shadow") v = this.paintValue(p, v, text.color.hex);
         else if (/^(padding|margin)-|^(width|height|max-width|max-height|min-width|min-height|row-gap|column-gap|border-radius|top|right|bottom|left)$/.test(p)) {
-          // em is the element's own font size (inside calc() too).
+          // em is the element's own font size (inside calc() too). Under a font size that follows
+          // the viewport width it changes with it: not modelled (a Bootstrap badge's .65em padding
+          // in a heading of calc(1.275rem + .3vw) was sized for 1280px at every width).
+          if (/\dem\b/.test(v) && this.textOf(el, si).fluid) {
+            this.note(el, si, { decl: `${o.utility} (${p}: ${v})`, reason: "an em length under a font size that follows the viewport width is not modelled", kind: "geometry" });
+            continue;
+          }
           if (/\dem\b/.test(v)) v = this.resolveBox(el, si, o.value) ?? v;
           v = this.mathValue(el, si, p, v, o.utility);
           const h = hintOf(o.value, this.theme);

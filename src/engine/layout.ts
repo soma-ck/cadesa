@@ -2293,7 +2293,9 @@ function layoutWith(
         if (/^(start|stretch)$/.test(props.align?.value ?? "stretch") && /^(start|stretch)$/.test(props.justifyItems?.value ?? "stretch"))
           pos = cb ? { x: -(ins.left - (props.border?.value.widths.left ?? 0)), y: -(ins.top - (props.border?.value.widths.top ?? 0)) } : { x: 0, y: 0 };
       }
-      else if (flowLike) {
+      // (Where the boxes before it aren't all laid out here, its place isn't known: a page on
+      // Wikipedia stopped check with an error.)
+      else if (flowLike && before.every((i) => children[i] && collapse.get(children[i]))) {
         const boxesBefore = before.map((i) => children[i]);
         let last = -1;
         boxesBefore.forEach((b, i) => {
