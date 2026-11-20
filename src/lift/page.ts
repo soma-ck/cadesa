@@ -2402,6 +2402,8 @@ export abstract class PageLifter {
       const plain = !k.own[si].has("vertical-align");
       return (plain && g.a <= strut.sa + 1e-6 && g.hm - g.a <= strut.sd + 1e-6) || this.atomicExtent(k, si) ? g.width : undefined;
     }
+    // An inline-grid or inline-flex badge holding its text (atomicItemBox).
+    if (/^inline-(grid|flex)$/.test(d)) return k.ownText && !k.children.length && !REPLACED_BLOCK.has(k.tag) && !CONTROL.has(k.tag) ? this.atomicText(k, si) : undefined;
     if (!(d === "inline-block" || (d === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
     if (CONTROL.has(k.tag)) {
       // A form control on a line of text: its own size and baseline (controlAtom).
@@ -2530,6 +2532,7 @@ export abstract class PageLifter {
   }
 
   atomicTextBoxOf(k: El, si: number): { width: number; a0: number; a: number; hm: number; strut: { sa: number; sd: number } } | undefined {
+    if (k.parent && !this.outOfFlow(k, si) && /^inline-(grid|flex)$/.test(this.ownDisplay(k, si))) return this.atomicItemBox(k, si);
     if (!k.parent || this.outOfFlow(k, si) || this.ownDisplay(k, si) !== "inline-block") return undefined;
     const t = this.textOf(k, si);
     if (t.fluid || this.textOf(k.parent, si).fluid) return undefined;
@@ -2611,6 +2614,84 @@ export abstract class PageLifter {
       a = r === undefined ? Infinity : a + r;
     }
     return { width, a0, a, hm, strut };
+  }
+
+  /**
+   * An inline-grid or inline-flex box holding one line of its own text (a badge: a digit or a tick
+   * centered in a circle of set size), on a line of text: its margin-box width (its width, or its
+   * text's max-content width), and its baseline, its one item's (the anonymous block around its
+   * text) first baseline: the item is as tall as its line, placed in the content box by
+   * align-items (stretched or at the start: at the top; centered: half the free space, in layout
+   * units; at the end). undefined when it isn't that.
+   */
+  atomicItemBox(k: El, si: number): { width: number; a0: number; a: number; hm: number; strut: { sa: number; sd: number } } | undefined {
+    if (k.pseudo || !k.parent || !k.ownText || k.children.length) return undefined;
+    const d = this.ownDisplay(k, si);
+    const t = this.textOf(k, si);
+    if (t.fluid || this.textOf(k.parent, si).fluid) return undefined;
+    const own = k.own[si];
+    const res = (p: string) => {
+      const o = own.get(p);
+      return o ? this.resolveBox(k, si, o.value)?.trim() : undefined;
+    };
+    if (["min-width", "max-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
+    if (["overflow-x", "overflow-y"].some((p) => !/^(visible|clip)?$/.test(res(p) ?? ""))) return undefined;
+    if (d === "inline-flex" && !/^(row)?$/.test(res("flex-direction") ?? "")) return undefined;
+    if (d === "inline-grid" && !/^(normal|stretch)?$/.test(res("align-content") ?? "")) return undefined;
+    if (!/^(none)?$/.test(t.inherited.get("text-transform")?.value ?? "")) return undefined;
+    const text = (k.node.childNodes ?? []).filter((c) => c.nodeName === "#text").map((c) => c.value ?? "").join("").replace(/[ \t\n\r\f]+/g, " ").trim();
+    if (!text) return undefined;
+    const m = metricsFor(t.family.value, t.italic);
+    const v = m?.vertical(t.size, t.weight);
+    if (!m || !v) return undefined;
+    const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
+    const lu = (x: number) => Math.floor(x * 64 + 1e-6) / 64;
+    const bdr = (side: string) => (/^(none|hidden)$/.test(this.resolve(k, si, own.get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+    const [ml, mr, mt, mb, pl, pr, pt, pb] = ["margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].map((p) => Math.trunc(px(p) * 64 + Math.sign(px(p)) * 1e-6) / 64);
+    if (![ml, mr, mt, mb, pl, pr, pt, pb].every(isFinite)) return undefined;
+    const insX = bdr("left") + pl + pr + bdr("right");
+    const insY = bdr("top") + pt + pb + bdr("bottom");
+    const borderBox = this.resolve(k, si, own.get("box-sizing")?.value ?? "content-box") === "border-box";
+    const wset = /^(auto)?$/.test(res("width") ?? "") ? undefined : lengthPx(res("width")!, t.size);
+    const hset = /^(auto)?$/.test(res("height") ?? "") ? undefined : lengthPx(res("height")!, t.size);
+    if ((wset === undefined && !/^(auto)?$/.test(res("width") ?? "")) || (hset === undefined && !/^(auto)?$/.test(res("height") ?? ""))) return undefined;
+    // Its width: set, or its text's (which then never wraps); text in a set width must not wrap either.
+    const textW = m.unsupported(text).length ? NaN : (m.measure(text, t.size, t.weight, t.letterSpacing !== 0) ?? NaN) + [...text].length * t.letterSpacing;
+    let bw: number;
+    if (wset !== undefined) {
+      bw = borderBox ? Math.max(lu(wset), insX) : lu(wset) + insX;
+      const nowrap = /^(nowrap|pre)$/.test(t.inherited.get("white-space")?.value ?? "");
+      if (text.includes(" ") && !nowrap && !(textW <= bw - insX)) return undefined;
+    } else {
+      if (!isFinite(textW)) return undefined;
+      bw = Math.ceil(textW * 64 - 1e-6) / 64 + insX;
+    }
+    // Its item: one line of its line height, the baseline where its strut puts it.
+    const lh = t.lineHeight === "normal" ? v.ascent + v.descent + v.lineGap : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : lu(t.lineHeight.px);
+    const leading = Math.round((lh - v.ascent - v.descent) * 64);
+    const sa = v.ascent + Math.floor(Math.trunc(leading / 2) / 64);
+    const ih = lu(lh);
+    const ch = hset === undefined ? ih : Math.max(0, borderBox ? lu(hset) - insY : lu(hset));
+    const bh = ch + insY;
+    const al = res("align-items") ?? "normal";
+    const U = (x: number) => Math.round(x * 64);
+    let off: number;
+    if (/^(normal|stretch|start|flex-start|self-start|baseline|first baseline)$/.test(al)) off = 0;
+    else if (al === "center") off = Math.trunc((U(ch) - U(ih)) / 2) / 64;
+    else if (/^(end|flex-end|self-end)$/.test(al)) off = ch - ih;
+    else return undefined;
+    const hm = mt + bh + mb;
+    const a0 = mt + bdr("top") + pt + off + sa;
+    const strut = this.strutOf(k.parent, si);
+    if (!strut) return undefined;
+    let a = a0;
+    const va = res("vertical-align") ?? "baseline";
+    if (va === "middle") a = (U(a) - Math.trunc((U(a) - U(hm - a)) / 2)) / 64 + strut.xh2;
+    else if (va !== "baseline") {
+      const r = lengthPx(va, t.size);
+      a = r === undefined ? Infinity : a + r;
+    }
+    return { width: ml + bw + mr, a0, a, hm, strut };
   }
 
   /**
@@ -2872,6 +2953,10 @@ export abstract class PageLifter {
       return g && { width: g.width, a: g.a0, hm: g.hm };
     }
     const dd = this.displayOf(k, si);
+    if (/^inline-(grid|flex)$/.test(dd) && !REPLACED_BLOCK.has(k.tag) && !CONTROL.has(k.tag)) {
+      const g = this.atomicItemBox(k, si);
+      return g && { width: g.width, a: g.a0, hm: g.hm };
+    }
     if (!(dd === "inline-block" || (dd === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
     if (CONTROL.has(k.tag)) return this.controlAtom(k, si);
     if (!REPLACED_BLOCK.has(k.tag) && (k.ownText || k.children.length)) {
