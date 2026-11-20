@@ -74,6 +74,8 @@ export interface Box {
   overfull?: boolean;
   /** A scroll container that shows a scrollbar where scrollbars take space (overflow: scroll, or auto with its content overflowing). */
   scrollbar?: boolean;
+  /** Its width comes from its content (shrink-to-fit: fit-content, a float, a button, an absolute box without a width). */
+  fromContent?: boolean;
 }
 
 export interface Issue {
@@ -1708,10 +1710,12 @@ function layoutWith(
       const pw = p.width?.value;
       const cap = p.maxWidth ? sizeAt(p.maxWidth.value, cb.w) : p.measure ? sizeAt(p.measure.value, cb.w) : Infinity;
       let w: number;
+      let shrunk = false;
       if (typeof pw === "number" || (pw !== undefined && typeof pw === "object")) w = sizeAt(pw, cb.w);
       else if (pw === "fill") w = cb.w;
       else if (l !== undefined && r !== undefined && pw === undefined) w = cb.w - l - r - m.left - m.right;
       else {
+        shrunk = true;
         const avail = pw === "max-content" ? Infinity : pw === "min-content" ? 0 : cb.w - (l ?? 0) - (r ?? 0) - m.left - m.right;
         const it = withOwnPct(intrinsic(a.k.node, a.k.comp, a.k.slot, true), p0, p);
         if (it.why) {
@@ -1723,6 +1727,7 @@ function layoutWith(
       if (p.aspect) notes.push("an absolutely positioned box with an aspect ratio isn't modelled");
       const box = measure(a.k.node, a.k.comp, a.k.slot, w, "abs", w, undefined, cb.w);
       box.assumptions.push(...notes);
+      if (shrunk) box.fromContent = true;
       // Height: a percentage of the containing block's, or stretched between top and bottom when it has none of its own.
       if (pos.height !== undefined && !p.height) {
         box.h = Math.max(ins.top + ins.bottom, sizeAt(pos.height, cb.h));
@@ -2218,6 +2223,7 @@ function layoutWith(
       children,
       ...(n.anonymous && { anonymous: true }),
       ...(scrollbar && { scrollbar: true }),
+      ...((fromContent as boolean) ? { fromContent: true } : {}),
     };
     // A block with nothing in it (no height, padding, border, lines or non-empty child) lets its
     // own top and bottom margins collapse through it (an aspect-ratio box that comes out 0 tall too).

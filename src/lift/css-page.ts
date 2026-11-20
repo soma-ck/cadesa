@@ -19,7 +19,34 @@ import postcss, { type AtRule, type ChildNode, type Container, type Rule } from 
 import { heightsHold, parseMediaQuery, type MediaInfo } from "../tailwind/css.js";
 import { cssValue } from "./css.js";
 import { kindOf, worst, type ImpactKind } from "./lift.js";
-import { attr, longhands, PageLifter, round, type El, type Origin, type PageLift, type State } from "./page.js";
+import { parse } from "parse5";
+import { attr, longhands, PageLifter, round, type El, type Origin, type P5, type PageLift, type State } from "./page.js";
+
+/**
+ * The page's <link> and <style> elements in document order, as [whole, "link", its attributes]
+ * or [whole, , , "style", its text] with their offset: from the parsed page, so markup inside an
+ * attribute value or a comment (a wiki's template data quoting "<style>") isn't taken for one.
+ */
+function linkAndStyleElements(html: string): RegExpMatchArray[] {
+  const doc = parse(html, { sourceCodeLocationInfo: true }) as unknown as P5;
+  const out: RegExpMatchArray[] = [];
+  const visit = (n: P5) => {
+    for (const c of n.childNodes ?? []) {
+      const loc = c.sourceCodeLocation;
+      if ((c.tagName === "link" || c.tagName === "style") && loc?.startTag) {
+        const whole = html.slice(loc.startOffset, loc.endOffset);
+        const m: (string | undefined)[] =
+          c.tagName === "link"
+            ? [whole, "link", html.slice(loc.startTag.startOffset + 5, loc.startTag.endOffset - 1), undefined, undefined]
+            : [whole, undefined, undefined, "style", html.slice(loc.startTag.endOffset, loc.endTag?.startOffset ?? loc.endOffset)];
+        out.push(Object.assign(m, { index: loc.startOffset, input: html }) as RegExpMatchArray);
+      }
+      visit(c);
+    }
+  };
+  visit(doc);
+  return out;
+}
 
 // ---------------------------------------------------------------- the browser's defaults
 
@@ -692,7 +719,7 @@ class CssLifter extends PageLifter {
     // given file where the page links it; given files the page doesn't link come first, in the
     // order given), then style="" attributes.
     const ua = readSheet("browser default", UA_CSS, "ua", 0);
-    const styleBlocks = [...html.matchAll(/<(link)\b([^>]*)>|<(style)\b[^>]*>([\s\S]*?)<\/style>/gi)];
+    const styleBlocks = linkAndStyleElements(html);
     const baseOf = (f: string) => f.replace(/[?#].*$/, "").replace(/^.*[\\/]/, "");
     const hrefOf = (attrs: string) => {
       const m = /(?:^|\s)href\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i.exec(attrs);

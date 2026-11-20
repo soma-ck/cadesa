@@ -3,6 +3,7 @@
  * the numbers here are Chromium's.
  */
 import { describe, expect, it } from "vitest";
+import { sizeUncertainty } from "../src/check.js";
 import { run } from "./lift-page.js";
 
 describe("an icon alone in a link that is a flex item", () => {
@@ -49,6 +50,27 @@ describe("properties that only paint inside an svg", () => {
   it("don't make the svg ≈", () => {
     expect(r.box("art").h).toBe(180);
     expect(r.approx("art")).toBeUndefined();
+  });
+});
+
+describe("a box as wide as its content", () => {
+  it("doesn't claim its width when something in it is ≈ (a fixed corner box, a button)", () => {
+    const r = run(
+      `<div class="corner" data-fixture="corner"><button class="tog" data-fixture="tog"><span class="g"></span></button></div>`,
+      `.corner { position: fixed; bottom: 0; right: 0 } .tog { display: flex; padding: 8px } .g { width: 16px; height: 16px } .tog::after { display: inline-block; content: ""; border-top: .3ch solid }`,
+    );
+    const { width } = sizeUncertainty(r.layout(), r.impacts[0]);
+    expect(r.approx("after")).toBeDefined();
+    expect(width.has("tog")).toBe(true);
+    expect(width.has("corner")).toBe(true);
+  });
+});
+
+describe("markup quoted in an attribute", () => {
+  it("isn't a <style> of the page (a wiki's template data)", () => {
+    const r = run(`<div data-mw="{&quot;html&quot;:&quot;<style> h1 { color: red; } </style>&quot;}" data-fixture="d"><p class="p" data-fixture="p">Notes</p></div><!-- <style> .p { padding: 40px } </style> -->`, `.p { margin: 0 }`);
+    expect(r.box("p").h).toBe(24);
+    expect(r.approx("p")).toBeUndefined();
   });
 });
 

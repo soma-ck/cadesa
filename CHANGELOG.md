@@ -32,6 +32,13 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   own) was placed at the grid's padding box corner; it sits at its content box corner, as the
   sole item of a grid area the size of the content box (css-grid 9.4; found by `fuzz-css`, its
   new flexboxes and grids with such boxes: marked exact, off by the grid's padding).
+- Fixed: a box as wide as its content without saying so (an absolutely positioned or fixed box
+  without a width, a float, a button) kept its width "known" to `check` when something inside it
+  was `≈`: every Bootstrap example's fixed theme toggle was claimed 8px narrower than Chromium
+  draws it. Its width is unknown there now, as a `width: fit-content` box's is.
+- Fixed: a `<style>` or `<link>` written inside an attribute value or a comment (Wikipedia's
+  template data quotes `<style>` blocks) was read as one of the page's stylesheets; `check --css`
+  stopped with a CSS syntax error on such a page. Only the page's own elements are read now.
 - Fixed: `check --css` stopped with an error on a page with `line-height: 0` (a chevron's
   `::before` in Bootstrap's cheatsheet); the box is `≈` instead.
 
