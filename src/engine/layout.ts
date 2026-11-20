@@ -2356,12 +2356,24 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
   }
 
   /** A box stretched taller after its own layout: its rows (if any) are placed again. */
+  /** A <button>'s height before it was stretched, and how far its content has been moved down. */
+  const buttonCentered = new WeakMap<Box, { natural: number; moved: number }>();
   function grow(b: Box, newH: number) {
     if (newH <= b.h) return;
     // A table stretched taller shares the height between its rows, which isn't modelled.
     if (b.props.pattern?.value === "table" && newH > b.h + EPS) b.assumptions.push("a table stretched taller than its rows (by a flex or grid container) shares the extra height between them, which isn't modelled");
+    const c0 = buttonCentered.get(b) ?? { natural: b.h, moved: 0 };
     b.h = newH;
     arrange(b);
+    // A <button> stretched taller than its content centers it (Chromium: its anonymous content
+    // box has auto top and bottom margins, safe centering), half the free space in layout units.
+    if (b.tag === "button" && !arrangement.has(b) && !gridArrange.has(b) && (b.props.pattern === undefined || b.props.pattern.value === "flow")) {
+      const off = PX(Math.trunc(Math.max(0, U(newH) - U(c0.natural)) / 2));
+      if (b.lines?.length) {
+        if (off > EPS) b.assumptions.push("a button stretched taller than its text centers it, which isn't modelled");
+      } else for (const c of b.children) if (!absInfo.has(c)) c.y += off - c0.moved;
+      buttonCentered.set(b, { natural: c0.natural, moved: off });
+    }
   }
 
   /**

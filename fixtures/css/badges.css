@@ -3,7 +3,8 @@
  * text) holding one character centered in them, beside text and on lines that wrap. And tables of
  * text: elements with display: table holding only text, in block flow (as wide as their text), in
  * a flex row and a flex column. Inter's contextual "x" between digits, drawn as a multiplication
- * sign, on lines that wrap.
+ * sign, on lines that wrap. Buttons in a grid row stretched taller than their content, which they
+ * center.
  */
 *,
 *::before,
@@ -200,4 +201,36 @@ p {
 
 .bold {
   font-weight: 650;
+}
+
+.crates {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.crate {
+  min-width: 0;
+  padding: 6px;
+  border: 1px solid #9fb3c8;
+  background: #f0f4f8;
+  font: inherit;
+  text-align: center;
+}
+
+.crate__lid {
+  height: 30px;
+  margin-bottom: 6px;
+  background: #d9e2ec;
+}
+
+.crate__name {
+  display: block;
+  font-size: 14px;
+}
+
+.crate__count {
+  display: block;
+  font-size: 12px;
 }
