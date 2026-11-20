@@ -669,6 +669,9 @@ export abstract class PageLifter {
     this.pseudoElements();
     this.anonymousText();
     this.inlineBlocks();
+    // A page lifted as stacks (a reset zeroes margins) that floats something: block flow after all,
+    // margins collapsing and floats among the blocks, as the browser lays it out.
+    if (this.blockFlow === "stack" && this.els.some((el) => this.states.some((_, si) => !!this.floated(el, si)))) this.blockFlow = "flow";
     for (const el of this.els) this.classify(el);
     this.lineBoxes();
     for (const el of this.els) this.synthesize(el);

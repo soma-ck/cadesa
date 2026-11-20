@@ -64,6 +64,9 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   font size is too (its width stays 34 "0"s; its button, in Arial, sets its height: probed). Parts
   styled in ways that move them otherwise stay `≈`, as does a page whose rule for them can't be
   decided.
+- Floats in a Tailwind page (its preflight resets margins, so its blocks were lifted as stacks)
+  are laid out: a page that floats something is lifted as block flow, margins collapsing and floats
+  among the blocks, as the browser has it. The Tailwind blog fixture floats a thumbnail and a note.
 - Floats with auto margins are exact: their auto margins are 0, as CSS 2.1 §10.3.5 has it. A box
   laid out after floats whose place isn't known no longer claims its size (its lines wrap by where
   it goes). The floats fixture covers floats with auto margins, clearance on a first child whose
