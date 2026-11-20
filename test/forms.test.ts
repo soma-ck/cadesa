@@ -74,9 +74,12 @@ describe("native selects on lines of text", () => {
     expect([r.box("d").h, r.box("s1").y, r.box("p").h, r.box("q").h]).toEqual([24, 0, 24, 32]);
     for (const id of ["d", "s1", "p", "q"]) expect(r.approx(id)).toBeUndefined();
   });
-  it("stay approximate in a web font: laid out before it loads, Chromium keeps a baseline half a pixel off", () => {
+  it("sit there in a web font too, as the page is once its fonts are loaded (and laid out again)", () => {
+    // A select laid out before its web font loaded keeps that baseline until the page is laid out
+    // again: --verify and the conformance scripts lay it out again once the fonts are loaded.
     const r = run(body, css, [600], { head: `<style>@font-face { font-family: "Inter"; src: url(Inter.woff2) }</style>` });
-    expect(r.approx("d")).toMatch(/web font/);
+    expect([r.box("d").h, r.box("s1").y, r.box("p").h, r.box("q").h]).toEqual([24, 0, 24, 32]);
+    for (const id of ["d", "s1", "p", "q"]) expect(r.approx(id)).toBeUndefined();
   });
 });
 

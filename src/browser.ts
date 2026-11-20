@@ -77,6 +77,12 @@ export async function serveFiles(root: string, overrides = new Map<string, strin
 export async function settle(page: Page): Promise<void> {
   await page.evaluate("document.fonts.ready");
   await page.evaluate("Promise.all([...document.images].map((i) => i.decode().catch(() => {})))");
+  // Laid out again from scratch: a native select laid out before its web font loaded keeps the
+  // baseline it had then (Chromium doesn't recompute it when the font arrives), so its place would
+  // depend on when the font loaded. After a full relayout it is where it is when the font loads
+  // first, every time (probed: 52 selects in a font loaded late, 14 of them half a pixel off
+  // after document.fonts.ready, none after the relayout).
+  await page.evaluate("(() => { const s = document.documentElement.style; const d = s.display; s.display = 'none'; void document.documentElement.offsetHeight; s.display = d; void document.documentElement.offsetHeight; })()");
   // (A transition a resize started, by a media query, is finished: its end is the page at that width.)
   await page.evaluate("for (const a of document.getAnimations()) if (a instanceof CSSTransition) a.finish(); else { a.pause(); a.currentTime = 0; }");
 }

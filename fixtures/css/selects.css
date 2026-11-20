@@ -1,0 +1,42 @@
+/*
+ * Native selects set in the page's web fonts (Inter, Roboto, Lato) on lines of text, at several
+ * sizes and line heights: each sits on its line by its baseline, as the page is once its fonts are
+ * loaded.
+ */
+@font-face {
+  font-family: "Inter";
+  font-weight: 100 900;
+  src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Roboto";
+  font-weight: 100 900;
+  src: url("../fonts/fonts/roboto/KFO7CnqEu92Fr1ME7kSn66aGLdTylUAMa3yUBA.woff2") format("woff2");
+}
+
+@font-face {
+  font-family: "Lato";
+  font-weight: 400;
+  src: url("../fonts/fonts/lato/Lato-Regular.woff2") format("woff2");
+}
+
+body {
+  margin: 0;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+.sheet {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.row {
+  margin: 0 0 6px;
+}
+
+select {
+  font: inherit;
+}

@@ -47,6 +47,13 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   font's contextual forms across spaces in a page, though canvas `measureText` doesn't, so it can't
   be measured word by word.) A run that wraps, has inline elements of its own or is letter-spaced
   stays `≈`. `fixtures/css/handwriting.html` (Caveat, OFL) covers it in `conformance:css`.
+- A native `<select>` in a web font is placed on its line exactly, as in an installed font. A select
+  laid out before its font loaded keeps the baseline it had then (Chromium doesn't recompute it when
+  the font arrives: probed, 14 of 52 selects in a font loaded late were half a pixel off after
+  `document.fonts.ready`), so `--verify`, `capture` and the conformance scripts now lay the page out
+  again once its fonts are loaded; after that every select was where it is when the font loads
+  first, in every load. That is the page's state once it has loaded. `fixtures/css/selects.html`
+  (selects in Inter, Roboto and Lato at 12 sizes and 4 line heights) is in `conformance:css`.
 - Floats with auto margins are exact: their auto margins are 0, as CSS 2.1 §10.3.5 has it. A box
   laid out after floats whose place isn't known no longer claims its size (its lines wrap by where
   it goes). The floats fixture covers floats with auto margins, clearance on a first child whose

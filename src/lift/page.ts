@@ -2056,14 +2056,6 @@ export abstract class PageLifter {
     return isFinite(width) ? { width, a: ex.a, hm: ex.hm, strut: ex.strut } : undefined;
   }
 
-  /** For a native select on a line in a web font: why its place there isn't known. */
-  webFontSelect(el: El, si: number): Note | undefined {
-    if (el.tag !== "select") return undefined;
-    const fam = firstFamily(this.textOf(el, si).family.value);
-    const o = el.own[si].get("appearance") ?? el.own[si].get("-webkit-appearance");
-    if (!this.webFont(fam) || (o && this.resolve(el, si, o.value) === "none")) return undefined;
-    return { decl: `<select> (font-family: ${fam})`, reason: "a native select laid out before its web font loads keeps a baseline up to half a pixel off (Chromium), so its place on its line depends on when the font loads", kind: "geometry" };
-  }
 
   /** An <input type=color> of the browser's size and look (50×27, border-box: nothing of its own sets them). */
   defaultColorInput(el: El, si: number): boolean {
@@ -2078,7 +2070,7 @@ export abstract class PageLifter {
    * 1px inside its padding box (the select is that line plus 2px tall): border and padding top,
    * 1px, half of what normal exceeds its line height by (half a pixel when that is odd), its
    * half-leading floored to a layout unit, and its font's ascent. Only for a single-row select of
-   * auto height in an installed font.
+   * auto height.
    */
   nativeSelectBaseline(el: El, si: number): number | undefined {
     if (el.tag !== "select" || attr(el.node, "multiple") !== undefined || Number(attr(el.node, "size") ?? "1") > 1) return undefined;
@@ -2089,9 +2081,9 @@ export abstract class PageLifter {
     if ((res("appearance") ?? res("-webkit-appearance") ?? "auto") === "none") return undefined;
     if (["height", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
     const t = this.textOf(el, si);
-    // In a web font: Chromium keeps the baseline a select had when it was laid out before the font
-    // loaded (up to half a pixel off, measured with probe pages), so it depends on when the font loads.
-    if (this.webFont(firstFamily(t.family.value))) return undefined;
+    // (In a web font too: a select laid out before its font loaded keeps the baseline it had then
+    // until the page is laid out again; --verify and the conformance scripts lay the page out again
+    // once its fonts are loaded, the state it is in once it has loaded.)
     const v = metricsFor(t.family.value, t.italic)?.vertical(t.size, t.weight);
     const own = this.strutOf(el, si);
     const normal = this.normalLine(t);
@@ -3277,7 +3269,7 @@ export abstract class PageLifter {
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline box's own rectangle is its text's content area; Cadesa lays out its lines (exact), not that rectangle", kind: "visual" });
         if (!own.has("width")) decl("width", "fit-content", "an inline element alone between blocks");
       } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && !el.rowLine?.[si] && el.anonymous === undefined)
-        this.note(el, si, this.staleFont([el, el.parent], si) ?? this.webFontSelect(el, si) ?? { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
+        this.note(el, si, this.staleFont([el, el.parent], si) ?? { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline-level box in block flow sits on a line box (baseline, line height, whitespace); Cadesa lays out block boxes", kind: "geometry" });
       // An empty inline (zero size where the next block starts) or a lone inline-block: as wide as its content.
       if (((el.asBlock[si] === "empty" && !inFlexOrGrid) || el.alone[si]) && !own.has("width")) decl("width", "fit-content", el.alone[si] ? "inline-block (alone on its line)" : "empty inline element");
       const lineAlign = el.alone[si] ? el.lineAlign?.[si] : undefined;
@@ -4131,8 +4123,6 @@ export abstract class PageLifter {
       // An atomic inline of known size whose line box stays the same: one object on the line, measured.
       if (this.atomicInline(k, si) !== undefined) return;
       if (k.pseudo && this.ownDisplay(k, si) === "inline-block" && !this.floatsAtStart(k, si) && this.atomicText(k, si) !== undefined) return;
-      const select = this.webFontSelect(k, si);
-      if (select) return this.note(el, si, select);
       const own = k.own[si];
       const ua = UA_TEXT[k.tag];
       const where = k.pseudo ? `::${k.pseudo}` : `<${k.tag}>`;
