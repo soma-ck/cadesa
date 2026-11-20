@@ -140,6 +140,66 @@ p {
   vertical-align: middle;
 }
 
+/* An svg alone in a positioned box of set size (a pointer drawn over a stage). */
+.stage {
+  position: relative;
+  height: 48px;
+}
+
+.pointer {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  width: 27px;
+  height: 34px;
+}
+
+.pointer-shifted {
+  left: 60px;
+}
+
+.pointer-arrow {
+  position: relative;
+  width: 25px;
+  height: 31px;
+}
+
+.pointer-shifted .pointer-arrow {
+  top: 2px;
+  left: 3px;
+}
+
+/* An image and an svg alone on their line: the line box reaches below them. */
+.avatar-img {
+  width: 20px;
+  height: 20px;
+}
+
+.seal {
+  margin-top: 8px;
+}
+
+.seal-icon {
+  width: 25px;
+  height: 31px;
+}
+
+.seal-short {
+  height: 20px;
+}
+
+@media (max-width: 600px) {
+  .pointer {
+    width: 23px;
+    height: 28px;
+  }
+
+  .pointer-arrow {
+    width: 21px;
+    height: 26px;
+  }
+}
+
 @media (max-width: 600px) {
   .toolbar-button {
     font-size: 0;

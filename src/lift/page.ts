@@ -1565,7 +1565,8 @@ export abstract class PageLifter {
     } else if (el.roles[si] === "leaf") {
       // No line boxes: as tall as its height says, its baseline at its bottom margin edge.
       const h = px("height");
-      if (!el.own[si].has("height") || !(h >= 0) || el.children.length) return undefined;
+      // (An svg's children are its graphics, not boxes.)
+      if (!el.own[si].has("height") || !(h >= 0) || (el.children.length && el.tag !== "svg")) return undefined;
       const border = res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb;
       hm = mt + border + mb;
       a = hm;
@@ -1670,6 +1671,10 @@ export abstract class PageLifter {
         if (top || bottom) (parent.linePad ??= [])[si] = { top, bottom };
         return true;
       }
+      // Alone in a parent of set height (that doesn't scroll), reaching above the strut: it sits at
+      // the top of its line, and the line box reaching below it changes nothing outside the parent.
+      const setHeight = parent !== this.bodyEl && lengthPx(res0(parent, "height") ?? "auto", this.textOf(parent, si).size) !== undefined && /^(visible|clip|hidden)?$/.test(res0(parent, "overflow-y") ?? "") && /^(visible|clip|hidden)?$/.test(res0(parent, "overflow-x") ?? "");
+      if (!sibs0.length && setHeight && !reach.top && el.roles[si] === "leaf") return this.marginsMeetNothing(el, si);
       if (reach.top || reach.bottom) return false;
     } else if (el.roles[si] !== "text") return false;
     if (reach) return this.marginsMeetNothing(el, si);
@@ -1802,7 +1807,9 @@ export abstract class PageLifter {
         const parentRole = el.parent !== this.bodyEl ? el.parent!.roles[si] : "page";
         const parentDisplay = el.parent !== this.bodyEl ? this.displayOf(el.parent!, si) : "block";
         if (/flex|grid/.test(parentDisplay) && parentRole === "container") return;
-        if (this.ownDisplay(el, si) === "inline-block" && this.aloneOnLine(el, si)) el.alone[si] = true;
+        // (An inline replaced element, an svg or an image of set size, is an atomic inline as an inline-block is.)
+        const atomic = this.ownDisplay(el, si) === "inline-block" || (this.ownDisplay(el, si) === "inline" && REPLACED_BLOCK.has(el.tag) && role === "leaf");
+        if (atomic && this.aloneOnLine(el, si)) el.alone[si] = true;
         if (role === "container") this.inlineRow(el, si);
         if (this.ownDisplay(el, si) === "inline" && role === "text") {
           const lh = this.inlineLine(el, si);

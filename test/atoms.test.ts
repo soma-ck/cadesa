@@ -49,3 +49,24 @@ describe("atomic inlines and runs on shared lines", () => {
     expect(r.approx("f")).toBeUndefined();
   });
 });
+
+describe("an inline svg or image alone on its line (fixtures/css/icons.html)", () => {
+  const r = run(
+    `<div class="stage"><div class="pointer" data-fixture="pointer"><svg class="arrow" data-fixture="arrow" viewBox="0 0 25 31"><path d="M2 2l20 14z"/></svg></div></div><div class="avatar" data-fixture="avatar"><img data-fixture="img" src="x.png" alt=""></div><div class="seal" data-fixture="seal"><svg class="arrow" data-fixture="seal-icon"></svg></div>`,
+    `.stage { position: relative; height: 48px } .pointer { position: absolute; top: 6px; left: 12px; width: 27px; height: 34px } .arrow { position: relative; width: 25px; height: 31px } img { width: 20px; height: 20px }`,
+  );
+  const rect = (id: string) => [r.box(id).x, r.box(id).y, r.box(id).w, r.box(id).h];
+
+  it("sits at the top of its line in a box of set height when it reaches above the strut", () => {
+    expect(rect("arrow")).toEqual([12, 6, 25, 31]);
+    expect(r.approx("arrow")).toBeUndefined();
+    expect(r.approx("pointer")).toBeUndefined();
+  });
+
+  it("makes its parent as tall as its line box", () => {
+    expect(rect("avatar")).toEqual([0, 48, 400, 26]);
+    expect(rect("img")).toEqual([0, 48, 20, 20]);
+    expect(r.box("seal").h).toBe(37);
+    for (const id of ["avatar", "img", "seal", "seal-icon"]) expect(r.approx(id)).toBeUndefined();
+  });
+});

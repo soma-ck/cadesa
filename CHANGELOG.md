@@ -30,6 +30,11 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   `npm run conformance:bootstrap:classic`, and `conformance:scrollers:classic` for
   `fixtures/css/overflow.html` and the new `fixtures/css/scrollers.html`, run in CI.
 
+- An inline `svg` or image of set size alone on its line is laid out as an inline-block alone on
+  its line is (it was `≈`): its parent is as tall as its line box, or, in a parent of set height,
+  it sits at the top of its line when it reaches above the strut (an svg pointer with
+  `position: relative` in a positioned box of set size). `fixtures/css/icons.html` covers them.
+
 ## 0.1.23 (2026-11-20)
 
 - Correction: the README said the Bootstrap suite also passes with classic 15px scrollbars
