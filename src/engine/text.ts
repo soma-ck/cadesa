@@ -901,19 +901,22 @@ function layoutLines(
   let fq = 0;
   if (floats.length && !opts.band) approximate ??= "floats among text that doesn't wrap";
   if (floats.length && (lead || opts.strut)) approximate ??= "floats among text with a float at its start or inline boxes past its strut";
-  /** Where each piece starts (a float inside a word is met mid-piece). */
-  const pieceStarts = new Set<number>();
-  for (let at = 0, k = 0; k < ps.length; at += [...ps[k]].length, k++) pieceStarts.add(at);
-  pieceStarts.add(all.length);
-  const meetFloat = (f: { at: number; w: number; fitsAt?: (top: number) => boolean; place: (top: number) => void }) => {
-    if (!pieceStarts.has(f.at)) approximate ??= "a float inside a word";
-    if (!line && !deferred.length) return f.place(nextTop);
+  /** Whether float f, met with `before` on the line so far, goes on this line (beside what is on it). */
+  const besideLine = (f: { w: number; fitsAt?: (top: number) => boolean }, before: string) => {
     // What is on the line so far (a space at its end hangs: it doesn't count).
-    const { used, lw } = lineWidth(line);
-    const so = used + lw;
-    if (line && !deferred.length && place && so + f.w <= maxWidth + 1 / 64 + TEXT_EPS / 64 && (!f.fitsAt || f.fitsAt(place.top))) {
-      f.place(place.top);
-      const at = opts.band!(place.top, opts.lineH ?? 0, () => true);
+    const { used, lw } = lineWidth(before);
+    return !!before && !deferred.length && !!place && used + lw + f.w <= maxWidth + 1 / 64 + TEXT_EPS / 64 && (!f.fitsAt || f.fitsAt(place.top));
+  };
+  /**
+   * Meet a float on the current line. Inside a word (`before`: the line up to it), it goes on the
+   * line if it fits beside what comes before it there, as at a break opportunity; the word, cut by
+   * the float into two items, stays whole (probed in Chromium).
+   */
+  const meetFloat = (f: { at: number; w: number; fitsAt?: (top: number) => boolean; place: (top: number) => void }, before = line) => {
+    if (!line && !deferred.length) return f.place(nextTop);
+    if (besideLine(f, before)) {
+      f.place(place!.top);
+      const at = opts.band!(place!.top, opts.lineH ?? 0, () => true);
       maxWidth = at.r - at.l;
       place = { x: at.l, room: maxWidth, top: at.top };
     } else deferred.push(f);
@@ -1040,6 +1043,36 @@ function layoutLines(
       consumed += [...line].length;
       lead = 0;
       open = start(p, mid);
+    }
+    // Floats inside this piece (inside a word): met where they occur, on the line the piece went
+    // on. One that fits there narrows the line; when the line then no longer holds the piece and
+    // something before it, Chromium rewinds to the break before the piece (the float, after it,
+    // isn't placed yet) and the piece starts the next line, meeting the float there (probed).
+    const pLen = [...p].length;
+    for (;;) {
+      const end = consumed + [...line].length;
+      const f = floats[fq];
+      if (!f || f.at >= end || f.at <= end - pLen) break;
+      if (open !== undefined || opts.wrapAnywhere || mode !== "normal") approximate ??= "a float inside a word that breaks between characters";
+      const before = [...line].slice(0, f.at - consumed).join("");
+      const rest = [...line].slice(0, -pLen).join("");
+      if (open === undefined && rest && besideLine(f, before)) {
+        const room = maxWidth;
+        maxWidth = room - f.w;
+        const holds = fits(line);
+        maxWidth = room;
+        if (!holds) {
+          push({ text: trimSpaces(rest), width: reported(rest), at: consumed }, consumed + [...rest].length);
+          consumed += [...rest].length;
+          lead = 0;
+          line = "";
+          openLine(p);
+          line = p;
+          continue;
+        }
+      }
+      fq++;
+      meetFloat(f, before);
     }
     mid = open !== undefined;
     if (open !== undefined) {

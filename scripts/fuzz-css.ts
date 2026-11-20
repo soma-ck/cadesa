@@ -429,7 +429,18 @@ export function genCssCase(seed: number): CssCase {
       if (what === "inline") {
         // Floats among a paragraph's text (a count floated to the end of a list item, a tile mid-paragraph).
         const f = () => `<span${attr(cls([`float: ${r.pick(["left", "right"])}`, "background: #cdd", ...(r.chance(0.5) ? [`width: ${r.int(10, 120)}px`, `height: ${r.int(8, 60)}px`] : [`padding: 0 ${r.int(0, 8)}px`]), ...(r.chance(0.3) ? [`margin: ${r.int(0, 6)}px ${r.int(0, 8)}px`] : [])]))}>${r.chance(0.5) ? words(r, 1, 2) : ""}</span>`;
-        parts.push(`<p>${words(r, 0, 12)} ${f()}${r.chance(0.5) ? " " : ""}${words(r, 1, 20)}${r.chance(0.3) ? ` ${f()} ${words(r, 1, 10)}` : ""}</p>`);
+        // A float inside a word ("half<float>way"), and floats inside an inline box (a link, a
+        // run with padding of its own) of the paragraph.
+        const midWord = () => {
+          const w = r.pick(["halfway", "wheelbarrow", "greenhouse", "sunflower", "Afterwards", "toward"]);
+          const at = r.int(1, w.length - 1);
+          return `${w.slice(0, at)}${f()}${w.slice(at)}`;
+        };
+        const box = (inner: string) => (r.chance(0.5) ? `<a href="#">${inner}</a>` : `<span${attr(cls([`padding: 0 ${r.int(0, 12)}px`, "background: #eef", ...(r.chance(0.3) ? [`margin: 0 ${r.int(0, 8)}px`] : [])]))}>${inner}</span>`);
+        const fl = () => (r.chance(0.3) ? midWord() : f());
+        const inner = () => (r.chance(0.6) ? fl() : `${words(r, 0, 4)} ${fl()}${r.chance(0.5) ? " " : ""}${words(r, 0, 4)}`);
+        const mid = r.chance(0.35) ? box(inner()) : fl();
+        parts.push(`<p>${words(r, 0, 12)} ${mid}${r.chance(0.5) ? " " : ""}${words(r, 1, 20)}${r.chance(0.3) ? ` ${r.chance(0.3) ? box(fl()) : f()} ${words(r, 1, 10)}` : ""}</p>`);
         continue;
       }
       if (what === "float") parts.push(float());
@@ -449,8 +460,28 @@ export function genCssCase(seed: number): CssCase {
     if (r.chance(0.3)) d.push("display: flow-root");
     return `<section${attr(cls(d))}>${parts.join("\n")}</section>`;
   };
+  /**
+   * An inline svg or image of set size alone in a block (a pointer in a box of set height, an
+   * avatar): laid out as an inline-block alone on its line.
+   */
+  const loneAtomic = () => {
+    const own = [`width: ${r.int(8, 60)}px`, `height: ${r.int(8, 60)}px`, ...(r.chance(0.4) ? ["position: relative", ...(r.chance(0.5) ? [`top: ${r.int(-4, 4)}px`, `left: ${r.int(-4, 4)}px`] : [])] : []), ...(r.chance(0.2) ? [`margin: ${r.int(0, 6)}px`] : [])];
+    const atom = r.chance(0.6) ? `<svg${attr(cls(own))} viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"></circle></svg>` : `<img${attr(cls(own))} src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">`;
+    const d = [
+      ...(r.chance(0.5) ? [`height: ${r.int(10, 80)}px`] : []),
+      ...(r.chance(0.3) ? ["position: relative"] : []),
+      ...(r.chance(0.3) ? [`padding: ${r.int(0, 8)}px`] : []),
+      ...(r.chance(0.3) ? [`font-size: ${r.pick(["12px", "16px", "24px"])}`] : []),
+      ...(r.chance(0.3) ? [`line-height: ${r.pick(["1", "1.5", "30px"])}`] : []),
+    ];
+    return `<div${attr(cls(d))}>${atom}</div>`;
+  };
   const count = r.int(2, 5);
   for (let i = 0; i < count; i++) {
+    if (r.chance(0.06)) {
+      blocks.push(loneAtomic());
+      continue;
+    }
     if (r.chance(0.12)) {
       blocks.push(scroller());
       continue;

@@ -804,7 +804,8 @@ function layoutWith(
           assumptions.push(`line breaks are approximate: ${a.approximate}`);
         }
         if (!plain && meta[i].underlined && !ambiguous) {
-          const b = layoutText(m!, r, t.sizePx, t.weight, maxWidth, { ...opts, hangKern: false });
+          // (Its floats were placed by the first pass: not again.)
+          const b = layoutText(m!, r, t.sizePx, t.weight, maxWidth, { ...opts, hangKern: false, ...(opts.floats && { floats: opts.floats.map((f) => ({ ...f, place: () => {} })) }) });
           if (b.lines.length !== a.lines.length || b.lines.some((l, k) => l.text !== a.lines[k].text) || Math.abs(b.minContent - a.minContent) > 1e-9) {
             ambiguous = true;
             assumptions.push("line breaks are approximate: a space at a line end inside underlined inline text (a link) changes the line's width");

@@ -374,6 +374,20 @@ p {
   background: #9fb3c8;
 }
 
+.word-float--left {
+  float: left;
+  width: 56px;
+}
+
+.word-narrow {
+  width: 180px;
+}
+
+.pad-run {
+  padding: 0 10px;
+  background: #f0f4f8;
+}
+
 .short-float {
   float: left;
   width: 70px;

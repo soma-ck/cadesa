@@ -3003,7 +3003,7 @@ export abstract class PageLifter {
       const el = byNode.get(n as unknown as P5);
       if (!el) return undefined;
       // A float among the text: a box of its own, placed where it occurs.
-      if (el !== root && el.parent === root && this.textFloat(el) && this.floated(el, si)) return { float: true };
+      if (el !== root && this.textFloatHost(el) === root && this.floated(el, si)) return { float: true };
       const out: InlineInfo = {};
       const atomic = el !== root ? this.atomicInline(el, si) : undefined;
       if (atomic !== undefined) return { atomic, ...this.pastStrut(el, si), ...this.innerFonts(el, si) };
@@ -3328,6 +3328,34 @@ export abstract class PageLifter {
    * A float among its parent's inline content (floated wherever it is displayed): its parent stays a
    * text box, and the float is a box of its own placed on the line where it occurs.
    */
+  /**
+   * The text box a float among its text belongs to: its parent (textFloat), or the block around
+   * the inline boxes it is inside (`<span>` or `<a>`, displayed as inline at every width); placed
+   * where it occurs in the text as one of the text box's own floats is (probed in Chromium).
+   */
+  textFloatHost(el: El): El | undefined {
+    if (!this.textFloat(el)) return undefined;
+    const inlineBox = (k: El) =>
+      !k.pseudo && k.anonymous === undefined && !REPLACED_BLOCK.has(k.tag) && !CONTROL.has(k.tag) && !INLINE_BLOCK.has(k.tag) &&
+      this.states.every((_, si) => this.displayOf(k, si) === "inline" && !this.floated(k, si) && !this.outOfFlow(k, si));
+    let p: El | undefined = el.parent;
+    while (p && p !== this.bodyEl && inlineBox(p)) p = p.parent;
+    return p && p !== this.bodyEl && p !== this.htmlEl ? p : undefined;
+  }
+
+  /** The floats among a text box's text (its own and those inside its inline boxes), in order. */
+  textFloatsIn(el: El): El[] {
+    const out: El[] = [];
+    const visit = (k: El) => {
+      for (const c of k.children) {
+        if (this.textFloatHost(c) === el) out.push(c);
+        else if (c.anonymous === undefined && !c.pseudo && c.roles.length === 0) visit(c);
+      }
+    };
+    visit(el);
+    return out;
+  }
+
   textFloat(el: El): boolean {
     return !!el.parent && el.parent !== this.bodyEl && !el.pseudo && el.anonymous === undefined && this.blockFlow === "flow" && this.states.some((_, si) => this.displayOf(el, si) !== "none") && this.states.every((_, si) => this.displayOf(el, si) === "none" || !!this.floated(el, si));
   }
@@ -3355,7 +3383,7 @@ export abstract class PageLifter {
   }
 
   visibleText(el: El): boolean {
-    return el.ownText || el.children.some((c) => !this.ignorable(c) && !this.textFloat(c) && this.inlineChild(c) && this.visibleText(c));
+    return el.ownText || el.children.some((c) => !this.ignorable(c) && !this.textFloatHost(c) && this.inlineChild(c) && this.visibleText(c));
   }
 
   classify(el: El) {
@@ -3366,7 +3394,9 @@ export abstract class PageLifter {
     // hold only parts, or a cell's content: a column's children aren't laid out either.)
     if (el.parent && el.parent !== this.bodyEl && this.states.some((_, si) => this.isTable(el.parent!, si)) && this.tableWhy(el.parent)) return;
     if (el.parent && el.parent !== this.bodyEl && this.states.some((_, si) => this.displayOf(el.parent!, si) === "table-column")) return;
-    if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length === 0) return;
+    // (A float inside a text box's inline boxes too: textFloatHost.)
+    const host = el.parent && el.parent !== this.bodyEl && el.parent.roles.length === 0 ? this.textFloatHost(el) : undefined;
+    if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length === 0 && !host?.roles.some((r) => r === "text")) return;
     if (el.anonymous !== undefined) {
       // A text run beside element children: an anonymous text box (or, in a text box, part of its text).
       this.states.forEach((_, si) => {
@@ -3391,7 +3421,7 @@ export abstract class PageLifter {
     this.states.forEach((_, si) => {
       const d = this.displayOf(el, si);
       let role: Role;
-      if (d === "none" || (el.parent && el.parent.roles[si] === "hidden")) role = "hidden";
+      if (d === "none" || (el.parent && el.parent.roles[si] === "hidden") || (host && host.roles[si] !== "text")) role = "hidden";
       else if (this.asideFloat(el, si)) role = "out";
       else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || (this.isTable(el, si) && !(hasText && el.children.length === 0 && this.ownDisplay(el, si) === "table") && (!!this.tableWhy(el) || !el.children.some((k) => !this.ignorable(k))))) role = "leaf";
       // A column's (or an empty row's) children aren't laid out.
@@ -3458,7 +3488,7 @@ export abstract class PageLifter {
       const side = this.floated(el, si);
       if (side) {
         if (this.blockFlow !== "flow") this.note(el, si, { decl: own.get("float")!.utility, reason: "a float in block flow lifted as a stack (the page resets margins) isn't modelled", kind: "geometry" });
-        else if (parentRole !== "text" && !this.floatLeads(el, si)) this.note(el, si, { decl: own.get("float")!.utility, reason: "a float after inline content on its line isn't modelled", kind: "geometry" });
+        else if (parentRole !== "text" && this.textFloatHost(el)?.roles[si] !== "text" && !this.floatLeads(el, si)) this.note(el, si, { decl: own.get("float")!.utility, reason: "a float after inline content on its line isn't modelled", kind: "geometry" });
         decl("float", side, own.get("float")!.utility);
       } else if (/^(left|right|inline-start|inline-end)$/.test(res("float") ?? "") && !inFlexOrGrid && !abs && !this.floatsAtStart(el, si) && !this.asideFloat(el, si))
         this.note(el, si, { decl: own.get("float")!.utility, reason: `floated generated content (${el.tag}) isn't modelled`, kind: "geometry" });
@@ -4305,7 +4335,7 @@ export abstract class PageLifter {
       // A float among the text: a box of its own, placed on the line where it occurs (see textFloat).
       if (this.floated(k, si)) {
         // (Only a float that is a child of the text box itself is placed among its lines.)
-        if (!this.textFloat(k) || k.parent !== el) this.note(el, si, { decl: `<${k.tag}> (float: ${this.floated(k, si)})`, reason: "a float inside an inline box isn't modelled", kind: "geometry" });
+        if (this.textFloatHost(k) !== el) this.note(el, si, { decl: `<${k.tag}> (float: ${this.floated(k, si)})`, reason: "a float inside an inline box isn't modelled", kind: "geometry" });
         return;
       }
       // An atomic inline of known size whose line box stays the same: one object on the line, measured.
@@ -4463,6 +4493,8 @@ export abstract class PageLifter {
           k.id = attr(k.node, "data-fixture") ?? uniqueId(slot);
           if (k.roles.some((r) => r === "container" || r === "text")) visit(k);
         }
+        // Floats inside a text box's inline boxes: boxes of the text box.
+        if (el.roles.some((r) => r === "text")) for (const f of this.textFloatsIn(el)) if (f.parent !== el) visit({ ...el, children: [f] } as El);
       };
       if (root.roles.some((r) => r === "container" || r === "text")) visit(root);
     }
@@ -4635,10 +4667,17 @@ export abstract class PageLifter {
         // Element children, with anonymous text runs between them.
         const byEl = new Map(n.children.map((c) => [c.fixtureId ? byId.get(c.fixtureId) : undefined, c] as const));
         // A text box's floats are boxes of their own (see textFloat).
-        const floatsIn = isText && el.children.some((k) => this.textFloat(k) && (si === undefined || !!this.floated(k, si)));
+        const inText = isText ? this.textFloatsIn(el) : [];
+        const floatsIn = inText.some((k) => si === undefined || !!this.floated(k, si));
+        // (Those inside its inline boxes become its children, in order: the engine places a text box's own floats.)
+        const nested = new Set(inText.filter((k) => k.parent !== el).map((k) => k.id));
+        const isNested = (c: FixtureNode) => !!c.fixtureId && nested.has(c.fixtureId);
+        const strip = (c: FixtureNode): FixtureNode => ({ ...c, children: c.children.filter((g) => !isNested(g)).map(strip) });
+        const collect = (c: FixtureNode): FixtureNode[] => c.children.flatMap((g) => (isNested(g) ? [g] : collect(g)));
+        const flat = nested.size ? n.children.flatMap((c) => [strip(c), ...collect(c)]) : n.children;
         const children =
           isText || el.tag === "svg"
-            ? el.tag === "svg" ? [] : floatsIn ? (n.children.map((c) => (c.fixtureId && this.textFloat(byId.get(c.fixtureId)!) ? keep(c) : c)).filter(Boolean) as FixtureNode[]) : n.children
+            ? el.tag === "svg" ? [] : floatsIn ? (flat.map((c) => (c.fixtureId && inText.some((k) => k.id === c.fixtureId) ? keep(c) : c)).filter(Boolean) as FixtureNode[]) : n.children
             : (el.children.map((k) => (k.anonymous !== undefined ? anonNode(k, si) : k.pseudo ? pseudoNode(k, si) : byEl.has(k) ? keep(byEl.get(k)!) : undefined)).filter(Boolean) as FixtureNode[]);
         if (!isText && el.children.some((k) => k.anonymous !== undefined)) return { ...n, children, ownText: "" };
         // A replaced element or form control has no text box (a textarea's text is its value).

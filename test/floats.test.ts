@@ -47,6 +47,35 @@ describe("floats among a paragraph's text", () => {
   });
 });
 
+describe("a float inside a word, and inside an inline box (probed in Chromium)", () => {
+  const css = `p { margin: 0 } .f { float: left; width: 30px; height: 10px } .r { float: right; width: 30px; height: 10px } .pad { padding: 0 12px }`;
+  const word = (w: number) => run(`<main style="width: ${w}px"><p data-fixture="p">one two three<span class="f" data-fixture="f"></span>four five six seven</p></main>`, css, [800]);
+  const inBox = (w: number) => run(`<main style="width: ${w}px"><p data-fixture="p">one <span class="pad">two thr<span class="r" data-fixture="f"></span>ee four</span> five six</p></main>`, css, [800]);
+  const lines = (r: ReturnType<typeof run>) => r.box("p").lines!.map((l) => l.text);
+
+  it("goes on the line the word is on when it fits beside what comes before it there, the word kept whole", () => {
+    // 80px: "three" + the float fits on the word's line; "threefour" then overflows the line it narrowed.
+    const r = word(80);
+    expect(lines(r)).toEqual(["one two", "threefour", "five six", "seven"]);
+    expect(geo(r.box("f"))).toEqual([0, 24, 30, 10]);
+    // 60px: it doesn't fit: below that line.
+    expect(geo(word(60).box("f"))).toEqual([0, 72, 30, 10]);
+    expect(geo(word(170).box("f"))).toEqual([0, 0, 30, 10]);
+    for (const w of [60, 80, 170]) expect(word(w).exact()).toBe(true);
+  });
+
+  it("inside an inline box: when the line it narrows no longer holds its word, the word starts the next line and meets the float there", () => {
+    // 130px: "one two thr" fits beside it, but "one two three" no longer does in what is left.
+    const r = inBox(130);
+    expect(lines(r)).toEqual(["one two", "three four", "five six"]);
+    expect(geo(r.box("f"))).toEqual([100, 24, 30, 10]);
+    expect(lines(inBox(120))).toEqual(["one two three", "four five", "six"]);
+    expect(geo(inBox(120).box("f"))).toEqual([90, 24, 30, 10]);
+    expect(geo(inBox(150).box("f"))).toEqual([120, 0, 30, 10]);
+    for (const w of [120, 130, 150]) expect(inBox(w).exact()).toBe(true);
+  });
+});
+
 describe("floats in block flow", () => {
   const r = run(
     `<section><div class="fl m"></div><div class="bfc">A box of its own beside the float</div><div class="wide">Margin wider than the float</div></section>

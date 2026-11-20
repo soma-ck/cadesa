@@ -352,8 +352,8 @@ describe("whatif command", () => {
   it("only promises unchanged for boxes predicted exactly", async () => {
     const { whatifCmd } = await import("../src/commands.js");
     const r = whatifCmd({
-      css: "fixtures/css/floats.css",
-      fixture: "fixtures/css/floats.html",
+      css: "fixtures/css/atoms.css",
+      fixture: "fixtures/css/atoms.html",
       widths: [390, 1280],
       changes: [{ path: "tokens.space.nonexistent-for-test", value: "1px" }],
     });

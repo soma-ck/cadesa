@@ -50,6 +50,16 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   `fixtures/css/handwriting.html` adds wrapping notes (bold, smaller, centered, in a box as wide
   as its lines).
 
+- A float inside a word, and a float inside an inline box (a link, a run with padding), are exact
+  (they were `≈`). Probed in Chromium: a float met inside a word goes on the line the word is on
+  when it fits beside what comes before it there (else below that line), and the word stays
+  whole, shaped as two items; when the line it narrows no longer holds the word and something
+  before it, the line ends before the word (the float, after that break, isn't placed yet) and the
+  word starts the next line, meeting the float there. A float inside an inline box is placed where
+  it occurs in the text, as one of the text box's own floats is. Fixed too: floats in underlined
+  text (a link) were placed twice. `fixtures/css/floats.html` adds floats inside words and inside a
+  run with padding, and `fuzz-css` generates both.
+
 ## 0.1.23 (2026-11-20)
 
 - Correction: the README said the Bootstrap suite also passes with classic 15px scrollbars
