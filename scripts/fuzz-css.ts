@@ -408,7 +408,10 @@ export function genCssCase(seed: number): CssCase {
       if (r.chance(0.15)) d.push(`padding-left: ${r.int(0, 20)}px`);
       if (r.chance(0.15)) d.push(`clear: ${r.pick(["left", "right", "both"])}`);
       const tag = r.pick(["strong", "em", "a"]);
-      const body = r.chance(0.3) ? `${words(r, 2, 8)} <${tag}${tag === "a" ? ' href="#"' : ""}>${words(r, 1, 3)}</${tag}> ${words(r, 2, 12)}` : words(r, 3, 30);
+      // Lines beside the floats holding inline boxes taller than the line: runs in other sizes and
+      // vertical-aligns, and atomic inlines.
+      const tallLine = () => `${words(r, 2, 10)} ${r.chance(0.6) ? run(0) : atomic()} ${words(r, 2, 14)}${r.chance(0.4) ? ` ${r.chance(0.5) ? run(0) : atomic()} ${words(r, 1, 10)}` : ""}`;
+      const body = r.chance(0.3) ? `${words(r, 2, 8)} <${tag}${tag === "a" ? ' href="#"' : ""}>${words(r, 1, 3)}</${tag}> ${words(r, 2, 12)}` : r.chance(0.35) ? tallLine() : words(r, 3, 30);
       return `<p${attr(cls(d))}>${body}</p>`;
     };
     const root = () => {

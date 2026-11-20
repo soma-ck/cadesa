@@ -474,7 +474,8 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
             const ox = Math.max(o.l, L + m0.left);
             const lim = Math.min(o.r, R - m0.right);
             const kb = auto0 ? measure(k.node, k.comp, k.slot, Math.max(0, lim - ox) + m0.left + m0.right, kind, undefined, undefined, cell) : measure(k.node, k.comp, k.slot, cell, kind);
-            if (!o.beside || (ox + kb.w <= lim + EPS && kb.h <= o.h + EPS)) {
+            // (A room past the container's end, beyond a float wider than it, is as wide as nothing.)
+            if (!o.beside || (kb.w <= Math.max(0, lim - ox) + EPS && kb.h <= o.h + EPS)) {
               b = kb;
               x = o.beside ? ox - ctx.x : offsetX(kb, cell, true);
               break;
