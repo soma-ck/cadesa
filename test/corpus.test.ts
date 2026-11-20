@@ -168,6 +168,21 @@ describe("a top-aligned run holding a raised run with a run of its own", () => {
   });
 });
 
+describe("a block button justified stretch", () => {
+  it("isn't taken to be as wide as its content (Chromium stretches it)", () => {
+    const r = run(`<div class="p" data-fixture="p"><button class="b" data-fixture="b">Write</button></div>`, `.p { justify-items: stretch } .b { display: block; font: inherit }`);
+    expect(r.box("b").w === 400 || r.approx("b") !== undefined).toBe(true);
+  });
+});
+
+describe("a grid item of unknown size", () => {
+  it("in a grid of one column, wider than the grid, makes its siblings ≈: the column grows to it", () => {
+    const r = run(`<div class="g"><div class="a" data-fixture="a">by north</div><div data-fixture="d">every <span class="w"></span> nets</div></div>`, `.g { display: grid } .w { display: inline-block; width: 477px; height: 20px }`);
+    expect(r.approx("d")).toBeDefined();
+    expect(r.approx("a")).toBeDefined();
+  });
+});
+
 describe("markup quoted in an attribute", () => {
   it("isn't a <style> of the page (a wiki's template data)", () => {
     const r = run(`<div data-mw="{&quot;html&quot;:&quot;<style> h1 { color: red; } </style>&quot;}" data-fixture="d"><p class="p" data-fixture="p">Notes</p></div><!-- <style> .p { padding: 40px } </style> -->`, `.p { margin: 0 }`);

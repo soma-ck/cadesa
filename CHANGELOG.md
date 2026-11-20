@@ -55,6 +55,13 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 - Fixed: a run aligned `top` (or `bottom`, `middle`...) holding a raised run (`sup`) that holds a
   run of its own put its line's baseline where Chromium doesn't (found by `fuzz-css`: a flex row
   aligned on baselines placed such a text box 10px low, marked exact); it is `≈`.
+- Fixed: a one-column grid (no template) was laid out as a stack, whose items are as wide as the
+  grid even where one's content is wider; the grid's column grows to it, and every item with it.
+  Where an item's content overflows, its items are `≈` now. And in any grid, an item of unknown
+  size makes its siblings `≈` (they share its tracks); only the later ones were (found by
+  `fuzz-css`, a flex row 236px narrower than Chromium's, marked exact).
+- Fixed: a subgrid with a width, `max-width` or alignment of its own was laid out by them; a
+  subgrid fills the columns it spans (found by `npm run fuzz`). It is `≈` there.
 - Fixed: `check --css` stopped with an error on a page with `line-height: 0` (a chevron's
   `::before` in Bootstrap's cheatsheet); the box is `≈` instead.
 
@@ -67,7 +74,8 @@ now exact:
   (`vertical-align: -.125em`, Bootstrap Icons'), which an inline svg or image alone on its line now
   takes too.
 - A `<button>` with `display: block` or `flex` in block flow is as wide as its content, as Chromium
-  sizes it (it was `≈`): the theme toggle every Bootstrap example has.
+  sizes it, unless `justify-self` or its parent's `justify-items` stretches it (it was `≈`): the
+  theme toggle every Bootstrap example has.
 - Borders in `em` (a dropdown caret's `.3em`), drawn whole pixels wide as px borders are.
 - SVG-only properties (`text-anchor`, `dominant-baseline`, `paint-order`...) no longer make an svg
   `≈`: they paint only inside it.

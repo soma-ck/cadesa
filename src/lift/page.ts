@@ -142,6 +142,8 @@ export interface El {
   rowGap: (string | undefined)[];
   /** A flex-row item without a width that may not shrink (flex-shrink: 0), with the declaration. */
   noShrink: (string | undefined)[];
+  /** A one-column grid lifted as a stack (per state): its column grows to an item's content wider than it, which a stack doesn't. */
+  gridAsStack?: (string | undefined)[];
   /** A flex basis lifted as its width, where the item's automatic minimum (its min-content width) could make it wider (per state). */
   basisAutoMin?: (string | undefined)[];
   /**
@@ -3719,7 +3721,9 @@ export abstract class PageLifter {
           // (A percentage row gap is a grid's own: of its final height.)
           // (Nor with an absolutely positioned child: its static position is the grid's padding box corner.)
           if (single && plainItems && !sized && !template.length && !placedKids && !/%$/.test(rowGap ?? "") && !el.children.some((k) => this.positioned(k, si))) {
-            // One column: a stack with the row gap.
+            // One column: a stack with the row gap. (Its column is as wide as its widest item's
+            // content, past the grid: dynamic() flags the widths where an item's content overflows it.)
+            (el.gridAsStack ??= [])[si] = own.get("display")!.utility;
             decl("display", "flex", own.get("display")!.utility);
             decl("flex-direction", "column", own.get("grid-template-columns")?.utility ?? own.get("display")!.utility);
             if (rowGap && lengthPx(res("row-gap")!, 16) !== 0) decl("row-gap", rowGap, gapOrigin!.utility);
@@ -3853,6 +3857,15 @@ export abstract class PageLifter {
       const stretched = parentRole === "container" && /flex/.test(parentDisplay) && el.parent && this.isColumn(el.parent, si) && !own.has("align-self") && /^(normal|stretch)$/.test(parentAlign);
       if ((CONTROL.has(el.tag) || REPLACED_BLOCK.has(el.tag)) && !own.has("width") && !stretched && this.controlWidth(el, si) === undefined)
         this.note(el, si, (CONTROL.has(el.tag) && this.staleFont([el], si)) || { decl: `<${el.tag}>`, reason: `<${el.tag}> without a width${this.uaInCascade ? "" : " (w-*)"} takes its intrinsic width, which Cadesa doesn't know`, kind: "geometry" });
+      // A <button> that is block-level in block flow (display: block or flex) isn't stretched: it
+      // is as wide as its content, unless it is justified stretch (justify-self, or its parent's
+      // justify-items; probed: a reset's justify-items: stretch makes it fill the line).
+      if (el.tag === "button" && !inFlexOrGrid && !abs && !this.isInlineLevel(el, si) && !this.floated(el, si) && (!own.has("width") || /^auto$/.test(res("width") ?? "")) && !own.has("max-width") && SIDES.every((s) => !/^auto$/.test(res(`margin-${s}`) ?? ""))) {
+        const self = res("justify-self") ?? "auto";
+        const items = el.parent ? (this.resolve(el.parent, si, el.parent.own[si]?.get("justify-items")?.value ?? "normal") ?? "normal") : "normal";
+        const justify = /^(auto|normal)$/.test(self) ? items : self;
+        if (!/stretch/.test(justify) && /^(normal|legacy|start|left|flex-start|self-start)$/.test(justify.replace(/^(safe|unsafe)\s+/, ""))) decl("width", "fit-content", "a <button> is as wide as its content");
+      }
 
       // Borders: preflight makes every side `0 solid currentcolor`.
       const bw = SIDES.map((s) => own.get(`border-${s}-width`));
@@ -4847,6 +4860,9 @@ export abstract class PageLifter {
         // Shrinking differs from the browser's (flex-shrink 0 without a width; a width with
         // flex-shrink): it matters only where its line's items want more than the line.
         const parent = parentOf.get(b);
+        if (el.gridAsStack?.[si] && b.children.some((k) => (k.overflowX ?? 0) > 1e-6))
+          for (const k of [b, ...walk(b.children)])
+            out.push({ file: this.page, line: el.line, selector: `[data-fixture="${k.id}"]`, decl: el.gridAsStack[si]!, reason: `an item's content is wider than its grid at ${layout.width}px, and the grid's one column grows to it`, kind: "geometry" });
         if (el.basisAutoMin?.[si] && (b.overflowX ?? 0) > 1e-6)
           out.push({ file: this.page, line: el.line, selector: sel, decl: el.basisAutoMin[si]!, reason: `its content is wider than its flex basis at ${layout.width}px, and a flex item is never narrower than its content (min-width: auto)`, kind: "geometry" });
         if (el.noShrink[si] && parent && parent.props.pattern?.value === "cluster" && b.overfull)

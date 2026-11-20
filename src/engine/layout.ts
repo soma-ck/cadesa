@@ -1616,6 +1616,10 @@ function layoutWith(
           if (it.wraps && b.w < it.max - EPS) b.assumptions.push("its width comes from its content, and a row inside it wraps there: the browser sizes it from the wrapped lines");
         }
       }
+      // A subgrid fills the columns it spans whatever its width, max-width or alignment (css-grid-2
+      // §2: fuzz found one with a max-width laid out narrower): not modelled.
+      if (kp.grid?.value.subgridColumns && (kp.maxWidth || own || kp.measure || km.autoLeft || km.autoRight || j !== "stretch"))
+        b.assumptions.push("a subgrid fills the columns it spans, whatever its width, max-width or alignment: not modelled");
       // Across its area: auto margins, else justify-self.
       const m = marginOf(b.props);
       const free = U(cw) - U(b.w) - U(m.left) - U(m.right);
@@ -1865,9 +1869,6 @@ function layoutWith(
         w = fit(Math.max(0, avail - m.left - m.right), `sits in a stack aligned ${stackAlign}, which sizes it to its content`);
       // A float without a width is as wide as its content (shrink-to-fit in its containing block).
       else if (props.float && pw === undefined && !props.aspect && !props.maxWidth) w = fit(Math.max(0, avail - m.left - m.right), "floats, which sizes it to its content");
-      // A <button> isn't stretched in block flow either (display: block or flex too): it is as wide as its content.
-      else if ((parent === "flow" || parent === "page") && pw === undefined && n.tag === "button" && n.controlWidth === undefined && !props.aspect && !props.maxWidth && !m.autoLeft && !m.autoRight)
-        w = fit(Math.max(0, avail - m.left - m.right), "is a <button>, as wide as its content");
       else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
       // A table without a width is as wide as its columns want (fit-content), unless a flex column or grid stretches it.
       else if (grid && pw === undefined && parent !== "stack" && parent !== "grid" && parent !== "layer") w = fit(Math.max(0, avail - m.left - m.right), "is a table as wide as its content");
@@ -2188,7 +2189,7 @@ function layoutWith(
       else if (parent === "page" || parent === "flow") assumptions.push(`${parent === "page" ? "at the page level" : "in block flow"} its width follows the image file; ${say("add aspect or a width token", "give it a width or an aspect-ratio")}`);
     }
     // A form control is as wide as its content unless something sets its width.
-    if ((parent === "page" || parent === "flow") && CONTROLS.has(n.tag) && (pw === "fill" || (pw === undefined && n.controlWidth === undefined && (n.tag !== "button" || m.autoLeft || m.autoRight || !!props.aspect || !!props.maxWidth))) && (!props.maxWidth || n.tag === "button"))
+    if ((parent === "page" || parent === "flow") && CONTROLS.has(n.tag) && (pw === "fill" || (pw === undefined && n.controlWidth === undefined)) && !props.maxWidth)
       assumptions.push(`a <${n.tag}> ${parent === "page" ? "at the page level" : "in block flow"} is as wide as its content; ${say("give it a width token or maxWidth", "give it a width")}`);
     if (media && !props.aspect && !props.height)
       issues.push({

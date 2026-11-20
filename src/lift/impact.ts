@@ -226,6 +226,10 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
             else if (align === "stretch" && !s.props.height) (placesRows(s) ? subtree : mark)(s, "size", `stretched with #${b.id}: ${why}`);
           }
         });
+      } else if (pattern === "grid" && !heightOnly) {
+        // A grid's items share its tracks: one of unknown size may resize every column (fuzz-css
+        // found an earlier item kept exact beside one whose content sizes the only column).
+        for (const s of p.children) if (s !== cur && !outOfFlow(s)) subtree(s, "size", `resized with #${b.id}: ${why}`);
       } else {
         const shared = pattern === "cluster" || grows;
         const sibs = shared ? p.children.filter((c) => c !== cur) : p.children.slice(i + 1);
