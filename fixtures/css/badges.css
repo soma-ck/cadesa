@@ -234,3 +234,16 @@ p {
   display: block;
   font-size: 12px;
 }
+
+/* Baseline alignment of a badge's one item: as at its start (first baseline) or its end (last). */
+.based {
+  align-items: baseline;
+}
+
+.last {
+  align-items: last baseline;
+}
+
+.flexdot.based {
+  align-items: first baseline;
+}

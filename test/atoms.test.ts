@@ -50,6 +50,22 @@ describe("atomic inlines and runs on shared lines", () => {
   });
 });
 
+describe("a badge whose one item is aligned on its baseline (fixtures/css/badges.html)", () => {
+  // Probed: baseline and first baseline place it as start does, last baseline as end does.
+  const css = `p { margin: 0 } .b { display: inline-grid; width: 26px; height: 26px; font-size: 13px; line-height: 1; padding: 2px 3px }`;
+  const at = (align: string) => run(`<p data-fixture="p">Seen <span class="b" data-fixture="b" style="align-items: ${align}">12</span> times</p>`, css);
+  it("is laid out as at its start or its end", () => {
+    for (const [a, b] of [["baseline", "start"], ["first baseline", "start"], ["last baseline", "end"]]) {
+      const x = at(a);
+      expect(x.approx("b")).toBeUndefined();
+      expect(x.box("p").h).toBe(at(b).box("p").h);
+    }
+    // (Chromium: 35px with the item at the start, 32px at the end.)
+    expect(at("baseline").box("p").h).toBe(35);
+    expect(at("last baseline").box("p").h).toBe(32);
+  });
+});
+
 describe("an inline svg or image alone on its line (fixtures/css/icons.html)", () => {
   const r = run(
     `<div class="stage"><div class="pointer" data-fixture="pointer"><svg class="arrow" data-fixture="arrow" viewBox="0 0 25 31"><path d="M2 2l20 14z"/></svg></div></div><div class="avatar" data-fixture="avatar"><img data-fixture="img" src="x.png" alt=""></div><div class="seal" data-fixture="seal"><svg class="arrow" data-fixture="seal-icon"></svg></div>`,

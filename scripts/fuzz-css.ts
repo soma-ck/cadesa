@@ -168,7 +168,7 @@ export function genCssCase(seed: number): CssCase {
     // A badge: an inline-grid or inline-flex box holding a character or a word, of set size or sized by it.
     if (r.chance(0.15)) {
       const d = [`display: ${r.pick(["inline-grid", "inline-flex"])}`, "background: #dde"];
-      if (r.chance(0.7)) d.push(`align-items: ${r.pick(["center", "center", "start", "end", "stretch", "flex-start", "flex-end"])}`);
+      if (r.chance(0.7)) d.push(`align-items: ${r.pick(["center", "center", "start", "end", "stretch", "flex-start", "flex-end", "baseline", "first baseline", "last baseline"])}`);
       if (r.chance(0.4)) d.push("justify-content: center");
       if (r.chance(0.7)) {
         const s = r.pick(["18px", "20px", "25px", "1.3em", "28px"]);

@@ -61,6 +61,19 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   padding holding only the float) stays `≈`. `fixtures/css/floats.html` adds floats inside words
   and inside a run with padding, and `fuzz-css` generates both.
 
+- A line of `word-break: break-all` or `line-break: anywhere` text with inline boxes or
+  letter-spacing of its own that ends inside a word is exact where its width (measured item by item
+  as other lines are) is farther from the room than the font's kerning across the break plus the
+  letter-spacing; within that it stays `≈` (it was `≈` everywhere). `fixtures/css/breaks.html` adds
+  such lines (runs with edges and weights of their own, a link, letter-spaced text), checked every
+  2px. "ffi" and "ffl" in a font with ligatures stay `≈`: probed, Roboto keeps them whole in
+  min-content, but where a line ends inside them isn't pinned down (sharing the glyph's advance
+  evenly between its characters, as carets are placed, predicts 301 of 13,920 breaks wrongly).
+- Baseline alignment inside a badge is exact: its one item is placed as `align-items: start` places
+  it (`baseline`, `first baseline`) or as `end` does (`last baseline`) (probed in grid and flex
+  badges of set, auto and shorter heights). `fixtures/css/badges.html` covers them, and `fuzz-css`
+  generates them.
+
 ## 0.1.23 (2026-11-20)
 
 - Correction: the README said the Bootstrap suite also passes with classic 15px scrollbars

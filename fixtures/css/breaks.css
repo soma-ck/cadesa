@@ -107,3 +107,20 @@ p {
   padding: 4px;
   background: #f0f4f8;
 }
+
+/* Lines that break inside words holding runs of their own, or letter-spaced. */
+.code-run {
+  padding: 0 6px;
+  margin: 0 2px;
+  border: 1px solid #9fb3c8;
+  font-weight: 600;
+}
+
+.spaced {
+  letter-spacing: 0.06em;
+}
+
+.spaced-wide {
+  letter-spacing: 2px;
+  font-size: 18px;
+}

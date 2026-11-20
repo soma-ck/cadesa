@@ -844,7 +844,18 @@ function layoutLines(
   const fits = (s: string) => {
     if (midWord(s)) {
       if (!spans.length && !lead && !ls && !edges.length) return fitsMid(s);
-      approximate ??= "a line ends inside a word (word-break: break-all or line-break: anywhere) in text with inline boxes or letter-spacing of its own";
+      // With inline boxes or letter-spacing of its own: measured item by item as other lines are.
+      // Chromium measures the line's last item where it sits in the text's shaping (kerned to the
+      // character after the break) and, where the font kerns across the break, reshaped too, so
+      // the two differ by that kerning (and letter-spacing at the break): decided exactly away
+      // from the line's width, flagged within that of it.
+      const { used, lw } = lineWidth(s);
+      const e = consumed + [...s].length;
+      const kern = e > 0 && e < all.length ? Math.abs(measure(all[e - 1] + all[e], e - 1) - measure(all[e - 1], e - 1) - measure(all[e], e)) : 0;
+      const room = maxWidth + 1 / 64 + TEXT_EPS / 64;
+      if (Math.abs(used + lw - room) <= kern + Math.abs(ls) + 2 / 64)
+        approximate ??= "a line ends inside a word (word-break: break-all or line-break: anywhere), with inline boxes or letter-spacing of its own, within the kerning across the break of its width";
+      return used + lw <= room;
     }
     const { used, lw, last, from } = lineWidth(s);
     // A line ending in a soft hyphen's "-" gets no slack (and how much isn't pinned down: flagged).

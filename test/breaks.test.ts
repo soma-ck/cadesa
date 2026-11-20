@@ -40,4 +40,19 @@ describe("breaks inside words", () => {
     expect(r.t.yaml).toMatch(/breaks: anywhere/);
     expect(r.exact()).toBe(true);
   });
+
+  it("breaks lines with inline boxes or letter-spacing of their own inside words, flagged only within the kerning across the break of their width", () => {
+    const m = metricsFor("Inter")!;
+    const text = "Codes LDGR2024STOREROOMWAVE and AVATARTYPOGRAPHY0098";
+    const spans = [{ from: 32, to: 52, open: 7, close: 7, weight: 600 }];
+    // Away from the line's width: exact, every line full but the last.
+    const a = layoutText(m, text, 16, 400, 203, { breaks: "all", items: [32, 52], spans });
+    expect(a.approximate).toBeUndefined();
+    for (const l of a.lines.slice(0, -1)) expect(l.width).toBeLessThanOrEqual(203 + 1 / 64);
+    // Letter-spaced: flagged where a line's width is within the letter-spacing of the room.
+    const widths = Array.from({ length: 200 }, (_, i) => 120 + i);
+    const flagged = widths.filter((w) => layoutText(m, text, 16, 400, w, { breaks: "all", letterSpacing: 1 }).approximate);
+    expect(flagged.length).toBeGreaterThan(0);
+    expect(flagged.length).toBeLessThan(widths.length);
+  });
 });
