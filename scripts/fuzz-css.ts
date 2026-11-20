@@ -276,7 +276,25 @@ export function genCssCase(seed: number): CssCase {
     const opts = () => Array.from({ length: r.int(1, 4) }, () => `<option>${words(r, 1, 3)}</option>`).join("");
     if (kind === "text") return `<input${c} type="${r.pick(["text", "email", "password", "tel", "url"])}"${r.chance(0.5) ? ` size="${r.int(1, 30)}"` : ""}>`;
     if (kind === "select") return `<select${c}>${opts()}</select>`;
-    if (kind === "date" || kind === "time" || kind === "month" || kind === "week" || kind === "datetime-local" || kind === "file") return `<input${c} type="${kind}">`;
+    // A time with a step (a seconds or milliseconds field, or none); inner parts the page styles:
+    // a file input's button (its padding, border, margin, font size, paint), a date's painted parts.
+    const step = (kind === "time" || kind === "datetime-local") && r.chance(0.5) ? ` step="${r.pick(["1", "15", "60", "900", "0.5", "0.001", "any", "3600"])}"` : "";
+    const parts: string[] = [];
+    if (kind === "file" && r.chance(0.5)) {
+      const pd = [r.pick(["color: #234", "background: #eef", "cursor: pointer"])];
+      if (r.chance(0.5)) pd.push(`padding: ${r.int(0, 10)}px ${r.int(0, 16)}px`);
+      if (r.chance(0.4)) pd.push(r.pick(["border: 0", "border: 1px solid #889", `border-width: ${r.int(0, 4)}px`]));
+      if (r.chance(0.3)) pd.push(`margin-right: ${r.int(0, 12)}px`);
+      if (r.chance(0.3)) pd.push(`font-size: ${r.pick(["12px", "15px", "20px", "1.2em"])}`);
+      parts.push(`::file-selector-button { ${pd.join("; ")} }`);
+    }
+    if (kind !== "file" && /date|time|month|week/.test(kind) && r.chance(0.3)) parts.push(`::-webkit-datetime-edit-fields-wrapper { color: #456 }`, `::-webkit-calendar-picker-indicator { opacity: 0.6; cursor: pointer }`);
+    if (parts.length) {
+      const pc = `k${++n}`;
+      for (const x of parts) css.push(`.${pc}${x}`);
+      return `<input class="${pc}${c ? ` ${c.replace(/^ class="|"$/g, "")}` : ""}" type="${kind}"${step}>`;
+    }
+    if (kind === "date" || kind === "time" || kind === "month" || kind === "week" || kind === "datetime-local" || kind === "file") return `<input${c} type="${kind}"${step}>`;
     if (kind === "textarea") return `<textarea${c}${r.chance(0.6) ? ` rows="${r.int(1, 5)}"` : ""}${r.chance(0.6) ? ` cols="${r.int(4, 40)}"` : ""}></textarea>`;
     if (kind === "submit" || kind === "button") return `<input${c} type="${kind}"${kind === "button" || r.chance(0.5) ? ` value="${words(r, 1, 2)}"` : ""}>`;
     return `<input type="${kind}">`;
@@ -337,6 +355,8 @@ export function genCssCase(seed: number): CssCase {
       if (r.chance(0.3)) d.push(`padding: ${r.int(0, 8)}px`);
       if (r.chance(0.2)) d.push(`clear: ${r.pick(["left", "right", "both"])}`);
       if (r.chance(0.3)) d.push(`font-size: ${r.pick(["12px", "14px", "20px"])}`);
+      // Auto margins: a float's are 0.
+      if (r.chance(0.15)) d.push(r.pick(["margin: 0 auto", "margin-left: auto", "margin-inline: auto; max-width: 140px"]));
       return `<div${attr(cls(d))}>${sized && r.chance(0.5) ? "" : words(r, 1, 5)}</div>`;
     };
     const para = () => {

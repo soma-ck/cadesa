@@ -442,6 +442,9 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         b.x = at.x - ctx.x + m.left;
         b.y = at.y - ctx.y + m.top;
         // (A float's auto margins are 0, CSS 2.1 §10.3.5: it goes to its side whatever they are.)
+        // One capped by a max-width without a width of its own is as wide as its content up to
+        // it, which the lift's maxWidth (as wide as its container up to it) doesn't say.
+        if (p.maxWidth && p.width === undefined) b.assumptions.push("a float with a max-width and no width (as wide as its content up to it) isn't modelled");
         collapse.set(b, { top: NONE, bottom: NONE, empty: true, at: NONE });
         floated.add(b);
         boxes.push(b);
