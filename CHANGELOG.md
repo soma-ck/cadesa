@@ -54,6 +54,16 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   again once its fonts are loaded; after that every select was where it is when the font loads
   first, in every load. That is the page's state once it has loaded. `fixtures/css/selects.html`
   (selects in Inter, Roboto and Lato at 12 sizes and 4 line heights) is in `conformance:css`.
+- A time (or datetime-local) input with a `step` is laid out with the fields Chromium shows for it
+  (probed): a whole number of minutes (or `any`, or no valid step: 60s) shows hours and minutes;
+  other whole seconds add a seconds field (`h:mm:ss AM`); a fraction of a second adds milliseconds
+  too (`h:mm:ss.SSS AM`).
+- A form control's inner parts are cascaded per element: a date input whose
+  `::-webkit-datetime-edit…` or picker the page only paints (color, background, opacity, a cursor)
+  is exact, and a file input whose `::file-selector-button` sets its padding, border, margin or
+  font size is too (its width stays 34 "0"s; its button, in Arial, sets its height: probed). Parts
+  styled in ways that move them otherwise stay `≈`, as does a page whose rule for them can't be
+  decided.
 - Floats with auto margins are exact: their auto margins are 0, as CSS 2.1 §10.3.5 has it. A box
   laid out after floats whose place isn't known no longer claims its size (its lines wrap by where
   it goes). The floats fixture covers floats with auto margins, clearance on a first child whose

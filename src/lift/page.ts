@@ -176,6 +176,8 @@ export interface El {
   signature?: string;
   /** Per state, from the front end: the declarations the cascade gives the element's ::before and ::after (when content is set). */
   pseudoOwn?: { before?: Map<string, Origin>; after?: Map<string, Origin> }[];
+  /** Its inner parts' own declarations, by state and pseudo-element (::file-selector-button, ::-webkit-datetime-edit…). */
+  partOwn?: Record<string, Map<string, Origin>>[];
   /** A ::before or ::after box (added after the cascade, as the first or last child of its element). */
   pseudo?: "before" | "after";
   /**
@@ -1919,7 +1921,7 @@ export abstract class PageLifter {
     if (DATE_LIKE.test(type)) return this.dateFields(el, type, si)?.width;
     if (type === "file") {
       // 34 times its font's "0", rounded up (its button and "No file chosen" sit inside that).
-      if (this.styledFileButton()) return undefined;
+      if (!this.fileButtonStyle(el, si)) return undefined;
       const z = m.measure("0", t.size, t.weight);
       return z === undefined ? undefined : Math.ceil(34 * z - 1e-6);
     }
@@ -1943,7 +1945,14 @@ export abstract class PageLifter {
    * seconds field), or a text isn't measured.
    */
   dateFields(el: El, type: string, si: number): { width: number; picker: number } | undefined {
-    if (this.styledDateParts() || (/time/.test(type) && attr(el.node, "step") !== undefined)) return undefined;
+    if (this.datePartsStyled(el, si)) return undefined;
+    // A time's step (in seconds) decides its fields, as Chromium (probed): a whole number of minutes
+    // (or none, "any", or not a positive number: 60) shows hours and minutes; other whole seconds
+    // add a seconds field (h:mm:ss AM); a fraction of a second adds milliseconds too (h:mm:ss.SSS AM).
+    const stepRaw = /time/.test(type) ? attr(el.node, "step")?.trim() : undefined;
+    const step = stepRaw === undefined || !/^[+]?(\d+\.?\d*|\.\d+)(e[+-]?\d+)?$/i.test(stepRaw) || !(parseFloat(stepRaw) > 0) ? 60 : parseFloat(stepRaw);
+    const secs = !Number.isInteger(step / 60) || !Number.isInteger(step);
+    const millis = !Number.isInteger(step);
     const t = this.textOf(el, si);
     const m = metricsFor(t.family.value, t.italic);
     if (!m || t.fluid) return undefined;
@@ -1951,9 +1960,10 @@ export abstract class PageLifter {
     const mx = (...xs: string[]) => Math.max(...xs.map(w));
     const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
     const date = [mx("mm", "12"), w("/"), mx("dd", "31"), w("/"), mx("yyyy", "275760")];
-    const time = [mx("--", "12"), w(":"), mx("--", "59"), w(" "), mx("--", "AM", "PM")];
+    const time = [mx("--", "12"), w(":"), mx("--", "59"), ...(secs ? [w(":"), mx("--", "59")] : []), ...(millis ? [w("."), mx("---", "999")] : []), w(" "), mx("--", "AM", "PM")];
+    const tn = 3 + (secs ? 1 : 0) + (millis ? 1 : 0);
     const [parts, n] =
-      type === "date" ? [date, 3] : type === "time" ? [time, 3] : type === "month" ? [[mx("---------", ...MONTHS), w(" "), mx("----", "275760")], 2] : type === "week" ? [[w("Week "), mx("--", "53"), w(", "), mx("----", "275760")], 2] : [[...date, w(", "), ...time], 6];
+      type === "date" ? [date, 3] : type === "time" ? [time, tn] : type === "month" ? [[mx("---------", ...MONTHS), w(" "), mx("----", "275760")], 2] : type === "week" ? [[w("Week "), mx("--", "53"), w(", "), mx("----", "275760")], 2] : [[...date, w(", "), ...time], 3 + tn];
     const sum = parts.reduce((a, b) => a + b, 0);
     if (!isFinite(sum)) return undefined;
     const edit = Math.floor(sum + 2 * n + 1e-6) + 1;
@@ -1963,15 +1973,61 @@ export abstract class PageLifter {
 
   /**
    * A file input's button ("Choose File", in Arial at its font size: 1px padding and 2px border
-   * above and below), on its line's baseline: how far it reaches above and below it. Arial's
-   * vertical metrics (Liberation Sans' on Linux: the same) are a fact of the font.
+   * above and below, unless the page's ::file-selector-button sets others), on its line's
+   * baseline: how far it reaches above and below it. Arial's vertical metrics (Liberation Sans' on
+   * Linux: the same) are a fact of the font. Probed with buttons of other padding, borders and
+   * font sizes: its line at line-height: normal inside them.
    */
-  fileButton(size: number): { above: number; below: number } {
+  fileButton(size: number, s: { pt: number; pb: number; bt: number; bb: number; mt: number; mb: number } = { pt: 1, pb: 1, bt: 2, bb: 2, mt: 0, mb: 0 }): { above: number; below: number } {
     const asc = Math.round(0.905 * size);
     const desc = Math.round(0.212 * size);
     const gap = Math.round((67 / 2048) * size);
-    const above = 3 + asc + Math.floor(gap / 2);
-    return { above, below: asc + desc + gap + 6 - above };
+    const above = s.mt + s.bt + s.pt + asc + Math.floor(gap / 2);
+    return { above, below: asc + desc + gap + s.mt + s.bt + s.pt + s.pb + s.bb + s.mb - above };
+  }
+
+  /**
+   * Whether a date-like input's inner parts are styled in a way that changes how it lays out its
+   * fields (anything but paint: colors, backgrounds, opacity, a cursor).
+   */
+  datePartsStyled(el: El, si: number): boolean {
+    if (!el.partOwn) return this.styledDateParts();
+    const parts = el.partOwn[si] ?? {};
+    return Object.entries(parts).some(([pe, own]) => !/^(file-selector-button|-webkit-file-upload-button)$/.test(pe) && [...own.keys()].some((p) => !p.startsWith("--") && !/^(none|paint)$/.test(kindOf(p))));
+  }
+
+  /**
+   * A file input's button as the page styles it (::file-selector-button): its padding, border and
+   * margin above and below, and its font size; undefined where it sets anything else that moves it
+   * (its font, line height, display, a size of its own).
+   */
+  fileButtonStyle(el: El, si: number): { size: number; style: { pt: number; pb: number; bt: number; bb: number; mt: number; mb: number } } | undefined {
+    const t = this.textOf(el, si);
+    const def = { size: t.size, style: { pt: 1, pb: 1, bt: 2, bb: 2, mt: 0, mb: 0 } };
+    if (!el.partOwn) return this.styledFileButton() ? undefined : def;
+    const own = el.partOwn[si]?.["file-selector-button"] ?? el.partOwn[si]?.["-webkit-file-upload-button"];
+    if (!own) return def;
+    // Horizontally its edges are inside the input's width (34 "0"s): only what is above and below counts.
+    for (const p of own.keys())
+      if (!p.startsWith("--") && !/^(none|paint)$/.test(kindOf(p)) && !/^((padding|margin)-(top|right|bottom|left)|border-(top|right|bottom|left)-(width|style)|font-size|font-weight|box-sizing|margin-inline-(start|end)|padding-inline-(start|end))$/.test(p)) return undefined;
+    const res = (p: string) => {
+      const o = own.get(p);
+      return o ? this.resolve(el, si, o.value) : undefined;
+    };
+    const fs = res("font-size");
+    const size = fs === undefined || /^inherit$/.test(fs) ? t.size : lengthPx(fs, t.size);
+    if (size === undefined || !(size > 0)) return undefined;
+    const px = (p: string, d: number) => {
+      const v = res(p);
+      return v === undefined ? d : (lengthPx(v, size) ?? NaN);
+    };
+    const bdr = (side: string) => {
+      const st = res(`border-${side}-style`);
+      if (st !== undefined && /^(none|hidden)$/.test(st)) return 0;
+      return borderPx(px(`border-${side}-width`, st === undefined ? 2 : 3));
+    };
+    const style = { pt: px("padding-top", 1), pb: px("padding-bottom", 1), bt: bdr("top"), bb: bdr("bottom"), mt: px("margin-top", 0), mb: px("margin-bottom", 0) };
+    return Object.values(style).every((v) => isFinite(v) && v >= 0) ? { size, style } : undefined;
   }
 
   /**
@@ -2016,7 +2072,10 @@ export abstract class PageLifter {
       return f ? top + Math.floor(((Math.max(own.lh + 2, f.picker) - own.lh - 2) / 2) * 64 + 1e-6) / 64 + 1 + own.sa : NaN;
     }
     // A file input: its line's, which its button may make taller above the baseline.
-    if (type === "file") return this.styledFileButton() ? NaN : top + Math.max(own.sa, this.fileButton(t.size).above);
+    if (type === "file") {
+      const fb = this.fileButtonStyle(el, si);
+      return fb ? top + Math.max(own.sa, this.fileButton(fb.size, fb.style).above) : NaN;
+    }
     return NaN;
   }
 
@@ -2131,10 +2190,11 @@ export abstract class PageLifter {
       return isFinite(h) ? h : undefined;
     }
     // A file input: one line, holding its button (see fileButton) on the baseline.
-    if (el.tag === "input" && type === "file" && !limited && !this.styledFileButton()) {
+    const fb = el.tag === "input" && type === "file" ? this.fileButtonStyle(el, si) : undefined;
+    if (el.tag === "input" && type === "file" && !limited && fb) {
       const own = this.strutOf(el, si);
       if (!own || t.fluid) return undefined;
-      const b = this.fileButton(t.size);
+      const b = this.fileButton(fb.size, fb.style);
       const h = Math.max(own.sa, b.above) + Math.max(own.sd, b.below) + edgesY();
       return isFinite(h) ? h : undefined;
     }

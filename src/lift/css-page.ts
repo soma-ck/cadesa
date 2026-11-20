@@ -753,14 +753,13 @@ class CssLifter extends PageLifter {
         for (const d of r.decls) if (d.prop.startsWith("--")) this.theme.set(d.prop, d.value);
   }
 
-  private dateParts?: boolean;
+  // (A control's inner parts are cascaded element by element, into El.partOwn: see the cascade.)
   styledDateParts(): boolean {
-    return (this.dateParts ??= this.rules.some((r) => r.origin === "author" && /::-webkit-(datetime-edit|date-and-time-value|calendar-picker-indicator)/i.test(r.selector)));
+    return false;
   }
 
-  private fileButtonStyled?: boolean;
   styledFileButton(): boolean {
-    return (this.fileButtonStyled ??= this.rules.some((r) => r.origin === "author" && /::(-webkit-file-upload-button|file-selector-button)/i.test(r.selector)));
+    return false;
   }
 
   keyframesAt(name: string, offset: number): Map<string, string> | undefined {
@@ -883,6 +882,8 @@ class CssLifter extends PageLifter {
       const apply: { rule: CssRuleIn; d: CssRuleIn["decls"][number]; t: number }[] = [];
       /** ::before and ::after: their own cascades. */
       const generated: Record<"before" | "after", typeof apply> = { before: [], after: [] };
+      /** A form control's inner parts (a file input's button, a date input's fields): their own cascades. */
+      const parts: Record<string, typeof apply> = {};
       for (const { rule, m, pseudoElement } of matched) {
         const props = rule.decls.filter((d) => !d.prop.startsWith("--"));
         const k: ImpactKind = props.length ? worst(props.map((d) => kindOf(d.prop))) : "none";
@@ -905,6 +906,8 @@ class CssLifter extends PageLifter {
               this.note(el, si, { decl: `${where} ${declText}`, reason: `::${pseudoElement} content under a selector Cadesa can't decide is not modelled`, kind: "geometry" });
             else if (m === "yes") for (const d of rule.decls) generated[pseudoElement].push({ rule, d, t: tier(rule, d.important) });
           } else if (/^(first-line|first-letter)$/.test(pseudoElement)) this.note(el, si, { decl: `${where} ${declText}`, reason: `::${pseudoElement} styles are not modelled`, kind: "text" });
+          // (Under a selector that may match: as if it did, so that what it sets is accounted for.)
+          else if (PARTS.test(pseudoElement) && m !== "state" && m !== "no") for (const d of rule.decls) (parts[pseudoElement.toLowerCase()] ??= []).push({ rule, d, t: tier(rule, d.important) });
           continue;
         }
         if (m === "state") {
@@ -929,9 +932,16 @@ class CssLifter extends PageLifter {
       (el.pseudoOwn ??= [])[si] = {};
       for (const pe of ["before", "after"] as const)
         if (generated[pe].some(({ d }) => d.prop === "content")) cascade(generated[pe], (el.pseudoOwn[si][pe] = new Map()));
+      if (Object.keys(parts).length) {
+        (el.partOwn ??= [])[si] = {};
+        for (const [pe, list] of Object.entries(parts)) cascade(list, (el.partOwn[si][pe] = new Map()));
+      }
     });
   }
 }
+
+/** A form control's inner parts, styled by pseudo-elements: a file input's button, a date input's fields and picker. */
+const PARTS = /^(file-selector-button|-webkit-file-upload-button|-webkit-datetime-edit.*|-webkit-date-and-time-value|-webkit-calendar-picker-indicator)$/i;
 
 function lineAt(text: string, offset: number) {
   let n = 1;

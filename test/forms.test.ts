@@ -132,3 +132,21 @@ describe("date inputs (en-US)", () => {
     expect(r.approx("d")).toBeDefined();
   });
 });
+
+describe("form controls' inner parts the page styles", () => {
+  // Chromium (en-US): the file input's width is 34 "0"s whatever its button; its button's padding,
+  // border and font size set its height (its line at line-height: normal inside them).
+  const r = run(
+    `<div><input data-fixture="f1" class="a" type="file"></div><div><input data-fixture="f2" class="b" type="file"></div><div><input data-fixture="f3" class="c" type="file"></div><div><input data-fixture="f4" class="d" type="file"></div><div><input data-fixture="t1" class="e" type="time" step="1"></div>`,
+    `input { font: 16px Inter } .a::file-selector-button { padding: 8px 16px } .b::file-selector-button { border: 0 } .c::file-selector-button { font-size: 20px } .d::file-selector-button { color: red; background: #eee; cursor: pointer }
+.e::-webkit-datetime-edit-fields-wrapper { color: #486581 } .e::-webkit-calendar-picker-indicator { opacity: 0.6 }`,
+    [600],
+  );
+  it("sizes a file input by its styled button", () => {
+    expect(["f1", "f2", "f3", "f4"].map((id) => [r.box(id).w, r.box(id).h])).toEqual([[344, 38], [344, 21], [344, 29], [344, 24]]);
+    for (const id of ["f1", "f2", "f3", "f4"]) expect(r.approx(id)).toBeUndefined();
+  });
+  it("lays out a date-like input whose parts are only painted, with a seconds field for its step", () => {
+    expect(r.approx("t1")).toBeUndefined();
+  });
+});

@@ -196,3 +196,34 @@ button {
   line-height: 1.25;
   appearance: none;
 }
+
+/* File inputs whose button the page styles, and date inputs whose inner parts it only tints. */
+.file-styled::file-selector-button {
+  margin-right: 10px;
+  padding: 6px 12px;
+  border: 0;
+  border-radius: 4px;
+  background: #d9e2ec;
+  color: #243b53;
+  cursor: pointer;
+}
+
+.file-big::file-selector-button {
+  padding: 10px 16px;
+  border: 1px solid #9fb3c8;
+  font-size: 15px;
+}
+
+.file-tinted::file-selector-button {
+  background: #f0f4f8;
+  color: #334e68;
+}
+
+.date-tinted::-webkit-datetime-edit-fields-wrapper {
+  color: #486581;
+}
+
+.date-tinted::-webkit-calendar-picker-indicator {
+  opacity: 0.6;
+  cursor: pointer;
+}
