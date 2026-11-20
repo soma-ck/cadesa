@@ -9,7 +9,7 @@
  * measured falls back to a one-line assumption, which every report flags.
  */
 import { closest } from "../diagnostics.js";
-import { styled, type Fixture, type FixtureNode } from "../fixture.js";
+import { styled, type Fixture, type FixtureNode, type Span } from "../fixture.js";
 import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
 import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, scrollbarPx, sizeAt, type GridSpec, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
@@ -255,6 +255,36 @@ function runFontsOf(n: FixtureNode, props: ResolvedProps): { font?: string; weig
     }
   });
   return [...out.values()];
+}
+
+/**
+ * Inter's contextual alternates draw a lowercase "x" between digits (a space, no-break space or
+ * narrow no-break space on either side allowed) as "×", unless the digit before it is a 0 that
+ * doesn't follow a digit (a hex prefix, "0x2"). Probed in Chromium at weights 100 to 900: such a
+ * run is as wide as the same run with "×". An "x" whose context spans a change of font or the edge
+ * of an inline box with margins, border or padding (shaped apart) isn't known: with `doubt`, true
+ * when there is one; otherwise the text with each such "x" replaced.
+ */
+function interTimes(r: string, spans: Span[] | undefined, doubt?: false): string;
+function interTimes(r: string, spans: Span[] | undefined, doubt: true): boolean;
+function interTimes(r: string, spans: Span[] | undefined, doubt = false): string | boolean {
+  if (!r.includes("x")) return doubt ? false : r;
+  const cs = [...r];
+  const sp = (c: string | undefined) => c === " " || c === "\u00a0" || c === "\u202f";
+  const digit = (c: string | undefined) => !!c && c >= "0" && c <= "9";
+  const split = (a: number, b: number) => (spans ?? []).some((x) => (styled(x) || x.open || x.close || x.openAt) && ((x.from > a && x.from <= b) || (x.to > a && x.to <= b)));
+  for (let i = 0; i < cs.length; i++) {
+    if (cs[i] !== "x") continue;
+    const a = sp(cs[i - 1]) ? i - 2 : i - 1;
+    const b = sp(cs[i + 1]) ? i + 2 : i + 1;
+    if (!digit(cs[a]) || !digit(cs[b]) || (cs[a] === "0" && !digit(cs[a - 1]))) continue;
+    if (split(a, b)) {
+      if (doubt) return true;
+      continue;
+    }
+    cs[i] = "×";
+  }
+  return doubt ? false : cs.join("");
 }
 
 /** A color that paints nothing (a background in it doesn't count as painted). */
@@ -573,7 +603,9 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     const t = props.text!.value;
     const m = metricsFor(t.font, !!t.italic);
     const raw = n.runs.length ? n.runs : [n.text];
-    const runs = raw.map((r) => (t.uppercase ? r.toUpperCase() : r));
+    // Inter draws an "x" between digits as a multiplication sign (its contextual alternates): measured as "×".
+    const inter = m?.family === "Inter" && !t.letterSpacing;
+    const runs = raw.map((r, i) => (t.uppercase ? r.toUpperCase() : inter ? interTimes(r, n.runMeta[i]?.spans) : r));
     const shown = [...runs, ...n.runMeta.flatMap((r) => (r.lead ? [r.lead.text] : []))].join(" ").replaceAll("\uFFFC", "");
     // Runs in another font: that font's metrics, for the characters in it, at its weights.
     const runFonts = n.runMeta.flatMap((r, i) => (r.spans ?? []).filter((sp) => sp.font !== undefined || (sp.italic !== undefined && sp.italic !== !!t.italic)).map((sp) => ({ sp, text: [...(runs[i] ?? "")].slice(sp.from, sp.to).join("").replaceAll("\uFFFC", "") })));
@@ -605,7 +637,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       assumptions.push("letter-spacing may be dropped from a paragraph that has a U+202F and no letters");
     // Contextual alternates change glyphs (and widths) depending on their neighbours: Inter draws
     // "*" and "@" differently between capitals, and "x" between digits as "×".
-    const contextual = /[*@<>\\]/.test(shown) ? shown.match(/[*@<>\\]/)![0] : /\d ?[xX] ?\d/.test(shown) ? "x between digits" : undefined;
+    const contextual = /[*@<>\\]/.test(shown) ? shown.match(/[*@<>\\]/)![0] : (inter ? runs.some((r, i) => interTimes(r, n.runMeta[i]?.spans, true)) : /\d ?[xX] ?\d/.test(shown)) ? "x between digits" : undefined;
     if (contextual) assumptions.push(`text width is approximate: "${contextual}" has contextual forms that Cadesa doesn't measure`);
     // A font whose contextual forms can't be searched (a handwriting font): exact where each run
     // of its text was laid out whole in Chromium (`cadesa fonts --measure`) and stays on one line.

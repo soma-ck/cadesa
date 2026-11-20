@@ -2,7 +2,8 @@
  * Badges on lines of text: inline-grid and inline-flex boxes of a set size (or sized by their
  * text) holding one character centered in them, beside text and on lines that wrap. And tables of
  * text: elements with display: table holding only text, in block flow (as wide as their text), in
- * a flex row and a flex column.
+ * a flex row and a flex column. Inter's contextual "x" between digits, drawn as a multiplication
+ * sign, on lines that wrap.
  */
 *,
 *::before,
@@ -191,4 +192,12 @@ p {
 
 .stack .note {
   margin-top: 0;
+}
+
+.sizes {
+  font-size: 15px;
+}
+
+.bold {
+  font-weight: 650;
 }
