@@ -73,7 +73,8 @@ export function fontUses(layouts: Layout[]): FontUse[] {
       }
       const u = use(t.font, t.weight, !!t.italic);
       // Each paragraph (run between line breaks) of its text, at its size and weight.
-      for (const line of (b.runTexts ?? [b.text]).map((x) => x.replace(/[ \t\n\r\f]+/g, " ").trim()).filter((x) => x && !x.includes("\uFFFC")))
+      // (Split at atomic inlines: the text on either side of one is shaped apart, each part whole.)
+      for (const line of (b.runTexts ?? [b.text]).flatMap((x) => x.replace(/[ \t\n\r\f]+/g, " ").trim().split("\uFFFC")).filter((x) => x.trim()))
         if (!(u.lines ??= []).some((x) => x.text === line && x.size === t.sizePx && x.weight === t.weight)) u.lines.push({ text: line, size: t.sizePx, weight: t.weight });
       chars(u, [...b.text].filter((c) => !inRuns.has(c)).join(""));
     }

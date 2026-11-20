@@ -642,9 +642,25 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // A font whose contextual forms can't be searched (a handwriting font): exact where each run
     // of its text was laid out whole in Chromium (`cadesa fonts --measure`) and stays on one line.
     const ctxWhy = `text width is approximate: font "${m!.family}" shapes more runs in context (contextual alternates) than were measured`;
-    const whole = m!.info.contextualIncomplete && /\S/.test(shown) && !t.letterSpacing && !t.wrapAnywhere
-      ? runs.map((r, i) => (n.runMeta[i]?.spans?.length || n.runMeta[i]?.items?.length || r.includes("\uFFFC") ? undefined : m!.lineWidth(r.replace(/[ \t\n\r\f]+/g, " ").trim(), t.sizePx, t.weight)))
-      : undefined;
+    // A run holding atomic inlines (a badge in another font): Chromium shapes the text on either side
+    // of each apart, so each part was laid out whole on its own; the run is as wide as its parts and
+    // its atomic inlines.
+    const wholeRun = (r: string, i: number): number | undefined => {
+      const meta = n.runMeta[i];
+      const cs = [...r];
+      const atoms = (meta?.spans ?? []).filter((sp) => cs.slice(sp.from, sp.to).join("") === "\uFFFC" && sp.font === undefined && sp.size === undefined && sp.weight === undefined && sp.italic === undefined);
+      if ((meta?.spans?.length ?? 0) !== atoms.length || (meta?.items ?? []).some((b) => cs[b - 1] !== "\uFFFC" && cs[b] !== "\uFFFC")) return undefined;
+      const line = r.replace(/[ \t\n\r\f]+/g, " ").trim();
+      if (!atoms.length) return m!.lineWidth(line, t.sizePx, t.weight);
+      let total = atoms.reduce((s, sp) => s + (sp.open ?? (sp.openAt ? sp.openAt(t.sizePx) : 0)) + (sp.close ?? 0), 0);
+      for (const part of line.split("\uFFFC").filter(Boolean)) {
+        const w = m!.lineWidth(part, t.sizePx, t.weight);
+        if (w === undefined) return undefined;
+        total += w;
+      }
+      return total;
+    };
+    const whole = m!.info.contextualIncomplete && /\S/.test(shown) && !t.letterSpacing && !t.wrapAnywhere ? runs.map(wholeRun) : undefined;
     const wholeOk = !!whole && whole.every((x) => x !== undefined);
     if (!contextual && m!.info.contextualIncomplete && /\S/.test(shown) && !wholeOk) assumptions.push(ctxWhy);
     // Whether a hanging space's kerning counts at a line end depends on the block that holds the

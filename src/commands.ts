@@ -553,8 +553,8 @@ export async function fontsCmd(
   s: SourceInput & { fixture: string; widths: number[]; measure?: boolean; system?: boolean; out?: string; via?: "cli" | "mcp" },
 ): Promise<Result> {
   s = withCssDir(s);
-  const p = pageOf(s);
-  const model = modelOf(load(s));
+  let p = pageOf(s);
+  let model = modelOf(load(s));
   let report = fontsOf(s, renderPage(model, p, s.widths));
   let measured: Measured[] | undefined;
   let text = "";
@@ -563,7 +563,22 @@ export async function fontsCmd(
     text += formatMeasured(measured) + (measured.length ? "\n" : "");
     const unused = report.filter((f) => !f.boxes.length && f.status !== "measured").map((f) => f.family);
     if (unused.length) text += `not measured, as no laid-out text is set in them: ${unused.join(", ")}\n\n`;
+    // Lifted and laid out again with the tables just measured (the lift sizes inline-blocks from
+    // them), the page's text may make other lines to measure whole (an inline-block of known size
+    // now splits a handwriting font's run): measured once more.
+    pageCache.clear();
+    p = pageOf(s);
+    model = modelOf(load(s));
     report = fontsOf(s, renderPage(model, p, s.widths));
+    const again = report.filter((f) => f.boxes.length && f.status === "measured" && !!f.remeasure?.includes("whole lines"));
+    if (again.length) {
+      const more = await measureReport(again, { out: s.out, system: s.system });
+      measured = [...measured.filter((m) => !more.some((x) => x.family === m.family)), ...more];
+      pageCache.clear();
+      p = pageOf(s);
+      model = modelOf(load(s));
+      report = fontsOf(s, renderPage(model, p, s.widths));
+    }
   }
   const measurable = report.some((f) => f.status === "file" || f.status === "google" || !!f.remeasure);
   // An outdated table measured from this machine's installed font: measured again with --system.

@@ -1,7 +1,7 @@
 /*
  * Notes set in Caveat, a handwriting font whose contextual alternates change a letter's glyph by
  * its neighbours (too many runs to search): a title, wrapping paragraphs at two sizes, a bold run,
- * a card and a list.
+ * a card, a list, and lines holding badges (inline grids), whose text on either side is shaped apart.
  */
 @font-face {
   font-family: "Caveat";
@@ -77,4 +77,19 @@ body {
   font-weight: 700;
   font-size: 20px;
   transform: rotate(-4deg);
+}
+
+.tally {
+  margin: 0 0 8px;
+}
+
+.count {
+  display: inline-grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: #d9e2ec;
+  font-size: 16px;
+  line-height: 1;
 }
