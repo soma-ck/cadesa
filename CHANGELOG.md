@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.24 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.24 mcp
+npx -y cadesa@0.1.25 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.25 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -18,7 +18,7 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## Unreleased
+## 0.1.25 (2026-11-20)
 
 - Fixed: `capture` and `check --verify` hung on a page with a lazy-loaded image below the fold
   (`loading="lazy"`: Wikipedia, the Tailwind home page). Chromium never loads such an image, so
