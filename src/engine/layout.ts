@@ -55,6 +55,8 @@ export interface Box {
   lines?: Line[];
   /** Runs of its text in another font, weight or face (italic or upright): what they are set in, for `cadesa fonts`. */
   runFonts?: { font?: string; weight: number; italic: boolean; text?: string }[];
+  /** Its text's runs (paragraphs between line breaks), as set (uppercased where it is): what `cadesa fonts` measures whole for a font whose contextual forms can't be searched. */
+  runTexts?: string[];
   /** Px this box's content extends past its content box horizontally. */
   overflowX?: number;
   /** Px this box's content extends past its fixed height. */
@@ -601,8 +603,14 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // "*" and "@" differently between capitals, and "x" between digits as "×".
     const contextual = /[*@<>\\]/.test(shown) ? shown.match(/[*@<>\\]/)![0] : /\d ?[xX] ?\d/.test(shown) ? "x between digits" : undefined;
     if (contextual) assumptions.push(`text width is approximate: "${contextual}" has contextual forms that Cadesa doesn't measure`);
-    else if (m!.info.contextualIncomplete && /\S/.test(shown))
-      assumptions.push(`text width is approximate: font "${m!.family}" shapes more runs in context (contextual alternates) than were measured`);
+    // A font whose contextual forms can't be searched (a handwriting font): exact where each run
+    // of its text was laid out whole in Chromium (`cadesa fonts --measure`) and stays on one line.
+    const ctxWhy = `text width is approximate: font "${m!.family}" shapes more runs in context (contextual alternates) than were measured`;
+    const whole = m!.info.contextualIncomplete && /\S/.test(shown) && !t.letterSpacing && !t.wrapAnywhere
+      ? runs.map((r, i) => (n.runMeta[i]?.spans?.length || n.runMeta[i]?.items?.length || r.includes("\uFFFC") ? undefined : m!.lineWidth(r.replace(/[ \t\n\r\f]+/g, " ").trim(), t.sizePx, t.weight)))
+      : undefined;
+    const wholeOk = !!whole && whole.every((x) => x !== undefined);
+    if (!contextual && m!.info.contextualIncomplete && /\S/.test(shown) && !wholeOk) assumptions.push(ctxWhy);
     // Whether a hanging space's kerning counts at a line end depends on the block that holds the
     // line: not when it paints a background, border or shadow (the text box itself; a <p> inside it
     // is its own, unpainted block) or its text is underlined. Under an underlined inline element
@@ -646,6 +654,8 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
       let off = 0;
       if (band && strut) assumptions.push("lines beside a float, with inline boxes that reach past the text's strut, aren't modelled");
+      // Measured whole: exact while each run fits on one line (it wraps otherwise, in pieces not measured).
+      if (wholeOk && !assumptions.includes(ctxWhy) && (band || (isFinite(maxWidth) && whole!.some((x) => x! > maxWidth + 1 / 64 + TEXT_EPS)))) assumptions.push(ctxWhy);
       const parts = runs.map((r, i) => {
         const runBand: Band | undefined = band && ((top, h, fits) => {
           const at = band(top + off, h, fits);
@@ -2037,6 +2047,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       text: isText ? n.text || undefined : undefined,
       lines,
       ...(isText && runFontsOf(n, props).length && { runFonts: runFontsOf(n, props) }),
+      ...(isText && metricsFor(props.text?.value.font, !!props.text?.value.italic)?.info.contextualIncomplete && { runTexts: (n.runs.length ? n.runs : [n.text]).map((r) => (props.text?.value.uppercase ? r.toUpperCase() : r)) }),
       assumptions,
       children,
       ...(n.anonymous && { anonymous: true }),

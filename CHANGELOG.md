@@ -41,6 +41,17 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   too (the text before that point at its snapped position, the reshaped part rounded up to a layout
   unit). Words break between grapheme clusters. Still `≈`: a fragment the font kerns at both ends
   and everywhere inside that fits only by its width in the word's shaping.
+- Text in a handwriting font whose contextual alternates are too many to search (Caveat) is exact
+  where it stays on one line: `cadesa fonts --measure` lays each run of the page's text in that
+  font out whole in Chromium, at its size and weight, and keeps the width. (Chromium shapes such a
+  font's contextual forms across spaces in a page, though canvas `measureText` doesn't, so it can't
+  be measured word by word.) A run that wraps, has inline elements of its own or is letter-spaced
+  stays `≈`. `fixtures/css/handwriting.html` (Caveat, OFL) covers it in `conformance:css`.
+- Floats with auto margins are exact: their auto margins are 0, as CSS 2.1 §10.3.5 has it. A box
+  laid out after floats whose place isn't known no longer claims its size (its lines wrap by where
+  it goes). The floats fixture covers floats with auto margins, clearance on a first child whose
+  top margin collapses with its parent's, a float inside a link, taller runs and inline-blocks on
+  lines beside a float, and a float inside a word.
 - A line may break before and after an atomic inline (an inline-block, an image, an svg) whatever
   the characters beside it are: probed in Chromium, "(" before one and "." or ")" after one are
   broken from it. They were kept together.

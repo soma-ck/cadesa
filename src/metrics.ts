@@ -83,6 +83,13 @@ export interface MetricsFile {
    */
   contextualIncomplete?: boolean;
   /**
+   * With `contextualIncomplete`: the page's text in the font, laid out in Chromium on one line
+   * each, by font size and weight ("size|weight"): its width in px (as its line box reports it, in
+   * layout units). Chromium shapes a handwriting font's contextual forms across spaces too (canvas
+   * measureText doesn't), so a line of such text is exact only measured whole.
+   */
+  lines?: Record<string, Record<string, number>>;
+  /**
    * Vertical metrics as Chromium uses them (its font's ascent, descent, line gap and x-height),
    * measured at a font size of `size` px (the units per em, so they are whole font units), per
    * face weight (a variable font: at 400). Chromium rounds the ascent, descent and line gap to
@@ -249,6 +256,8 @@ export async function generateMetrics(opts: {
   browser?: Browser;
   /** Characters to measure beyond the standard set (icon codepoints in the Private Use Area, other scripts). */
   extra?: string;
+  /** Text a page sets in the font on one line, at a size and weight: measured whole where the font's contextual forms can't be searched (see MetricsFile.lines). */
+  lines?: { text: string; size: number; weight: number }[];
   /** Measure the italic face (font-style: italic): the file is an italic face, or the installed family's italic. */
   italic?: boolean;
 }): Promise<MetricsFile> {
@@ -441,6 +450,22 @@ export async function generateMetrics(opts: {
     const vWeights = opts.system ? weights : [opts.weight ?? 400];
     const vertical: NonNullable<MetricsFile["vertical"]> = { size: vSize, byWeight: {} };
     if (result.loaded) for (const w of vWeights) vertical.byWeight[w] = await measureVertical(page, family, w, vSize, opts.italic);
+    // A font whose contextual forms the search can't cover: the page's text, laid out whole.
+    let lines: MetricsFile["lines"];
+    if (result.loaded && result.incomplete && opts.lines?.length)
+      lines = (await page.evaluate(`(async ({ LINES, FAMILY, ST }) => {
+        const out = {};
+        for (const l of LINES) await document.fonts.load(ST + l.weight + " " + l.size + "px " + FAMILY);
+        for (const l of LINES) {
+          const s = document.createElement("span");
+          s.style.cssText = "white-space: pre; font: " + ST + l.weight + " " + l.size + "px " + FAMILY + "; font-kerning: normal";
+          s.textContent = l.text;
+          document.body.appendChild(s);
+          (out[l.size + "|" + l.weight] ??= {})[l.text] = s.getBoundingClientRect().width;
+          s.remove();
+        }
+        return out;
+      })(${JSON.stringify({ LINES: opts.lines.slice(0, 20000), FAMILY: family, ST: opts.italic ? "italic " : "" })})`)) as MetricsFile["lines"];
     await page.close();
     if (!result.loaded)
       throw new Error(
@@ -467,6 +492,7 @@ export async function generateMetrics(opts: {
       ...(result.fine && { fine: result.fine }),
       ...(Object.values(result.contextual).some((c) => Object.keys(c).length) && { contextual: result.contextual }),
       ...(result.incomplete && { contextualIncomplete: true }),
+      ...(lines && { lines }),
       vertical,
       ...(opts.italic && { style: "italic" as const }),
     };
@@ -565,6 +591,7 @@ export function writeMetrics(m: MetricsFile, dir: string, opts: { gzip?: boolean
         ...(files.length && { files }),
         ...(missing && { missing }),
         ...((prev.contextualIncomplete || cur.contextualIncomplete) && { contextualIncomplete: true }),
+        ...((prev.lines || cur.lines) && { lines: { ...prev.lines, ...cur.lines } }),
       };
       delete out.upm;
       const upm = prev.upm && prev.upm === cur.upm ? cur.upm : unitsPerEm(out);

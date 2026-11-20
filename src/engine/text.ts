@@ -37,6 +37,12 @@ export interface FontMetrics {
   info: MetricsInfo;
   /** A table of an italic face (measured with font-style: italic). */
   italic: boolean;
+  /**
+   * For a font whose contextual forms the search couldn't cover: the width of this text laid out
+   * whole on one line at a size and weight (px, as its line box reports it), when it was measured
+   * (MetricsFile.lines); undefined otherwise.
+   */
+  lineWidth(text: string, sizePx: number, weight: number): number | undefined;
   /** Width in px, or undefined if the text has a character outside the measured set. */
   /** With `spaced`, as letter-spaced text (no contextual alternates); letter-spacing itself isn't added. */
   measure(text: string, sizePx: number, weight: number, spaced?: boolean): number | undefined;
@@ -237,7 +243,13 @@ function load(file: string): FontMetrics {
       const chars = face.avgChar !== undefined && face.maxChar !== undefined ? { avgChar: px(face.avgChar), maxChar: px(face.maxChar) } : {};
       return { ascent: round(px(face.ascent)), descent: round(px(face.descent)), lineGap: round(px(face.lineGap)), xHeight: px(face.xHeight), ...chars };
     },
+    lineWidth(text, sizePx, weight) {
+      return m.lines?.[`${sizePx}|${weight}`]?.[text];
+    },
     measure(text, sizePx, weight, spaced) {
+      // Text measured whole (a handwriting font's line): that width.
+      const whole = spaced ? undefined : m.lines?.[`${sizePx}|${weight}`]?.[text];
+      if (whole !== undefined) return whole;
       const [wa, wb, t] = bracket(weight);
       const exact = fineRow(weight);
       const advA = exact ?? m.advances[wa];

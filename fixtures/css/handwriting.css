@@ -1,0 +1,80 @@
+/*
+ * Notes set in Caveat, a handwriting font whose contextual alternates change a letter's glyph by
+ * its neighbours (too many runs to search): a title, wrapping paragraphs at two sizes, a bold run,
+ * a card and a list.
+ */
+@font-face {
+  font-family: "Caveat";
+  font-weight: 400 700;
+  src: url("../fonts/fonts/caveat/Caveat-latin.woff2") format("woff2");
+}
+
+body {
+  margin: 0;
+  font: 22px/1.4 Caveat, cursive;
+  color: #243b53;
+  background: #fffdf7;
+}
+
+.board {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.board-title {
+  margin: 0 0 12px;
+  font-size: 34px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.note {
+  margin: 0 0 10px;
+}
+
+.card {
+  margin: 12px 0;
+  padding: 10px 14px;
+  border: 2px solid #9fb3c8;
+}
+
+.card-label {
+  display: block;
+  font-weight: 700;
+  font-size: 18px;
+}
+
+.card-text {
+  margin: 4px 0 0;
+  font-size: 20px;
+}
+
+.aside {
+  margin: 0 0 10px;
+  font-size: 24px;
+}
+
+.mark {
+  font-weight: 700;
+}
+
+.list {
+  margin: 0;
+  padding-left: 24px;
+}
+
+.item {
+  font-size: 21px;
+}
+
+.sticker {
+  position: absolute;
+  top: 24px;
+  right: 16px;
+  padding: 4px 10px;
+  border: 2px solid #d64545;
+  font-weight: 700;
+  font-size: 20px;
+  transform: rotate(-4deg);
+}

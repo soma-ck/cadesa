@@ -33,6 +33,8 @@ export interface FontUse {
    * codepoints from `content:` values, other scripts): measured too.
    */
   chars?: string;
+  /** Its text boxes' text at their sizes and weights: measured whole, on one line, for a font whose contextual forms can't be searched (a handwriting font). */
+  lines?: { text: string; size: number; weight: number }[];
 }
 
 const STANDARD = new Set(CHARS);
@@ -70,6 +72,9 @@ export function fontUses(layouts: Layout[]): FontUse[] {
         if (r.text) (chars(ru, r.text), [...r.text].forEach((c) => inRuns.add(c)));
       }
       const u = use(t.font, t.weight, !!t.italic);
+      // Each paragraph (run between line breaks) of its text, at its size and weight.
+      for (const line of (b.runTexts ?? [b.text]).map((x) => x.replace(/[ \t\n\r\f]+/g, " ").trim()).filter((x) => x && !x.includes("\uFFFC")))
+        if (!(u.lines ??= []).some((x) => x.text === line && x.size === t.sizePx && x.weight === t.weight)) u.lines.push({ text: line, size: t.sizePx, weight: t.weight });
       chars(u, [...b.text].filter((c) => !inRuns.has(c)).join(""));
     }
   for (const u of out.values()) (u.weights.sort((a, b) => a - b), u.sizes.sort((a, b) => a - b));
@@ -356,6 +361,10 @@ export function fontReport(uses: FontUse[], sources: PageFontSources): FontRepor
       const it = u.italicWeights?.length && u.stack ? metricsFor(u.stack, true) : undefined;
       if (!r.remeasure && u.italicWeights?.length && !it) r.remeasure = `its italic text (${u.italicWeights.join(", ")}) is set in the italic face, which isn't measured`;
       else if (!r.remeasure && it?.outdated) r.remeasure = `the italic table was measured by an older Cadesa and has no ${it.outdated}`;
+      // A font whose contextual forms the search can't cover (a handwriting font): the page's text, laid out whole.
+      const whole = m.info.contextualIncomplete ? (u.lines ?? []).filter((x) => m.lineWidth(x.text, x.size, x.weight) === undefined) : [];
+      if (!r.remeasure && whole.length)
+        r.remeasure = `its contextual forms are measured on whole lines, and ${whole.length} line${whole.length > 1 ? "s" : ""} of the page's text (${whole.slice(0, 2).map((x) => JSON.stringify(x.text.length > 30 ? `${x.text.slice(0, 30)}…` : x.text)).join(", ")}${whole.length > 2 ? "…" : ""}) ${whole.length > 1 ? "aren't" : "isn't"}`;
       // A table measured by an older Cadesa, without what it measures now: measured again.
       if (!r.remeasure && m.outdated) r.remeasure = `the table was measured by an older Cadesa and has no ${m.outdated}`;
       if (r.remeasure) r.note = `${r.remeasure}: --measure${m.info.machineSpecific ? " --system" : ""} measures ${m.info.machineSpecific ? "it again" : "what the page loads"}`;
@@ -544,7 +553,7 @@ export interface Measured {
 export async function measureFaces(
   family: string,
   faces: FontFaceRule[],
-  opts: { out: string; cacheDir: string; browser: Browser; via: Measured["via"]; extra?: string },
+  opts: { out: string; cacheDir: string; browser: Browser; via: Measured["via"]; extra?: string; lines?: FontUse["lines"] },
 ): Promise<Measured> {
   const result: Measured = { family, via: opts.via, faces: [] };
   // Its italic faces too, when the page loads them: italic text is set in them.
@@ -559,7 +568,7 @@ export async function measureFaces(
       const { path, url } = await fileFor(f, opts.cacheDir);
       const variable = f.weight.includes(" ");
       const italic = /^(italic|oblique)/.test(f.style);
-      const m: MetricsFile = await generateMetrics({ font: path, family, weight: variable ? undefined : Number(f.weight), url, browser: opts.browser, extra: opts.extra, italic });
+      const m: MetricsFile = await generateMetrics({ font: path, family, weight: variable ? undefined : Number(f.weight), url, browser: opts.browser, extra: opts.extra, lines: opts.lines, italic });
       const written = writeMetrics(m, opts.out);
       if (!italic || !file) file = written;
       result.faces.push({ weight: italic ? `${f.weight} italic` : f.weight, file: rel(path), ...(url && { url }), ...(m.files?.[0].sha256 && { sha256: m.files[0].sha256 }) });
@@ -576,8 +585,8 @@ export async function measureFaces(
  * Measure the font installed on this machine under `family` (machine-specific). With `stack`,
  * the first of its families this machine has, as the browser would pick it.
  */
-export async function measureSystem(family: string, weights: number[], opts: { out: string; browser: Browser; stack?: string; extra?: string; italicWeights?: number[] }): Promise<Measured> {
-  const m = await generateMetrics({ family, system: { weights, stack: opts.stack }, browser: opts.browser, extra: opts.extra });
+export async function measureSystem(family: string, weights: number[], opts: { out: string; browser: Browser; stack?: string; extra?: string; lines?: FontUse["lines"]; italicWeights?: number[] }): Promise<Measured> {
+  const m = await generateMetrics({ family, system: { weights, stack: opts.stack }, browser: opts.browser, extra: opts.extra, lines: opts.lines });
   const file = writeMetrics(m, opts.out);
   // Italic text: the italic face as this machine's browser picks it (an installed italic, or the upright one slanted).
   const italic = opts.italicWeights?.length ? await generateMetrics({ family, system: { weights: opts.italicWeights, stack: opts.stack }, browser: opts.browser, extra: opts.extra, italic: true }) : undefined;
@@ -644,9 +653,9 @@ export async function measureReport(report: FontReport[], opts: MeasureOptions =
       try {
         // (With the characters the page's text uses beyond the standard set: icon codepoints.)
         const extra = r.chars;
-        if (r.status === "file" || (r.status === "measured" && r.faces.length)) done.push(await measureFaces(r.family, r.faces, { out, cacheDir, browser, via: "file", extra }));
-        else if (r.status === "google" || (r.status === "measured" && r.google)) done.push(await measureFaces(r.family, await googleFaces(r.google!.url), { out, cacheDir, browser, via: "google", extra }));
-        else done.push(await measureSystem(r.family, [...new Set([400, 700, ...r.weights])].sort((a, b) => a - b), { out, browser, stack: r.stack, extra, italicWeights: r.italicWeights?.length ? [...new Set([400, 700, ...r.italicWeights])].sort((a, b) => a - b) : undefined }));
+        if (r.status === "file" || (r.status === "measured" && r.faces.length)) done.push(await measureFaces(r.family, r.faces, { out, cacheDir, browser, via: "file", extra, lines: r.lines }));
+        else if (r.status === "google" || (r.status === "measured" && r.google)) done.push(await measureFaces(r.family, await googleFaces(r.google!.url), { out, cacheDir, browser, via: "google", extra, lines: r.lines }));
+        else done.push(await measureSystem(r.family, [...new Set([400, 700, ...r.weights])].sort((a, b) => a - b), { out, browser, stack: r.stack, extra, lines: r.lines, italicWeights: r.italicWeights?.length ? [...new Set([400, 700, ...r.italicWeights])].sort((a, b) => a - b) : undefined }));
       } catch (e) {
         done.push({ family: r.family, via: r.status === "system" || r.status === "unknown" ? "system" : r.status === "google" ? "google" : "file", faces: [], error: (e as Error).message.split("\n")[0] });
       }
