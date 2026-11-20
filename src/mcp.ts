@@ -204,6 +204,10 @@ export function createServer(): McpServer {
         url: z.string().describe("The page: an http(s) URL (e.g. a local dev server) or a path to an HTML file"),
         out: z.string().default("capture").describe("Directory to write page.html, css/ and fonts/ into"),
         wait: z.string().optional().describe("CSS selector to wait for before saving (the app has rendered)"),
+        before: z
+          .array(z.string())
+          .optional()
+          .describe('Steps run in order before saving, to capture a state reached by interaction (an open modal, an expanded accordion): "click: text=Full log", "hover: .menu", "fill: #q = shoes", "press: Escape", "wait: .modal.show" or "wait: 500". Selectors are Playwright selectors.'),
         width: z.number().positive().optional().describe("Viewport width to load the page at (default 1280)"),
         format: pageShape.format,
       },

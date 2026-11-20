@@ -1,0 +1,8 @@
+body{margin:0;font:16px/24px Inter;color:#111;background:#fff}
+.notice{display:flex;gap:8px;padding:8px;background:#fff3cd}
+.ico{color:#e0a800}
+.msg{color:#664d03}
+.tabs{display:flex;gap:4px}
+.tab{padding:4px;background:#fff}
+.tab.active{background:#e9ecef}
+.step{color:rgba(0,0,0,.4)}

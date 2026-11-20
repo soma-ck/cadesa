@@ -114,10 +114,22 @@ function paintOver(bg: Behind, c: string, path: string): Behind {
   return { ...bg, stops: [...(bg.stops ?? []), c], stopsPath: path };
 }
 
+/**
+ * An icon drawn with an icon font (Font Awesome, Bootstrap Icons, Material Icons ligatures aside):
+ * every character is in a Private Use Area. WCAG 1.4.11 asks 3:1 of icons, not text's 4.5:1.
+ */
+export function isIconText(text: string | undefined): boolean {
+  const cs = [...(text ?? "")].filter((c) => !/\s/.test(c));
+  return cs.length > 0 && cs.every((c) => {
+    const n = c.codePointAt(0)!;
+    return (n >= 0xe000 && n <= 0xf8ff) || n >= 0xf0000;
+  });
+}
+
 /** The worst contrast of text in `color` over what's behind it (every gradient stop), or why it can't be known. */
-function contrastOf(color: string, sizePx: number, weight: number, here: Behind): { why: string } | { ratio: number; min: number; on: string; from: string; alpha: number; shown: string } {
+function contrastOf(color: string, sizePx: number, weight: number, here: Behind, icon = false): { why: string } | { ratio: number; min: number; on: string; from: string; alpha: number; shown: string } {
   const large = sizePx >= 24 || (sizePx >= 18.66 && weight >= 700);
-  const min = large ? 3 : 4.5;
+  const min = icon || large ? 3 : 4.5;
   // Translucent stops over an image can't be resolved; nearly opaque ones can.
   const stopsOpaque = (here.stops ?? []).length > 0 && here.stops!.every((s) => rgba(s)[3] >= 0.9);
   if (here.image && !stopsOpaque) return { why: `the text sits over ${here.image}; check it by eye, or put an opaque background or scrim behind it` };
@@ -245,8 +257,9 @@ export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Partial
       if (b.text && b.props.text) {
         const t = b.props.text.value;
         const colorPath = `${b.props.text.steps[0].path}.color`;
-        const judge = (color: string, sizePx: number, weight: number, behind: Behind, who: string, path: string) => {
-          const r = contrastOf(color, sizePx, weight, behind);
+        const judge = (color: string, sizePx: number, weight: number, behind: Behind, who: string, path: string, text?: string) => {
+          const icon = isIconText(text);
+          const r = contrastOf(color, sizePx, weight, behind, icon);
           if ("why" in r)
             out.push({ check: "contrast", width: l.width, severity: "warning", inconclusive: true, id: b.id, path, message: `contrast of ${who} is inconclusive: ${r.why}` });
           else if (r.ratio < r.min)
@@ -256,13 +269,13 @@ export function check(layouts: Layout[], impacts?: WidthImpact[], page?: Partial
               severity: "error",
               id: b.id,
               path,
-              message: `${who} text ${color}${r.alpha < 0.999 ? ` (${Math.round(r.alpha * 100)}% opaque, shows as ${r.shown})` : ""} on ${r.on} is ${r.ratio.toFixed(2)}:1; WCAG AA needs ${r.min}:1 (background: ${r.from})`,
+              message: `${who} ${icon ? "icon" : "text"} ${color}${r.alpha < 0.999 ? ` (${Math.round(r.alpha * 100)}% opaque, shows as ${r.shown})` : ""} on ${r.on} is ${r.ratio.toFixed(2)}:1; ${icon ? "WCAG 1.4.11 needs 3:1 for icons" : `WCAG AA needs ${r.min}:1`} (background: ${r.from})`,
             });
         };
-        judge(t.color, t.sizePx, t.weight, here, `#${b.id}`, colorPath);
+        judge(t.color, t.sizePx, t.weight, here, `#${b.id}`, colorPath, b.text);
         // Inline runs in a color (or on a background) of their own: <span class="text-danger">, a badge.
         for (const r of page?.inlineRuns?.(l.width) ?? [])
-          if (r.id === b.id) judge(r.color, r.sizePx, r.weight, r.background ? paintOver(here, r.background, r.where) : here, `${quote(r.text, 30)} (<${r.tag}> in #${b.id})`, r.where);
+          if (r.id === b.id) judge(r.color, r.sizePx, r.weight, r.background ? paintOver(here, r.background, r.where) : here, isIconText(r.text) ? `<${r.tag}> in #${b.id}` : `${quote(r.text, 30)} (<${r.tag}> in #${b.id})`, r.where, r.text);
       }
       const clip = clippedText(b);
       if (clip) out.push({ check: "clipped", width: l.width, severity: "warning", id: clip.id, path: b.props.overflow!.steps.at(-1)!.path, message: clip.message(l.width) });

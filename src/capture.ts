@@ -13,6 +13,36 @@ import { settle, type Page } from "./browser.js";
 import { RunError } from "./diagnostics.js";
 import { launchChromium } from "./metrics.js";
 
+/** One --before step: "click: text=Full log", "fill: #q = shoes", "press: Escape", "wait: .modal.show" or "wait: 500". */
+export async function runStep(page: Page, step: string, timeout: number): Promise<void> {
+  const m = /^\s*(click|hover|fill|press|wait)\s*:\s*(.+?)\s*$/i.exec(step);
+  if (!m) throw new RunError(`--before "${step}": expected click: <selector>, hover: <selector>, fill: <selector> = <text>, press: <key> or wait: <selector or ms>`);
+  const [, verb, arg] = m;
+  try {
+    switch (verb.toLowerCase()) {
+      case "click":
+        return await page.locator(arg).first().click({ timeout });
+      case "hover":
+        return await page.locator(arg).first().hover({ timeout });
+      case "fill": {
+        // "<selector> = <text>": the first " = " (a selector may contain "=" itself: [name=q]).
+        const sp = arg.indexOf(" = ");
+        if (sp < 0) throw new RunError(`--before "${step}": fill needs <selector> = <text>`);
+        return await page.locator(arg.slice(0, sp).trim()).first().fill(arg.slice(sp + 3), { timeout });
+      }
+      case "press":
+        return await page.keyboard.press(arg);
+      case "wait":
+        if (/^\d+$/.test(arg)) return await page.waitForTimeout(Number(arg));
+        await page.locator(arg).first().waitFor({ state: "visible", timeout });
+        return;
+    }
+  } catch (e) {
+    if (e instanceof RunError) throw e;
+    throw new RunError(`--before "${step}" failed: ${(e as Error).message.split("\n")[0]}`);
+  }
+}
+
 export interface CaptureOptions {
   url: string;
   /** Directory to write into (created). */
@@ -21,6 +51,12 @@ export interface CaptureOptions {
   loginScript?: string;
   /** A CSS selector to wait for after loading (the app has rendered). */
   wait?: string;
+  /**
+   * Steps to run after the page has rendered and before it is saved, to capture a state the page
+   * only reaches through interaction: "click: <selector>", "hover: <selector>", "fill: <selector> = <text>",
+   * "press: <key>", "wait: <selector>" or "wait: <ms>". Selectors are Playwright's (`text=Full log`, CSS, `role=button[name="Save"]`).
+   */
+  before?: string[];
   /** Viewport width to load the page at (default 1280). */
   width?: number;
   /** Milliseconds to wait for the page and the selector (default 30000). */
@@ -304,6 +340,11 @@ export async function capture(opts: CaptureOptions): Promise<CaptureResult> {
     await page.waitForLoadState("networkidle", { timeout: Math.min(timeout, 10000) }).catch(() => notes.push("the network was still busy 10s after load; captured anyway"));
     if (opts.wait) await page.waitForSelector(opts.wait, { timeout });
     await settle(page);
+    for (const step of opts.before ?? []) {
+      await runStep(page, step, timeout);
+      await settle(page);
+      notes.push(`ran before saving: ${step}`);
+    }
     const landed = page.url();
     if (landed.split("#")[0] !== new URL(opts.url).href.split("#")[0]) notes.push(`the page ended up at ${landed}, not the URL given (a redirect: is it a login page?)`);
 
