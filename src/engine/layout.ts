@@ -524,7 +524,8 @@ function layoutWith(
             const lim = Math.min(o.r, R - m0.right);
             const kb = auto0 ? measure(k.node, k.comp, k.slot, Math.max(0, lim - ox) + m0.left + m0.right, kind, undefined, undefined, cell) : measure(k.node, k.comp, k.slot, cell, kind);
             // (A room past the container's end, beyond a float wider than it, is as wide as nothing.)
-            if (!o.beside || (kb.w <= Math.max(0, lim - ox) + EPS && kb.h <= o.h + EPS)) {
+            // (Its whole height too: a room not beside a float ends where a float lower down starts.)
+            if ((!o.beside || kb.w <= Math.max(0, lim - ox) + EPS) && kb.h <= o.h + EPS) {
               b = kb;
               x = o.beside ? ox - ctx.x : offsetX(kb, cell, true);
               break;
@@ -733,7 +734,7 @@ function layoutWith(
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     // Beside floats (band): each run's lines go on from where the run before it ended.
     // Floats among the text (inlineFloat: the width of one, and where it goes) are placed as its lines are.
-    return (maxWidth: number, band?: Band, inlineFloat?: (index: number) => { w: number; fitsAt: (top: number) => boolean; place: (top: number) => void }) => {
+    return (maxWidth: number, band?: Band, inlineFloat?: (index: number) => { w: number; h?: number; fitsAt: (top: number) => boolean; place: (top: number) => void }) => {
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
       let off = 0;
       // Measured whole: exact while each run fits on one line, or where it wraps was measured too.
@@ -747,7 +748,7 @@ function layoutWith(
         });
         const floats = inlineFloat && meta[i].floats?.map((f) => {
           const g = inlineFloat(f.index);
-          return { at: moved(raw[i], f.at), w: g.w, ...(f.edge && { edge: true }), fitsAt: (top: number) => g.fitsAt(top + off), place: (top: number) => g.place(top + off) };
+          return { at: moved(raw[i], f.at), w: g.w, ...(g.h !== undefined && { h: g.h }), ...(f.edge && { edge: true }), fitsAt: (top: number) => g.fitsAt(top + off), place: (top: number) => g.place(top + off) };
         });
         const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, ...(t.breaks && { breaks: t.breaks }), items: items[i], spans: spans[i], lead: leads[i], strut, ...(runBand && { band: runBand, lineH }), ...(floats?.length && { floats }) };
         /** Lines beside floats: placed from the content box's top. */
@@ -2028,6 +2029,7 @@ function layoutWith(
           const fh = fm.top + b.h + fm.bottom;
           return {
             w: fw,
+            h: fh,
             // Whether it can go right at a line's top (beside what is there), or would end up lower.
             fitsAt: (top: number) => {
               const from = Math.max(flowCtx.y + top, b.props.clear ? flowCtx.ex.clearance(b.props.clear.value) : -Infinity);

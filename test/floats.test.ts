@@ -81,6 +81,17 @@ describe("a float inside a word, and inside an inline box (probed in Chromium)",
   });
 });
 
+describe("a formatting context of its own above a lower float", () => {
+  it("goes beside the float when it is too tall for the room above it (fuzz-css, Chromium: beside it)", () => {
+    const r = run(
+      `<main style="width: 240px"><section><div class="l"></div></section><div class="bfc" data-fixture="bfc">${"word ".repeat(40)}</div></main>`,
+      `section { height: 0 } .l { float: left; width: 178px; height: 25px; margin-top: 73px } .bfc { display: flow-root }`,
+      [800],
+    );
+    expect([r.box("bfc").x, r.box("bfc").y, r.box("bfc").w]).toEqual([178, 0, 62]);
+  });
+});
+
 describe("floats in block flow", () => {
   const r = run(
     `<section><div class="fl m"></div><div class="bfc">A box of its own beside the float</div><div class="wide">Margin wider than the float</div></section>

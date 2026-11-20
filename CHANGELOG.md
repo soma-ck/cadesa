@@ -30,10 +30,15 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   `npm run conformance:bootstrap:classic`, and `conformance:scrollers:classic` for
   `fixtures/css/overflow.html` and the new `fixtures/css/scrollers.html`, run in CI.
 
+- Fixed: a box with a formatting context of its own (a flex container, `flow-root`) whose room
+  isn't beside a float where it starts, but which is taller than that room reaches before a float
+  lower down, was laid out across that float; it goes in the narrower room beside it, as Chromium
+  places it (found by `fuzz-css` once the text above it was no longer flagged).
 - An inline `svg` or image of set size alone on its line is laid out as an inline-block alone on
   its line is (it was `≈`): its parent is as tall as its line box, or, in a parent of set height,
   it sits at the top of its line when it reaches above the strut (an svg pointer with
-  `position: relative` in a positioned box of set size). `fixtures/css/icons.html` covers them.
+  `position: relative` in a positioned box of set size). One with vertical margins of its own stays
+  `≈`. `fixtures/css/icons.html` covers them, and `fuzz-css` generates them.
 
 - Text in a handwriting font (Caveat) that wraps is exact. Chromium's line breaker reshapes a line's
   ends where the run's shaping isn't safe to break, so a line's width is neither its standalone
@@ -57,8 +62,9 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   before it, the line ends before the word (the float, after that break, isn't placed yet) and the
   word starts the next line, meeting the float there. A float inside an inline box is placed where
   it occurs in the text, as one of the text box's own floats is. Fixed too: floats in underlined
-  text (a link) were placed twice. A float at an edge of the inline box it is inside (a box with
-  padding holding only the float) stays `≈`. `fixtures/css/floats.html` adds floats inside words
+  text (a link) were placed twice. Still `≈` (found by `fuzz-css`): a float at the start or end of
+  the inline element it is inside, a float inside a word that has no height or is met on a line
+  beside another float. `fixtures/css/floats.html` adds floats inside words
   and inside a run with padding, and `fuzz-css` generates both.
 
 - A line of `word-break: break-all` or `line-break: anywhere` text with inline boxes or

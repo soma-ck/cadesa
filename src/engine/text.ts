@@ -554,7 +554,7 @@ export function layoutText(
      * a space at its end hanging, and its width within the line's room), and with no float before it waiting,
      * at that line's top, the line then shortened; any other below the line, at the next one's top.
      */
-    floats?: { at: number; w: number; edge?: boolean; fitsAt?: (top: number) => boolean; place: (top: number) => void }[];
+    floats?: { at: number; w: number; h?: number; edge?: boolean; fitsAt?: (top: number) => boolean; place: (top: number) => void }[];
   } = {},
 ): TextLayout {
   // Beside floats, with inline boxes that may reach past the strut: each line's band must hold the
@@ -1066,6 +1066,9 @@ function layoutLines(
       const f = floats[fq];
       if (!f || f.at >= end || f.at <= end - pLen) break;
       if (open !== undefined || opts.wrapAnywhere || mode !== "normal") approximate ??= "a float inside a word that breaks between characters";
+      // Not pinned down (fuzz-css): one of no height, or met on a line beside another float.
+      if ((f.h ?? 1) <= 0 || (place && place.room < maxWidth0 - 1e-6) || floats.some((g) => g !== f && (g.h ?? 1) > 0 && fq > floats.indexOf(g)))
+        approximate ??= "a float inside a word of no height, or beside another float";
       const before = [...line].slice(0, f.at - consumed).join("");
       const rest = [...line].slice(0, -pLen).join("");
       if (open === undefined && rest && besideLine(f, before)) {

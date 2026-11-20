@@ -281,7 +281,8 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   /** Spans open when a run starts (split from the run before by a <br>): they start at 0, with no open edge. */
   let carried: number[] = [];
   const flush = () => {
-    const { text: t, items, marks, floats } = collapseItems(cur);
+    const { text: t, items, marks, floats: found } = collapseItems(cur);
+    const floats = found.map((f) => (edgeFloats.has(f.index) ? { ...f, edge: true } : f));
     if (t) {
       runs.push(t);
       const out: Span[] = [];
@@ -338,9 +339,18 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   };
   /** Floats among the text, in order. */
   let floatCount = 0;
+  /** Floats inside an inline element with nothing but whitespace before or after them in it. */
+  const edgeFloats = new Set<number>();
   const walk = (k: P5Node, u: boolean) => {
     if (skip?.(k)) return;
     if (k.tagName && inline?.(k)?.float) {
+      const parent = (k as { parentNode?: P5Node }).parentNode;
+      if (parent && parent !== n) {
+        const sibs = parent.childNodes ?? [];
+        const i = sibs.indexOf(k);
+        const blank = (c: P5Node) => c.nodeName === "#text" && !/\S/.test(c.value ?? "");
+        if (sibs.slice(0, i).every(blank) || sibs.slice(i + 1).every(blank)) edgeFloats.add(floatCount);
+      }
       cur += FLOAT + floatCount++ + END;
       return;
     }

@@ -1808,7 +1808,9 @@ export abstract class PageLifter {
         const parentDisplay = el.parent !== this.bodyEl ? this.displayOf(el.parent!, si) : "block";
         if (/flex|grid/.test(parentDisplay) && parentRole === "container") return;
         // (An inline replaced element, an svg or an image of set size, is an atomic inline as an inline-block is.)
-        const atomic = this.ownDisplay(el, si) === "inline-block" || (this.ownDisplay(el, si) === "inline" && REPLACED_BLOCK.has(el.tag) && role === "leaf");
+        // (Vertical margins of its own aren't laid out as an inline-block's are: probed, flagged.)
+        const noMargin = ["margin-top", "margin-bottom"].every((p) => /^(0|0px)?$/.test(this.resolve(el, si, el.own[si].get(p)?.value ?? "") ?? "x"));
+        const atomic = this.ownDisplay(el, si) === "inline-block" || (this.ownDisplay(el, si) === "inline" && REPLACED_BLOCK.has(el.tag) && role === "leaf" && noMargin);
         if (atomic && this.aloneOnLine(el, si)) el.alone[si] = true;
         if (role === "container") this.inlineRow(el, si);
         if (this.ownDisplay(el, si) === "inline" && role === "text") {
