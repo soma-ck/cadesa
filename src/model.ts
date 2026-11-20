@@ -254,6 +254,11 @@ export interface Props {
    */
   shrink?: { value: number; path: string };
   /**
+   * In a stack, cluster or grid: where the box goes among its siblings (CSS order): lower first,
+   * ties in document order. Default 0.
+   */
+  order?: { value: number; path: string };
+  /**
    * What happens to content that doesn't fit, per axis, as computed (a visible axis next to a
    * scrolling one computes to auto, clip to hidden). Anything but visible and clip makes a scroll
    * container: a new block formatting context (margins don't collapse through it) whose automatic
@@ -381,6 +386,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "textAlign",
   "grow",
   "shrink",
+  "order",
   "overflow",
   "position",
   "contain",

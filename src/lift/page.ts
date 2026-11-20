@@ -882,6 +882,8 @@ export abstract class PageLifter {
 
   apply(own: Map<string, Origin>, d: { prop: string; value: string; important: boolean }, utility: string) {
     if (d.prop === "word-wrap") d = { ...d, prop: "overflow-wrap" }; // a legacy alias
+    // The grid- prefixed gaps: aliases of row-gap, column-gap and gap.
+    else if (d.prop === "grid-row-gap" || d.prop === "grid-column-gap" || d.prop === "grid-gap") d = { ...d, prop: d.prop.slice(5) };
     const deferred = !d.prop.startsWith("--") && /\bvar\(/.test(d.value) ? DEFERRED[d.prop] : undefined;
     const pairs: [string, string][] = d.prop.startsWith("--") ? [[d.prop, d.value]] : deferred ? deferred.map((p) => [p, d.value]) : longhands(d.prop, d.value);
     for (const [p, v] of pairs) {
@@ -3538,7 +3540,9 @@ export abstract class PageLifter {
         (!!tpart && /^(width|min-width|max-width)$/.test(p) && /^(row|header|body|footer)$/.test(tpart)) ||
         (!!tpart && /^(height|min-height|max-height)$/.test(p) && /^column/.test(tpart)) ||
         // Flex item properties do nothing outside a flex container (align-self: outside flex and grid).
-        (/^(flex|flex-grow|flex-shrink|flex-basis|order)$/.test(p) && !(/flex/.test(parentDisplay) && parentRole === "container" && !abs)) ||
+        (/^(flex|flex-grow|flex-shrink|flex-basis)$/.test(p) && !(/flex/.test(parentDisplay) && parentRole === "container" && !abs)) ||
+        // order places a flex or grid item among its siblings (and does nothing anywhere else).
+        (p === "order" && !inFlexOrGrid) ||
         (p === "align-self" && !inFlexOrGrid) ||
         // Grid lines place only a grid item.
         (/^grid-(row|column)-(start|end)$/.test(p) && !(inFlexOrGrid && /grid/.test(parentDisplay))) ||

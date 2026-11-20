@@ -916,6 +916,11 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           if (typeof v === "number" && v >= 0 && isFinite(v) && v <= 1000) out.shrink = { value: v, path: p.join(".") };
           else err(p, "invalid shrink", { expected: "a number of 0 or more, e.g. 1 (a box with a width shrinks in a full line) or 0 (a box without one doesn't)", got: v });
           break;
+        case "order":
+          // order (CSS order): where a stack's, cluster's or grid's item goes among its siblings.
+          if (typeof v === "number" && Number.isInteger(v) && Math.abs(v) <= 1e6) out.order = { value: v, path: p.join(".") };
+          else err(p, "invalid order", { expected: "an integer, e.g. -1 (first) or 1 (after the items without one)", got: v });
+          break;
       }
     }
     return out;

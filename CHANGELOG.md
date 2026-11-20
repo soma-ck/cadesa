@@ -28,6 +28,10 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   or `auto`) whose text is taller than its line was laid out with that item's baseline where its
   text puts it; Chromium clamps a scroll container's baseline to its border box (found by
   `fuzz-css`: the row's other items sat a pixel to 15px too low, marked exact).
+- Fixed: a box without offsets in a grid that isn't its containing block (no `position` of its
+  own) was placed at the grid's padding box corner; it sits at its content box corner, as the
+  sole item of a grid area the size of the content box (css-grid 9.4; found by `fuzz-css`, its
+  new flexboxes and grids with such boxes: marked exact, off by the grid's padding).
 - Fixed: `check --css` stopped with an error on a page with `line-height: 0` (a chevron's
   `::before` in Bootstrap's cheatsheet); the box is `≈` instead.
 
@@ -44,6 +48,13 @@ now exact:
 - Borders in `em` (a dropdown caret's `.3em`), drawn whole pixels wide as px borders are.
 - SVG-only properties (`text-anchor`, `dominant-baseline`, `paint-order`...) no longer make an svg
   `≈`: they paint only inside it.
+- `order` on flex and grid items (Bootstrap's `order-md-last`, a docs layout's columns): items are
+  laid out and auto-placed in order, also where a breakpoint sets it. The language has `order` too.
+- A box without offsets in a flexbox (a visually hidden label, `.visually-hidden`) sits where the
+  sole item would, by `justify-content` and `align-items` (it was at the start, or `≈`); `clip`
+  only paints.
+- `grid-gap`, `grid-row-gap` and `grid-column-gap` are read as `gap`, `row-gap` and `column-gap`;
+  `tab-size`, `text-autospace` and `text-spacing-trim` change nothing in the text Cadesa measures.
 
 `fixtures/css/corpus.html` keeps them (in `conformance:css`), and `fuzz-css` generates icons alone
 in flex-item links, aligned middle or by a length, and toggle buttons with em-bordered carets.

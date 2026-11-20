@@ -496,8 +496,51 @@ export function genCssCase(seed: number): CssCase {
     const row = cls(["display: flex", `justify-content: ${r.pick(["flex-start", "flex-end"])}`]);
     return `<div${attr(row)}><button${attr(b)} type="button">${icon}${r.chance(0.5) ? `<span>${words(r, 1, 2)}</span>` : ""}</button></div>`;
   };
+  /**
+   * A flexbox or grid whose items are placed by order (on every width, or from a breakpoint on), with
+   * a box without offsets (a visually hidden label, a dot) that sits where the sole item would.
+   */
+  const ordered = () => {
+    const kind = r.pick(["row", "wrap", "column", "grid"] as const);
+    const d =
+      kind === "grid"
+        ? ["display: grid", `grid-template-columns: repeat(${r.int(2, 4)}, 1fr)`, `${r.pick(["gap", "grid-gap"])}: ${r.int(0, 10)}px`]
+        : ["display: flex", ...(kind === "column" ? ["flex-direction: column"] : []), ...(kind === "wrap" ? ["flex-wrap: wrap"] : []), `gap: ${r.int(0, 10)}px`];
+    if (kind !== "grid") {
+      if (r.chance(0.6)) d.push(`align-items: ${r.pick(["center", "flex-end", "flex-start", "stretch"])}`);
+      if (kind !== "column" && r.chance(0.6)) d.push(`justify-content: ${r.pick(["center", "flex-end", "space-between", "space-around", "space-evenly"])}`);
+    }
+    if (r.chance(0.5)) d.push(`height: ${r.int(40, 120)}px`);
+    if (r.chance(0.4)) d.push(`padding: ${r.int(0, 8)}px`);
+    if (r.chance(0.5)) d.push("position: relative");
+    const many = r.int(2, 5);
+    const items: string[] = [];
+    for (let j = 0; j < many; j++) {
+      const own = [...(kind === "wrap" ? [`width: ${r.pick(["30%", "45%", "100%", "120px"])}`] : []), ...(r.chance(0.3) ? [`padding: ${r.int(0, 6)}px`] : [])];
+      let bp = "";
+      if (r.chance(0.4)) {
+        const o = r.pick(["-1", "1", "2", "5", "-2"]);
+        if (r.chance(0.4)) bp = `@media (min-width: ${r.pick([480, 640, 768, 900])}px) { .%s { order: ${o} } }`;
+        else own.push(`order: ${o}`);
+      }
+      const c = cls(own.length ? own : ["margin: 0"]);
+      if (bp) css.push(bp.replace("%s", c));
+      items.push(`<div${attr(c)}>${words(r, 1, 4)}</div>`);
+    }
+    if (r.chance(0.5)) {
+      const abs = r.chance(0.5)
+        ? ["position: absolute", "width: 1px", "height: 1px", "padding: 0", "margin: -1px", "overflow: hidden", "clip: rect(0, 0, 0, 0)", "white-space: nowrap", "border: 0"]
+        : ["position: absolute", `width: ${r.int(4, 20)}px`, `height: ${r.int(4, 20)}px`, ...(r.chance(0.5) ? [`margin: ${r.int(0, 4)}px`] : [])];
+      items.splice(r.int(0, items.length), 0, `<span${attr(cls(abs))}>${abs.includes("overflow: hidden") ? words(r, 1, 2) : ""}</span>`);
+    }
+    return `<div${attr(cls(d))}>${items.join("")}</div>`;
+  };
   const count = r.int(2, 5);
   for (let i = 0; i < count; i++) {
+    if (r.chance(0.06)) {
+      blocks.push(ordered());
+      continue;
+    }
     if (r.chance(0.06)) {
       blocks.push(loneAtomic());
       continue;

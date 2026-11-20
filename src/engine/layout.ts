@@ -342,6 +342,9 @@ interface Intrinsic {
  * takes 15px from the window (the page is laid out again, narrower). Media queries and vw units
  * keep the whole window's width.
  */
+/** Where an out-of-flow box's static position sits in its flexbox parent's content box, on each axis. */
+type AbsAlign = { x: "start" | "center" | "end"; y: "start" | "center" | "end" };
+
 export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const SB = scrollbarPx();
   const bars = { x: false, y: false };
@@ -597,6 +600,11 @@ function layoutWith(
     parent: Box | undefined;
     /** Its static position from its parent's content box corner (before its own margins), or undefined when it isn't known. */
     at?: { x: number; y: number };
+    /**
+     * In a flexbox: where it sits as the sole item would, by justify-content and align-items, in
+     * the parent's content box (its margin box placed at its start, center or end on each axis).
+     */
+    align?: AbsAlign;
   }[] = [];
   /** Each placed out-of-flow box: its containing block (undefined: the window) and whether it sits at its static position. */
   const absInfo = new Map<Box, { cb?: Box; parent?: Box; staticPos: boolean }>();
@@ -842,6 +850,20 @@ function layoutWith(
     return d ? { ...it, min: it.min + d, max: it.max + d } : it;
   };
 
+  /**
+   * A flexbox's or grid's items in their order (order, then document order), as they are laid
+   * out and auto-placed; block flow keeps document order.
+   */
+  const byOrder = <K extends { comp?: Component | null; slot?: string }>(kids: K[], pattern: string | undefined): K[] => {
+    if (pattern !== "stack" && pattern !== "cluster" && pattern !== "grid") return kids;
+    const ord = kids.map((k) => (k.comp ? (resolveElement(model, k.comp, k.slot, width).order?.value ?? 0) : 0));
+    if (ord.every((o) => o === 0)) return kids;
+    return kids
+      .map((k, i) => ({ k, i }))
+      .sort((a, b) => ord[a.i] - ord[b.i] || a.i - b.i)
+      .map((x) => x.k);
+  };
+
   /** Children that are Cadesa slots or components; anything else inside a text box is inline text. */
   const classedOf = (n: FixtureNode, c: Component) =>
     n.children.filter((k) => k.classes.some((cl) => cl.startsWith(model.prefix) && (cl.startsWith(`${model.prefix}${c.name}__`) || model.components.has(cl.slice(model.prefix.length)))));
@@ -1042,9 +1064,9 @@ function layoutWith(
       }
     } else if (n.children.length) {
       // Absolutely positioned children don't size their parent.
-      const kids = n.children.map((k) => ({ node: k, ...childOf(k, c, true) })).filter((k) => !k.comp || !outOfFlow(k.comp, k.slot));
-      if (kids.some((k) => k.comp === null)) return unknown(`<${n.tag}> has children the engine doesn't lay out`);
       const pat = p.pattern?.value;
+      const kids = byOrder(n.children.map((k) => ({ node: k, ...childOf(k, c, true) })).filter((k) => !k.comp || !outOfFlow(k.comp, k.slot)), pat);
+      if (kids.some((k) => k.comp === null)) return unknown(`<${n.tag}> has children the engine doesn't lay out`);
       if (!pat) return unknown(`<${n.tag}> has children but no layout`);
       if (pat === "grid" && fullGrid(p, kids as Kid[])) {
         const r = gridIntrinsic(p, kids as Kid[]);
@@ -1716,8 +1738,13 @@ function layoutWith(
       // Position: by its offsets, else where it would be in flow.
       const parent = a.parent;
       const pin = parent ? insets(parent.props) : undefined;
-      const sx = (parent ? parent.x + pin!.left : pageX) + (a.at?.x ?? 0);
-      const sy = (parent ? parent.y + pin!.top : pageY) + (a.at?.y ?? 0);
+      // Aligned in a flexbox: the free space in its parent's content box around its margin box
+      // (in layout units, halved as Chromium halves it).
+      const free = (room: number, size: number, how: "start" | "center" | "end") => (how === "start" ? 0 : how === "end" ? room - size : Math.trunc((U(room) - U(size)) / 2) / 64);
+      const ax = parent && a.align ? free(parent.w - pin!.left - pin!.right, box.w + m.left + m.right, a.align.x) : 0;
+      const ay = parent && a.align ? free(parent.h - pin!.top - pin!.bottom, box.h + m.top + m.bottom, a.align.y) : 0;
+      const sx = (parent ? parent.x + pin!.left : pageX) + (a.at?.x ?? 0) + ax;
+      const sy = (parent ? parent.y + pin!.top : pageY) + (a.at?.y ?? 0) + ay;
       const staticOk = !!a.at;
       let staticPos = false;
       const x = l !== undefined ? cb.x + l + m.left : r !== undefined ? cb.x + cb.w - r - box.w - m.right : ((staticPos = true), sx + m.left);
@@ -1865,7 +1892,7 @@ function layoutWith(
     const allKids = isText ? [] : n.children.map((k) => ({ node: k, ...childOf(k, c) }));
     const placed = allKids.filter((k) => k.comp !== null) as { node: FixtureNode; comp: Component; slot: string | undefined }[];
     // Absolute and fixed children are out of flow: placed once everything else is (see placeAbsolute).
-    const kids = placed.filter((k) => !outOfFlow(k.comp, k.slot));
+    const kids = byOrder(placed.filter((k) => !outOfFlow(k.comp, k.slot)), pattern);
     const outKids = placed.filter((k) => outOfFlow(k.comp, k.slot));
     const skipped = allKids.filter((k) => k.comp === null).map((k) => k.node);
 
@@ -2238,12 +2265,27 @@ function layoutWith(
       const before = kids.flatMap((x, i) => (n.children.indexOf(x.node) < at ? [i] : []));
       const skippedBefore = skipped.some((x) => n.children.indexOf(x) < at);
       let pos: { x: number; y: number } | undefined;
+      let align: AbsAlign | undefined;
       const flowLike = pattern === undefined || pattern === "flow";
       if (skippedBefore) pos = undefined;
-      else if (!before.length && (flowLike || pattern === "stack")) pos = { x: 0, y: 0 };
-      else if (pattern === "stack") pos = { x: 0, y: 0 };
-      else if (pattern === "cluster") pos = (props.justify?.value ?? "start") === "start" && /^(start|stretch)$/.test(props.align?.value ?? "center") ? { x: 0, y: 0 } : undefined;
-      else if (pattern === "grid" || pattern === "layer") pos = /^(start|stretch)$/.test(props.align?.value ?? "stretch") && /^(start|stretch)$/.test(props.justifyItems?.value ?? "stretch") ? { x: -(ins.left - (props.border?.value.widths.left ?? 0)), y: -(ins.top - (props.border?.value.widths.top ?? 0)) } : undefined;
+      else if (pattern === "stack" || pattern === "cluster") {
+        // As the sole flex item: on the main axis by justify-content (space-between at the start,
+        // space-around and space-evenly centered), across it by align-items (stretch: the start).
+        const main = ({ start: "start", between: "start", center: "center", around: "center", evenly: "center", end: "end" } as const)[props.justify?.value ?? "start"];
+        const al = props.align?.value ?? (pattern === "cluster" ? "center" : "stretch");
+        const cross = al === "stretch" ? "start" : al === "baseline" ? undefined : al;
+        if (cross && main) {
+          pos = { x: 0, y: 0 };
+          align = pattern === "stack" ? { x: cross, y: main } : { x: main, y: cross };
+        }
+      } else if (!before.length && flowLike) pos = { x: 0, y: 0 };
+      else if (pattern === "grid" || pattern === "layer") {
+        // In a grid area that is its padding box when the grid is its containing block, else its
+        // content box (css-grid 9.4; probed: a grid with padding and no position of its own).
+        const cb = containingBlock(box, resolveElement(model, k.comp, k.slot, width).position!.value.type);
+        if (/^(start|stretch)$/.test(props.align?.value ?? "stretch") && /^(start|stretch)$/.test(props.justifyItems?.value ?? "stretch"))
+          pos = cb ? { x: -(ins.left - (props.border?.value.widths.left ?? 0)), y: -(ins.top - (props.border?.value.widths.top ?? 0)) } : { x: 0, y: 0 };
+      }
       else if (flowLike) {
         const boxesBefore = before.map((i) => children[i]);
         let last = -1;
@@ -2256,7 +2298,7 @@ function layoutWith(
           pos = { x: 0, y: lb.y + lb.h + sum(join(collapse.get(lb)!.bottom, ...empties)) };
         } else if (!throughTop) pos = { x: 0, y: sum(join(...empties)) };
       }
-      absQueue.push({ k, parent: box, at: pos });
+      absQueue.push({ k, parent: box, at: pos, ...(align && (align.x !== "start" || align.y !== "start") && { align }) });
     }
 
     // Overflow: past the content box on the right (a negative right margin may pull a child past it on purpose).

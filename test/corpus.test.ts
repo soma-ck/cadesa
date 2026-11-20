@@ -86,3 +86,55 @@ describe("a baseline-aligned row with an item that clips its overflow", () => {
     for (const id of ["a", "huge", "a2", "tiny"]) expect(r.approx(id)).toBeUndefined();
   });
 });
+
+describe("order", () => {
+  const css = `.row { display: flex; flex-wrap: wrap; gap: 12px } .c1 { width: 60% } .c2 { width: 30% } .c3 { width: 100% } @media (min-width: 768px) { .last { order: 5 } .c3 { width: 20% } } .first { order: -1 } .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px }`;
+  const r = run(
+    `<div class="row"><div class="c1" data-fixture="c1">Summary</div><div class="c2 last" data-fixture="c2">Cart</div><div class="c3" data-fixture="c3">Notes</div></div><div class="grid" data-fixture="grid"><div>one</div><div class="first" data-fixture="g2">two</div><div>three</div><div class="last" data-fixture="g4">four</div><div data-fixture="g5">five</div></div>`,
+    css,
+    [400, 900],
+  );
+  const at = (id: string, w: number) => [r.box(id, w).x, r.box(id, w).y - r.box(/^c/.test(id) ? "c1" : "grid", w).y].map((v) => Math.round(v * 1000) / 1000);
+
+  it("places flex items by it, from the breakpoint that sets it", () => {
+    expect(at("c2", 400)).toEqual([252, 0]);
+    expect(at("c3", 900)).toEqual([552, 0]);
+    expect(at("c2", 900)).toEqual([0, 36]);
+  });
+
+  it("auto-places grid items by it", () => {
+    expect(at("g2", 400)).toEqual([0, 0]);
+    expect(at("g4", 400)).toEqual([0, 28]);
+    expect(at("g4", 900)).toEqual([301.328, 28]);
+    expect(at("g5", 900)).toEqual([0, 28]);
+    for (const w of [400, 900]) for (const id of ["c1", "c2", "c3", "g2", "g4"]) expect(r.approx(id, w)).toBeUndefined();
+  });
+});
+
+describe("a box without offsets in a flexbox", () => {
+  const r = run(
+    `<div class="col" data-fixture="col"><div class="item">tide</div><span class="vh" data-fixture="vh">hidden</span></div><div class="row" data-fixture="row"><div class="item">tide</div><span class="vh" data-fixture="vh3">hidden</span></div><div class="row3" data-fixture="row3"><div class="item">tide</div><span class="dot" data-fixture="dot"></span></div>`,
+    `.col { display: flex; flex-direction: column; align-items: center; height: 60px; position: relative } .row { display: flex; align-items: center; height: 50px; position: relative } .row3 { display: flex; align-items: flex-end; justify-content: flex-end; height: 50px; padding: 3px; position: relative } .item { width: 40px } .vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; margin: -1px; padding: 0; border: 0 } .dot { position: absolute; width: 7px; height: 5px }`,
+  );
+  const rel = (id: string, p: string) => [r.box(id).x - r.box(p).x, r.box(id).y - r.box(p).y];
+
+  it("sits where the sole item would (a visually hidden label's clip only paints)", () => {
+    expect(rel("vh", "col")).toEqual([199.5, -1]);
+    expect(rel("vh3", "row")).toEqual([-1, 24.5]);
+    expect(rel("dot", "row3")).toEqual([390, 48]);
+    for (const id of ["vh", "vh3", "dot"]) expect(r.approx(id)).toBeUndefined();
+  });
+});
+
+describe("a box without offsets in a grid", () => {
+  const r = run(
+    `<div class="grid" data-fixture="grid"><div>one</div><span class="dot" data-fixture="dot"></span><div>two</div></div><div class="grid rel" data-fixture="grid2"><div>one</div><span class="dot" data-fixture="dot2"></span></div>`,
+    `.grid { display: grid; grid-template-columns: repeat(2, 1fr); padding: 7px; border: 2px solid #333 } .rel { position: relative } .dot { position: absolute; width: 11px; height: 14px }`,
+  );
+
+  it("sits at the grid's content box corner, or its padding box corner when the grid contains it", () => {
+    expect([r.box("dot").x - r.box("grid").x, r.box("dot").y - r.box("grid").y]).toEqual([9, 9]);
+    expect([r.box("dot2").x - r.box("grid2").x, r.box("dot2").y - r.box("grid2").y]).toEqual([2, 2]);
+    for (const id of ["dot", "dot2"]) expect(r.approx(id)).toBeUndefined();
+  });
+});

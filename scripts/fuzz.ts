@@ -327,6 +327,8 @@ function genProps(g: Gen, kind: Kind, parent: Parent, override = false): Obj {
     p.grow = r.weighted<Obj | number>([[1, 4], [{ factor: 1, basis: "zero" }, 4], [r.int(2, 3), 1], [{ factor: r.pick([0.5, 1.5, 2, 0.3]), basis: r.pick(["zero", "content"]) }, 1]]);
   // shrink: a box with a width that still gives way in a full cluster line, or one without that doesn't.
   if (parent === "cluster" && kind !== "media" && r.chance(0.15 * s)) p.shrink = p.width !== undefined ? r.pick([1, 1, 2, 0.5]) : r.pick([0, 0, 2]);
+  // order: where a flexbox's or grid's item goes among its siblings.
+  if ((parent === "cluster" || parent === "stack" || parent === "grid") && r.chance(0.1 * s)) p.order = r.pick([-1, 1, 2, 5]);
   if (r.chance(0.12 * s)) p.measure = size();
   // Margins: common in block flow (where they collapse), sometimes anywhere else.
   if (r.chance((parent === "flow" || parent === "page" ? 0.5 : 0.2) * s)) {
@@ -719,7 +721,7 @@ function removeAt(body: Node[], path: number[]) {
   list.splice(path.at(-1)!, 1);
 }
 
-const PROP_KEYS = new Set(["layout", "padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "fit", "text", "textAlign", "grow", "shrink"]);
+const PROP_KEYS = new Set(["layout", "padding", "margin", "background", "backdrop", "border", "shadow", "radius", "maxWidth", "measure", "width", "height", "aspect", "fit", "text", "textAlign", "grow", "shrink", "order"]);
 
 /** Every smaller variant of a case, biggest reductions first. */
 function* candidates(c: Case): Generator<Case> {

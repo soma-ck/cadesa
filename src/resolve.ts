@@ -148,6 +148,8 @@ export interface ResolvedProps {
   grow?: Resolved<{ factor: number; basis: "zero" | "content" }>;
   /** A cluster item's flex-shrink, where set (see Props.shrink). */
   shrink?: Resolved<number>;
+  /** A stack's, cluster's or grid's item's order among its siblings (see Props.order). */
+  order?: Resolved<number>;
   aspect?: Resolved<number>;
   overflow?: Resolved<{ x: Overflow; y: Overflow }>;
   /** Containment (see Props.contain). */
@@ -379,6 +381,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
           out.justify = { value: j, display: l.justify ? j : "start (default)", steps: [...pre, src(l.justify ? `${l.path}.justify` : l.path)] };
           out.wrap = { value: l.wrap !== false, display: l.wrap === false ? "false (one line)" : "true (default)", steps: [...pre, src(l.wrap === false ? `${l.path}.wrap` : l.path)] };
         }
+        break;
+      }
+      case "order": {
+        const o = p.order!;
+        out.order = { value: o.value, display: String(o.value), steps: [...pre, src(o.path)] };
         break;
       }
       case "shrink": {

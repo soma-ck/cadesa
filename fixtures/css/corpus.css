@@ -6,6 +6,11 @@
  * - a toggle button whose caret is an ::after with borders in em (drawn whole pixels wide);
  * - buttons with display: block or flex in block flow (and in a fixed corner box), as wide as
  *   their content as an inline button is;
+ * - a visually hidden label (position: absolute, clip) and a dot without offsets in flexboxes
+ *   that center or end-align their items: each sits where the sole item would; in a grid that
+ *   isn't its containing block, at its content box's corner;
+ * - legacy grid-gap, and tab-size and text-autospace (no effect on this text);
+ * - flex and grid items placed by order, set at a breakpoint (mobile first) and on every width;
  * - a placeholder svg with SVG-only properties (text-anchor), which only paint inside it;
  * - a chevron ::before with line-height: 0 and an image as its content (left ≈);
  * - a baseline-aligned row with an item that clips its overflow, its text taller than its line:
@@ -20,6 +25,8 @@
 body {
   margin: 0;
   font: 16px/1.5 Inter, sans-serif;
+  tab-size: 4;
+  text-autospace: normal;
   color: #1f2933;
   background: #ffffff;
 }
@@ -225,4 +232,109 @@ svg {
   padding: 8px 12px;
   font: inherit;
   border: 1px solid #6b7280;
+}
+
+.order {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px 12px;
+}
+
+.order-main {
+  width: 100%;
+}
+
+.order-side {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #d1d5db;
+}
+
+.order-foot {
+  width: 100%;
+}
+
+@media (min-width: 768px) {
+  .order-main {
+    width: 60%;
+  }
+
+  .order-side {
+    width: 30%;
+    order: 2;
+  }
+
+  .order-foot {
+    order: 1;
+  }
+}
+
+.order-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-gap: 4px;
+  padding: 8px 12px;
+}
+
+.order-first {
+  order: -1;
+}
+
+.order-last {
+  order: 5;
+}
+
+.order-stack {
+  display: flex;
+  flex-direction: column;
+  padding: 0 12px;
+}
+
+.order-stack p {
+  margin: 0 0 4px;
+}
+
+.corner-toggle {
+  position: relative;
+}
+
+.hidden-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.halo {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 96px;
+  padding: 6px;
+  border: 1px solid #d1d5db;
+}
+
+.halo-row {
+  flex-direction: row;
+  align-items: flex-end;
+  justify-content: space-around;
+}
+
+.halo-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  margin: 3px;
+  background: #4c1d95;
+}
+
+.halo-text {
+  margin: 0;
 }

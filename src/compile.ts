@@ -169,6 +169,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   // otherwise switch it off.
   if (e.grow && (p.grow || p.width || unset("width") || p.shrink)) out.push(`flex: ${e.grow.value} ${e.shrink?.value ?? (e.width ? 0 : 1)} ${e.grow.basis === "zero" ? "0px" : "auto"}`);
   else if (unset("grow") || (p.shrink && !p.width && !unset("width"))) out.push(`flex: ${flexOf(!!e.width)}`);
+  if (p.order) out.push(`order: ${p.order.value}`);
   // min-height too: a column flex parent shorter than its content would otherwise shrink the box.
   // With a minHeight, the larger of the two (CSS's used height when both apply).
   const minOf = (h?: Ref, m?: Ref) => (h && m ? `max(${v(h)}, ${v(m)})` : h ? v(h) : m ? v(m) : "auto");

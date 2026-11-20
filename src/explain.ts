@@ -56,6 +56,7 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   wrap: "layout",
   grow: "grow",
   shrink: "shrink",
+  order: "order",
   overflow: "overflow",
   scrollbar: "overflow",
   contain: "contain",
@@ -138,6 +139,8 @@ function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: s
       return { value: `${p.grow!.value}${p.grow!.basis === "zero" ? " (from zero)" : ""}`, path: p.grow!.path };
     case "shrink":
       return { value: String(p.shrink!.value), path: p.shrink!.path };
+    case "order":
+      return { value: String(p.order!.value), path: p.order!.path };
     case "width":
       return "keyword" in p.width! ? { value: p.width!.keyword, path: p.width!.path } : { value: tok(p.width!), path: p.width!.path };
     case "text":

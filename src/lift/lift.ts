@@ -64,19 +64,20 @@ export interface LiftResult {
 // ---------------------------------------------------------------- property classes
 
 const PAINT =
-  /^(color-scheme|color-adjust|print-color-adjust|forced-color-adjust|color|background(-color|-image|-position|-size|-repeat|-clip|-origin|-attachment)?|box-shadow|outline.*|opacity|cursor|transition.*|animation.*|text-decoration.*|text-shadow|text-align|border(-top|-right|-bottom|-left)?-color|border(-top|-right|-bottom|-left)?-(left|right)?-?radius|border-radius|fill|stroke.*|filter|backdrop-filter|visibility|pointer-events|user-select|caret-color|accent-color|will-change|z-index|mix-blend-mode|appearance|-webkit-.*|-moz-.*|list-style.*|object-.*|scroll-.*|isolation|content|resize|touch-action|clip-path|mask.*)$/;
+  /^(color-scheme|color-adjust|print-color-adjust|forced-color-adjust|color|background(-color|-image|-position|-size|-repeat|-clip|-origin|-attachment)?|box-shadow|outline.*|opacity|cursor|transition.*|animation.*|text-decoration.*|text-shadow|text-align|border(-top|-right|-bottom|-left)?-color|border(-top|-right|-bottom|-left)?-(left|right)?-?radius|border-radius|fill|stroke.*|filter|backdrop-filter|visibility|pointer-events|user-select|caret-color|accent-color|will-change|z-index|mix-blend-mode|appearance|-webkit-.*|-moz-.*|list-style.*|object-.*|scroll-.*|isolation|content|resize|touch-action|clip-path|clip|mask.*)$/;
 const TEXT =
   /^(font.*|letter-spacing|word-spacing|text-transform|white-space|line-height|text-indent|word-break|overflow-wrap|word-wrap|hyphens|tab-size|text-wrap.*|direction|unicode-bidi|writing-mode|text-rendering|font-kerning)$/;
 const VISUAL = /^(transform|translate|rotate|scale|perspective.*|transform-origin)$/;
 
 /**
  * Paint that changes neither a text's color nor what is painted behind it in the default state
- * (transitions, cursors, outlines, border colors and radii, the ellipsis of text-overflow, and SVG
- * properties such as text-anchor, which only paint inside an svg, laid out as one box): no effect
- * on boxes or on contrast.
+ * (transitions, cursors, outlines, border colors and radii, the ellipsis of text-overflow, SVG
+ * properties such as text-anchor, which only paint inside an svg, laid out as one box, and spacing
+ * that only applies to text Cadesa doesn't measure: CJK autospace and trimming, tabs, which only
+ * keep their width where white-space preserves them): no effect on boxes or on contrast.
  */
 const COLORLESS =
-  /^((-webkit-)?transition.*|cursor|counter-(reset|increment|set)|text-rendering|font-display|image-rendering|shape-rendering|(page-)?break-(before|after|inside)|orphans|widows|speak|backface-visibility|scrollbar-(width|color)|-webkit-text-stroke.*|text-underline-offset|text-underline-position|(-webkit-|-moz-|-ms-)?user-select|pointer-events|touch-action|will-change|resize|scroll-.*|overscroll-.*|caret-color|accent-color|outline.*|border(-top|-right|-bottom|-left)?-color|border(-top|-bottom)?(-left|-right)?-radius|border-(start|end)-(start|end)-radius|list-style.*|isolation|text-decoration.*|(-webkit-)?print-color-adjust|color-adjust|forced-color-adjust|-webkit-tap-highlight-color|(-webkit-|-moz-|-ms-)?text-size-adjust|-webkit-font-smoothing|-moz-osx-font-smoothing|-webkit-touch-callout|-webkit-overflow-scrolling|z-index|text-align|text-overflow|text-anchor|dominant-baseline|paint-order|vector-effect|fill-(opacity|rule)|clip-rule|stop-(color|opacity)|flood-(color|opacity)|lighting-color|marker(-start|-mid|-end)?|color-interpolation(-filters)?)$/;
+  /^((-webkit-)?transition.*|cursor|counter-(reset|increment|set)|text-rendering|font-display|image-rendering|shape-rendering|(page-)?break-(before|after|inside)|orphans|widows|speak|backface-visibility|scrollbar-(width|color)|-webkit-text-stroke.*|text-underline-offset|text-underline-position|(-webkit-|-moz-|-ms-)?user-select|pointer-events|touch-action|will-change|resize|scroll-.*|overscroll-.*|caret-color|accent-color|outline.*|border(-top|-right|-bottom|-left)?-color|border(-top|-bottom)?(-left|-right)?-radius|border-(start|end)-(start|end)-radius|list-style.*|isolation|text-decoration.*|(-webkit-)?print-color-adjust|color-adjust|forced-color-adjust|-webkit-tap-highlight-color|(-webkit-|-moz-|-ms-)?text-size-adjust|-webkit-font-smoothing|-moz-osx-font-smoothing|-webkit-touch-callout|-webkit-overflow-scrolling|z-index|text-align|text-overflow|text-autospace|text-spacing-trim|(-moz-)?tab-size|text-anchor|dominant-baseline|paint-order|vector-effect|fill-(opacity|rule)|clip-rule|stop-(color|opacity)|flood-(color|opacity)|lighting-color|marker(-start|-mid|-end)?|color-interpolation(-filters)?)$/;
 
 export function kindOf(prop: string): ImpactKind {
   if (COLORLESS.test(prop)) return "none";
@@ -885,6 +886,14 @@ export function liftElements(input: LiftInput): LiftResult {
     if (rowShrink && isFinite(parseFloat(rowShrink.value))) out.shrink = parseFloat(rowShrink.value);
     const grow = take("flex-grow");
     const basis = take("flex-basis");
+    // order: where a flex or grid item goes among its siblings (the page front end keeps it only there).
+    const order = take("order");
+    if (order) {
+      const ov = order.value.trim();
+      if (/^-?\d+$/.test(ov)) {
+        if (parseInt(ov) !== 0) out.order = parseInt(ov);
+      } else note(e, s, order, "order must be an integer", "geometry");
+    }
     if (width) {
       const v = width.value.trim();
       if ((v === "100%" && !input.fullWidthAsPercent) || (v === "auto" && alignSelf?.value.trim() === "stretch")) out.width = "fill";
@@ -1242,6 +1251,7 @@ export function liftElements(input: LiftInput): LiftResult {
         textAlign: () => "start",
         float: () => "none",
         clear: () => "none",
+        order: () => 0,
         root: () => false,
       };
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {
