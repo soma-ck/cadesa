@@ -238,7 +238,9 @@ function load(file: string): FontMetrics {
       ...(m.contextualIncomplete && { contextualIncomplete: true }),
     },
     ...(outdatedTable(m) && { outdated: outdatedTable(m) }),
-    unsupported: (text) => [...new Set([...text].filter((c) => !index.has(c)))],
+    // (An emoji is drawn in a fallback color font whose height and width this table doesn't hold,
+    // even where it lists the character: a blog's "🤔" lines wrapped otherwise in Chromium.)
+    unsupported: (text) => [...new Set([...text].filter((c) => !index.has(c) || /\p{Emoji_Presentation}/u.test(c)))],
     ligatureIn(text) {
       if (!ligRuns.length) return undefined;
       return ligRuns.find((r) => text.includes(r));

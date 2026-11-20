@@ -4866,7 +4866,10 @@ export abstract class PageLifter {
         // Shrinking differs from the browser's (flex-shrink 0 without a width; a width with
         // flex-shrink): it matters only where its line's items want more than the line.
         const parent = parentOf.get(b);
-        if (el.gridAsStack?.[si] && b.children.some((k) => (k.overflowX ?? 0) > 1e-6))
+        // (Or where something in an item isn't known: how wide its content is isn't either; a blog's
+        // code block, a grid of lines in white-space: pre, claimed its lines 130px too narrow.)
+        const noted = (e: El): boolean => [...e.notes.values()].some((n) => n.states.has(si) && /^(geometry|text)$/.test(n.note.kind)) || e.children.some(noted);
+        if (el.gridAsStack?.[si] && (b.children.some((k) => (k.overflowX ?? 0) > 1e-6) || [...walk(b.children)].some((k) => k.assumptions.length > 0) || el.children.some(noted)))
           for (const k of [b, ...walk(b.children)])
             out.push({ file: this.page, line: el.line, selector: `[data-fixture="${k.id}"]`, decl: el.gridAsStack[si]!, reason: `an item's content is wider than its grid at ${layout.width}px, and the grid's one column grows to it`, kind: "geometry" });
         if (el.basisAutoMin?.[si] && (b.overflowX ?? 0) > 1e-6)

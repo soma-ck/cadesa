@@ -60,6 +60,13 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   Where an item's content overflows, its items are `≈` now. And in any grid, an item of unknown
   size makes its siblings `≈` (they share its tracks); only the later ones were (found by
   `fuzz-css`, a flex row 236px narrower than Chromium's, marked exact).
+- Fixed: an emoji (🤔) was measured from the text font's table where the table lists it, but
+  Chromium draws it in a fallback color font: a blog's list item wrapped onto a third line in
+  Chromium, its size claimed known. Text with an emoji is `≈` (characters drawn as emoji by
+  default; ©, ® and the like stay measured).
+- Fixed: a one-column grid lifted as a stack whose item holds something `≈` kept the other items'
+  widths "known" (a blog's code block, a grid of lines in `white-space: pre`, claimed its lines
+  130px too narrow); they are unknown there too.
 - Fixed: a subgrid with a width, `max-width` or alignment of its own was laid out by them; a
   subgrid fills the columns it spans (found by `npm run fuzz`). It is `≈` there.
 - Fixed: a length in `em` (padding, margins, sizes) under a font size that follows the viewport
