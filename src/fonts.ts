@@ -55,11 +55,19 @@ export function fontUses(layouts: Layout[]): FontUse[] {
         if (italic && !(u.italicWeights ??= []).includes(weight)) u.italicWeights.push(weight);
         return u;
       };
-      // Runs in another font or face (an <em> in a real italic face) need that font's table too.
-      for (const r of b.runFonts ?? []) use(r.font, r.weight, r.italic);
+      const chars = (u: FontUse, text: string) => {
+        const extra = [...text].filter((c) => !STANDARD.has(c) && c !== "\uFFFC" && /\S/.test(c));
+        if (extra.length) u.chars = [...new Set([...(u.chars ?? ""), ...extra])].sort().join("");
+      };
+      // Runs in another font or face (an <em> in a real italic face, text inside an inline-block in
+      // a font of its own) need that font's table too, with the characters set in it.
+      const inRuns = new Set<string>();
+      for (const r of b.runFonts ?? []) {
+        const ru = use(r.font, r.weight, r.italic);
+        if (r.text) (chars(ru, r.text), [...r.text].forEach((c) => inRuns.add(c)));
+      }
       const u = use(t.font, t.weight, !!t.italic);
-      const extra = [...b.text].filter((c) => !STANDARD.has(c) && c !== "\uFFFC" && /\S/.test(c));
-      if (extra.length) u.chars = [...new Set([...(u.chars ?? ""), ...extra])].sort().join("");
+      chars(u, [...b.text].filter((c) => !inRuns.has(c)).join(""));
     }
   for (const u of out.values()) (u.weights.sort((a, b) => a - b), u.sizes.sort((a, b) => a - b));
   return [...out.values()];

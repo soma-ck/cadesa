@@ -18,7 +18,7 @@
  */
 import { parse } from "parse5";
 import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
-import { parseFixture, textAndRuns, type Fixture, type FixtureNode, type Generated, type InlineInfo, type P5Node, type RunStyle } from "../fixture.js";
+import { parseFixture, styled, textAndRuns, type Fixture, type FixtureNode, type Generated, type InlineInfo, type P5Node, type RunStyle } from "../fixture.js";
 import { ABSOLUTE, lengthExpr, MATHY } from "../fluid.js";
 import { borderPx, insets, scrollbarPx } from "../resolve.js";
 import { lineHeightPx, lineHeightRatio } from "../engine/layout.js";
@@ -1206,6 +1206,35 @@ export abstract class PageLifter {
     return -Math.trunc(Math.fround(len) * 64) / 64;
   }
 
+  /** The fonts an atomic inline's text is set in, with that text (what `cadesa fonts` measures for it). */
+  innerFonts(k: El, si: number): { inner: { font: string; weight: number; italic: boolean; text: string }[] } | undefined {
+    const out = new Map<string, { font: string; weight: number; italic: boolean; text: string }>();
+    const visit = (e: El) => {
+      if (this.displayOf(e, si) === "none") return;
+      const own = (e.node.childNodes ?? []).filter((c) => c.nodeName === "#text").map((c) => c.value ?? "").join("").replace(/[ \t\n\r\f]+/g, " ").trim();
+      if (own) {
+        const t = this.textOf(e, si);
+        const key = `${t.family.value}|${t.weight}|${!!t.italic}`;
+        const f = out.get(key) ?? { font: t.family.value, weight: t.weight, italic: !!t.italic, text: "" };
+        f.text += own;
+        out.set(key, f);
+      }
+      e.children.forEach((c) => c.anonymous === undefined && !c.pseudo && visit(c));
+    };
+    visit(k);
+    return out.size ? { inner: [...out.values()] } : undefined;
+  }
+
+  /** Not moved by its position: static, or relative with no offsets (top, right, bottom, left all auto). */
+  stillRelative(k: El, si: number): boolean {
+    const r = (p: string) => {
+      const o = k.own[si]?.get(p);
+      return o ? this.resolve(k, si, o.value) : undefined;
+    };
+    const pos = r("position") ?? "static";
+    return pos === "static" || (pos === "relative" && ["top", "right", "bottom", "left", "inset"].every((p) => /^(auto)?$/.test(r(p) ?? "")));
+  }
+
   /** An inline box whose text has no break opportunity (no space, dash or slash) and only inline boxes in it: it is never split across lines. */
   unbreakable(k: El, si: number): boolean {
     const atomicFree = (e: El): boolean => e.children.every((c) => c.anonymous !== undefined || (!c.pseudo && c.tag !== "br" && this.displayOf(c, si) === "inline" && !REPLACED_BLOCK.has(c.tag) && atomicFree(c)));
@@ -2302,7 +2331,9 @@ export abstract class PageLifter {
     const ctype = k.tag === "input" ? (attr(k.node, "type") ?? "text").toLowerCase() : "";
     const themed = /^(checkbox|radio|range)$/.test(ctype) && (raw("appearance") ?? raw("-webkit-appearance") ?? "auto") !== "none" && !own.has("width") && !own.has("height");
     const border = themed || raw("box-sizing") === "border-box";
-    const hv = themed ? `${ctype === "range" ? 16 : 13}px` : raw("height");
+    // An empty inline-block (no content, not replaced) is as tall and as wide as nothing unless set (a spacer of margins).
+    const empty = !REPLACED_BLOCK.has(k.tag) && !CONTROL.has(k.tag) && !k.children.length && !k.ownText;
+    const hv = themed ? `${ctype === "range" ? 16 : 13}px` : (raw("height") ?? (empty ? "0px" : undefined));
     const wv = themed ? `${ctype === "range" ? 129 : 13}px` : (raw("width") ?? "auto");
     if (!hv || hv === "auto") return undefined;
     if (["min-width", "max-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(raw(p) ?? ""))) return undefined;
@@ -2324,7 +2355,8 @@ export abstract class PageLifter {
         const w = lu(lengthPx(wv, size) ?? NaN);
         if (!(w >= 0)) return undefined;
         bw = border ? Math.max(w, insX) : w + insX;
-      } else {
+      } else if (empty && !(ratio > 0)) bw = insX;
+      else {
         if (!(ratio > 0) || !isFinite(ratio) || insX || insY) return undefined;
         bw = h * ratio;
       }
@@ -2413,7 +2445,7 @@ export abstract class PageLifter {
       const o = own.get(p);
       return o ? this.resolveBox(k, si, o.value) : undefined;
     };
-    if (["width", "min-width", "max-width", "min-height", "max-height"].some((p) => !(p === "width" && lines && fixedW !== Infinity) && !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
+    if (["width", "min-width", "max-width", "min-height", "max-height"].some((p) => !(p === "width" && lines && (fixedW !== Infinity || /^(min-content|max-content|fit-content)$/.test(res(p) ?? ""))) && !/^(auto|none|0|0px)?$/.test(res(p) ?? ""))) return undefined;
     const px = (p: string) => lengthPx(res(p) ?? "0", t.size) ?? NaN;
     // A height of its own (a chip as tall as its line height): its line stays at the top of its content box.
     const hset = /^(auto)?$/.test(res("height") ?? "") ? undefined : lengthPx(res("height")!, t.size);
@@ -2485,13 +2517,16 @@ export abstract class PageLifter {
       if (d.anonymous !== undefined) return d.tag === "#text" && !d.pseudo;
       if (d.pseudo || this.outOfFlow(d, si)) return false;
       if (this.displayOf(d, si) === "none") return true;
+      // An empty inline-block of its own size (a strut, a spacer): one object on the line.
+      if (this.displayOf(d, si) === "inline-block" && !d.children.length && !d.ownText && !REPLACED_BLOCK.has(d.tag) && !CONTROL.has(d.tag)) return this.atomicInline(d, si) !== undefined;
       if (this.displayOf(d, si) !== "inline" || REPLACED_BLOCK.has(d.tag) || CONTROL.has(d.tag)) return false;
       const dt = this.textOf(d, si);
       const pt = this.textOf(d.parent, si);
       const same = dt.size === pt.size && dt.family.value === pt.family.value && !!dt.italic === !!pt.italic && JSON.stringify(dt.lineHeight) === JSON.stringify(pt.lineHeight) && dt.letterSpacing === pt.letterSpacing;
       const va = d.own[si].get("vertical-align");
       if ((!same || (va && this.resolve(d, si, va.value) !== "baseline")) && !this.runModelled(d, si)) return false;
-      for (const p of d.own[si].keys()) if (!p.startsWith("--") && !/^(color|background(-color|-image)?|font-(size|family|weight|style)|line-height|vertical-align|display|box-sizing|text-decoration.*|cursor|opacity)$/.test(p)) return false;
+      for (const p of d.own[si].keys()) if (!p.startsWith("--") && !/^(color|background(-color|-image)?|font-(size|family|weight|style)|line-height|vertical-align|display|box-sizing|text-decoration.*|cursor|opacity|margin-(left|right)|position|-ms-high-contrast-adjust|forced-color-adjust|border-(top|right|bottom|left)-color|text-rendering)$/.test(p)) return false;
+      if (!this.stillRelative(d, si)) return false;
       const dd = d.own[si].get("display");
       if (dd && this.resolve(d, si, dd.value) !== "inline") return false;
       return d.children.every(ok);
@@ -2505,7 +2540,7 @@ export abstract class PageLifter {
     if (!runs.length) return undefined;
     const out: { width: number; h: number; base: number }[] = [];
     for (let i = 0; i < runs.length; i++) {
-      const spans = runMeta[i]?.spans;
+      const spans = runMeta[i]?.spans?.filter((sp) => styled(sp) || sp.open || sp.close || sp.openAt);
       const shown = runs[i].replaceAll("\uFFFC", "");
       if (m.unsupported(shown).length) return undefined;
       // (Its inline elements' edges too: text in another font or size is measured item by item.)
@@ -2527,6 +2562,8 @@ export abstract class PageLifter {
     };
     const w = r("width");
     if (w === undefined || /^auto$/.test(w)) return Infinity;
+    // Content-sized on one line that doesn't wrap (KaTeX's bases): its min-content is its max-content.
+    if (/^(min-content|max-content|fit-content)$/.test(w) && this.textOf(k, si).inherited.get("white-space")?.value === "nowrap") return Infinity;
     const px = (v: string | undefined) => (v === undefined ? 0 : (lengthPx(v, size) ?? NaN));
     const width = px(w);
     if (!isFinite(width)) return undefined;
@@ -2619,10 +2656,15 @@ export abstract class PageLifter {
       if (el !== root && el.parent === root && this.textFloat(el) && this.floated(el, si)) return { float: true };
       const out: InlineInfo = {};
       const atomic = el !== root ? this.atomicInline(el, si) : undefined;
-      if (atomic !== undefined) return { atomic, ...this.pastStrut(el, si) };
+      if (atomic !== undefined) return { atomic, ...this.pastStrut(el, si), ...this.innerFonts(el, si) };
       if (el !== root && this.displayOf(el, si) === "inline") {
         if (this.textOf(el, si).weight !== this.textOf(el.parent, si).weight) out.weight = this.textOf(el, si).weight;
-        Object.assign(out, this.runStyle(el, si));
+        const rs = this.runStyle(el, si);
+        Object.assign(out, rs);
+        // Text in a font of its own that isn't measured (the box is ≈): which font, for `cadesa fonts`.
+        const et = this.textOf(el, si);
+        const ptx = this.textOf(el.parent, si);
+        if (!rs && (et.family.value !== ptx.family.value || !!et.italic !== !!ptx.italic)) out.face = { font: et.family.value, weight: et.weight, italic: !!et.italic };
         const e = this.inlineEdges(el, si);
         if (e?.open) out.open = e.open;
         if (e?.close) out.close = e.close;
@@ -3979,6 +4021,8 @@ export abstract class PageLifter {
         if (edges && /^(margin|padding)-(left|right)$|^border-(left|right)-(width|style)$/.test(c.prop)) continue;
         if (inline && !lead && /^(margin|padding)-(top|bottom)$|^border-(top|bottom)-(width|style)$/.test(c.prop)) continue;
         if (lead && /^(margin|padding)-(top|bottom)$|^border-(top|bottom)-(width|style)$/.test(c.prop)) continue;
+        // Relative position with no offsets moves nothing; legacy high-contrast hints change no layout.
+        if ((c.prop === "position" && this.stillRelative(k, si)) || /^(-ms-high-contrast-adjust|forced-color-adjust)$/.test(c.prop)) continue;
         // A weight of its own is measured run by run.
         if (c.prop === "font-weight" && (inline || lead || kt.weight === pt.weight)) continue;
         if (c.kind === "paint" || c.kind === "none" || c.kind === "state") {

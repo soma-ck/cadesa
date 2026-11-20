@@ -1,0 +1,28 @@
+/* A page of text with inline math set by KaTeX (katex.css and its fonts): formulas in paragraphs and alone. */
+@font-face {
+  font-family: "Inter";
+  font-weight: 100 900;
+  src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+.page {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+.card {
+  padding: 8px 12px;
+  border: 1px solid #d9e2ec;
+}

@@ -466,7 +466,7 @@ export function layoutText(
      * a space at its end hanging, and its width within the line's room), and with no float before it waiting,
      * at that line's top, the line then shortened; any other below the line, at the next one's top.
      */
-    floats?: { at: number; w: number; place: (top: number) => void }[];
+    floats?: { at: number; w: number; fitsAt?: (top: number) => boolean; place: (top: number) => void }[];
   } = {},
 ): TextLayout {
   /** The room for the line being filled (beside floats: that line's band). */
@@ -649,13 +649,13 @@ export function layoutText(
   const pieceStarts = new Set<number>();
   for (let at = 0, k = 0; k < ps.length; at += [...ps[k]].length, k++) pieceStarts.add(at);
   pieceStarts.add(all.length);
-  const meetFloat = (f: { at: number; w: number; place: (top: number) => void }) => {
+  const meetFloat = (f: { at: number; w: number; fitsAt?: (top: number) => boolean; place: (top: number) => void }) => {
     if (!pieceStarts.has(f.at)) approximate ??= "a float inside a word";
     if (!line && !deferred.length) return f.place(nextTop);
     // What is on the line so far (a space at its end hangs: it doesn't count).
     const { used, lw } = lineWidth(line);
     const so = used + lw;
-    if (line && !deferred.length && place && so + f.w <= maxWidth + 1 / 64 + TEXT_EPS / 64) {
+    if (line && !deferred.length && place && so + f.w <= maxWidth + 1 / 64 + TEXT_EPS / 64 && (!f.fitsAt || f.fitsAt(place.top))) {
       f.place(place.top);
       const at = opts.band!(place.top, opts.lineH ?? 0, () => true);
       maxWidth = at.r - at.l;

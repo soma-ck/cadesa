@@ -72,6 +72,20 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   limits of the tracks that are infinitely growable (no item sized them yet) first, as CSS Grid
   §12.5.1 and Chromium do, not to every track it spans. A `grid-auto-flow: column dense` grid with
   an item spanning two auto columns had a column 25px off.
+- Math set by KaTeX, where it is a row of bases: each base an inline-block that doesn't wrap
+  (`width: min-content`) holding an empty strut of set height in em with its vertical-align, runs
+  of text in KaTeX's fonts and faces (with the em margins KaTeX gives them) and empty spacers of
+  em margins; the formula's own font size and line height around them. Empty inline-blocks (a
+  strut, a spacer) are laid out as objects on the line inside such inline-blocks and in text, and
+  relative position with no offsets moves nothing. `fixtures/katex` holds KaTeX's own CSS and fonts
+  (MIT) with formulas rendered by KaTeX, checked by `conformance:css`. Still `≈`: superscripts,
+  subscripts, fractions and roots (KaTeX's vlist inline-tables of relatively positioned rows).
+- Fixed: an absolutely positioned box placed by its bottom or right offset moves with its own size,
+  so where that size isn't guaranteed (an `≈` box inside it), it and what is in it are `≈` too; an
+  out-of-flow box at its static position is `≈` when an in-flow box before it is.
+- `cadesa fonts` counts each run's characters for its own font (a minus sign in a math run is the
+  math font's, not the paragraph's), and text inside inline-blocks for the fonts it is set in, even
+  where a box is `≈`: `--measure` measures those fonts, with those characters.
 
 ## 0.1.20 (2026-11-20)
 

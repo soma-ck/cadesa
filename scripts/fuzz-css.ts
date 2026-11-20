@@ -107,8 +107,29 @@ export function genCssCase(seed: number): CssCase {
     const inner = depth < 2 && r.chance(0.25) ? (r.chance(0.3) ? `${r.pick(WORDS)}${run(depth + 1).replace(/>([^<]*)</, (_, t: string) => `>${t.replace(/ /g, "")}<`)}` : `${words(r, 0, 2)} ${run(depth + 1)} ${words(r, 0, 2)}`) : words(r, 1, 4);
     return `<${tag}${tag === "a" ? ' href="#"' : ""}${attr(cls(decls))}>${inner}</${tag}>`;
   };
+  /**
+   * Math set the way KaTeX sets it: an inline box in another font size and line height holding
+   * inline-blocks that don't wrap (bases), each with an empty strut of set height (em) and
+   * vertical-align, runs of text in other fonts and faces (with an em margin of their own), and
+   * empty spacers of em margins between them.
+   */
+  const math = () => {
+    const box = cls([`font-size: ${r.pick(["1.21em", "1.1em", "1em"])}`, "line-height: 1.2", "font-family: Roboto", "position: relative"]);
+    const base = cls(["display: inline-block", "white-space: nowrap", "width: min-content", "position: relative"]);
+    const strut = (h: number, d: number) => `<span${attr(cls(["display: inline-block", `height: ${h}em`, ...(d ? [`vertical-align: -${d}em`] : [])]))}></span>`;
+    const space = () => `<span${attr(cls(["display: inline-block", `margin-right: ${r.pick(["0.1667em", "0.2222em", "0.2778em"])}`]))}></span>`;
+    const atom = () => {
+      const d: string[] = [];
+      if (r.chance(0.5)) d.push(`font-family: ${r.pick(["Lato", "Inter"])}`, ...(r.chance(0.5) ? ["font-style: italic"] : []));
+      if (r.chance(0.3)) d.push(`margin-right: ${r.pick(["0.0359em", "0.044em", "0.05em"])}`);
+      return `<span${attr(cls(d))}>${r.pick(["a", "b", "x", "y", "2", "+", "=", "n"])}</span>`;
+    };
+    const bases = Array.from({ length: r.int(1, 3) }, () => `<span${attr(base)}>${strut(r.pick([0.4306, 0.6444, 0.6944, 0.7778]), r.pick([0, 0, 0.0833, 0.1944]))}${Array.from({ length: r.int(1, 3) }, () => (r.chance(0.3) ? space() : "") + atom()).join("")}</span>`);
+    return `<span${attr(box)}><span>${bases.join("")}</span></span>`;
+  };
   /** An atomic inline: an inline-block of set size, or an image-like box, placed by its vertical-align. */
   const atomic = () => {
+    if (r.chance(0.15)) return math();
     // An inline-block with content of its own: one line, or lines broken by <br>s with runs in them,
     // padded and bordered, maybe of set height.
     if (r.chance(0.4)) {

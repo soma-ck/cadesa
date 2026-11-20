@@ -257,3 +257,20 @@ describe("metrics from other fonts", () => {
     expect(existsSync(join(dir, ".cadesa"))).toBe(false);
   });
 });
+
+describe("fonts of text inside inline-blocks and runs", () => {
+  it("counts each run's characters for its own font, and text inside an inline-block for its fonts", () => {
+    const r = run(
+      `<p>Sum <span class="m"><span class="b"><span class="s"></span><span class="v">x</span><span class="o">⋅</span></span></span> and <span class="m">y−z</span></p>`,
+      `.m { font-family: Roboto; font-size: 1.2em } .b { display: inline-block; white-space: nowrap } .s { display: inline-block; height: 0.7em } .v { font-family: Lato; font-style: italic }`,
+      [400],
+    );
+    const uses = fontUses(r.layouts);
+    const of = (f: string) => uses.find((u) => u.family === f);
+    // The minus sign is in Roboto's run, the dot operator inside the inline-block: neither is Inter's.
+    expect(of("Inter")?.chars ?? "").not.toMatch(/[−⋅]/);
+    expect(of("Roboto")?.chars).toContain("−");
+    expect(of("Roboto")?.chars).toContain("⋅");
+    expect(of("Lato")?.italicWeights).toEqual([400]);
+  });
+});

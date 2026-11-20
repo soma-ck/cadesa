@@ -9,7 +9,7 @@
  * measured falls back to a one-line assumption, which every report flags.
  */
 import { closest } from "../diagnostics.js";
-import type { Fixture, FixtureNode } from "../fixture.js";
+import { styled, type Fixture, type FixtureNode } from "../fixture.js";
 import { containsLayout, scrolls, tokenKey, type Component, type Model, type PageSides, type Pattern, type Ref } from "../model.js";
 import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, scrollbarPx, sizeAt, type GridSpec, type Margins, type ResolvedProps, type Sides, type Track } from "../resolve.js";
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
@@ -54,7 +54,7 @@ export interface Box {
   /** Laid-out lines, with widths in px, when the text could be measured. */
   lines?: Line[];
   /** Runs of its text in another font, weight or face (italic or upright): what they are set in, for `cadesa fonts`. */
-  runFonts?: { font?: string; weight: number; italic: boolean }[];
+  runFonts?: { font?: string; weight: number; italic: boolean; text?: string }[];
   /** Px this box's content extends past its content box horizontally. */
   overflowX?: number;
   /** Px this box's content extends past its fixed height. */
@@ -225,17 +225,28 @@ export function lineHeightRatio(px: number, sizePx: number): number {
   return Math.round(exact * 1e12) / 1e12;
 }
 
-/** The fonts, weights and faces runs of a text box's text are set in, where they differ from the box's. */
-function runFontsOf(n: FixtureNode, props: ResolvedProps): { font?: string; weight: number; italic: boolean }[] {
+/**
+ * The fonts, weights and faces runs of a text box's text are set in, where they differ from the
+ * box's, with the text set in each (and the text inside atomic inlines, in theirs).
+ */
+function runFontsOf(n: FixtureNode, props: ResolvedProps): { font?: string; weight: number; italic: boolean; text?: string }[] {
   const t = props.text?.value;
   if (!t) return [];
-  const out = new Map<string, { font?: string; weight: number; italic: boolean }>();
-  for (const r of n.runMeta)
+  const out = new Map<string, { font?: string; weight: number; italic: boolean; text?: string }>();
+  const add = (f: { font?: string; weight: number; italic: boolean }, text: string) => {
+    const key = `${f.font}|${f.weight}|${f.italic}`;
+    const o = out.get(key) ?? { ...f, text: "" };
+    o.text += text;
+    out.set(key, o);
+  };
+  n.runMeta.forEach((r, i) => {
     for (const sp of r.spans ?? []) {
+      for (const x of sp.inner ?? []) add({ font: x.font, weight: x.weight, italic: x.italic }, x.text);
+      if (sp.face && !styled(sp)) add(sp.face, [...(n.runs[i] ?? "")].slice(sp.from, sp.to).join("").replaceAll("￼", ""));
       if (sp.font === undefined && sp.italic === undefined && sp.weight === undefined) continue;
-      const f = { font: sp.font ?? t.font, weight: sp.weight ?? t.weight, italic: sp.italic ?? !!t.italic };
-      out.set(`${f.font}|${f.weight}|${f.italic}`, f);
+      add({ font: sp.font ?? t.font, weight: sp.weight ?? t.weight, italic: sp.italic ?? !!t.italic }, [...(n.runs[i] ?? "")].slice(sp.from, sp.to).join("").replaceAll("￼", ""));
     }
+  });
   return [...out.values()];
 }
 
@@ -596,7 +607,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     const moved = (r: string, b: number) => (t.uppercase ? [...[...r].slice(0, b).join("").toUpperCase()].length : b);
     const items = raw.map((r, i) => meta[i].items.map((b) => moved(r, b)));
     // (An atomic inline sized in em: its width at this font size.)
-    const spans = raw.map((r, i) => meta[i].spans?.map(({ openAt, ...sp }) => ({ ...sp, ...(openAt && { open: openAt(t.sizePx) }), from: moved(r, sp.from), to: moved(r, sp.to) })));
+    const spans = raw.map((r, i) => meta[i].spans?.filter((sp) => styled(sp) || sp.open || sp.close || sp.openAt).map(({ openAt, ...sp }) => ({ ...sp, ...(openAt && { open: openAt(t.sizePx) }), from: moved(r, sp.from), to: moved(r, sp.to) })));
     // A float at the start of a run: as wide as its text (rounded up to a layout unit) plus its edges.
     const leads = meta.map((r) => {
       if (!r.lead) return undefined;
@@ -624,7 +635,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     // Beside floats (band): each run's lines go on from where the run before it ended.
     // Floats among the text (inlineFloat: the width of one, and where it goes) are placed as its lines are.
-    return (maxWidth: number, band?: Band, inlineFloat?: (index: number) => { w: number; place: (top: number) => void }) => {
+    return (maxWidth: number, band?: Band, inlineFloat?: (index: number) => { w: number; fitsAt: (top: number) => boolean; place: (top: number) => void }) => {
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
       let off = 0;
       if (band && strut) assumptions.push("lines beside a float, with inline boxes that reach past the text's strut, aren't modelled");
@@ -635,7 +646,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         });
         const floats = inlineFloat && meta[i].floats?.map((f) => {
           const g = inlineFloat(f.index);
-          return { at: moved(raw[i], f.at), w: g.w, place: (top: number) => g.place(top + off) };
+          return { at: moved(raw[i], f.at), w: g.w, fitsAt: (top: number) => g.fitsAt(top + off), place: (top: number) => g.place(top + off) };
         });
         const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i], strut, ...(runBand && { band: runBand, lineH }), ...(floats?.length && { floats }) };
         /** Lines beside floats: placed from the content box's top. */
@@ -1872,8 +1883,14 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
           const b = fboxes[index];
           const fm = marginOf(b.props);
           const fw = fm.left + b.w + fm.right;
+          const fh = fm.top + b.h + fm.bottom;
           return {
             w: fw,
+            // Whether it can go right at a line's top (beside what is there), or would end up lower.
+            fitsAt: (top: number) => {
+              const from = Math.max(flowCtx.y + top, b.props.clear ? flowCtx.ex.clearance(b.props.clear.value) : -Infinity);
+              return flowCtx.ex.find(Math.max(from, flowCtx.ex.lastTop), Math.max(0, fh), flowCtx.x, flowCtx.x + innerW, (room) => fw <= room + EPS).top <= flowCtx.y + top + EPS;
+            },
             place: (top: number) => {
               const from = Math.max(flowCtx.y + top, b.props.clear ? flowCtx.ex.clearance(b.props.clear.value) : -Infinity);
               const at = flowCtx.ex.place(b.props.float!.value, fw, fm.top + b.h + fm.bottom, from, flowCtx.x, flowCtx.x + innerW);
@@ -2438,6 +2455,9 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
   };
   const pageX = outer.left + bodyMargin.left + bodyPad.left;
   for (const b of boxes) place(b, 0, 0, pageW, windowH);
+  const parentOf = new Map<Box, Box>();
+  for (const b of walk(boxes)) for (const k of b.children) parentOf.set(k, b);
+  placeAbsolute(parentOf, pageX, outer.top + (bodyPad.top ? bodyMargin.top + bodyPad.top : 0));
   // An inline box laid out as the block of its lines (Props.inlineBox): its rectangle is the union
   // of its text's content area on each line, from where its text starts on the line (aligned in
   // the line's room as text-align says, in layout units; an overflowing line at the start) to where
@@ -2469,9 +2489,6 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     b.w = x1 - x0;
     b.h = y1 - y0;
   }
-  const parentOf = new Map<Box, Box>();
-  for (const b of walk(boxes)) for (const k of b.children) parentOf.set(k, b);
-  placeAbsolute(parentOf, pageX, outer.top + (bodyPad.top ? bodyMargin.top + bodyPad.top : 0));
 
   // Transforms: each transformed box, and everything inside it, is drawn mapped by its matrix (and
   // its ancestors'); its rectangle is the bounding box of its mapped corners. Nothing else moves.
@@ -2548,7 +2565,9 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       if (flagged.has(b)) continue;
       // (A page-level one at its static position sits below the page's in-flow boxes: any of them that isn't guaranteed moves it.)
       const pageDep = a.staticPos && !a.parent ? boxes.find((x) => x !== b && !absInfo.has(x) && flagged.has(x)) : undefined;
-      const dep = (a.cb && flagged.has(a.cb) ? a.cb : undefined) ?? (a.staticPos && a.parent && flagged.has(a.parent) ? a.parent : undefined) ?? pageDep;
+      // (At its static position it sits below the in-flow boxes before it in its parent: any of them that isn't guaranteed moves it too.)
+      const sibDep = a.staticPos && a.parent ? a.parent.children.find((x) => x !== b && !absInfo.has(x) && flagged.has(x)) : undefined;
+      const dep = (a.cb && flagged.has(a.cb) ? a.cb : undefined) ?? (a.staticPos && a.parent && flagged.has(a.parent) ? a.parent : undefined) ?? sibDep ?? pageDep;
       if (dep) {
         flag(b, `geometry depends on #${dep.id}, which the engine can't guarantee (${flagged.get(dep)})`, true);
         changed = true;

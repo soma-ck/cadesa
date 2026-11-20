@@ -105,6 +105,10 @@ export interface RunStyle {
   byExtent?: { mode: "middle" | "text-top" | "text-bottom"; sa: number; sd: number; base: number; xh2: number; ascent: number; descent: number };
   /** Inside such a box: `above` and `below` are from its baseline, not the line's. */
   rel?: boolean;
+  /** An atomic inline holding text: the fonts its text is set in, and that text (for `cadesa fonts`). */
+  inner?: { font: string; weight: number; italic: boolean; text: string }[];
+  /** Text in a font of its own that isn't measured (the box is ≈): which font, for `cadesa fonts` only. */
+  face?: { font: string; weight: number; italic: boolean };
 }
 
 /** Whether a run style changes anything. */
@@ -260,6 +264,8 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     ...(sp.align !== undefined && { align: sp.align }),
     ...(sp.byExtent !== undefined && { byExtent: sp.byExtent }),
     ...(sp.rel && { rel: true }),
+    ...(sp.inner && { inner: sp.inner }),
+    ...(sp.face && { face: sp.face }),
   });
   const live: number[] = [];
   let lead: RunMeta["lead"];
@@ -292,7 +298,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
         out.push(s);
         order.set(s, id);
       }
-      const useful = out.filter((s) => styled(s) || s.open || s.close);
+      const useful = out.filter((s) => styled(s) || s.open || s.close || s.face);
       runMeta.push({ inBlock: depth > 0, underlined, items, ...(useful.length && { spans: useful.sort((a, b) => a.from - b.from || b.to - a.to || order.get(a)! - order.get(b)!) }), ...(lead !== undefined && runs.length === 1 && { lead }), ...(floats.length && { floats }) });
     }
     carried = [...live];
@@ -301,7 +307,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
   };
   /** Text in an inline box of its own (an element, or generated content). */
   const span = (info: (RunStyle & { open?: number; close?: number; openAt?: (sizePx: number) => number }) | undefined, body: () => void) => {
-    if (!info || (!styled(info) && !info.open && !info.close)) {
+    if (!info || (!styled(info) && !info.open && !info.close && !info.face)) {
       cur += EDGE;
       body();
       cur += EDGE;
@@ -336,7 +342,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     else if (inline?.(k)?.atomic !== undefined) {
       const info = inline!(k)!;
       const a = info.atomic!;
-      const v = info.above !== undefined ? { above: info.above, below: info.below, ...(info.align && { align: info.align }) } : {};
+      const v = { ...(info.above !== undefined && { above: info.above, below: info.below, ...(info.align && { align: info.align }) }), ...(info.inner && { inner: info.inner }) };
       span(typeof a === "number" ? { open: a, ...v } : { open: 1, openAt: a, ...v }, () => (cur += "\uFFFC"));
     }
     else if (k.tagName && BLOCK.has(k.tagName)) {

@@ -123,6 +123,9 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
    * across its parent, or centered by a max-width, keeps its x when only its height changes.
    */
   const bySize = (p: Box): boolean => {
+    // An out-of-flow box placed by its bottom or right offset (top or left auto): its size moves its top or left edge.
+    const pos = p.props.position?.value;
+    if (pos && (pos.type === "absolute" || pos.type === "fixed") && ((pos.top === undefined && pos.bottom !== undefined) || (pos.left === undefined && pos.right !== undefined))) return true;
     const m = p.props.margin?.value;
     if (m && (m.autoTop || m.autoBottom)) return true;
     const gp = parentOf.get(p);
