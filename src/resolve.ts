@@ -144,6 +144,8 @@ export interface ResolvedProps {
   /** A cluster's lines: false keeps every item on one line. */
   wrap?: Resolved<boolean>;
   grow?: Resolved<{ factor: number; basis: "zero" | "content" }>;
+  /** A cluster item's flex-shrink, where set (see Props.shrink). */
+  shrink?: Resolved<number>;
   aspect?: Resolved<number>;
   overflow?: Resolved<{ x: Overflow; y: Overflow }>;
   /** Containment (see Props.contain). */
@@ -375,6 +377,11 @@ export function resolveElement(model: Model, component: Component, slot: string 
           out.justify = { value: j, display: l.justify ? j : "start (default)", steps: [...pre, src(l.justify ? `${l.path}.justify` : l.path)] };
           out.wrap = { value: l.wrap !== false, display: l.wrap === false ? "false (one line)" : "true (default)", steps: [...pre, src(l.wrap === false ? `${l.path}.wrap` : l.path)] };
         }
+        break;
+      }
+      case "shrink": {
+        const sh = p.shrink!;
+        out.shrink = { value: sh.value, display: String(sh.value), steps: [...pre, src(sh.path)] };
         break;
       }
       case "grow": {

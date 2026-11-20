@@ -613,6 +613,11 @@
               "const": "none"
             }
           ]
+        },
+        "shrink": {
+          "description": "in a cluster: how much the box gives up when its line is too full, in proportion to the factor times its size (flex-shrink), never below its min-content width (at most its width). Default 1 for a box without a width, 0 for one with a width",
+          "type": "number",
+          "minimum": 0
         }
       }
     },

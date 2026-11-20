@@ -1,0 +1,159 @@
+/*
+ * Flex rows too full for their items: items with a width that still shrink (flex-shrink 1 and 2,
+ * down to their min-content width, a clipped item below it), items without a width that don't
+ * (flex-shrink: 0), percentage widths, and rows that wrap.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+.page {
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.bar {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: #f0f4f8;
+}
+
+.bar__side {
+  width: 160px;
+  padding: 4px 8px;
+  background: #d9e2ec;
+}
+
+.bar__main {
+  width: 420px;
+  padding: 4px 8px;
+  background: #e4ebf0;
+}
+
+.bar__end {
+  width: 120px;
+  flex-shrink: 2;
+  background: #d9e2ec;
+}
+
+.bar__fixed {
+  width: 140px;
+  flex-shrink: 0;
+  background: #cbd2d9;
+}
+
+.due {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.due__label {
+  flex: 0 0 auto;
+  font-weight: 600;
+}
+
+.due__date {
+  width: 60%;
+  color: #52606d;
+}
+
+.due__count {
+  width: 30%;
+  text-align: right;
+}
+
+.due--tight {
+  max-width: 420px;
+}
+
+.tabs {
+  display: flex;
+  margin-bottom: 12px;
+  border-bottom: 1px solid #d9e2ec;
+}
+
+.tab {
+  width: 180px;
+  padding: 8px 12px;
+  color: #334e68;
+  text-decoration: none;
+}
+
+.tab--wide {
+  width: 240px;
+}
+
+.cards {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.card {
+  width: 220px;
+  padding: 10px;
+  border: 1px solid #d9e2ec;
+}
+
+.card--clip {
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+.card--keep {
+  flex-shrink: 0;
+}
+
+.side {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.side__icon {
+  width: 40px;
+  height: 40px;
+  background: #9fb3c8;
+}
+
+.side__text {
+  width: 100%;
+}
+
+.side__stay {
+  flex-shrink: 0;
+  font-weight: 600;
+}
+
+.pair {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pair__a {
+  width: 520px;
+  padding: 6px;
+  background: #f0f4f8;
+}
+
+.pair__b {
+  width: 360px;
+  padding: 6px;
+  background: #e4ebf0;
+}

@@ -141,6 +141,8 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   // (auto margins switch off stretching). maxWidth and measure share max-width: when both apply
   // (in this rule or merged from an earlier one), the smaller wins.
   const e = ctx.eff;
+  /** flex without a grow factor: a box with a width neither grows nor shrinks, one without shrinks; shrink sets its factor. */
+  const flexOf = (sized: boolean) => (e.shrink ? `0 ${e.shrink.value} auto` : sized ? "none" : "0 1 auto");
   // A width the box sets itself (a size, or fit): maxWidth then only caps it.
   const fixedWidth = !!e.width && (!("keyword" in e.width) || e.width.keyword !== "fill");
   if (p.maxWidth || p.measure || unset("maxWidth") || unset("measure")) {
@@ -159,13 +161,14 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.width) {
     // fill: the full width of the parent. Not align-self: stretch, which in a grid or layer stretches
     // the height instead. fit: shrink-to-fit (its content's width, at most the parent's).
-    if ("keyword" in p.width) out.push(`width: ${p.width.keyword === "fit" ? "fit-content" : p.width.keyword === "fill" ? "100%" : p.width.keyword}`, "align-self: auto", "flex: none");
-    else out.push(`width: ${v(p.width)}`, "align-self: auto", "flex: none");
-  } else if (unset("width")) out.push(`width: ${e.maxWidth || e.aspect ? "100%" : "auto"}`, "flex: 0 1 auto");
+    if ("keyword" in p.width) out.push(`width: ${p.width.keyword === "fit" ? "fit-content" : p.width.keyword === "fill" ? "100%" : p.width.keyword}`, "align-self: auto", `flex: ${flexOf(true)}`);
+    else out.push(`width: ${v(p.width)}`, "align-self: auto", `flex: ${flexOf(true)}`);
+  } else if (unset("width")) out.push(`width: ${e.maxWidth || e.aspect ? "100%" : "auto"}`, `flex: ${flexOf(false)}`);
   // grow: flex-grow from a basis of 0 (equal shares) or auto (its own size); with a width it never
-  // shrinks. Restated after a width in the same rule, whose flex: none would otherwise switch it off.
-  if (e.grow && (p.grow || p.width || unset("width"))) out.push(`flex: ${e.grow.value} ${e.width ? 0 : 1} ${e.grow.basis === "zero" ? "0px" : "auto"}`);
-  else if (unset("grow")) out.push(`flex: ${e.width ? "none" : "0 1 auto"}`);
+  // shrinks (unless shrink says so). Restated after a width in the same rule, whose flex would
+  // otherwise switch it off.
+  if (e.grow && (p.grow || p.width || unset("width") || p.shrink)) out.push(`flex: ${e.grow.value} ${e.shrink?.value ?? (e.width ? 0 : 1)} ${e.grow.basis === "zero" ? "0px" : "auto"}`);
+  else if (unset("grow") || (p.shrink && !p.width && !unset("width"))) out.push(`flex: ${flexOf(!!e.width)}`);
   // min-height too: a column flex parent shorter than its content would otherwise shrink the box.
   // With a minHeight, the larger of the two (CSS's used height when both apply).
   const minOf = (h?: Ref, m?: Ref) => (h && m ? `max(${v(h)}, ${v(m)})` : h ? v(h) : m ? v(m) : "auto");

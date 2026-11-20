@@ -335,6 +335,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `layout.justify` | `start`, `end`, `center`, `between`, `around`, `evenly` | `justify-content` in a cluster, distributed as Chromium does |
 | `layout.wrap` | `false` | a one-line row (`flex-wrap: nowrap`) whose items shrink to fit |
 | `grow` | `{ factor, basis: zero \| auto }` | `flex: <factor> …`: items share a row's free space (Bootstrap's `.col`, Tailwind's `flex-1`) |
+| `shrink` | a number (`0`, `1`, `2`) | `flex-shrink`: how much an item gives up when its row is too full, never below its min-content width (at most its width). By default an item with a `width` doesn't shrink and one without does |
 | `padding` | space token or percentage size token (of the parent's width), or `{ block, inline }` | `padding` (a missing axis is 0) |
 | `margin` | space token (negative allowed), percentage size token, `auto`, `{ block, inline }` or `{ top, right, bottom, left }` | `margin`; collapses between blocks in `flow`, adds to the outer size in stacks, rows and grids; `auto` takes free space (top and bottom: in stacks, rows and grids) |
 | `width` | size token (px, rem, `"50%"` or `"min(440px, 100%)"`), `fill`, `fit`, `max-content` or `min-content` | fixed width, stretch in a stack, `fit-content` or a content width. Unset: stretch in a stack, sized to its content in a cluster |

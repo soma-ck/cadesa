@@ -55,6 +55,7 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   justify: "layout",
   wrap: "layout",
   grow: "grow",
+  shrink: "shrink",
   overflow: "overflow",
   scrollbar: "overflow",
   contain: "contain",
@@ -135,6 +136,8 @@ function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: s
       return p.layout!.pattern === "cluster" ? { value: p.layout!.justify ?? "start (default)", path: p.layout!.path } : undefined;
     case "grow":
       return { value: `${p.grow!.value}${p.grow!.basis === "zero" ? " (from zero)" : ""}`, path: p.grow!.path };
+    case "shrink":
+      return { value: String(p.shrink!.value), path: p.shrink!.path };
     case "width":
       return "keyword" in p.width! ? { value: p.width!.keyword, path: p.width!.path } : { value: tok(p.width!), path: p.width!.path };
     case "text":

@@ -906,6 +906,11 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           out.grow = { value: f, basis: (g.basis as "zero" | "content" | undefined) ?? "content", path: p.join(".") };
           break;
         }
+        case "shrink":
+          // shrink: 1 (flex-shrink): a box with a width that still gives way in a full line, or 0: one without that doesn't.
+          if (typeof v === "number" && v >= 0 && isFinite(v) && v <= 1000) out.shrink = { value: v, path: p.join(".") };
+          else err(p, "invalid shrink", { expected: "a number of 0 or more, e.g. 1 (a box with a width shrinks in a full line) or 0 (a box without one doesn't)", got: v });
+          break;
       }
     }
     return out;

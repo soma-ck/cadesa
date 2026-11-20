@@ -879,6 +879,9 @@ export function liftElements(input: LiftInput): LiftResult {
     const alignSelf = take("align-self");
     const flex = take("flex");
     const shrink = take("flex-shrink");
+    // A flex row item's shrink factor where it isn't the default for its width (page.ts decides).
+    const rowShrink = take("row-shrink");
+    if (rowShrink && isFinite(parseFloat(rowShrink.value))) out.shrink = parseFloat(rowShrink.value);
     const grow = take("flex-grow");
     const basis = take("flex-basis");
     if (width) {
@@ -1232,6 +1235,8 @@ export function liftElements(input: LiftInput): LiftResult {
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {
         for (const k of lost(a, b)) {
           if (UNSETTABLE_PROPS.has(k)) d[k] = "none";
+          // Back to the default shrink factor for its width (0 with one, 1 without).
+          else if (k === "shrink") d[k] = b.width !== undefined ? 0 : 1;
           else if (zero[k]) d[k] = zero[k]();
           else
             unlifted.push({

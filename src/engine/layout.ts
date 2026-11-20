@@ -1081,6 +1081,18 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         }
         base = insX;
       }
+      // flex-shrink: 1 unless a width is set (Cadesa compiles flex: none with it); shrink sets it.
+      const sized = typeof pw === "number" || (pw !== undefined && typeof pw === "object") || (pw === "fill" && !!p.width) || pw === "fit" || pw === "max-content" || pw === "min-content";
+      const shrink = p.shrink?.value ?? (sized ? 0 : 1);
+      // A box with a width that shrinks: its automatic minimum width is its content's min-content
+      // width, at most that width (the specified size suggestion).
+      if (sized && shrink > 0 && !(g && g.basis === "zero")) {
+        const it = content();
+        if (!it.why) {
+          min = Math.max(insX, Math.min(it.min, base));
+          minKnown = true;
+        }
+      }
       // A scroll container's automatic minimum width is 0: it shrinks below its content (which then scrolls or is clipped).
       // (A textarea is one too: it scrolls its text.)
       if (scrolls(p.overflow?.value) || k.node.tag === "textarea") {
@@ -1099,9 +1111,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       const hyp = Math.max(Math.min(base, cap), g?.basis === "zero" ? min : 0, insX, tableMin);
       // An aspect box that grows: its minimum width also follows its height, which isn't modelled.
       if (g && p.aspect) notes.push("grow on a box with an aspect ratio: its minimum width also follows its height, which isn't modelled");
-      // flex-shrink: 1 unless a width is set (Cadesa compiles flex: none with it).
-      const shrinkable = !(typeof pw === "number" || (pw !== undefined && typeof pw === "object") || (pw === "fill" && p.width) || pw === "fit" || pw === "max-content" || pw === "min-content");
-      return { k, p, km, out, base, hyp, min, cap, insX, shrink: shrinkable, shrinkUnknown: shrinkable && !minKnown, wraps, intr, factor: g?.factor ?? 0, notes, errors };
+      return { k, p, km, out, base, hyp, min, cap, insX, shrink, shrinkUnknown: shrink > 0 && !minKnown, wraps, intr, factor: g?.factor ?? 0, notes, errors };
     });
 
     type Item = (typeof items)[number];
@@ -1123,13 +1133,13 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     return lines.map((ln) => {
       const n = ln.length;
       const flexed = flexLine(
-        ln.map((it) => ({ base: U(it.base), hyp: U(it.hyp), factor: it.factor, shrink: it.shrink ? 1 : 0, pad: U(it.insX), min: U(it.min), max: it.cap === Infinity ? Infinity : U(it.cap), out: U(it.out) })),
+        ln.map((it) => ({ base: U(it.base), hyp: U(it.hyp), factor: it.factor, shrink: it.shrink, pad: U(it.insX), min: U(it.min), max: it.cap === Infinity ? Infinity : U(it.cap), out: U(it.out) })),
         U(innerW),
         U(gap),
       );
       const sizes = flexed ? flexed.map(PX) : ln.map((it) => it.hyp);
       ln.forEach((it, i) => {
-        if (it.shrinkUnknown && sizes[i] < it.hyp - EPS) it.notes.push("it shrinks in its row, down to a minimum width the engine doesn't measure (an aspect ratio)");
+        if (it.shrinkUnknown && sizes[i] < it.hyp - EPS) it.notes.push(`it shrinks in its row, down to a minimum width the engine doesn't measure (${it.p.aspect ? "an aspect ratio" : "its content's min-content width"})`);
       });
       ln.forEach((it, i) => {
         if (it.wraps && it.intr && sizes[i] < it.intr.max - EPS) it.notes.push("its width comes from its content, and a row inside it wraps there: the browser sizes it from the wrapped lines");

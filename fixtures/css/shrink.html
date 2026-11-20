@@ -1,0 +1,61 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: flex items with a width that shrink</title>
+    <link rel="stylesheet" href="shrink.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="bar">
+        <div class="bar__side">Pantry</div>
+        <div class="bar__main">Shelves of tins, jars of pickles and a sack of flour by the door</div>
+        <div class="bar__end">Stocked</div>
+      </div>
+      <div class="bar">
+        <div class="bar__side">Larder</div>
+        <div class="bar__fixed">Cold shelf</div>
+        <div class="bar__main">Cheese, butter and the Sunday joint under a wire cover</div>
+      </div>
+      <div class="due">
+        <span class="due__label">Next delivery</span>
+        <span class="due__date">Thursday morning before nine</span>
+        <span class="due__count">12 crates</span>
+      </div>
+      <div class="due due--tight">
+        <span class="due__label">Milk</span>
+        <span class="due__date">Every other day, left on the step</span>
+        <span class="due__count">4 pints</span>
+      </div>
+      <nav class="tabs">
+        <a class="tab" href="#">Breakfast</a>
+        <a class="tab" href="#">Lunch and supper</a>
+        <a class="tab tab--wide" href="#">Preserves and pickles</a>
+        <a class="tab" href="#">Baking</a>
+      </nav>
+      <div class="cards">
+        <div class="card">Flour</div>
+        <div class="card card--clip">Sugar, brown and white</div>
+        <div class="card card--keep">Salt</div>
+        <div class="card">Oats and barley</div>
+      </div>
+      <div class="side">
+        <div class="side__icon"></div>
+        <div class="side__text">Check the dates on the tins at the back of the top shelf every month.</div>
+        <div class="side__stay">Monthly</div>
+      </div>
+      <div class="pair">
+        <div class="pair__a">Eggs from the farm down the lane</div>
+        <div class="pair__b">Bread from the baker</div>
+      </div>
+    </main>
+  </body>
+</html>

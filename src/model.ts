@@ -243,6 +243,12 @@ export interface Props {
    */
   grow?: { value: number; basis: "zero" | "content"; path: string };
   /**
+   * In a cluster: how much the box gives up when its line is too full, in proportion to the number
+   * times its size (flex-shrink), never below its minimum (its min-content width, at most its
+   * width). Default 1 for a box without a width, 0 for one with a width.
+   */
+  shrink?: { value: number; path: string };
+  /**
    * What happens to content that doesn't fit, per axis, as computed (a visible axis next to a
    * scrolling one computes to auto, clip to hidden). Anything but visible and clip makes a scroll
    * container: a new block formatting context (margins don't collapse through it) whose automatic
@@ -369,6 +375,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "text",
   "textAlign",
   "grow",
+  "shrink",
   "overflow",
   "position",
   "contain",

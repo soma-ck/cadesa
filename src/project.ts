@@ -107,6 +107,7 @@ const PROPS: (keyof ResolvedProps)[] = [
   "justify",
   "wrap",
   "grow",
+  "shrink",
   "overflow",
   "position",
 ];

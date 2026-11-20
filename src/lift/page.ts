@@ -3690,16 +3690,19 @@ export abstract class PageLifter {
       }
       if (role !== "container") for (const p of ["flex-direction", "flex-wrap", "align-items", "justify-content", "row-gap", "column-gap", "grid-template-columns", "justify-items"]) handled.add(p);
 
-      // A flex-row item that may not shrink (flex-shrink: 0) without a width: Cadesa shrinks a lone
-      // item too wide for its line; dynamic() flags the widths where that happens.
-      // And the other way round: a width (Cadesa's never shrinks) on an item that may shrink.
+      // A flex-row item's flex-shrink, where it isn't Cadesa's default (0 with a width, 1 without):
+      // a width that still shrinks in a full row, or no width and flex-shrink: 0 (lift.ts: shrink).
+      // With a basis of 0 (grow from zero) it isn't modelled: dynamic() flags the widths where it matters.
       if (parentRole === "container" && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si)) {
         const fl = res("flex");
         const sh = res("flex-shrink") ?? (fl ? String(parseFlex(fl)?.shrink ?? 1) : "1");
         const basis = res("flex-basis") ?? (fl ? parseFlex(fl)?.basis ?? "auto" : "auto");
         const width = own.has("width") && res("width") !== "auto";
-        if (!width && parseFloat(sh) === 0 && !/^0(px|%)?$/.test(basis)) el.noShrink[si] = `${(own.get("flex-shrink") ?? own.get("flex"))!.utility} (flex-shrink: 0)`;
-        else if (width && parseFloat(sh) !== 0 && !/^0(px|%)?$/.test(basis)) el.noShrink[si] = `${own.get("width")!.utility} (a width, and flex-shrink: ${sh})`;
+        const factor = parseFloat(sh);
+        if (isFinite(factor) && factor >= 0 && (width ? factor !== 0 : factor !== 1) && !/^0(px|%)?$/.test(basis))
+          decl("row-shrink", String(factor), `${(own.get("flex-shrink") ?? own.get("flex") ?? own.get("width"))!.utility} (flex-shrink: ${sh}${width ? ", with a width" : ""})`);
+        else if (!width && factor === 0) el.noShrink[si] = `${(own.get("flex-shrink") ?? own.get("flex"))!.utility} (flex-shrink: 0)`;
+        else if (width && factor !== 0) el.noShrink[si] = `${own.get("width")!.utility} (a width, and flex-shrink: ${sh})`;
       }
 
       // Form controls size themselves from the font and the UA's internal padding, except a text
