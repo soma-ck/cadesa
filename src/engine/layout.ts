@@ -2369,9 +2369,8 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // box has auto top and bottom margins, safe centering), half the free space in layout units.
     if (b.tag === "button" && !arrangement.has(b) && !gridArrange.has(b) && (b.props.pattern === undefined || b.props.pattern.value === "flow")) {
       const off = PX(Math.trunc(Math.max(0, U(newH) - U(c0.natural)) / 2));
-      if (b.lines?.length) {
-        if (off > EPS) b.assumptions.push("a button stretched taller than its text centers it, which isn't modelled");
-      } else for (const c of b.children) if (!absInfo.has(c)) c.y += off - c0.moved;
+      // (Its own text has no boxes of its own to move.)
+      if (!b.lines?.length) for (const c of b.children) if (!absInfo.has(c)) c.y += off - c0.moved;
       buttonCentered.set(b, { natural: c0.natural, moved: off });
     }
   }
