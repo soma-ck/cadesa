@@ -697,8 +697,9 @@ function layoutLines(
   };
   const mode = opts.breaks ?? "normal";
   /**
-   * Pieces of the text. Broken inside words (break-all, line-break: anywhere), a ligature glyph
-   * ("fi" in Roboto) is never broken: its characters stay in one piece.
+   * Pieces of the text for its min-content width. Broken inside words (break-all, line-break:
+   * anywhere), a ligature glyph ("fi" in Roboto) is never broken there: its characters stay in one
+   * piece (probed). A line, though, may end inside one (reshaped, see fitsMid).
    */
   const piecesOf = (t: string) => {
     const out = pieces(t, mode);
@@ -719,7 +720,7 @@ function layoutLines(
     }
     return merged;
   };
-  const ps = piecesOf(text);
+  const ps = pieces(text, mode);
   const lines: Line[] = [];
   const all = [...text];
   /** Characters of the text already placed on earlier lines. */
@@ -1013,7 +1014,7 @@ function layoutLines(
     }
     mid = open !== undefined;
     if (open !== undefined) {
-      queue = piecesOf(open + queue.slice(i + 1).join(""));
+      queue = pieces(open + queue.slice(i + 1).join(""), mode);
       i = -1;
     }
   }
@@ -1029,7 +1030,8 @@ function layoutLines(
   let widestPiece = "";
   let minContent = 0;
   const piecesAt: { p: string; at: number }[] = [];
-  for (let at = 0, k = 0; k < ps.length; at += [...ps[k]].length, k++) piecesAt.push({ p: ps[k], at });
+  const minPieces = mode === "normal" ? ps : piecesOf(text);
+  for (let at = 0, k = 0; k < minPieces.length; at += [...minPieces[k]].length, k++) piecesAt.push({ p: minPieces[k], at });
   // With anywhere, any character is a soft wrap opportunity for min-content. Each character
   // counts with its kerning to the next one, a space included (Inter's thin "WW" kerns apart,
   // "… " together).
