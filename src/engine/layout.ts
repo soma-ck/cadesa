@@ -345,8 +345,18 @@ interface Intrinsic {
 export function layout(model: Model, fixture: Fixture, width: number): Layout {
   const SB = scrollbarPx();
   const bars = { x: false, y: false };
+  /**
+   * The scrollbars each scroll container showed in the pass before. When the page is laid out
+   * again because its own scrollbars appeared, Chromium keeps every inner scroll container's
+   * scrollbars as they were (they are frozen while a box is laid out again for its scrollbars):
+   * probed, a `.table-responsive` that overflows only once the page's scrollbar narrows it shows
+   * none, and one that overflowed only before keeps its scrollbar.
+   */
+  let frozen: Map<FixtureNode, { x: boolean; y: boolean; close?: boolean }> | undefined;
   for (;;) {
-    const l = layoutWith(model, fixture, width, bars);
+    const shown = new Map<FixtureNode, { x: boolean; y: boolean; close?: boolean }>();
+    const l = layoutWith(model, fixture, width, bars, frozen, shown);
+    frozen ??= shown;
     if (!SB) return l;
     const windowH = model.page?.windowHeight ?? 800;
     const layoutW = width - (bars.y ? SB : 0);
@@ -362,7 +372,16 @@ export function layout(model: Model, fixture: Fixture, width: number): Layout {
   }
 }
 
-function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x: boolean; y: boolean }): Layout & { extent: { w: number; h: number } } {
+function layoutWith(
+  model: Model,
+  fixture: Fixture,
+  width: number,
+  rootBars: { x: boolean; y: boolean },
+  pageFrozen: Map<FixtureNode, { x: boolean; y: boolean; close?: boolean }> | undefined,
+  shown: Map<FixtureNode, { x: boolean; y: boolean; close?: boolean }>,
+): Layout & { extent: { w: number; h: number } } {
+  /** Scroll containers' scrollbars kept as they were while a box is laid out again for its own (see layout). */
+  let frozen = pageFrozen;
   const issues: Issue[] = [];
   /** Advice in Cadesa's terms, or in CSS terms on a page lifted from its CSS. */
   const say = (cadesa: string, css: string) => (model.css ? css : cadesa);
@@ -1704,8 +1723,10 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // Classic scrollbars: overflow: scroll always shows one; auto shows one when its content
     // overflows on that axis, found once its content is laid out (then it is laid out again with it).
     const ovs = props.overflow?.value;
-    const barX = SB && (ovs?.x === "scroll" || bars?.x) ? SB : 0;
-    const barY = SB && (ovs?.y === "scroll" || bars?.y) ? SB : 0;
+    // Inside a box laid out again for its scrollbars, a scroll container keeps the ones it had.
+    const kept = !bars && SB && ovs ? frozen?.get(n) : undefined;
+    const barX = SB && (ovs?.x === "scroll" || (bars ?? kept)?.x) ? SB : 0;
+    const barY = SB && (ovs?.y === "scroll" || (bars ?? kept)?.y) ? SB : 0;
     if (barX || barY) props = { ...props, scrollbar: { value: { x: barX, y: barY }, display: `${SB}px`, steps: props.overflow!.steps } };
     const ins = insets(props);
     const insX = ins.left + ins.right;
@@ -2052,19 +2073,27 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       const roomY = props.height && tableH === undefined ? props.height.value - insY : undefined;
       const overX = ovs.x === "auto" && extentX - innerW >= 0.5 - EPS;
       const overY = ovs.y === "auto" && roomY !== undefined && contentH - roomY >= 0.5 - EPS;
-      if (SB && ((overX && !barX) || (overY && !barY))) {
+      if (SB && !kept && ((overX && !barX) || (overY && !barY))) {
         if (formatsKids) flexAncestors--;
         auto = undo.auto;
         issues.length = undo.issues;
         absQueue.length = undo.abs;
         if (undo.ex) bfc!.ex.reset(undo.ex);
-        return measure(n, c, slot, avail, parent, forcedW, over, cbW, stackAlign, { x: !!barX || overX, y: !!barY || overY }, bfc);
+        // Laid out again with its scrollbars: the scroll containers inside it keep theirs (from `shown`, this pass's).
+        const outer = frozen;
+        frozen ??= shown;
+        try {
+          return measure(n, c, slot, avail, parent, forcedW, over, cbW, stackAlign, { x: !!barX || overX, y: !!barY || overY }, bfc);
+        } finally {
+          frozen = outer;
+        }
       }
-      if (overX || overY) scrollbar = true;
+      if (!kept && (overX || overY)) scrollbar = true;
       if (SB) {
         // Where Chromium's choice hinges on a fraction of a pixel, or on what isn't laid out here.
-        if ((ovs.x === "auto" && Math.abs(extentX - innerW - 0.5) < 1 / 64) || (roomY !== undefined && ovs.y === "auto" && Math.abs(contentH - roomY - 0.5) < 1 / 64))
-          assumptions.push("its content overflows it by about half a pixel: whether a scrollbar appears isn't known");
+        const close = kept ? !!kept.close : (ovs.x === "auto" && Math.abs(extentX - innerW - 0.5) < 1 / 64) || (roomY !== undefined && ovs.y === "auto" && Math.abs(contentH - roomY - 0.5) < 1 / 64);
+        if (!kept) shown.set(n, { x: !!barX, y: !!barY, ...(close && { close }) });
+        if (close) assumptions.push("its content overflows it by about half a pixel: whether a scrollbar appears isn't known");
         if (children.some((b) => b.props.transform || b.props.position?.value.type === "relative") || outKids.length)
           assumptions.push("a scroll container with a positioned or transformed child: what it scrolls (and so its scrollbars) isn't modelled");
         // A width from its content (fit-content) grows by the scrollbar; one given by a flex or grid container's sizing would too.

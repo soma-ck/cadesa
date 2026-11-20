@@ -18,6 +18,18 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- Fixed: with classic scrollbars (`--scrollbars classic`, `CADESA_SCROLLBARS=classic`) a scroll
+  container inside the page kept the scrollbar it would need after the page's own scrollbar
+  narrowed it. Chromium lays the page out again for its scrollbar with every inner scroll
+  container's scrollbars as they were (probed: a `.table-responsive` that overflows only once the
+  page's scrollbar narrows it shows none, one that overflowed only before keeps its own), and does
+  the same inside a scroll container laid out again for its own scrollbar. The Bootstrap suite now
+  passes with classic scrollbars too (it had 99 boxes 15px off since 0.1.19):
+  `npm run conformance:bootstrap:classic`, and `conformance:scrollers:classic` for
+  `fixtures/css/overflow.html` and the new `fixtures/css/scrollers.html`, run in CI.
+
 ## 0.1.23 (2026-11-20)
 
 - Correction: the README said the Bootstrap suite also passes with classic 15px scrollbars

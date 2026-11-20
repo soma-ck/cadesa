@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: scroll containers on a page that scrolls</title>
+    <link rel="stylesheet" href="scrollers.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page" data-fixture="page">
+      <p data-fixture="intro">Rows of a schedule in wrappers that scroll sideways when they don't fit.</p>
+      <div class="wrap" data-fixture="wrap-300"><div class="strip w300" data-fixture="strip-300"></div></div>
+      <p data-fixture="after-300">After the first wrapper.</p>
+      <div class="wrap" data-fixture="wrap-455"><div class="strip w455" data-fixture="strip-455"></div></div>
+      <div class="wrap" data-fixture="wrap-612"><div class="strip w612" data-fixture="strip-612"></div></div>
+      <div class="wrap" data-fixture="wrap-768"><div class="strip w768" data-fixture="strip-768"></div></div>
+      <div class="wrap" data-fixture="wrap-grows"><div class="strip grows" data-fixture="strip-grows"></div></div>
+      <p data-fixture="after-grows">After the wrapper whose strip grows with it.</p>
+      <div class="pane" data-fixture="pane">
+        <div class="wrap" data-fixture="pane-wrap"><div class="strip w520" data-fixture="pane-strip"></div></div>
+        <div class="filler" data-fixture="filler"></div>
+      </div>
+      <p data-fixture="after-pane">After the pane.</p>
+      <div class="tail" data-fixture="tail"></div>
+    </main>
+  </body>
+</html>

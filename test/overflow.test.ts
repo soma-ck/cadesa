@@ -107,6 +107,32 @@ describe("overflow in layout (Chromium's boxes)", () => {
       else process.env.CADESA_SCROLLBARS = saved;
     }
   });
+
+  it("keeps inner scroll containers' classic scrollbars while a box is laid out again for its own (fixtures/css/scrollers.html)", () => {
+    const saved = process.env.CADESA_SCROLLBARS;
+    process.env.CADESA_SCROLLBARS = "classic";
+    try {
+      const page = "fixtures/css/scrollers.html";
+      const s = liftCssPage(page, readFileSync(page, "utf8"), [{ file: "fixtures/css/scrollers.css", text: readFileSync("fixtures/css/scrollers.css", "utf8") }]);
+      const m = modelOf(loadSource("s.yaml", s.yaml));
+      const sat = (w: number) => {
+        const l = render(m, s.fixtureAt(w), [w])[0];
+        return Object.fromEntries([...walk(l.boxes)].map((b) => [b.id, b]));
+      };
+      // 340px: a 300px strip fits its wrapper (308px) until the page's scrollbar narrows it to 293px:
+      // the wrapper shows no scrollbar (Chromium: 293×24). 330px: it overflows from the start.
+      expect(rect(sat(340)["wrap-300"])).toEqual([16, 73, 293, 24]);
+      expect(sat(330)["wrap-300"].h).toBe(39);
+      // 740px: a strip of 200% - 700px overflows its wrapper only before the page's scrollbar
+      // narrows it: the wrapper keeps its scrollbar (Chromium: 39px tall).
+      expect(sat(740)["wrap-grows"].h).toBe(39);
+      // 560px: a wrapper in a pane that gains a vertical scrollbar keeps none (Chromium: 24px tall).
+      expect(sat(560)["pane-wrap"].h).toBe(24);
+    } finally {
+      if (saved === undefined) delete process.env.CADESA_SCROLLBARS;
+      else process.env.CADESA_SCROLLBARS = saved;
+    }
+  });
 });
 
 describe("check: clipped and non-wrapping text", () => {

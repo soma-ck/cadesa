@@ -1,0 +1,69 @@
+/*
+ * Scroll containers on a page tall enough to scroll. With classic scrollbars (15px) the page's own
+ * scrollbar narrows everything after the first layout: a wrapper that overflows only then shows no
+ * scrollbar, one that overflowed only before keeps its own, and so do wrappers inside a pane laid
+ * out again for its vertical scrollbar. With overlay scrollbars nothing changes size.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 15px/1.5 Inter, system-ui, sans-serif;
+  color: #111827;
+  background: #f3f4f6;
+}
+
+.page {
+  padding: 16px;
+}
+
+p {
+  margin: 0 0 12px;
+}
+
+.wrap {
+  overflow-x: auto;
+  background: #ffffff;
+  margin-bottom: 12px;
+}
+
+.strip {
+  height: 24px;
+  background: #dbeafe;
+}
+
+.w300 { width: 300px; }
+.w455 { width: 455px; }
+.w612 { width: 612px; }
+.w768 { width: 768px; }
+.w520 { width: 520px; }
+
+/* Wider than its wrapper only while the wrapper is wide. */
+.grows {
+  width: calc(200% - 700px);
+}
+
+.pane {
+  height: 180px;
+  overflow-y: auto;
+  background: #ffffff;
+  margin-bottom: 12px;
+}
+
+.pane .wrap {
+  margin: 0;
+}
+
+.filler {
+  height: 240px;
+  background: #fef3c7;
+}
+
+.tail {
+  height: 900px;
+  background: #e5e7eb;
+}

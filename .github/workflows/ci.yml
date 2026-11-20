@@ -61,3 +61,25 @@ jobs:
         with:
           name: conformance
           path: artifacts/
+
+  conformance-classic:
+    # Classic 15px scrollbars (Chromium on Windows and Linux desktops), in a job of its own so it
+    # runs beside the overlay-scrollbar suites.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      - name: "Scroll containers, classic scrollbars (2 pages)"
+        run: npm run conformance:scrollers:classic
+      - name: "Angular + Bootstrap pages, classic scrollbars (113 widths)"
+        run: npm run conformance:bootstrap:classic
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: conformance-classic
+          path: artifacts/
