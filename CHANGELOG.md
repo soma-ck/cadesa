@@ -66,6 +66,9 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   formatting context of its own beside floats reaching past its container's end is placed in the
   room there, as wide as nothing; a `<button>` stretched taller than its content (by a grid row or a
   flex line) centers it, as Chromium does (its content was left at the top, and marked exact).
+- An inline box taller than the line whose leading whitespace collapsed, opening where a full line
+  breaks, is now `≈` (probed: which line it opens on depends on its font, size and vertical-align by
+  a rule not pinned down); it was always put on the full line.
 - `fuzz-css` generates badges, flex items that shrink, tables of text, animated layout properties,
   runs and atomic inlines on lines beside floats, and `break-all`, `anywhere` and `keep-all` text;
   the source fuzzer generates `shrink`.
