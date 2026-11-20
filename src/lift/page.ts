@@ -142,6 +142,8 @@ export interface El {
   rowGap: (string | undefined)[];
   /** A flex-row item without a width that may not shrink (flex-shrink: 0), with the declaration. */
   noShrink: (string | undefined)[];
+  /** A flex basis lifted as its width, where the item's automatic minimum (its min-content width) could make it wider (per state). */
+  basisAutoMin?: (string | undefined)[];
   /**
    * An inline element laid out as a block (per state): "block" wraps only block-level boxes, alone
    * between blocks (block-in-inline: Chromium lays its children out as if it were a block with no
@@ -683,6 +685,7 @@ export abstract class PageLifter {
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.evaluate(el);
     this.resolveRem();
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.expandDeferred(el);
+    this.boxBody();
     for (const el of this.els) this.animatedLayout(el);
     this.presentationalHints();
     this.pseudoElements();
@@ -817,6 +820,45 @@ export abstract class PageLifter {
     this.roots = this.bodyEl.children;
   }
   htmlEl?: El;
+  /** The <body> laid out as a box of its own (see boxBody). */
+  bodyBox?: El;
+
+  /**
+   * A <body> that is a flex or grid container (a sign-in page centered in the window, a docs
+   * layout's header, sidebar and main in a grid) is laid out as the one box on the page: an element
+   * of its own (its margins, padding, border and layout), with the page's children in it. The page
+   * keeps what applies to the window (its background, overflow, the text everything inherits).
+   */
+  boxBody() {
+    const body = this.bodyEl;
+    if (!body || !this.states.some((_, si) => /^(inline-)?(flex|grid)$/.test(this.resolve(body, si, body.own[si]?.get("display")?.value ?? "") ?? ""))) return;
+    const pageOnly = (p: string) => /^overflow(-[xy])?$/.test(p);
+    const inherited = (p: string) => p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p) || p === "background-color";
+    const b: El = {
+      ...body,
+      parent: body,
+      children: body.children,
+      own: body.own.map((m) => new Map([...(m ?? [])].filter(([p]) => !pageOnly(p)))),
+      text: [...body.text],
+      roles: [],
+      decls: [],
+      notes: new Map(),
+      space: [],
+      nowrap: [],
+      rowGap: [],
+      noShrink: [],
+      asBlock: [],
+      alone: [],
+      baselineShift: [],
+    };
+    for (const c of b.children) c.parent = b;
+    body.own = body.own.map((m) => new Map([...(m ?? [])].filter(([p]) => inherited(p) || pageOnly(p))));
+    body.pseudoOwn = undefined;
+    body.children = [b];
+    this.els.unshift(b);
+    this.roots = [b];
+    this.bodyBox = b;
+  }
 
   /**
    * The width and height attributes of <svg>, <img>, <video> and <canvas> are presentational
@@ -1403,6 +1445,10 @@ export abstract class PageLifter {
     if (kt.fluid || pt.fluid || this.textOf(root, si).fluid || kt.letterSpacing !== pt.letterSpacing) return false;
     const m = metricsFor(kt.family.value, kt.italic);
     if (!m || !m.vertical(kt.size, kt.weight)) return false;
+    // A run in another size on the lines of text in a fractional size (21.33px: 1.6rem of a 10pt
+    // root): Chromium's line is a pixel taller than these metrics give (found by fuzz-css; not
+    // understood yet), so it isn't measured.
+    if (kt.size !== this.textOf(root, si).size && !Number.isInteger(this.textOf(root, si).size)) return false;
     const e = this.inlineExtent(k, si);
     if (!e || !this.strutOf(root, si) || this.baselineShift(k, si) === undefined) return false;
     // Middle, text-top and text-bottom place a box by its extent on each line it is on: one whose
@@ -3552,6 +3598,8 @@ export abstract class PageLifter {
         // Grid lines place only a grid item.
         (/^grid-(row|column)-(start|end)$/.test(p) && !(inFlexOrGrid && /grid/.test(parentDisplay))) ||
         p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p) || p === "display" ||
+        // Overlay scrollbars take no room, so no gutter is kept for them.
+        (p === "scrollbar-gutter" && scrollbarPx() === 0) ||
         (pos === "sticky" && /^(top|right|bottom|left)$/.test(p)) || p === "z-index" ||
         // Offsets do nothing on a box that isn't positioned.
         (/^(top|right|bottom|left)$/.test(p) && !/^(relative|absolute|fixed|sticky)$/.test(pos ?? "static")) || p === "box-sizing" ||
@@ -3959,10 +4007,16 @@ export abstract class PageLifter {
         // (A percentage of the row's width, which is definite there.)
         const pct = basis !== undefined && /^\d*\.?\d+%$/.test(basis.trim()) ? basis.trim() : undefined;
         const capped = ["min-width", "max-width"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""));
+        // Its automatic minimum is its min-content width, which may be wider than the basis (probed:
+        // a 25% basis holding a long word is as wide as the word): without one (min-width: 0, or a
+        // scroll container) it is the basis; with one, dynamic() flags the widths where its content
+        // overflows the basis.
+        const noAutoMin = /^(0|0px)$/.test(res("min-width") ?? "") || ["overflow-x", "overflow-y"].some((p) => /^(hidden|auto|scroll)$/.test(res(p) ?? ""));
         if (grow === 0 && shrink === 0 && px && !/^0(px)?$/.test(px.css)) {
           for (const p of ["flex", "flex-grow", "flex-shrink", "flex-basis"]) out.delete(p);
           decl("width", px.css, `${basisRaw?.utility ?? "flex"} (flex: 0 0 ${basis}: as wide as its basis)`);
           el.noShrink[si] = undefined;
+          if (!noAutoMin) (el.basisAutoMin ??= [])[si] = `${basisRaw?.utility ?? "flex"} (flex-basis: ${basis})`;
         } else if (grow === 0 && isFinite(shrink) && shrink >= 0 && (px || pct) && !/^0(px|%)?$/.test(pct ?? px!.css) && !capped) {
           // A basis that isn't 0 or auto, no grow: as wide as the basis (which beats a width), and it
           // gives way in a full row by its shrink factor (Cadesa's width with shrink).
@@ -3971,6 +4025,7 @@ export abstract class PageLifter {
           if (shrink === 0) out.delete("row-shrink");
           else decl("row-shrink", String(shrink), `${basisRaw?.utility ?? "flex"} (flex-shrink: ${shrink}, with a basis)`);
           el.noShrink[si] = undefined;
+          if (!noAutoMin) (el.basisAutoMin ??= [])[si] = `${basisRaw?.utility ?? "flex"} (flex-basis: ${basis})`;
         }
       }
       // Baseline alignment in its row: pushed down by the difference in top insets (see baselineShifts).
@@ -4232,6 +4287,8 @@ export abstract class PageLifter {
       return { px: this.viewportHeight, viewport: true };
     }
     if (depth > 64) return "unknown";
+    // The page around a <body> laid out as a box (boxBody): what <html> gives it.
+    if (el === this.bodyEl && this.bodyBox) return this.definiteHeight(this.htmlEl, si, depth + 1);
     const own = el.own[si];
     const o = own?.get("height");
     const v = o ? this.resolveBox(el, si, o.value) : undefined;
@@ -4673,6 +4730,8 @@ export abstract class PageLifter {
           if (same && /^(margin|padding)-|^border-(top|right|bottom|left)-(width|style|color)$/.test(p)) continue;
           if (/^(height|min-height|box-sizing|display)$/.test(p) && (p !== "display" || v === "block")) continue;
           if (/^overflow-[xy]$/.test(p) && !(overflowBoth && el === this.bodyEl)) continue;
+          // Overlay scrollbars take no room, so no gutter is kept for them.
+          if (p === "scrollbar-gutter" && scrollbarPx() === 0) continue;
           const k = kindOf(p);
           if (k === "paint" || k === "none") continue;
           if (this.bodyEl) this.note(this.bodyEl, s, { decl: `${o.utility} (${p}: ${o.value})`, reason: `page-level ${p} is not modelled`, kind: k });
@@ -4681,6 +4740,11 @@ export abstract class PageLifter {
     }
     const fixtureHtml = this.generatedHtml();
     const fixture = parseFixture(this.page, fixtureHtml);
+    // A <body> laid out as a box (boxBody): the one node on the page, its children in it.
+    if (this.bodyBox) {
+      const b = this.bodyBox;
+      fixture.body = [{ tag: "body", classes: [...b.classes, ...(b.className ? [b.className] : [])], attrs: {}, fixtureId: b.id, line: b.line, text: "", ownText: "", runs: [], runMeta: [], children: fixture.body }];
+    }
     const byId = new Map(this.els.filter((e) => e.id).map((e) => [e.id!, e]));
     const hiddenNodes = new Set(this.els.filter((e) => this.ignorable(e)).map((e) => e.node));
     // Per width range: also what display: none hides there (inline content of a text box hidden at some widths).
@@ -4779,6 +4843,8 @@ export abstract class PageLifter {
         // Shrinking differs from the browser's (flex-shrink 0 without a width; a width with
         // flex-shrink): it matters only where its line's items want more than the line.
         const parent = parentOf.get(b);
+        if (el.basisAutoMin?.[si] && (b.overflowX ?? 0) > 1e-6)
+          out.push({ file: this.page, line: el.line, selector: sel, decl: el.basisAutoMin[si]!, reason: `its content is wider than its flex basis at ${layout.width}px, and a flex item is never narrower than its content (min-width: auto)`, kind: "geometry" });
         if (el.noShrink[si] && parent && parent.props.pattern?.value === "cluster" && b.overfull)
           out.push({ file: this.page, line: el.line, selector: sel, decl: el.noShrink[si], reason: `its row is too full at ${layout.width}px, and it shrinks differently there (Cadesa shrinks an item without a width, never one with)`, kind: "geometry" });
         if (el.nowrap[si] && b.children.length > 1) {
@@ -5027,9 +5093,17 @@ export abstract class PageLifter {
     }
     // Back to front; at one offset, later-inserted text first so attributes keep their order.
     edits.sort((a, b) => b.at - a.at || b.end - a.end);
-    let out = this.html;
-    for (const e of edits) out = out.slice(0, e.at) + e.text + out.slice(e.end);
-    return out;
+    // Written front to back in one pass (that order, reversed, is the order the texts end up in):
+    // a captured page has thousands of edits in hundreds of kilobytes.
+    const parts: string[] = [];
+    let cursor = 0;
+    for (const e of edits.reverse()) {
+      if (e.at < cursor) continue;
+      parts.push(this.html.slice(cursor, e.at), e.text);
+      cursor = Math.max(cursor, e.end);
+    }
+    parts.push(this.html.slice(cursor));
+    return parts.join("");
   }
 }
 

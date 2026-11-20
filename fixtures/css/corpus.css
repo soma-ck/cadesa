@@ -13,7 +13,8 @@
  * - CSS nesting (& and nested media queries with bare declarations), media query lists with
  *   print, `not all and (min-width)`, and another engine's properties and at-rules (ignored);
  * - logical sizes and border shorthands (max-inline-size, min-block-size, border-inline-start);
- * - flex items with a basis of their own and no grow (px, em, a percentage; shrinking or not);
+ * - flex items with a basis of their own and no grow (px, em, a percentage; shrinking or not)
+ *   and no automatic minimum (min-width: 0);
  * - flex and grid items placed by order, set at a breakpoint (mobile first) and on every width;
  * - a placeholder svg with SVG-only properties (text-anchor), which only paint inside it;
  * - a chevron ::before with line-height: 0 and an image as its content (left ≈);
@@ -419,6 +420,10 @@ svg {
   display: flex;
   gap: 8px;
   padding: 4px 12px;
+}
+
+.bases > * {
+  min-width: 0;
 }
 
 .bases-title {

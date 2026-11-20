@@ -779,7 +779,8 @@ export function liftElements(input: LiftInput): LiftResult {
     for (const p of ["flex-direction", "flex-wrap", "align-items", "justify-content", "row-gap", "column-gap"]) {
       const d = take(p);
       // On a block container (Bootstrap's .navbar-collapse once .show makes it display: block) they do nothing.
-      const block = !!input.wholeCascade && (!display || /^(block|flow-root|flow|inline|inline-block|list-item)$/.test(display.value.trim()));
+      // On a grid, flex-direction and flex-wrap do nothing either (its own gaps and alignment were taken above).
+      const block = !!input.wholeCascade && (!display || /^(block|flow-root|flow|inline|inline-block|list-item)$/.test(display.value.trim()) || (/^(inline-)?grid$/.test(display.value.trim()) && /^flex-/.test(p)));
       if (d && !(p.endsWith("gap") && isZero(d.value))) note(e, s, d, block ? `${p} only applies to a flex or grid container; no effect here` : `${p} only applies to a flex container`, block ? "none" : "geometry");
     }
 
@@ -1259,6 +1260,9 @@ export function liftElements(input: LiftInput): LiftResult {
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {
         for (const k of lost(a, b)) {
           if (UNSETTABLE_PROPS.has(k)) d[k] = "none";
+          // A grid placement set only on wider screens: auto-placed below (its alignment, if it had
+          // one, would stay in the compiled CSS: not unset).
+          else if (k === "place" && !(a.place as { align?: string; justify?: string }).align && !(a.place as { align?: string; justify?: string }).justify) d[k] = { row: "auto", column: "auto" };
           // Back to the default shrink factor for its width (0 with one, 1 without).
           else if (k === "shrink") d[k] = b.width !== undefined ? 0 : 1;
           else if (zero[k]) d[k] = zero[k]();

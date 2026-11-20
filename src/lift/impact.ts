@@ -93,22 +93,51 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
   const width = l.width;
   const boxes = [...walk(l.boxes)];
   const boxOf = new Map<FixtureNode, Box>();
+  // (Indexed: a captured page has thousands of boxes.)
+  const byId = new Map<string, Box>();
+  const byLine = new Map<string, Box>();
+  for (const x of boxes) {
+    const k = `${x.id}\0${x.tag}`;
+    if (!byId.has(k)) byId.set(k, x);
+    const kl = `${x.fixtureLine}\0${x.tag}`;
+    if (!byLine.has(kl)) byLine.set(kl, x);
+  }
   for (const loc of located) {
     // By id when the element has one: several elements of a tag can share a source line (minified or captured HTML).
-    const b = loc.node.fixtureId ? boxes.find((x) => x.id === loc.node.fixtureId && x.tag === loc.node.tag) : boxes.find((x) => x.fixtureLine === loc.node.line && x.tag === loc.node.tag);
+    const b = loc.node.fixtureId ? byId.get(`${loc.node.fixtureId}\0${loc.node.tag}`) : byLine.get(`${loc.node.line}\0${loc.node.tag}`);
     if (b) boxOf.set(loc.node, b);
   }
   const parentOf = new Map<Box, Box>();
   for (const b of boxes) for (const c of b.children) parentOf.set(c, b);
 
-  const marks = new Map<Box, Map<string, Effect>>();
-  const mark = (b: Box, e: Effect, why: string) => {
-    const m = marks.get(b) ?? new Map<string, Effect>();
-    if (m.get(why) !== "size") m.set(why, e);
+  /**
+   * Per box, each reason with its effect. A reason passed on from another box ("moved by #a: …")
+   * is kept once per cause, with the first box it came from: on a long page every box after a
+   * hundred others would otherwise keep a hundred copies of the same cause.
+   */
+  const marks = new Map<Box, Map<string, [string, Effect]>>();
+  const keyOf = (why: string) => why.replace(/^((?:moved|resized|stretched) (?:by|with)) #[^:\s]+: /, "$1: ");
+  const mark = (b: Box, e: Effect, why: string, key = keyOf(why)) => {
+    const m = marks.get(b) ?? new Map<string, [string, Effect]>();
+    const prev = m.get(key);
+    if (prev?.[1] !== "size") m.set(key, [prev?.[0] ?? why, e]);
     marks.set(b, m);
   };
+  const effectsOf = (b: Box) => [...(marks.get(b)?.values() ?? [])].map(([, e]) => e);
+  /** Boxes whose whole subtree has a cause (by key) with an effect: marking it again changes nothing. */
+  const whole = new Map<Box, Set<string>>();
   const subtree = (b: Box, e: Effect, why: string) => {
-    for (const x of walk([b])) mark(x, e, why);
+    const key = keyOf(why);
+    const done = `${key}\0${e}`;
+    const visit = (x: Box) => {
+      const w = whole.get(x) ?? new Set<string>();
+      if (w.has(done)) return;
+      mark(x, e, why, key);
+      for (const k of x.children) visit(k);
+      w.add(done);
+      whole.set(x, w);
+    };
+    visit(b);
   };
   /**
    * heightOnly: only the box's height is unknown (its width, and how its content is laid out, are
@@ -280,9 +309,9 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
     const pos = b.props.position!.value;
     const atStatic = (pos.left === undefined && pos.right === undefined) || (pos.top === undefined && pos.bottom === undefined);
     // (A page-level one at its static position sits below the page's in-flow boxes.)
-    const pageDep = atStatic && !parentOf.get(b) ? l.boxes.find((r) => r !== b && !outOfFlow(r) && [...(marks.get(r)?.values() ?? [])].some((e) => e !== "paint")) : undefined;
-    const dep = [cb, atStatic ? parentOf.get(b) : undefined, pageDep].find((a) => a && [...(marks.get(a)?.values() ?? [])].length);
-    if (dep) subtree(b, "position", `moved by #${dep.id}: ${[...marks.get(dep)!.keys()][0].replace(/^(moved|resized) by #\S+: /, "")}`);
+    const pageDep = atStatic && !parentOf.get(b) ? l.boxes.find((r) => r !== b && !outOfFlow(r) && effectsOf(r).some((e) => e !== "paint")) : undefined;
+    const dep = [cb, atStatic ? parentOf.get(b) : undefined, pageDep].find((a) => a && effectsOf(a).length);
+    if (dep) subtree(b, "position", `moved by #${dep.id}: ${[...marks.get(dep)!.values()][0][0].replace(/^(moved|resized) by #\S+: /, "")}`);
   }
 
   const exact: string[] = [];
@@ -294,9 +323,9 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
       exact.push(b.id);
       continue;
     }
-    const geo = [...m].filter(([, e]) => e !== "paint");
-    const paint = [...m].filter(([, e]) => e === "paint");
-    const effects = [...new Set([...m.values()])];
+    const geo = [...m.values()].filter(([, e]) => e !== "paint");
+    const paint = [...m.values()].filter(([, e]) => e === "paint");
+    const effects = [...new Set([...m.values()].map(([, e]) => e))];
     if (geo.length) uncertain.push({ id: b.id, effects, reasons: geo.map(([r]) => r) });
     else exact.push(b.id);
     if (!geo.length && paint.length) paintOnly.push({ id: b.id, effects: ["paint"], reasons: paint.map(([r]) => r) });

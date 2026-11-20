@@ -182,10 +182,11 @@ export function sizeUncertainty(l: Layout, imp?: WidthImpact): { width: Set<stri
   };
   const out = new Set<string>();
   const visit = (b: Box, parent: Box | undefined, parentUnknown: boolean) => {
-    // A cluster item with its own width (a length or a percentage, which never shrinks) and no grow keeps it.
+    // A cluster item with its own width (a length or a percentage, which never shrinks) and no grow
+    // keeps it. In a grid, where an unknown item goes moves the others to other tracks.
     const w = b.props.width?.value;
     const fixed = (typeof w === "number" || (typeof w === "object" && "pct" in w)) && !b.props.grow;
-    const cluster = parent?.props.pattern?.value === "cluster" && !fixed;
+    const cluster = /^(cluster|grid)$/.test(parent?.props.pattern?.value ?? "") && !fixed;
     const unknown =
       own.has(b.id) || parentUnknown || (cluster && parent!.children.some(anyInside)) || ((b.fromContent || /^(fit|max-content|min-content)$/.test(String(b.props.width?.value))) && anyInside(b));
     if (unknown) out.add(b.id);

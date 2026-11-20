@@ -108,16 +108,46 @@ describe("logical properties", () => {
 });
 
 describe("a flex item with a basis and no grow", () => {
-  it("is as wide as its basis, and shrinks by its factor in a full row", () => {
+  it("without an automatic minimum, is as wide as its basis, and shrinks by its factor in a full row", () => {
     const r = run(
       `<div class="row"><div class="s1" data-fixture="s1">alpha beta gamma</div><div class="s2" data-fixture="s2">delta epsilon</div><div class="s3" data-fixture="s3">zeta</div></div><div class="row"><div class="c" data-fixture="c">one</div></div>`,
-      `.row { display: flex } .s1 { flex: 0 1 300px } .s2 { flex: 0 1 250px; min-width: 0 } .s3 { flex-basis: 50%; width: 10px } .c { flex: 0 0 33.333%; padding: 0 4px; box-sizing: border-box }`,
+      `.row { display: flex } .row > div { min-width: 0 } .s1 { flex: 0 1 300px } .s2 { flex: 0 1 250px; overflow: hidden } .s3 { flex-basis: 50%; width: 10px } .c { flex: 0 0 33.333%; padding: 0 4px; box-sizing: border-box }`,
       [400, 1600],
     );
     expect([r.box("s1", 1600).w, r.box("s2", 1600).w, r.box("s3", 1600).w]).toEqual([300, 250, 800]);
     expect(r.box("s1", 400).w + r.box("s2", 400).w + r.box("s3", 400).w).toBeCloseTo(400, 5);
     expect(Math.round(r.box("c", 1600).w * 1000) / 1000).toBe(533.313);
     for (const w of [400, 1600]) expect(r.exact(w)).toBe(true);
+  });
+  it("with one, is ≈ where its content is wider than the basis (its min-content width wins)", () => {
+    const r = run(`<div class="row"><div class="b" data-fixture="b">tidesandboatsatdawnalongtheridge</div></div>`, `.row { display: flex } .b { flex-basis: 25% }`);
+    expect(r.approx("b")).toBeDefined();
+  });
+});
+
+describe("a body that is a flex or grid container", () => {
+  const r = run(
+    `<header class="h" data-fixture="h">Notes</header><nav class="side" data-fixture="side">Tides</nav><main class="m" data-fixture="m"><p class="x">Harbor</p></main>`,
+    `body { display: flex; flex-direction: column; align-items: center; margin: 8px } .h, .side, .m { padding: 8px } .x { margin: 0 } @media (min-width: 900px) { body { display: grid; grid-template-columns: 200px 1fr; column-gap: 16px; align-items: start; margin: 0 } .h { grid-column: 1 / 3 } }`,
+    [400, 1000],
+  );
+  const rect = (id: string, w: number) => [r.box(id, w).x, r.box(id, w).y, r.box(id, w).w];
+
+  it("is laid out as the one box on the page, its children in it", () => {
+    const body = r.layout(400).boxes[0];
+    expect(body.tag).toBe("body");
+    expect([body.x, body.y, body.w, body.h]).toEqual([8, 8, 384, 120]);
+    expect(rect("h", 1000)).toEqual([0, 0, 1000]);
+    expect(rect("side", 1000)).toEqual([0, 40, 200]);
+    expect(rect("m", 1000)[0]).toBe(216);
+    for (const w of [400, 1000]) for (const id of ["h", "side", "m"]) expect(r.approx(id, w)).toBeUndefined();
+  });
+});
+
+describe("a run in another size in text of a fractional size", () => {
+  it("is ≈ (Chromium's line is a pixel taller than the metrics give)", () => {
+    const r = run(`<p class="p" data-fixture="p">field <span class="s">and</span> the field</p>`, `html { font-size: 10pt } .p { margin: 0; font-size: 1.6rem; line-height: 20px } .s { font-size: 0.75em }`);
+    expect(r.approx("p")).toBeDefined();
   });
 });
 

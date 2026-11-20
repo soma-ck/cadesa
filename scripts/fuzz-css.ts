@@ -85,6 +85,17 @@ export function genCssCase(seed: number): CssCase {
     if (r.chance(0.5)) css.push(`@media (min-width: ${r.int(400, 1000)}px) { html { font-size: ${r.pick(["16px", "75%", "12pt", "1.25em"])} } }`);
     css.push(`body { font-size: ${r.pick(["1rem", "1.4rem", "1.6rem", "0.875rem"])} }`, `p { margin-bottom: ${r.pick(["0.5rem", "1rem", "calc(0.25rem + 2px)"])} }`);
   }
+  // A body that is a flex or grid container (a page centered in the window, a docs layout's grid),
+  // maybe only from a breakpoint on: laid out as the one box on the page.
+  if (r.chance(0.06)) {
+    const body = r.pick([
+      `display: flex; flex-direction: column; align-items: ${r.pick(["center", "flex-start", "stretch"])}`,
+      `display: grid; row-gap: ${r.int(0, 16)}px; align-items: start`,
+      `display: grid; grid-template-columns: ${r.pick(["200px 1fr", "1fr 1fr", "repeat(3, 1fr)"])}; gap: ${r.int(0, 16)}px`,
+      `display: flex; flex-wrap: wrap; gap: ${r.int(0, 12)}px; padding: ${r.int(0, 20)}px 0`,
+    ]);
+    css.push(r.chance(0.4) ? `@media (min-width: ${r.pick([600, 800, 1000])}px) { body { ${body}; margin: 0 } }` : `body { ${body} }`);
+  }
   let n = 0;
   const cls = (all: string[]) => {
     const decls = all.filter(Boolean);

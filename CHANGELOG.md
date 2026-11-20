@@ -36,9 +36,22 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   without a width, a float, a button) kept its width "known" to `check` when something inside it
   was `≈`: every Bootstrap example's fixed theme toggle was claimed 8px narrower than Chromium
   draws it. Its width is unknown there now, as a `width: fit-content` box's is.
+- Fixed: `check --css` ran out of memory on a long page (MDN's, 5,800 elements, after 16 minutes):
+  each box kept a copy of every cause passed on to it by the boxes before it, and the page's HTML
+  was rebuilt once per element. A cause passed on is kept once per box, and the page is written
+  in one pass: the default sweep of that page takes about two minutes.
+- Fixed: in a grid, an item whose placement or size is `≈` moves the others to other tracks, but
+  their widths stayed "known" to `check` (as a flex row's items' don't).
 - Fixed: a `<style>` or `<link>` written inside an attribute value or a comment (Wikipedia's
   template data quotes `<style>` blocks) was read as one of the page's stylesheets; `check --css`
   stopped with a CSS syntax error on such a page. Only the page's own elements are read now.
+- Fixed: a flex item with `flex: 0 0 <length>` was laid out as wide as its basis even where its
+  content is wider (a long word): a flex item is never narrower than its content (`min-width:
+  auto`). Where its content overflows the basis, the box is `≈` now (found by `fuzz-css`, marked
+  exact: 40px against Chromium's 162px).
+- Fixed: a run in another size (`font-size: .75em`) on the lines of text in a fractional size
+  (21.33px: `1.6rem` of a `10pt` root) made its line a pixel taller in Chromium than Cadesa
+  measured (found by `fuzz-css`, marked exact); it is `≈` there until it is understood.
 - Fixed: `check --css` stopped with an error on a page with `line-height: 0` (a chevron's
   `::before` in Bootstrap's cheatsheet); the box is `≈` instead.
 
@@ -69,9 +82,18 @@ now exact:
   `@starting-style`, are ignored as Chromium ignores them.
 - A flex item with a basis of its own and no grow (`flex: 0 1 300px`, `flex-basis: 140px`,
   `flex: 0 0 33.333%`: Docusaurus's columns) is as wide as its basis and shrinks by its factor in a
-  full row (it was `≈`, "flex-basis has no Cadesa equivalent").
+  full row (it was `≈`, "flex-basis has no Cadesa equivalent"), unless its content is wider than
+  the basis there.
 - Logical sizes (`inline-size`, `block-size`, their `min-` and `max-`) and border shorthands
   (`border-inline-start: 3px solid`) are read as their physical properties.
+- A `<body>` that is a flex or grid container (a sign-in page centered in the window, a docs
+  layout's header, sidebar and content in a grid: MDN, Pico, Bootstrap's sign-in and cheatsheet) is
+  laid out as the one box on the page, with its margins, padding and layout, and its children in
+  it (every box was `≈`: "page-level display is not modelled"). `fixtures/css/body.html` keeps it.
+- A grid placement set only from a breakpoint on (`@media (min-width: …) { .x { grid-column:
+  1 / 3 } }`) is auto-placed below it (it was `≈`: "place is removed below …").
+- `scrollbar-gutter` changes nothing with overlay scrollbars (they take no room).
+- `flex-direction` and `flex-wrap` on a grid container do nothing (they made its boxes `≈`).
 - `grid-gap`, `grid-row-gap` and `grid-column-gap` are read as `gap`, `row-gap` and `column-gap`;
   `tab-size`, `text-autospace` and `text-spacing-trim` change nothing in the text Cadesa measures.
 
