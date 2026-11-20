@@ -107,7 +107,8 @@ now exact:
 - A flex item with a basis of its own and no grow (`flex: 0 1 300px`, `flex-basis: 140px`,
   `flex: 0 0 33.333%`: Docusaurus's columns) is as wide as its basis and shrinks by its factor in a
   full row (it was `≈`, "flex-basis has no Cadesa equivalent"), unless its content is wider than
-  the basis there.
+  the basis there, or its row is as wide as its content (Chromium counts the item's content there,
+  not its basis: found by `fuzz-css`).
 - Logical sizes (`inline-size`, `block-size`, their `min-` and `max-`) and border shorthands
   (`border-inline-start: 3px solid`) are read as their physical properties.
 - A `<body>` that is a flex or grid container (a sign-in page centered in the window, a docs

@@ -144,6 +144,8 @@ export interface El {
   noShrink: (string | undefined)[];
   /** A one-column grid lifted as a stack (per state): its column grows to an item's content wider than it, which a stack doesn't. */
   gridAsStack?: (string | undefined)[];
+  /** A flex basis lifted as its width (per state). */
+  basisLifted?: (string | undefined)[];
   /** A flex basis lifted as its width, where the item's automatic minimum (its min-content width) could make it wider (per state). */
   basisAutoMin?: (string | undefined)[];
   /**
@@ -4042,6 +4044,7 @@ export abstract class PageLifter {
           decl("width", px.css, `${basisRaw?.utility ?? "flex"} (flex: 0 0 ${basis}: as wide as its basis)`);
           el.noShrink[si] = undefined;
           if (!noAutoMin) (el.basisAutoMin ??= [])[si] = `${basisRaw?.utility ?? "flex"} (flex-basis: ${basis})`;
+          (el.basisLifted ??= [])[si] = `${basisRaw?.utility ?? "flex"} (flex-basis: ${basis})`;
         } else if (grow === 0 && isFinite(shrink) && shrink >= 0 && (px || pct) && !/^0(px|%)?$/.test(pct ?? px!.css) && !capped) {
           // A basis that isn't 0 or auto, no grow: as wide as the basis (which beats a width), and it
           // gives way in a full row by its shrink factor (Cadesa's width with shrink).
@@ -4051,6 +4054,7 @@ export abstract class PageLifter {
           else decl("row-shrink", String(shrink), `${basisRaw?.utility ?? "flex"} (flex-shrink: ${shrink}, with a basis)`);
           el.noShrink[si] = undefined;
           if (!noAutoMin) (el.basisAutoMin ??= [])[si] = `${basisRaw?.utility ?? "flex"} (flex-basis: ${basis})`;
+          (el.basisLifted ??= [])[si] = `${basisRaw?.utility ?? "flex"} (flex-basis: ${basis})`;
         }
       }
       // Baseline alignment in its row: pushed down by the difference in top insets (see baselineShifts).
@@ -4872,6 +4876,12 @@ export abstract class PageLifter {
         if (el.gridAsStack?.[si] && (b.children.some((k) => (k.overflowX ?? 0) > 1e-6) || [...walk(b.children)].some((k) => k.assumptions.length > 0) || el.children.some(noted)))
           for (const k of [b, ...walk(b.children)])
             out.push({ file: this.page, line: el.line, selector: `[data-fixture="${k.id}"]`, decl: el.gridAsStack[si]!, reason: `an item's content is wider than its grid at ${layout.width}px, and the grid's one column grows to it`, kind: "geometry" });
+        // A row as wide as its content counts its items at their max-content width, not their
+        // basis (Chromium's flex intrinsic sizes; fuzz-css: a centered row 17px narrower).
+        const rowBox = parentOf.get(b);
+        if (el.basisLifted?.[si] && rowBox && (rowBox.fromContent || rowBox.props.width?.value === "fit" || rowBox.props.width?.value === "max-content" || rowBox.props.width?.value === "min-content"))
+          for (const k of [rowBox, ...walk(rowBox.children)])
+            out.push({ file: this.page, line: el.line, selector: `[data-fixture="${k.id}"]`, decl: el.basisLifted[si]!, reason: `its row is as wide as its content at ${layout.width}px, which counts an item at its content's width, not its basis`, kind: "geometry" });
         if (el.basisAutoMin?.[si] && (b.overflowX ?? 0) > 1e-6)
           out.push({ file: this.page, line: el.line, selector: sel, decl: el.basisAutoMin[si]!, reason: `its content is wider than its flex basis at ${layout.width}px, and a flex item is never narrower than its content (min-width: auto)`, kind: "geometry" });
         if (el.noShrink[si] && parent && parent.props.pattern?.value === "cluster" && b.overfull)
