@@ -757,6 +757,20 @@ export function liftElements(input: LiftInput): LiftResult {
     }
     const part = take("table-part");
     if (part) out.part = part.value.trim();
+    // Floats and clearance (the page front end emits them where they apply), and flow-root.
+    const flt = take("float");
+    const flv = flt?.value.trim();
+    if (flv === "left" || flv === "right") out.float = flv;
+    else if (flt && flv !== "none") note(e, s, flt, `float: ${flv} is not modelled`, "geometry");
+    const cl = take("clear");
+    const clv = cl?.value.trim();
+    if (clv === "left" || clv === "right" || clv === "both") out.clear = clv;
+    else if (cl && clv !== "none") note(e, s, cl, `clear: ${clv} is not modelled`, "geometry");
+    // An inline box laid out as a block of its lines: its rectangle on each line (see Props.inlineBox).
+    const ib = take("inline-box")?.value.trim().split(/\s+/).map((x) => parseFloat(x));
+    if (ib && ib.length === 2 && ib.every((x) => isFinite(x))) out.inlineBox = { top: ib[0], height: ib[1] };
+    const fr = take("flow-root")?.value.trim();
+    if (fr === "true" || fr === "false") out.root = fr === "true";
     for (const p of ["flex-direction", "flex-wrap", "align-items", "justify-content", "row-gap", "column-gap"]) {
       const d = take(p);
       // On a block container (Bootstrap's .navbar-collapse once .show makes it display: block) they do nothing.
@@ -1210,6 +1224,9 @@ export function liftElements(input: LiftInput): LiftResult {
         overflow: () => "visible",
         contain: () => "none",
         textAlign: () => "start",
+        float: () => "none",
+        clear: () => "none",
+        root: () => false,
       };
       const fillLost = (a: Record<string, unknown>, b: Record<string, unknown>, d: Record<string, unknown>, cls: string) => {
         for (const k of lost(a, b)) {

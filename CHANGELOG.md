@@ -18,6 +18,34 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- Floats are laid out, as Chromium's LayoutNG keeps them in a block formatting context's exclusion
+  space: `float: left` and `right` (inline-start and inline-end) in block flow, as wide as their
+  content unless a width is set, placed where they occur (below the content and the margins before
+  them; at the top of a block whose top margin hasn't come down yet) as high and as far to their
+  side as the floats before them allow (CSS 2.1 §9.5.1: no higher than an earlier float, beside
+  the floats they meet over their whole height, else below). Lines of text beside floats are
+  shortened, each in the first band from its place down whose room fits its first word (else
+  below the floats), in any block of the formatting context, nested blocks too. `clear` puts a box
+  (or a float) below the floats it clears, unless its margins already do; a clearfix (`::after {
+  clear: both }`) holds its floats. A box that makes a formatting context of its own (`overflow`
+  other than visible, `display: flow-root`, a flex, grid or table container, a form control or
+  image) sits beside floats, in the first room it fits (as wide as that room when its width is
+  auto, its margins inside the floats'), and is as tall as the floats in it. A float that leads
+  its line (a drop cap, an image at the start of a paragraph) is placed there and the text after
+  it goes around it. In a source: `float: left | right`, `clear: left | right | both`, `root:
+  true` (flow-root). Still `≈`: a float after inline content on its line, lines beside a float
+  holding inline boxes that reach past the strut, inline-blocks sharing lines beside a float, and
+  floats in a page lifted as stacks (a preflight reset).
+- An inline element alone between blocks (`<span>`, `<a>`, `<strong>` as the whole content of an
+  anonymous block) is exact, rectangle and all: as `getBoundingClientRect()` reports it, the union
+  of its text's content area on each of its lines (its font's ascent and descent, rounded as
+  Chromium rounds them, around the baseline, with its vertical padding and border), from where its
+  text starts on the line (aligned as `text-align` says, in layout units) to where it ends (its
+  width rounded up to a layout unit), across every line it is broken onto. `conformance:bootstrap`
+  goes from 68,858 to 69,310 exact boxes of 69,310.
+
 ## 0.1.19 (2026-11-20)
 
 - Synthesized bold is measured: text asking for a weight the page has no face for (600 or 700 when

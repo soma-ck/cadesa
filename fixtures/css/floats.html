@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: floats, clearance and formatting contexts beside floats</title>
+    <link rel="stylesheet" href="floats.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="journal">
+      <article class="entry">
+        <div class="plate"></div>
+        <h2 class="entry-title">Seed swap at the old mill</h2>
+        <p class="entry-text">The swap opened at nine with a table of beans, squash and a few packets of a pale yellow tomato that nobody could name. By noon the beans were gone and the squash had found new homes across the valley.</p>
+        <p class="entry-text">Next year the mill offers the loft as well, so there will be room for the onion sets and the potato boxes that stayed outside in the rain.</p>
+      </article>
+      <aside class="aside-note">Bring your own envelopes and a pencil.</aside>
+      <p class="entry-text">Notes from the long table follow below, in the order they were written down.</p>
+      <div class="gallery">
+        <div class="thumb"></div>
+        <div class="thumb wide"></div>
+        <div class="thumb"></div>
+        <div class="thumb"></div>
+        <div class="thumb tall"></div>
+      </div>
+      <footer class="gallery-foot">Photographs by the garden club.</footer>
+      <section class="media">
+        <div class="avatar"></div>
+        <div class="media-body">
+          <h3 class="media-title">Orchard walk</h3>
+          <p class="media-text">We counted the blossoms on the old pear trees again and logged a late frost on the lower slope.</p>
+        </div>
+      </section>
+      <section class="holder">
+        <div class="badge-float">Due</div>
+        <div class="badge-float right">Mon</div>
+      </section>
+      <section class="clearfix-box">
+        <div class="half">Left column of a two column note that floats.</div>
+        <div class="half end">Right column, floated the other way, a little longer than the first one so the heights differ.</div>
+      </section>
+      <p class="after-clearfix">Below the floats, which the box above contains.</p>
+      <section class="wrapper">
+        <div class="pin"></div>
+        <div class="inner">
+          <p class="inner-text">A paragraph inside another block, still beside the float from its parent's earlier sibling, wrapping its lines around it until the float ends below.</p>
+        </div>
+        <div class="cleared">Cleared below the pin.</div>
+      </section>
+      <section class="pair">
+        <div class="pair-left">Left</div>
+        <div class="pair-right">Right side panel</div>
+        <div class="pair-panel">A panel that makes its own formatting context and sits between the two floats.</div>
+      </section>
+      <section class="story">
+        <p class="story-text"><span class="dropcap">W</span>inter planting starts with garlic, set out in rows a hand apart and covered with straw once the ground has cooled enough to hold it.</p>
+        <div class="tag">Week six</div>
+        <p class="story-text centered">Centered lines beside a float keep to the room the float leaves them on each line.</p>
+        <p class="story-text">Some of the rows got <strong>a second layer</strong> of straw and a few <em>marker stakes</em> as well.</p>
+      </section>
+      <section class="crowded">
+        <div class="crowd-block"></div>
+        <h3 class="crowd-title">Compostability</h3>
+        <p class="crowd-text">A paragraph whose first word fits only below the wide float.</p>
+      </section>
+      <section class="nest">
+        <div class="nest-outer">
+          <div class="nest-inner">Inner</div>
+          <div class="nest-text">Outer float holding a float of its own and some text.</div>
+        </div>
+        <div class="boxed">
+          <div class="boxed-float">Held</div>
+          <p class="boxed-text">A box that hides its overflow holds its float.</p>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

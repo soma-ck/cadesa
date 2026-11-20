@@ -182,6 +182,9 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   if (p.fit) out.push(`object-fit: ${p.fit.value}`);
   if (p.overflow) out.push(`overflow-x: ${p.overflow.x}`, `overflow-y: ${p.overflow.y}`);
   if (p.contain) out.push(`contain: ${p.contain.raw}`);
+  if (p.float) out.push(`float: ${p.float.value}`);
+  if (p.clear) out.push(`clear: ${p.clear.value}`);
+  if (p.root?.value) out.push("display: flow-root");
   if (p.part) {
     const DISPLAY = { caption: "table-caption", column: "table-column", "column-group": "table-column-group", header: "table-header-group", body: "table-row-group", footer: "table-footer-group", row: "table-row", cell: "table-cell" } as const;
     out.push(`display: ${DISPLAY[p.part.value]}`);

@@ -190,6 +190,14 @@ export interface ResolvedProps {
   /** A height that is a percentage of the parent's content height, once that is definite (stretched or set); auto until then. */
   heightPct?: Resolved<number | Pct>;
   text?: Resolved<ResolvedText>;
+  /** Floated left or right (see Props.float). */
+  float?: Resolved<"left" | "right">;
+  /** Below the floats before it on that side (see Props.clear). */
+  clear?: Resolved<"left" | "right" | "both">;
+  /** true: a block formatting context of its own (display: flow-root); false: laid out from line boxes, not one (see Props.root). */
+  root?: Resolved<boolean>;
+  /** An inline box laid out as the block of its lines: its rectangle on each line (see Props.inlineBox). */
+  inlineBox?: Resolved<{ top: number; height: number }>;
 }
 
 /**
@@ -410,6 +418,26 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "contain": {
         const c = p.contain!;
         if (c.layout || c.paint || c.size) out.contain = { value: { layout: c.layout, paint: c.paint, ...(c.size && { size: c.size }) }, display: c.raw, steps: [...pre, src(c.path)] };
+        break;
+      }
+      case "float": {
+        const f = p.float!;
+        if (f.value !== "none") out.float = { value: f.value, display: f.value, steps: [...pre, src(f.path)] };
+        break;
+      }
+      case "clear": {
+        const f = p.clear!;
+        if (f.value !== "none") out.clear = { value: f.value, display: f.value, steps: [...pre, src(f.path)] };
+        break;
+      }
+      case "inlineBox": {
+        const f = p.inlineBox!;
+        out.inlineBox = { value: { top: f.top, height: f.height }, display: `${fmtPx(f.top)}px below its line's top, ${fmtPx(f.height)}px tall`, steps: [...pre, src(f.path)] };
+        break;
+      }
+      case "root": {
+        const f = p.root!;
+        out.root = { value: f.value, display: f.value ? "flow-root" : "laid out from line boxes", steps: [...pre, src(f.path)] };
         break;
       }
       case "part": {

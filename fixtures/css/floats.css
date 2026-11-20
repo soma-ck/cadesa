@@ -1,0 +1,272 @@
+/*
+ * Floats: an image plate with text wrapping around it, a right-floated aside of its own width,
+ * a gallery of floated thumbnails that wrap onto rows, a cleared footer, a media object (a
+ * formatting context beside a float), a flow-root holding floats, a clearfix, a float reaching
+ * into a later block, and a panel between two floats.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+h2,
+h3,
+p {
+  margin: 0;
+}
+
+.journal {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.entry {
+  margin-bottom: 12px;
+}
+
+.plate {
+  float: left;
+  width: 40%;
+  height: 120px;
+  margin: 4px 16px 8px 0;
+  background: #d9e2ec;
+}
+
+.entry-title {
+  font-size: 20px;
+  line-height: 28px;
+}
+
+.entry-text {
+  margin-bottom: 8px;
+}
+
+.aside-note {
+  float: right;
+  margin-left: 12px;
+  padding: 8px 10px;
+  border: 1px solid #bcccdc;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.gallery {
+  margin-top: 16px;
+}
+
+.thumb {
+  float: left;
+  width: 22%;
+  height: 60px;
+  margin: 0 8px 8px 0;
+  background: #9fb3c8;
+}
+
+.thumb.wide {
+  width: 30%;
+}
+
+.thumb.tall {
+  height: 90px;
+}
+
+.gallery-foot {
+  clear: both;
+  padding-top: 4px;
+  font-size: 14px;
+  line-height: 20px;
+}
+
+.media {
+  margin-top: 20px;
+}
+
+.avatar {
+  float: left;
+  width: 64px;
+  height: 64px;
+  margin-right: 12px;
+  background: #486581;
+}
+
+.media-body {
+  overflow: hidden;
+  padding: 0 4px;
+}
+
+.media-title {
+  font-size: 18px;
+  line-height: 24px;
+}
+
+.holder {
+  display: flow-root;
+  margin-top: 16px;
+  padding: 4px;
+  background: #f0f4f8;
+}
+
+.badge-float {
+  float: left;
+  padding: 2px 8px;
+  margin-right: 6px;
+  background: #334e68;
+  color: #ffffff;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.badge-float.right {
+  float: right;
+  margin-right: 0;
+}
+
+.clearfix-box {
+  margin-top: 16px;
+}
+
+.clearfix-box::after {
+  display: block;
+  clear: both;
+  content: "";
+}
+
+.half {
+  float: left;
+  width: 50%;
+  padding: 0 8px;
+}
+
+.half.end {
+  float: right;
+}
+
+.after-clearfix {
+  margin-top: 8px;
+}
+
+.wrapper {
+  margin-top: 16px;
+}
+
+.pin {
+  float: right;
+  width: 30%;
+  height: 100px;
+  margin-left: 10px;
+  background: #829ab1;
+}
+
+.inner {
+  padding-top: 6px;
+}
+
+.cleared {
+  clear: right;
+  margin-top: 6px;
+}
+
+.pair {
+  margin-top: 16px;
+}
+
+.pair-left {
+  float: left;
+  width: 25%;
+  padding: 6px;
+  background: #e4e7eb;
+}
+
+.pair-right {
+  float: right;
+  width: 25%;
+  padding: 6px;
+  background: #e4e7eb;
+}
+
+.pair-panel {
+  display: flow-root;
+  padding: 6px;
+  border: 1px solid #9aa5b1;
+}
+
+.story {
+  margin-top: 16px;
+}
+
+.dropcap {
+  float: left;
+  margin: 2px 6px 0 0;
+  font-size: 44px;
+  line-height: 40px;
+  font-weight: 700;
+}
+
+.tag {
+  float: right;
+  width: 30%;
+  margin: 0 0 6px 10px;
+  padding: 4px;
+  background: #f0f4f8;
+  font-size: 13px;
+  line-height: 18px;
+}
+
+.story-text.centered {
+  text-align: center;
+}
+
+.crowded {
+  margin-top: 16px;
+}
+
+.crowd-block {
+  float: left;
+  width: 72%;
+  height: 50px;
+  background: #bcccdc;
+}
+
+.crowd-title {
+  font-size: 22px;
+  line-height: 30px;
+}
+
+.nest {
+  margin-top: 16px;
+}
+
+.nest-outer {
+  float: left;
+  width: 45%;
+  padding: 6px;
+  background: #f0f4f8;
+}
+
+.nest-inner {
+  float: right;
+  padding: 2px 6px;
+  margin-left: 4px;
+  background: #d9e2ec;
+}
+
+.boxed {
+  overflow: hidden;
+  border: 1px solid #d9e2ec;
+}
+
+.boxed-float {
+  float: right;
+  width: 40%;
+  height: 70px;
+  background: #e4e7eb;
+}

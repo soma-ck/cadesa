@@ -61,6 +61,10 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   position: "position",
   table: "layout",
   part: "part",
+  float: "float",
+  clear: "clear",
+  root: "root",
+  inlineBox: "inlineBox",
 };
 
 function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: string; path: string } | undefined {
@@ -93,6 +97,14 @@ function describe(model: Model, p: Props, prop: keyof ResolvedProps): { value: s
       return { value: p.contain!.raw, path: p.contain!.path };
     case "part":
       return { value: p.part!.raw, path: p.part!.path };
+    case "float":
+      return { value: p.float!.value, path: p.float!.path };
+    case "clear":
+      return { value: p.clear!.value, path: p.clear!.path };
+    case "inlineBox":
+      return { value: `top ${p.inlineBox!.top}px, height ${p.inlineBox!.height}px`, path: p.inlineBox!.path };
+    case "root":
+      return { value: p.root!.value ? "flow-root" : "block", path: p.root!.path };
     case "table":
       return p.layout!.pattern === "table" ? { value: [p.layout!.collapse ? "collapse" : "separate", ...(p.layout!.fixed ? ["fixed"] : [])].join(", "), path: p.layout!.path } : undefined;
     case "textAlign":

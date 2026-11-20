@@ -15,9 +15,23 @@ import { activeBreakpoints, atBase, fmtPx, insets, layoutUnit, resolveElement, s
 import { layoutText, metricsFor, TEXT_EPS, type Line } from "./text.js";
 import { boxMatrix4, multiply4, originOf, perspective4, projectRect, translate4, type Matrix4 } from "./transform.js";
 import { expandTracks, placeFlow as gridPlace, sizeTracks, trackStarts, type Contribution, type Explicit, type TrackList, type TrackSize } from "./grid.js";
+import { Exclusions } from "./floats.js";
 import { firstBaseline, layoutTable, tableGrid, tableInsets, tableIntrinsic, type Grid, type TableHooks } from "./table.js";
 
 const EPS = 0.001;
+
+/** The room for a line of text beside floats (see layoutText's `band`), from the text's content box. */
+type Band = (top: number, h: number, fits: (w: number) => boolean) => { top: number; l: number; r: number };
+
+/**
+ * A block formatting context's floats, and where a box sits in it: its border box's top left
+ * corner in the context's coordinates (see floats.ts).
+ */
+interface Bfc {
+  ex: Exclusions;
+  x: number;
+  y: number;
+}
 
 export interface Box {
   id: string;
@@ -336,6 +350,162 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     if (atTop) return { boxes, contentH: throughTop ? 0 : Math.max(0, sum(pending)), top: pending, bottom: NONE, empty: true, pending };
     return { boxes, contentH: Math.max(0, end === "keep" ? cursor + sum(pending) : cursor), top, bottom: end === "escape" ? pending : NONE, empty: false, pending: NONE };
   }
+  /**
+   * Whether a box makes a block formatting context of its own (its floats stay inside it, and it
+   * sits beside the floats around it): a float, flow-root, a scroll container, layout or paint
+   * containment, a flex, grid or table container, a table part, a flex or grid item, an
+   * out-of-flow box; and a replaced element or form control, which avoids floats as one does.
+   */
+  const establishes = (n: FixtureNode, p: ResolvedProps, parent: ParentKind) =>
+    !!p.float || (p.root?.value === false && (parent === "flow" || parent === "page") ? false : p.root?.value === true || scrolls(p.overflow?.value) || containsLayout(p.contain?.value) || (!!p.pattern && p.pattern.value !== "flow") || !!p.part ||
+    (parent !== "flow" && parent !== "page") || CONTROLS.has(n.tag) || MEDIA.has(n.tag));
+  /** Whether anything inside an element floats (at this width). */
+  const floatMemo = new Map<FixtureNode, boolean>();
+  const floatsInside = (n: FixtureNode, c: Component): boolean => {
+    let r = floatMemo.get(n);
+    if (r === undefined) {
+      r = n.children.some((k) => {
+        const ch = childOf(k, c, true);
+        return !!ch.comp && (!!resolveElement(model, ch.comp, ch.slot, width).float || floatsInside(k, ch.comp));
+      });
+      floatMemo.set(n, r);
+    }
+    return r;
+  };
+  /** Boxes that float: out of their parent's block flow (their margins collapse with nothing). */
+  const floated = new WeakSet<Box>();
+
+  /**
+   * Block flow in a block formatting context with floats (any above this container's top that
+   * reach into it, any among its children or inside them): children are laid out one after the
+   * other where they end up, as Chromium's LayoutNG does. A float is placed where it occurs (below
+   * the content before it and the margins pending there; at the container's top while nothing in
+   * it has come down from its top yet), as CSS 2.1 §9.5.1 places it; a box with `clear` goes below
+   * the floats it clears unless it is already lower; a box that makes a formatting context of its
+   * own goes in the first room beside the floats (from its place down) that it fits, as wide as that
+   * room when its width is auto. Everything else is laid out where it is, so its lines go around
+   * the floats. Without floats it is `flow`.
+   */
+  function flowKids(kids: Kid[], cell: number, throughTop: boolean, end: "escape" | "drop" | "keep", ctx: Bfc, kind: "flow" | "page"): FlowResult {
+    const kp = kids.map((k) => resolveElement(model, k.comp, k.slot, width));
+    const seq = ctx.ex.bottom > ctx.y + EPS || kids.some((k, i) => kp[i].float || kp[i].clear || floatsInside(k.node, k.comp));
+    if (!seq) return flow(kids.map((k) => measure(k.node, k.comp, k.slot, cell, kind)), cell, throughTop, end);
+    let cursor = 0;
+    let pending: Strut = NONE;
+    let atTop = true;
+    let top: Strut = NONE;
+    const boxes: Box[] = [];
+    const L = ctx.x;
+    const R = ctx.x + cell;
+    const save = () => ({ auto, issues: issues.length, abs: absQueue.length, ex: ctx.ex.mark() });
+    const restore = (u: ReturnType<typeof save>) => {
+      auto = u.auto;
+      issues.length = u.issues;
+      absQueue.length = u.abs;
+      ctx.ex.reset(u.ex);
+    };
+    kids.forEach((k, i) => {
+      const p = atBase(kp[i], cell);
+      const m0 = marginOf(p);
+      // Where the content so far ends, with the margins pending there (at the top: the container's own top).
+      const here = atTop ? (throughTop ? 0 : sum(pending)) : cursor + sum(pending);
+      if (p.float) {
+        const b = measure(k.node, k.comp, k.slot, cell, kind);
+        const m = marginOf(b.props);
+        // A float that clears goes below the floats it clears too.
+        const from = Math.max(ctx.y + here, p.clear ? ctx.ex.clearance(p.clear.value) : -Infinity);
+        const at = ctx.ex.place(p.float.value, m.left + b.w + m.right, m.top + b.h + m.bottom, from, L, R);
+        b.x = at.x - ctx.x + m.left;
+        b.y = at.y - ctx.y + m.top;
+        if (m.autoLeft || m.autoRight || p.maxWidth) b.assumptions.push("a float with auto margins isn't modelled");
+        collapse.set(b, { top: NONE, bottom: NONE, empty: true, at: NONE });
+        floated.add(b);
+        boxes.push(b);
+        return;
+      }
+      const clearTo = p.clear ? ctx.ex.clearance(p.clear.value) - ctx.y : -Infinity;
+      const first = atTop && throughTop;
+      if (establishes(k.node, p, kind)) {
+        // Its own margins collapse with those before it (not with what is inside it).
+        const hyp = first ? 0 : cursor + sum(join(pending, strut(m0.top)));
+        let Y = ctx.y + Math.max(hyp, clearTo);
+        let b: Box | undefined;
+        let x = 0;
+        const auto0 = p.width === undefined && !p.maxWidth && !p.aspect && !p.float;
+        for (let guard = 0; !b && guard < 200; guard++) {
+          // The rooms beside the floats at Y, widest (shortest) first.
+          const tops = [...new Set(ctx.ex.floats.map((f) => f.t).filter((t) => t > Y + EPS))].sort((a, z) => a - z);
+          const opps: { l: number; r: number; h: number; beside: boolean }[] = [];
+          for (const t of [...tops, Infinity]) {
+            const bd = ctx.ex.band(Y, isFinite(t) ? t - Y : 1e9, L, R);
+            const last = opps.at(-1);
+            if (last && Math.abs(bd.l - last.l) < EPS && Math.abs(bd.r - last.r) < EPS) last.h = t - Y;
+            else opps.push({ ...bd, h: t - Y });
+          }
+          for (const o of opps) {
+            const u = save();
+            const ox = Math.max(o.l, L + m0.left);
+            const lim = Math.min(o.r, R - m0.right);
+            const kb = auto0 ? measure(k.node, k.comp, k.slot, Math.max(0, lim - ox) + m0.left + m0.right, kind, undefined, undefined, cell) : measure(k.node, k.comp, k.slot, cell, kind);
+            if (!o.beside || (ox + kb.w <= lim + EPS && kb.h <= o.h + EPS)) {
+              b = kb;
+              x = o.beside ? ox - ctx.x : offsetX(kb, cell, true);
+              break;
+            }
+            restore(u);
+          }
+          if (!b) {
+            const below = Math.min(...ctx.ex.floats.map((f) => f.b).filter((v) => v > Y + EPS));
+            if (!isFinite(below)) break;
+            Y = below;
+          }
+        }
+        b ??= measure(k.node, k.comp, k.slot, cell, kind);
+        b.x = x;
+        b.y = Y - ctx.y;
+        if (first && b.y > EPS) b.assumptions.push("the first box of a block whose top margin collapses with it, moved down by floats (or clearance), isn't modelled");
+        if (Math.abs(b.x - offsetX(b, cell, true)) > EPS && (m0.autoLeft || m0.autoRight || p.maxWidth)) b.assumptions.push("a box beside floats with auto margins isn't modelled");
+        if (first) top = join(pending, collapse.get(b)!.top);
+        atTop = false;
+        cursor = b.y + b.h;
+        pending = collapse.get(b)!.bottom;
+        boxes.push(b);
+        return;
+      }
+      // A block in this formatting context: laid out where it goes (first where it would go if its
+      // first child's top margin added nothing to its own; again if it ends up elsewhere).
+      const u = save();
+      const bottom0 = ctx.ex.bottom;
+      const gy = first ? 0 : cursor + sum(join(pending, strut(m0.top)));
+      const gx = m0.left;
+      let b = measure(k.node, k.comp, k.slot, cell, kind, undefined, undefined, undefined, undefined, undefined, { ex: ctx.ex, x: ctx.x + gx, y: ctx.y + gy });
+      let c = collapse.get(b)!;
+      const x = offsetX(b, cell, true);
+      let y = c.empty ? (first ? 0 : cursor + sum(join(pending, c.at))) : first ? 0 : cursor + sum(join(pending, c.top));
+      const cleared = clearTo > y + EPS;
+      if (cleared) y = clearTo;
+      if ((Math.abs(x - gx) > EPS || Math.abs(y - gy) > EPS) && (ctx.ex.floats.length > u.ex[0] || bottom0 > ctx.y + Math.min(y, gy) + EPS)) {
+        restore(u);
+        b = measure(k.node, k.comp, k.slot, cell, kind, undefined, undefined, undefined, undefined, undefined, { ex: ctx.ex, x: ctx.x + x, y: ctx.y + y });
+        c = collapse.get(b)!;
+      }
+      b.x = x;
+      b.y = y;
+      boxes.push(b);
+      if (cleared && first && (c.top.pos !== 0 || c.top.neg !== 0)) b.assumptions.push("clearance on the first box of a block whose top margin collapses with it isn't modelled");
+      if (c.empty && !cleared) {
+        pending = join(pending, c.top);
+        return;
+      }
+      if (first && !cleared) top = join(pending, c.top);
+      atTop = false;
+      cursor = b.y + b.h;
+      pending = c.bottom;
+    });
+    if (atTop) return { boxes, contentH: throughTop ? 0 : Math.max(0, sum(pending)), top: pending, bottom: NONE, empty: true, pending };
+    return { boxes, contentH: Math.max(0, end === "keep" ? cursor + sum(pending) : cursor), top, bottom: end === "escape" ? pending : NONE, empty: false, pending: NONE };
+  }
+
   /** Absolutely positioned or fixed: out of flow. */
   const outOfFlow = (c: Component, slot: string | undefined) => {
     const t = resolveElement(model, c, slot, width).position?.value.type;
@@ -446,13 +616,33 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // A <button> centers its text unless the role says otherwise (the reset leaves text-align alone).
     const align = props.textAlign?.value ?? (n.tag === "button" ? "center" : "start");
     // Each run (paragraph, list item, line after <br>) starts on a new line.
-    return (maxWidth: number) => {
+    // Beside floats (band): each run's lines go on from where the run before it ended.
+    return (maxWidth: number, band?: Band) => {
+      const lineH = lineHeightPx(t.sizePx, t.lineHeight);
+      let off = 0;
+      if (band && strut) assumptions.push("lines beside a float, with inline boxes that reach past the text's strut, aren't modelled");
       const parts = runs.map((r, i) => {
-        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i], strut };
+        const runBand: Band | undefined = band && ((top, h, fits) => {
+          const at = band(top + off, h, fits);
+          return { ...at, top: at.top - off };
+        });
+        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i], strut, ...(runBand && { band: runBand, lineH }) };
+        /** Lines beside floats: placed from the content box's top. */
+        const done = <T extends { lines: Line[] }>(x: T): T => {
+          if (!band) return x;
+          for (const l of x.lines) l.top = (l.top ?? 0) + off;
+          const last = x.lines.at(-1);
+          if (last) off = last.top! + lineH;
+          return x;
+        };
         // white-space: nowrap: the paragraph is one line, and its min-content is its whole width.
         if (t.nowrap) {
-          const one = layoutText(m!, r, t.sizePx, t.weight, Infinity, { ...opts, wrapAnywhere: false, hangKern: false });
-          return { ...one, minContent: one.maxContent, widestPiece: r.trim() };
+          const one = layoutText(m!, r, t.sizePx, t.weight, Infinity, { ...opts, band: undefined, wrapAnywhere: false, hangKern: false });
+          if (runBand) {
+            const at = runBand(0, lineH, (w) => one.maxContent <= w + 1 / 64 + TEXT_EPS);
+            for (const l of one.lines) Object.assign(l, { x: at.l, room: at.r - at.l, top: at.top });
+          }
+          return done({ ...one, minContent: one.maxContent, widestPiece: r.trim() });
         }
         // Centered or end-aligned lines measure their hanging space's kerning out too.
         const plain = t.underline || (!!painted && !meta[i].inBlock) || align !== "start" || t.nowrap;
@@ -468,7 +658,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
             assumptions.push("line breaks are approximate: a space at a line end inside underlined inline text (a link) changes the line's width");
           }
         }
-        return a;
+        return done(a);
       });
       const widest = parts.reduce((a, b) => (b.minContent > a.minContent ? b : a));
       return {
@@ -1393,9 +1583,10 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     cbW?: number,
     stackAlign?: "start" | "center" | "end" | "stretch",
     bars?: { x: boolean; y: boolean },
+    bfc?: Bfc,
   ): Box {
     // (What a pass leaves behind, undone when the box is laid out again with its scrollbars.)
-    const undo = { auto, issues: issues.length, abs: absQueue.length };
+    const undo = { auto, issues: issues.length, abs: absQueue.length, ex: bfc?.ex.mark() };
     const id = idOf(n);
     let rawProps = resolveElement(model, c, slot, width);
     // A table cell's border as its table lays it out (table.ts); a collapsed table's own border and padding.
@@ -1472,6 +1663,8 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       // A stack that doesn't stretch its children (align-items: center, start, end): fit-content.
       else if (parent === "stack" && pw === undefined && stackAlign && stackAlign !== "stretch" && !props.maxWidth && !props.aspect)
         w = fit(Math.max(0, avail - m.left - m.right), `sits in a stack aligned ${stackAlign}, which sizes it to its content`);
+      // A float without a width is as wide as its content (shrink-to-fit in its containing block).
+      else if (props.float && pw === undefined && !props.aspect && !props.maxWidth) w = fit(Math.max(0, avail - m.left - m.right), "floats, which sizes it to its content");
       else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
       // A table without a width is as wide as its columns want (fit-content), unless a flex column or grid stretches it.
       else if (grid && pw === undefined && parent !== "stack" && parent !== "grid" && parent !== "layer") w = fit(Math.max(0, avail - m.left - m.right), "is a table as wide as its content");
@@ -1542,8 +1735,13 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     const ov = props.overflow?.value;
     // So does layout or paint containment (an independent formatting context).
     const scroller = scrolls(ov) || containsLayout(props.contain?.value);
-    const throughTop = inFlow && ins.top === 0 && !scroller;
-    const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.minHeight && !props.aspect && !scroller;
+    // A float, a scroll container, flow-root, a flex or grid container or item, a table and its
+    // cells, an out-of-flow box: a block formatting context of its own, which holds its floats.
+    const ownContext = establishes(n, props, parent);
+    const throughTop = inFlow && ins.top === 0 && !ownContext;
+    const throughBottom = inFlow && ins.bottom === 0 && !props.height && !props.minHeight && !props.aspect && !ownContext;
+    /** Where this box's content box sits in its block formatting context (its own, or the one it is in). */
+    const flowCtx: Bfc = ownContext || !bfc ? { ex: new Exclusions(), x: ins.left, y: ins.top } : { ex: bfc.ex, x: bfc.x + ins.left, y: bfc.y + ins.top };
     let escaped: FlowResult | undefined;
     let grows: StackGrow | undefined;
     let gridArr: ((contentH: number) => void) | undefined;
@@ -1638,7 +1836,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     } else if (kids.length && pattern === "flow") {
       // A box sized by its aspect ratio keeps its last child's bottom margin neither inside nor out (Chromium drops it).
       const end = throughBottom ? "escape" : inFlow && !scroller && ins.bottom === 0 && props.aspect && !props.height ? "drop" : "keep";
-      const f = flow(kids.map((k) => measure(k.node, k.comp, k.slot, innerW, "flow")), innerW, throughTop, end);
+      const f = flowKids(kids, innerW, throughTop, end, flowCtx, "flow");
       children.push(...f.boxes);
       contentH = f.contentH;
       escaped = f;
@@ -1648,9 +1846,18 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       const t = props.text!.value;
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
       if (measureText) {
-        const tl = measureText(innerW);
+        // Beside floats (any below its top in its formatting context): each line in the room they leave.
+        const beside = flowCtx.ex.bottom > flowCtx.y + EPS;
+        const band: Band | undefined = beside
+          ? (top, h, fits) => {
+              const at = flowCtx.ex.find(flowCtx.y + top, h, flowCtx.x, flowCtx.x + innerW, fits);
+              return { top: at.top - flowCtx.y, l: at.l - flowCtx.x, r: at.r - flowCtx.x };
+            }
+          : undefined;
+        const tl = measureText(innerW, band);
         lines = tl.lines;
-        contentH = lines.reduce((s, l) => s + (l.h ?? lineH), 0);
+        const last = lines.at(-1);
+        contentH = band && last?.top !== undefined ? last.top + lineH : lines.reduce((s, l) => s + (l.h ?? lineH), 0);
         contentW = Math.max(...lines.map((l) => l.width));
         // Text in a box that clips or scrolls it (overflow-x other than visible) doesn't spill out: check reports it as clipped.
         if (tl.minContent > innerW + 0.5 && !t.nowrap && !t.wrapAnywhere && (!ov || ov.x === "visible") && !props.contain?.value.paint) {
@@ -1667,6 +1874,8 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       children.push(...rows.flat());
       contentH = rows.reduce((s, r) => s + rowHeight(r, props.align?.value), 0) + rowGap * (rows.length - 1);
     }
+    // A block formatting context's root is as tall as the floats in it (CSS 2.1 §10.6.7).
+    if (ownContext && !flowCtx.ex.empty && (pattern === undefined || pattern === "flow")) contentH = Math.max(contentH, flowCtx.ex.bottom - ins.top);
 
     // aspect: the height follows the width. Media elements take exactly that; other boxes grow if
     // their content needs more (aspect-ratio's automatic minimum size). In a stack (a column
@@ -1718,7 +1927,8 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         auto = undo.auto;
         issues.length = undo.issues;
         absQueue.length = undo.abs;
-        return measure(n, c, slot, avail, parent, forcedW, over, cbW, stackAlign, { x: !!barX || overX, y: !!barY || overY });
+        if (undo.ex) bfc!.ex.reset(undo.ex);
+        return measure(n, c, slot, avail, parent, forcedW, over, cbW, stackAlign, { x: !!barX || overX, y: !!barY || overY }, bfc);
       }
       if (overX || overY) scrollbar = true;
       if (SB) {
@@ -1748,6 +1958,9 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         message: `<${n.tag}> #${id} has no aspect or height, so its size depends on ${n.attrs.width || n.attrs.height ? "its width/height attributes and the file" : "the file"} and can't be predicted; ${say(`add aspect: "16:9" (or height)`, "give it an aspect-ratio (or a height)")}`,
       });
     if (media && !props.aspect && !props.height) assumptions.push("its size depends on the image file (no aspect or height)");
+    // Lifted from line boxes (see Props.root): beside a float, those lines would be shortened.
+    if (props.root?.value === false && bfc && bfc.ex.band(bfc.y, Math.max(h, 1), bfc.x, bfc.x + w).beside)
+      assumptions.push("inline content laid out from its line boxes, beside a float, isn't modelled");
     const box: Box = {
       id,
       tag: n.tag,
@@ -1775,7 +1988,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // Flex and grid containers, form controls,
     // media and <hr> (overflow: hidden) never do.
     const empty =
-      h === 0 && insY === 0 && !props.height && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" && !scroller &&
+      h === 0 && insY === 0 && !props.height && !media && !CONTROLS.has(n.tag) && n.tag !== "hr" && !ownContext &&
       !(isText && n.text) && (pattern === undefined ? !kids.length : pattern === "flow" && !!escaped?.empty);
     const inner = escaped?.empty ? escaped.pending : NONE;
     const mt = strut(m.top);
@@ -2112,6 +2325,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
   const pageW = Math.max(0, layoutW - outer.left - outer.right - bodyMargin.left - bodyMargin.right - bodyPad.left - bodyPad.right);
 
   const boxes: Box[] = [];
+  const pageKids: Kid[] = [];
   let unknownOnPage: string | undefined;
   /** Page-level absolute boxes after in-flow ones: their static position is known once the body's flow is. */
   const pageAbs: { entry: (typeof absQueue)[number]; before: number }[] = [];
@@ -2135,18 +2349,20 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       continue;
     }
     if (outOfFlow(c, undefined)) {
-      const entry: (typeof absQueue)[number] = { k: { node: n, comp: c, slot: undefined }, parent: undefined, ...(!boxes.length && { at: { x: 0, y: 0 } }) };
+      const entry: (typeof absQueue)[number] = { k: { node: n, comp: c, slot: undefined }, parent: undefined, ...(!pageKids.length && { at: { x: 0, y: 0 } }) };
       absQueue.push(entry);
-      if (boxes.length && !unknownOnPage) pageAbs.push({ entry, before: boxes.length });
+      if (pageKids.length && !unknownOnPage) pageAbs.push({ entry, before: pageKids.length });
       continue;
     }
-    boxes.push(measure(n, c, undefined, pageW, "page"));
+    pageKids.push({ node: n, comp: c, slot: undefined });
   }
   // The body is block flow: page-level boxes stack, their margins collapsing. Its own top margin
   // collapses with theirs unless its padding separates them, so the body starts below the largest
-  // (below all of them when every page-level box is empty); the root element contains it.
+  // (below all of them when every page-level box is empty); the root element contains it, and is
+  // the block formatting context of the page's floats.
   const through = bodyPad.top === 0;
-  const body = flow(boxes, pageW, through, "escape");
+  const body = flowKids(pageKids, pageW, through, "escape", { ex: new Exclusions(), x: 0, y: 0 }, "page");
+  boxes.push(...body.boxes);
   const top = through ? sum(join(strut(bodyMargin.top), body.empty ? body.pending : body.top)) : bodyMargin.top + bodyPad.top;
   // Below the page-level boxes before it and the margins pending there (as in measure).
   for (const { entry, before } of pageAbs) {
@@ -2186,6 +2402,37 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
   };
   const pageX = outer.left + bodyMargin.left + bodyPad.left;
   for (const b of boxes) place(b, 0, 0, pageW, windowH);
+  // An inline box laid out as the block of its lines (Props.inlineBox): its rectangle is the union
+  // of its text's content area on each line, from where its text starts on the line (aligned in
+  // the line's room as text-align says, in layout units; an overflowing line at the start) to where
+  // it ends (its width rounded up to a layout unit, as Chromium sizes a text fragment).
+  for (const b of walk(boxes)) {
+    const ib = b.props.inlineBox?.value;
+    if (!ib || !b.lines?.length || !b.props.text) continue;
+    const bi = insets(b.props);
+    const innerW = b.w - bi.left - bi.right;
+    const t = b.props.text.value;
+    const lh = lineHeightPx(t.sizePx, t.lineHeight);
+    const align = b.props.textAlign?.value ?? "start";
+    let next = 0;
+    let [x0, x1, y0, y1] = [Infinity, -Infinity, 0, 0];
+    b.lines.forEach((l, i) => {
+      const top = l.top ?? next;
+      const room = l.room ?? innerW;
+      const lw = Math.ceil(l.width * 64 - TEXT_EPS) / 64;
+      const free = Math.max(0, room - lw);
+      const off = (l.x ?? 0) + (align === "center" ? Math.trunc((free * 64) / 2) / 64 : align === "end" ? free : 0);
+      x0 = Math.min(x0, off);
+      x1 = Math.max(x1, off + lw);
+      if (i === 0) y0 = top + ib.top;
+      y1 = top + ib.top + ib.height;
+      next = top + (l.h ?? lh);
+    });
+    b.x += bi.left + x0;
+    b.y += bi.top + y0;
+    b.w = x1 - x0;
+    b.h = y1 - y0;
+  }
   const parentOf = new Map<Box, Box>();
   for (const b of walk(boxes)) for (const k of b.children) parentOf.set(k, b);
   placeAbsolute(parentOf, pageX, outer.top + (bodyPad.top ? bodyMargin.top + bodyPad.top : 0));

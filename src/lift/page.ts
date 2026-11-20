@@ -146,10 +146,14 @@ export interface El {
    * next block starts, e.g. Angular's <router-outlet>).
    */
   asBlock: ("block" | "empty" | undefined)[];
+  /** Floated left or right (per state; null: not), see floated. */
+  floatSide?: ("left" | "right" | null)[];
   /** An inline-block alone on its line whose line box is exactly its margin box: lifted as a block of its content's width. */
   alone: boolean[];
   /** An inline element alone between blocks: the height of each of its lines (per state), see inlineLine. */
   inlineLine?: (number | undefined)[];
+  /** Such an element's own rectangle on each of its lines: from the line's top, and its height (px). */
+  inlineRect?: ({ top: number; height: number } | undefined)[];
   /** A lone inline-block placed for one line of its text (per state): see dynamic(). */
   oneLine?: boolean[];
   /** With oneLine: how many lines its <br>s give it (1 without any), per state. */
@@ -1048,8 +1052,59 @@ export abstract class PageLifter {
     return undefined;
   }
 
-  /** The display the cascade gives the element (the browser's default for its tag when nothing sets it). */
+  /**
+   * The side an element floats to (float: left or right, inline-start or inline-end in a
+   * left-to-right page), where it floats: not when it is positioned (absolute or fixed), a flex or
+   * grid item, generated content (see floatsAtStart), or a float that changes nothing (asideFloat).
+   */
+  floated(el: El, si: number): "left" | "right" | undefined {
+    const o = el.own[si]?.get("float");
+    if (!o) return undefined;
+    const cache = (el.floatSide ??= []);
+    if (cache[si] !== undefined) return cache[si] ?? undefined;
+    let side: "left" | "right" | null = null;
+    const v = o ? this.resolve(el, si, o.value) : undefined;
+    if (v && /^(left|right|inline-start|inline-end)$/.test(v) && !el.pseudo && el.anonymous === undefined && !this.positioned(el, si)) {
+      const parent = el.parent && el.parent !== this.bodyEl && el.parent !== this.htmlEl ? el.parent : undefined;
+      if (!(parent && /flex|grid/.test(this.ownDisplay(parent, si))) && !this.asideFloat(el, si)) side = /^(left|inline-start)$/.test(v) ? "left" : "right";
+    }
+    cache[si] = side;
+    return side ?? undefined;
+  }
+
+  /**
+   * Whether a float comes before any inline content of the line it is on: nothing but collapsible
+   * whitespace, other floats and boxes out of flow between it and the block before it (or its
+   * parent's start). It is then placed where a block in its place would be, and the text after it
+   * (an anonymous block) goes around it, as Chromium lays out the line it starts.
+   */
+  floatLeads(el: El, si: number): boolean {
+    const p = el.parent;
+    if (!p) return true;
+    const nodes = p.node.childNodes ?? [];
+    const shown = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
+    for (let j = nodes.indexOf(el.node) - 1; j >= 0; j--) {
+      const c = nodes[j];
+      if (c.nodeName === "#text") {
+        if (/[^ \t\n\r\f]/.test(c.value ?? "")) return false;
+        continue;
+      }
+      const k = p.children.find((x) => x.node === c);
+      if (!k || !shown(k) || this.floated(k, si)) continue;
+      return !this.isInlineLevel(k, si);
+    }
+    const before = p.children.find((k) => k.pseudo === "before");
+    return !before || !shown(before) || !!this.floated(before, si) || !this.isInlineLevel(before, si);
+  }
+
+  /** The display the cascade gives the element (the browser's default for its tag when nothing sets it); a float's is blockified. */
   ownDisplay(el: El, si: number): string {
+    const d0 = this.cascadeDisplay(el, si);
+    if (d0 === "none" || !this.floated(el, si)) return d0;
+    return d0 === "inline-flex" ? "flex" : d0 === "inline-grid" ? "grid" : d0 === "inline-table" ? "table" : /^(inline|inline-block|inline-flow-root|run-in)$|^table-/.test(d0) ? "block" : d0;
+  }
+
+  cascadeDisplay(el: El, si: number): string {
     const d = el.own[si].get("display");
     const v = d ? this.resolve(el, si, d.value) : undefined;
     if (v) return v;
@@ -1662,6 +1717,17 @@ export abstract class PageLifter {
     const a = this.strutOf(parent, si);
     const b = this.strutOf(el, si);
     if (!a || !b) return undefined;
+    // Its own rectangle on each line: its font's content area (ascent and descent, as Chromium
+    // rounds them) around the baseline, with its vertical padding and border.
+    const px = (p: string) => {
+      const d = el.own[si].get(p);
+      const v = d ? this.resolveBox(el, si, d.value) : "0";
+      return v === undefined ? NaN : (lengthPx(v, t.size) ?? NaN);
+    };
+    const border = (side: string) => (/^(none|hidden)$/.test(this.resolve(el, si, el.own[si].get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+    const above = px("padding-top") + border("top");
+    const below = px("padding-bottom") + border("bottom");
+    if (isFinite(above) && isFinite(below)) (el.inlineRect ??= [])[si] = { top: Math.max(a.sa, b.sa) - b.ascent - above, height: b.ascent + b.descent + above + below };
     return Math.max(a.sa, b.sa) + Math.max(a.sd, b.sd);
   }
 
@@ -2756,6 +2822,8 @@ export abstract class PageLifter {
     const border = (side: string) => (/^(none|hidden)$/.test(this.resolve(el, si, el.own[si].get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
     const sizing = this.resolve(el, si, el.own[si].get("box-sizing")?.value ?? "content-box");
     const box = (size: string, a: string, b: string) => px(size) + (sizing === "border-box" ? 0 : px(`padding-${a}`) + px(`padding-${b}`) + border(a) + border(b));
+    // (A float without a width or height is as big as its content: not one that changes nothing.)
+    if (!el.own[si].has("width") || !el.own[si].has("height")) return false;
     const w = box("width", "left", "right");
     const h = box("height", "top", "bottom");
     if (!(px("margin-left") + w + px("margin-right") <= 0)) return false;
@@ -2864,7 +2932,11 @@ export abstract class PageLifter {
       // Inline-level boxes in block flow sit on line boxes, which Cadesa doesn't model, except an
       // inline-block alone on its line whose line box is exactly its margin box.
       const inlineLine = !inFlexOrGrid ? el.inlineLine?.[si] : undefined;
-      if (inlineLine !== undefined) {
+      // Its rectangle is its text's content area on each of its lines (with its vertical padding and
+      // border), their union: as getBoundingClientRect() reports it.
+      const inlineRect = inlineLine !== undefined ? el.inlineRect?.[si] : undefined;
+      if (inlineRect) decl("inline-box", `${fmtNum(inlineRect.top)}px ${fmtNum(inlineRect.height)}px`, "an inline box: its text's content area on its lines");
+      else if (inlineLine !== undefined) {
         this.note(el, si, { decl: `display: ${this.displayOf(el, si)}`, reason: "an inline box's own rectangle is its text's content area; Cadesa lays out its lines (exact), not that rectangle", kind: "visual" });
         if (!own.has("width")) decl("width", "fit-content", "an inline element alone between blocks");
       } else if (!inFlexOrGrid && this.isInlineLevel(el, si) && !el.alone[si] && !el.rowLine?.[si] && el.anonymous === undefined)
@@ -2878,6 +2950,28 @@ export abstract class PageLifter {
         decl("margin-right", lineAlign === "center" ? "auto" : "0px", why);
         if (lineAlign === "end") decl("margin-left", "auto", why);
       }
+
+      // A float in block flow (engine: floats.ts). In a page lifted as stacks (a preflight reset)
+      // there is no block flow to float in.
+      const side = this.floated(el, si);
+      if (side) {
+        if (this.blockFlow !== "flow") this.note(el, si, { decl: own.get("float")!.utility, reason: "a float in block flow lifted as a stack (the page resets margins) isn't modelled", kind: "geometry" });
+        else if (!this.floatLeads(el, si)) this.note(el, si, { decl: own.get("float")!.utility, reason: "a float after inline content on its line isn't modelled", kind: "geometry" });
+        decl("float", side, own.get("float")!.utility);
+      } else if (/^(left|right|inline-start|inline-end)$/.test(res("float") ?? "") && !inFlexOrGrid && !abs && !this.floatsAtStart(el, si) && !this.asideFloat(el, si))
+        this.note(el, si, { decl: own.get("float")!.utility, reason: `floated generated content (${el.tag}) isn't modelled`, kind: "geometry" });
+      // clear, where something floats (on a block-level box in block flow).
+      const clearV = res("clear");
+      if (clearV && !/^none$/.test(clearV) && !inFlexOrGrid && !abs && this.floats(si) && !this.isInlineLevel(el, si)) {
+        const cv = /^(left|inline-start)$/.test(clearV) ? "left" : /^(right|inline-end)$/.test(clearV) ? "right" : clearV === "both" ? "both" : undefined;
+        if (cv) decl("clear", cv, own.get("clear")!.utility);
+        else this.note(el, si, { decl: own.get("clear")!.utility, reason: `clear: ${clearV} is not modelled`, kind: "geometry" });
+      }
+      // display: flow-root: a block formatting context of its own.
+      if (this.ownDisplay(el, si) === "flow-root" && (role === "container" || role === "text")) decl("flow-root", "true", own.get("display")?.utility ?? "display: flow-root");
+      // Lifted from its line boxes (inline-blocks on lines, an inline box laid out as a block): it
+      // isn't a formatting context of its own, and what floats beside it isn't modelled.
+      else if (this.floats(si) && (el.inlineRow?.[si] || el.alone[si] || el.inlineLine?.[si] !== undefined || el.asBlock[si])) decl("flow-root", "false", "laid out from its line boxes");
 
       // Sticky: in flow; it only moves once the page scrolls.
       const pos = res("position");
@@ -2908,9 +3002,12 @@ export abstract class PageLifter {
         // Alone in its parent on a line, its vertical margins are in the parent's padding.
         (/^margin-(top|bottom)$/.test(p) && !!el.parent?.linePad?.[si]) ||
         (/^padding-(top|bottom)$/.test(p) && !!el.linePad?.[si]) ||
+        // An inline box's vertical edges move nothing (its rectangle takes them in: inline-box).
+        (!!inlineRect && /^(padding-(top|bottom)|margin-(top|bottom)|border-(top|bottom)-(width|style|color)|width|height|min-height|max-height|min-width|max-width)$/.test(p)) ||
         // A flex or grid item doesn't float; clear does nothing where nothing floats.
-        (p === "float" && inFlexOrGrid) ||
-        (p === "clear" && (inFlexOrGrid || abs || !this.floats(si))) ||
+        // A float's side and clear are emitted above (a flex or grid item doesn't float).
+        p === "float" ||
+        p === "clear" ||
         p === "content";
 
       // Layout. A flex or grid item is blockified: an inline element holding blocks (text and a

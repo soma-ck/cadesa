@@ -284,6 +284,32 @@ export interface Props {
    * rowspan attributes say, a column those of its span.
    */
   part?: { value: TablePart; align?: CellAlign; side?: "top" | "bottom"; contentBox?: boolean; raw: string; path: string };
+  /**
+   * Floated to the left or right of its block formatting context (CSS float): out of the block
+   * flow, placed as high and as far to that side as the floats before it allow (CSS 2.1 §9.5.1),
+   * and as wide as its content (shrink-to-fit) unless a width is set. Lines of text beside it are
+   * shortened; boxes that make a formatting context of their own sit beside it. none: in a
+   * breakpoint override, not floated.
+   */
+  float?: { value: "left" | "right" | "none"; path: string };
+  /** Placed below the floats before it on that side (CSS clear): left, right or both. none: in a breakpoint override, nothing cleared. */
+  clear?: { value: "left" | "right" | "both" | "none"; path: string };
+  /**
+   * true: a block container that makes a formatting context of its own (display: flow-root):
+   * margins don't collapse through it, it contains its floats, and it sits beside floats around
+   * it. false: a box lifted from line boxes (inline-blocks sharing lines, laid out as a row; an
+   * inline box laid out as a block): it is no formatting context of its own, and floats beside
+   * it make it approximate.
+   */
+  root?: { value: boolean; path: string };
+  /**
+   * An inline box (a <span>, <a>, <strong>) laid out as the block of its lines: its own rectangle
+   * is its text's content area on each line, `top` px below the line's top and `height` px tall
+   * (its font's ascent and descent around the baseline, and its vertical padding and border),
+   * from where its text starts on the line to where it ends; the union of those (as
+   * getBoundingClientRect() reports it). Its lines are laid out as any text box's.
+   */
+  inlineBox?: { top: number; height: number; path: string };
   /** Removed by this override (`maxWidth: none`), with the YAML path. */
   unset?: Partial<Record<Unsettable, string>>;
 }
@@ -350,6 +376,10 @@ export const PROP_ORDER: (keyof Props)[] = [
   "perspective",
   "place",
   "part",
+  "float",
+  "clear",
+  "root",
+  "inlineBox",
 ];
 
 export interface Slot {

@@ -863,6 +863,29 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
           else out.part = { value: t.part, ...(t.align && { align: t.align }), ...(t.side && { side: t.side }), ...(t.contentBox && { contentBox: true }), raw: (v as string).trim().toLowerCase().replace(/\s+/g, " "), path: p.join(".") };
           break;
         }
+        case "float":
+          // float: left or right (none in an override).
+          if (v === "left" || v === "right" || (v === "none" && override)) out.float = { value: v, path: p.join(".") };
+          else err(p, "invalid float", { expected: override ? "left, right or none" : "left or right", got: v });
+          break;
+        case "clear":
+          if (v === "left" || v === "right" || v === "both" || (v === "none" && override)) out.clear = { value: v, path: p.join(".") };
+          else err(p, "invalid clear", { expected: override ? "left, right, both or none" : "left, right or both", got: v });
+          break;
+        case "inlineBox": {
+          // inlineBox: { top: 2, height: 20 }: an inline box's rectangle on each of its lines (px).
+          const o = obj(v, p, "an inline box's rectangle");
+          if (!o) break;
+          keys(o, p, ["top", "height"]);
+          if (typeof o.top !== "number" || !isFinite(o.top) || typeof o.height !== "number" || !(o.height >= 0)) err(p, "invalid inlineBox", { expected: "{ top: <px from the line's top>, height: <px> }", got: v });
+          else out.inlineBox = { top: o.top, height: o.height, path: p.join(".") };
+          break;
+        }
+        case "root":
+          // root: true (display: flow-root): a block formatting context of its own.
+          if (typeof v === "boolean") out.root = { value: v, path: p.join(".") };
+          else err(p, "invalid root", { expected: "true (a formatting context of its own, display: flow-root) or false", got: v });
+          break;
         case "textAlign":
           if (v === "start" || v === "center" || v === "end") out.textAlign = { value: v, path: p.join(".") };
           else err(p, "invalid textAlign", { expected: "start, center or end", got: v });

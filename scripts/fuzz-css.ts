@@ -269,10 +269,73 @@ export function genCssCase(seed: number): CssCase {
     const box = `<div${attr(cls(d))}>${kids.join("")}</div>`;
     return inline ? `<div>${words(r, 0, 3)} ${box} ${words(r, 0, 3)}</div>` : box;
   };
+  /**
+   * Floats in block flow: left and right floats of set or content width with margins and padding,
+   * paragraphs whose lines go around them (some with inline runs, some centered), boxes that clear
+   * them, boxes that make a formatting context of their own (overflow: hidden, flow-root, a flex
+   * row) beside them, floats in nested blocks, a clearfix, and a float leading a paragraph.
+   */
+  const floatBlock = () => {
+    const float = () => {
+      const d = [`float: ${r.pick(["left", "left", "right"])}`, "background: #cdd"];
+      const sized = r.chance(0.6);
+      if (sized) d.push(`width: ${r.pick([`${r.int(30, 260)}px`, `${r.int(10, 60)}%`])}`);
+      if (sized || r.chance(0.5)) d.push(`height: ${r.int(10, 120)}px`);
+      if (r.chance(0.5)) d.push(`margin: ${r.int(0, 10)}px ${r.int(0, 14)}px ${r.int(0, 10)}px ${r.int(0, 8)}px`);
+      if (r.chance(0.3)) d.push(`padding: ${r.int(0, 8)}px`);
+      if (r.chance(0.2)) d.push(`clear: ${r.pick(["left", "right", "both"])}`);
+      if (r.chance(0.3)) d.push(`font-size: ${r.pick(["12px", "14px", "20px"])}`);
+      return `<div${attr(cls(d))}>${sized && r.chance(0.5) ? "" : words(r, 1, 5)}</div>`;
+    };
+    const para = () => {
+      const d: string[] = [];
+      if (r.chance(0.2)) d.push(`text-align: ${r.pick(["center", "right"])}`);
+      if (r.chance(0.2)) d.push(`font-size: ${r.pick(["13px", "18px", "22px"])}`);
+      if (r.chance(0.2)) d.push(`line-height: ${r.pick(["1.2", "20px", "normal"])}`);
+      if (r.chance(0.2)) d.push(`margin: ${r.int(0, 16)}px 0`);
+      if (r.chance(0.15)) d.push(`padding-left: ${r.int(0, 20)}px`);
+      if (r.chance(0.15)) d.push(`clear: ${r.pick(["left", "right", "both"])}`);
+      const tag = r.pick(["strong", "em", "a"]);
+      const body = r.chance(0.3) ? `${words(r, 2, 8)} <${tag}${tag === "a" ? ' href="#"' : ""}>${words(r, 1, 3)}</${tag}> ${words(r, 2, 12)}` : words(r, 3, 30);
+      return `<p${attr(cls(d))}>${body}</p>`;
+    };
+    const root = () => {
+      const kind = r.pick(["overflow: hidden", "display: flow-root", "display: flex", "overflow: auto"]);
+      const d = [kind, "border: 1px solid #889"];
+      if (r.chance(0.4)) d.push(`margin: ${r.int(0, 12)}px ${r.int(0, 20)}px`);
+      if (r.chance(0.3)) d.push(`width: ${r.int(80, 400)}px`);
+      if (r.chance(0.3)) d.push(`padding: ${r.int(0, 8)}px`);
+      return `<div${attr(cls(d))}>${r.chance(0.4) ? float() : ""}<p>${words(r, 2, 20)}</p></div>`;
+    };
+    const parts: string[] = [];
+    const k = r.int(2, 7);
+    for (let j = 0; j < k; j++) {
+      const what = r.pick(["float", "float", "para", "para", "root", "nested", "clear", "clearfix", "lead"] as const);
+      if (what === "float") parts.push(float());
+      else if (what === "para") parts.push(para());
+      else if (what === "root") parts.push(root());
+      else if (what === "nested") parts.push(`<div${attr(cls(r.chance(0.5) ? [`padding: ${r.int(0, 8)}px`] : r.chance(0.5) ? [`margin-top: ${r.int(0, 20)}px`] : []))}>${r.chance(0.5) ? float() : ""}${para()}</div>`);
+      else if (what === "clear") parts.push(`<div${attr(cls([`clear: ${r.pick(["left", "right", "both"])}`, `margin-top: ${r.int(0, 20)}px`]))}>${words(r, 1, 4)}</div>`);
+      else if (what === "clearfix") {
+        const cf = cls(["padding: 0"]);
+        css.push(`.${cf}::after { display: block; clear: both; content: "" }`);
+        parts.push(`<div${attr(cf)}>${float()}${float()}</div>`);
+      } else parts.push(`<p><span${attr(cls(["float: left", `font-size: ${r.pick(["30px", "40px", "48px"])}`, `line-height: ${r.pick(["1", "36px", "44px"])}`, `margin-right: ${r.int(0, 8)}px`]))}>${r.pick(["W", "T", "A", "O"])}</span>${words(r, 5, 30)}</p>`);
+    }
+    const d: string[] = [];
+    if (r.chance(0.3)) d.push(`width: ${r.int(200, 700)}px`);
+    if (r.chance(0.3)) d.push(`padding: ${r.int(0, 12)}px`);
+    if (r.chance(0.3)) d.push("display: flow-root");
+    return `<section${attr(cls(d))}>${parts.join("\n")}</section>`;
+  };
   const count = r.int(2, 5);
   for (let i = 0; i < count; i++) {
     if (r.chance(0.12)) {
       blocks.push(scroller());
+      continue;
+    }
+    if (r.chance(0.18)) {
+      blocks.push(floatBlock());
       continue;
     }
     if (r.chance(0.3)) {

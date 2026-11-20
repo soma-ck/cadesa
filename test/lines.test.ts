@@ -103,7 +103,11 @@ describe("an inline element alone between blocks", () => {
     for (const id of ["card", "label", "value", "card-2", "h", "end"]) expect(r.approx(id, 150)).toBeUndefined();
   });
 
-  it("its own rectangle (its text's content area) stays ≈", () => {
-    expect(r.approx("delta")).toMatch(/an inline box's own rectangle is its text's content area/);
+  it("its own rectangle is the union of its text's content area on its lines, exact", () => {
+    // Chromium (getBoundingClientRect): one fragment at 400px, four at 150px; 12px text on a 16px line.
+    expect(geo(r.box("delta", 400))).toEqual([9, 62, 377.547, 16]);
+    expect(geo(r.box("delta", 150))).toEqual([9, 62, 125.453, 88]);
+    expect(geo(r.box("tight", 400))).toEqual([9, 137.078, 91.063, 15]);
+    for (const w of [400, 150]) for (const id of ["delta", "tight"]) expect(r.approx(id, w)).toBeUndefined();
   });
 });

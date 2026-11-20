@@ -332,6 +332,13 @@ export interface Line {
   /** Its height, when inline boxes on it may reach past the text's strut (see layoutText's `strut`), and its baseline from its top. */
   h?: number;
   base?: number;
+  /**
+   * Beside floats (see layoutText's `band`): where the line box starts from the content box's left
+   * edge, how wide its room is, and its top from the content box's top (px).
+   */
+  x?: number;
+  room?: number;
+  top?: number;
 }
 
 export interface TextLayout {
@@ -424,7 +431,7 @@ export function layoutText(
   text: string,
   sizePx: number,
   weight: number,
-  maxWidth: number,
+  maxWidth0: number,
   opts: {
     letterSpacing?: number;
     spacesOnly?: boolean;
@@ -444,8 +451,17 @@ export function layoutText(
      * and `below`), and lines record their height.
      */
     strut?: { above: number; below: number };
+    /**
+     * Floats beside the text: the room for a line `h` tall at `top` (from the content box's top),
+     * the first band from there down whose room fits the line's first piece (see Exclusions.find).
+     * With it, lines record where they are (Line.x, room and top), each `lineH` tall.
+     */
+    band?: (top: number, h: number, fits: (w: number) => boolean) => { top: number; l: number; r: number };
+    lineH?: number;
   } = {},
 ): TextLayout {
+  /** The room for the line being filled (beside floats: that line's band). */
+  let maxWidth = maxWidth0;
   // letter-spacing is added after every character, including the last one on a line (or, with
   // spacesOnly, after every U+0020 and U+00A0 only).
   const ls = opts.letterSpacing ?? 0;
@@ -590,6 +606,29 @@ export function layoutText(
     return ok;
   };
   let line = "";
+  /** Beside floats: the band of the line being filled, and where the next line may start. */
+  let place: { x: number; room: number; top: number } | undefined;
+  let nextTop = 0;
+  /** Find the band of a new line that starts with piece p (beside floats). */
+  const openLine = (p: string) => {
+    if (!opts.band || place) return;
+    const at = opts.band(nextTop, opts.lineH ?? 0, (room) => {
+      maxWidth = room;
+      return fits(p);
+    });
+    maxWidth = at.r - at.l;
+    place = { x: at.l, room: maxWidth, top: at.top };
+  };
+  const push = (l: Line) => {
+    if (opts.band) {
+      openLine("");
+      Object.assign(l, place);
+      nextTop = place!.top + (opts.lineH ?? 0);
+      place = undefined;
+    }
+    lines.push(l);
+  };
+  if (opts.band && lead) approximate ??= "a float at the start of the text beside other floats";
   /**
    * Start a new line with piece p. With overflow-wrap: anywhere, a piece too wide for a line of
    * its own is broken between characters. Returns the open last fragment when it did: Chromium
@@ -597,7 +636,9 @@ export function layoutText(
    * "mid-2024" breaks as "m", "id", "-2"...: a "-" that starts a line doesn't break before a digit).
    */
   const start = (p: string, mid: boolean): string | undefined => {
+    openLine(p);
     if (!opts.wrapAnywhere || fits(p)) return void (line = p);
+    if (opts.band) approximate ??= "a word breaks between characters beside a float";
     // Graphemes, with a soft hyphen kept with the character after it (Chromium never ends a
     // fragment on one). A fragment that starts inside the word counts the kerning to the character
     // that follows it (Chromium measures it as shaped with the rest of the word); one that starts
@@ -630,7 +671,7 @@ export function layoutText(
           approximate ??= "a word breaks between characters close to the line's width";
       }
       if (cur && !(fragW(cur + ch, k + 1) <= maxWidth + 1e-6)) {
-        lines.push({ text: cur, width: fragW(cur, k), at: consumed });
+        push({ text: cur, width: fragW(cur, k), at: consumed });
         consumed += [...cur].length;
         broke = true;
         cur = ch;
@@ -654,20 +695,21 @@ export function layoutText(
   let mid = false;
   for (let i = 0; i < queue.length; i++) {
     let p = queue[i];
+    if (!line) openLine(p);
     // A piece ending in a soft hyphen that can't fit a line of its own is broken between
     // characters together with the rest of its word.
     while (opts.wrapAnywhere && p.endsWith(SHY) && i + 1 < queue.length && !fits(p)) p += queue[++i];
     // A first piece that doesn't fit beside the float at the start goes below it, on a line of its
     // own (the float is as tall as one line).
     if (!line && lead && !fits(p)) {
-      lines.push({ text: "", width: lead, at: consumed });
+      push({ text: "", width: lead, at: consumed });
       lead = 0;
     }
     let open: string | undefined;
     if (!line) open = start(p, mid);
     else if (fits(line + p)) line += p;
     else {
-      lines.push({ text: trimSpaces(line), width: reported(line), at: consumed });
+      push({ text: trimSpaces(line), width: reported(line), at: consumed });
       consumed += [...line].length;
       lead = 0;
       open = start(p, mid);
@@ -678,7 +720,7 @@ export function layoutText(
       i = -1;
     }
   }
-  if (line || !lines.length) lines.push({ text: trimSpaces(line), width: reported(line), at: consumed });
+  if (line || !lines.length) push({ text: trimSpaces(line), width: reported(line), at: consumed });
   // Each line box: the strut and every inline box with content on the line (an empty one where it
   // stands), each placed by its vertical-align around the baseline.
   if (opts.strut && spans.some((sp) => sp.above !== undefined || sp.below !== undefined)) {
