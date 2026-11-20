@@ -66,6 +66,61 @@ describe("a box as wide as its content", () => {
   });
 });
 
+describe("CSS nesting", () => {
+  const r = run(
+    `<div class="card" data-fixture="card"><h2 class="title" data-fixture="title">Tides</h2><p class="lead" data-fixture="lead">Boats</p></div><div class="card wide" data-fixture="wide"><p>Nets</p></div>`,
+    `.card { padding: 12px; & .title { margin: 0; font-size: 20px } p { margin: 0 } > .lead { padding-left: 16px } &.wide { padding: 24px } @media (min-width: 700px) { padding: 20px; .title { font-size: 28px } } }`,
+    [400, 800],
+  );
+
+  it("applies nested rules, & and nested media queries", () => {
+    expect(r.box("title", 400).h).toBe(30);
+    expect(r.box("title", 800).h).toBe(42);
+    expect(r.box("lead", 400).x).toBe(12);
+    expect(r.box("card", 800).h).toBe(20 + 42 + 24 + 20);
+    expect(r.box("wide", 800).h).toBe(24 + 24 + 24);
+    for (const w of [400, 800]) expect(r.exact(w)).toBe(true);
+  });
+});
+
+describe("media queries", () => {
+  const r = run(
+    `<div class="a" data-fixture="a">Tides</div><div class="b" data-fixture="b">Nets</div><div class="d" data-fixture="d">Dawn</div>`,
+    `.a { padding: 4px } @media print, screen and (min-width: 700px) { .a { padding: 20px } } @media not all and (min-width: 700px) { .b { padding: 10px } } @media print { .d { padding: 30px } } @-moz-document url-prefix() { .d { padding: 40px } }`,
+    [699, 700],
+  );
+
+  it("read a list with print as its screen query, and not all and (min-width) as its other side", () => {
+    expect([r.box("a", 699).h, r.box("a", 700).h]).toEqual([32, 64]);
+    expect([r.box("b", 699).h, r.box("b", 700).h]).toEqual([44, 24]);
+    expect([r.box("d", 699).h, r.box("d", 700).h]).toEqual([24, 24]);
+    for (const w of [699, 700]) expect(r.exact(w)).toBe(true);
+  });
+});
+
+describe("logical properties", () => {
+  it("are read as their physical ones", () => {
+    const r = run(`<div class="a" data-fixture="a">Tides</div><div class="b" data-fixture="b">Nets</div>`, `div { box-sizing: border-box } .a { max-inline-size: 300px; margin-inline: auto } .b { inline-size: 50%; block-size: 40px; border-inline-start: 3px solid #333 }`);
+    expect([r.box("a").x, r.box("a").w]).toEqual([50, 300]);
+    expect([r.box("b").w, r.box("b").h]).toEqual([200, 40]);
+    expect(r.exact()).toBe(true);
+  });
+});
+
+describe("a flex item with a basis and no grow", () => {
+  it("is as wide as its basis, and shrinks by its factor in a full row", () => {
+    const r = run(
+      `<div class="row"><div class="s1" data-fixture="s1">alpha beta gamma</div><div class="s2" data-fixture="s2">delta epsilon</div><div class="s3" data-fixture="s3">zeta</div></div><div class="row"><div class="c" data-fixture="c">one</div></div>`,
+      `.row { display: flex } .s1 { flex: 0 1 300px } .s2 { flex: 0 1 250px; min-width: 0 } .s3 { flex-basis: 50%; width: 10px } .c { flex: 0 0 33.333%; padding: 0 4px; box-sizing: border-box }`,
+      [400, 1600],
+    );
+    expect([r.box("s1", 1600).w, r.box("s2", 1600).w, r.box("s3", 1600).w]).toEqual([300, 250, 800]);
+    expect(r.box("s1", 400).w + r.box("s2", 400).w + r.box("s3", 400).w).toBeCloseTo(400, 5);
+    expect(Math.round(r.box("c", 1600).w * 1000) / 1000).toBe(533.313);
+    for (const w of [400, 1600]) expect(r.exact(w)).toBe(true);
+  });
+});
+
 describe("markup quoted in an attribute", () => {
   it("isn't a <style> of the page (a wiki's template data)", () => {
     const r = run(`<div data-mw="{&quot;html&quot;:&quot;<style> h1 { color: red; } </style>&quot;}" data-fixture="d"><p class="p" data-fixture="p">Notes</p></div><!-- <style> .p { padding: 40px } </style> -->`, `.p { margin: 0 }`);

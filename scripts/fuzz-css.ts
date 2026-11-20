@@ -517,6 +517,8 @@ export function genCssCase(seed: number): CssCase {
     const items: string[] = [];
     for (let j = 0; j < many; j++) {
       const own = [...(kind === "wrap" ? [`width: ${r.pick(["30%", "45%", "100%", "120px"])}`] : []), ...(r.chance(0.3) ? [`padding: ${r.int(0, 6)}px`] : [])];
+      // A basis of its own, no grow (shrinking or not): as wide as the basis in a row.
+      if ((kind === "row" || kind === "wrap") && r.chance(0.35)) own.push(r.chance(0.5) ? `flex: 0 ${r.pick([0, 1, 2])} ${r.pick(["120px", "30%", "8rem", "45%", "200px"])}` : `flex-basis: ${r.pick(["90px", "25%", "10em"])}`, "box-sizing: border-box");
       let bp = "";
       if (r.chance(0.4)) {
         const o = r.pick(["-1", "1", "2", "5", "-2"]);
@@ -533,7 +535,10 @@ export function genCssCase(seed: number): CssCase {
         : ["position: absolute", `width: ${r.int(4, 20)}px`, `height: ${r.int(4, 20)}px`, ...(r.chance(0.5) ? [`margin: ${r.int(0, 4)}px`] : [])];
       items.splice(r.int(0, items.length), 0, `<span${attr(cls(abs))}>${abs.includes("overflow: hidden") ? words(r, 1, 2) : ""}</span>`);
     }
-    return `<div${attr(cls(d))}>${items.join("")}</div>`;
+    const dc = cls(d);
+    // CSS nesting: a nested rule for its first item, and a nested media query with bare declarations.
+    if (r.chance(0.3)) css.push(`.${dc} { & > :first-child { padding-top: ${r.int(0, 8)}px } @media (min-width: ${r.pick([500, 700, 900])}px) { padding-left: ${r.int(0, 12)}px; & > :last-child { margin-left: ${r.int(0, 6)}px } } }`);
+    return `<div${attr(dc)}>${items.join("")}</div>`;
   };
   const count = r.int(2, 5);
   for (let i = 0; i < count; i++) {

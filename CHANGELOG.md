@@ -60,6 +60,18 @@ now exact:
 - A box without offsets in a flexbox (a visually hidden label, `.visually-hidden`) sits where the
   sole item would, by `justify-content` and `align-items` (it was at the start, or `≈`); `clip`
   only paints.
+- CSS nesting (`&`, nested rules, and media queries nested in a rule with declarations of their
+  own), as Chromium reads it; it made every box of a page `≈` ("nested rules are not supported":
+  the Docusaurus site).
+- Media query lists with `print` (`@media print, screen and (min-width: 769px)`, Bulma's) are read
+  as their screen query, and `not all and (min-width: …)` (Tailwind's `max-lg:`) as the other side
+  of it. Another engine's at-rules (`@-moz-document`) and properties (`-ms-`, `-moz-`, `-o-`), and
+  `@starting-style`, are ignored as Chromium ignores them.
+- A flex item with a basis of its own and no grow (`flex: 0 1 300px`, `flex-basis: 140px`,
+  `flex: 0 0 33.333%`: Docusaurus's columns) is as wide as its basis and shrinks by its factor in a
+  full row (it was `≈`, "flex-basis has no Cadesa equivalent").
+- Logical sizes (`inline-size`, `block-size`, their `min-` and `max-`) and border shorthands
+  (`border-inline-start: 3px solid`) are read as their physical properties.
 - `grid-gap`, `grid-row-gap` and `grid-column-gap` are read as `gap`, `row-gap` and `column-gap`;
   `tab-size`, `text-autospace` and `text-spacing-trim` change nothing in the text Cadesa measures.
 

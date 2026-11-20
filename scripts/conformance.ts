@@ -51,6 +51,11 @@ const { values } = parseArgs({
      * box whose line count differs from Chromium's (counted from the text's line boxes).
      */
     strict: { type: "boolean", default: false },
+    /**
+     * A captured page (cadesa capture) may name fonts that never load (an icon font, a file that
+     * failed): say so once and compare anyway, instead of stopping.
+     */
+    "missing-fonts": { type: "boolean", default: false },
   },
 });
 const strict = values.strict!;
@@ -93,6 +98,7 @@ console.log(`tolerance: ±${tolerance}px\n`);
 
 // Font families the source sets text in; each must load in the fixture or the comparison is meaningless.
 const familiesOf = (model: Model) => [...new Set([...model.text.values()].filter((r) => r.font).map((r) => model.tokens.get(`font.${r.font!.name}`)!.raw.split(",")[0].trim().replace(/^["']|["']$/g, "")))];
+const missingFonts = new Set<string>();
 let checked = 0;
 let linesChecked = 0;
 let assumed = 0;
@@ -132,7 +138,8 @@ for (const layout of layouts) {
   for (const family of families) {
     // (A system font, with no @font-face of its own: nothing to load.)
     const ok = await page.evaluate(`(document.fonts.check(${JSON.stringify(`16px "${family}"`)}) || ![...document.fonts].some((f) => f.family.replace(/^["']|["']$/g, "") === ${JSON.stringify(family)})) && ![...document.fonts].some((f) => f.status === "error")`);
-    if (!ok) throw new Error(`font "${family}" did not load in ${fixtureFile}`);
+    if (!ok && !values["missing-fonts"]) throw new Error(`font "${family}" did not load in ${fixtureFile}`);
+    if (!ok && !missingFonts.has(family)) (missingFonts.add(family), console.log(`! font "${family}" did not load in ${fixtureFile}; compared anyway (--missing-fonts)`));
   }
   const rects = await measureBoxes(page);
   const lineCounts = strict ? await measureLineCounts(page) : {};

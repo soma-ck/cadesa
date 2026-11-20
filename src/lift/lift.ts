@@ -80,6 +80,8 @@ const COLORLESS =
   /^((-webkit-)?transition.*|cursor|counter-(reset|increment|set)|text-rendering|font-display|image-rendering|shape-rendering|(page-)?break-(before|after|inside)|orphans|widows|speak|backface-visibility|scrollbar-(width|color)|-webkit-text-stroke.*|text-underline-offset|text-underline-position|(-webkit-|-moz-|-ms-)?user-select|pointer-events|touch-action|will-change|resize|scroll-.*|overscroll-.*|caret-color|accent-color|outline.*|border(-top|-right|-bottom|-left)?-color|border(-top|-bottom)?(-left|-right)?-radius|border-(start|end)-(start|end)-radius|list-style.*|isolation|text-decoration.*|(-webkit-)?print-color-adjust|color-adjust|forced-color-adjust|-webkit-tap-highlight-color|(-webkit-|-moz-|-ms-)?text-size-adjust|-webkit-font-smoothing|-moz-osx-font-smoothing|-webkit-touch-callout|-webkit-overflow-scrolling|z-index|text-align|text-overflow|text-autospace|text-spacing-trim|(-moz-)?tab-size|text-anchor|dominant-baseline|paint-order|vector-effect|fill-(opacity|rule)|clip-rule|stop-(color|opacity)|flood-(color|opacity)|lighting-color|marker(-start|-mid|-end)?|color-interpolation(-filters)?)$/;
 
 export function kindOf(prop: string): ImpactKind {
+  // Another engine's prefixed property (-moz-, -ms-, -o-): Chromium drops it.
+  if (/^-(moz|ms|o)-/.test(prop)) return "none";
   if (COLORLESS.test(prop)) return "none";
   if (PAINT.test(prop)) return "paint";
   if (TEXT.test(prop)) return "text";

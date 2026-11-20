@@ -584,26 +584,49 @@ function readSheet(file: string, text: string, origin: Origin3, start: number, l
     const out: CssRuleIn["decls"] = [];
     r.each((n) => {
       if (n.type === "decl") out.push({ prop: n.prop.startsWith("--") ? n.prop : n.prop.toLowerCase(), value: cssValue(n.value), important: n.important });
-      else if (n.type === "rule") skipped.push({ file, line: (n.source?.start?.line ?? 0) + lineOffset, text: n.selector, reason: "nested rules are not supported" });
     });
     return out;
   };
-  const visit = (n: ChildNode, media: MediaInfo[]) => {
+  const push = (sels: string[], decls: CssRuleIn["decls"], media: MediaInfo[], line: number) => {
+    for (const sel of sels) {
+      const complex = parseSelector(sel);
+      rules.push({ selector: sel, complex, spec: complex ? specificityOf(complex) : [0, 0, 0], decls, media, order: order++, line: line + lineOffset, file, origin });
+    }
+  };
+  /**
+   * A nested rule's selector (CSS nesting): & is the parent's selectors, as :is() of them (with
+   * their specificity); without one it is a descendant of them (or a child, sibling... of them
+   * when it starts with a combinator).
+   */
+  const nest = (sel: string, parent: string) => (sel.includes("&") ? sel.replaceAll("&", `:is(${parent})`) : `:is(${parent}) ${sel}`);
+  const visit = (n: ChildNode, media: MediaInfo[], parent?: string) => {
     if (n.type === "rule") {
       const r = n as Rule;
+      const sels = splitList(r.selector).map((s) => (parent === undefined ? s : nest(s, parent)));
       const decls = declsOf(r);
-      if (!decls.length) return;
-      for (const sel of splitList(r.selector)) {
-        const complex = parseSelector(sel);
-        rules.push({ selector: sel, complex, spec: complex ? specificityOf(complex) : [0, 0, 0], decls, media, order: order++, line: (r.source?.start?.line ?? 0) + lineOffset, file, origin });
-      }
+      // Its own declarations first, then its nested rules in order.
+      if (decls.length) push(sels, decls, media, r.source?.start?.line ?? 0);
+      r.each((c) => void ((c.type === "rule" || c.type === "atrule") && visit(c, media, sels.join(", "))));
     } else if (n.type === "atrule") {
       const a = n as AtRule;
       const name = a.name.toLowerCase();
       const line = (a.source?.start?.line ?? 0) + lineOffset;
-      if (name === "media") a.each((c) => visit(c, [...media, parseMediaQuery(a.params)]));
+      // Nested in a style rule, its bare declarations are the parent's under this condition.
+      const bare = (m: MediaInfo[]) => {
+        if (parent === undefined) return;
+        const decls = declsOf(a);
+        if (decls.length) push(splitList(parent), decls, m, a.source?.start?.line ?? 0);
+      };
+      if (name === "media") {
+        const m = [...media, parseMediaQuery(a.params)];
+        bare(m);
+        a.each((c) => void (c.type !== "decl" && visit(c, m, parent)));
+      }
       // @supports: modern features hold in Chromium. @layer: read in source order (layer order is not modelled).
-      else if (name === "supports" || name === "layer") a.each((c) => visit(c, media));
+      else if (name === "supports" || name === "layer") {
+        bare(media);
+        a.each((c) => void (c.type !== "decl" && visit(c, media, parent)));
+      }
       else if (name === "font-face") {
         const get = (prop: string) => a.nodes?.find((d): d is import("postcss").Declaration => d.type === "decl" && d.prop.toLowerCase() === prop)?.value.trim();
         const family = get("font-family")?.replace(/^["']|["']$/g, "");
@@ -620,6 +643,9 @@ function readSheet(file: string, text: string, origin: Origin3, start: number, l
         });
         keyframes.push({ name: a.params.trim().replace(/^["']|["']$/g, ""), blocks });
       } else if (name === "import") skipped.push({ file, line, text: `@import ${a.params}`, reason: "@import is not followed; lift the imported file too" });
+      // Another engine's at-rules (@-moz-document), and @starting-style (only where a transition
+      // starts, never in the page as it settles), are never applied: no rule of theirs is.
+      else if (/^-(moz|ms|o)-|^starting-style$/.test(name)) return;
       else if (!/^(font-face|keyframes|-webkit-keyframes|charset|namespace|property|page|counter-style|font-feature-values)$/.test(name))
         skipped.push({ file, line, text: `@${a.name} ${a.params}`.trim(), reason: `@${a.name} is not modelled` });
     }

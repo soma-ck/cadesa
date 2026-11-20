@@ -92,6 +92,21 @@ const toPx = (v: string) => {
 export function parseMediaQuery(raw: string): MediaInfo {
   const q = raw.trim();
   const out: MediaInfo = { raw: q, widths: [], env: true };
+  // A list: the queries that can hold on a screen (print never does); one of them is that one.
+  if (/,/.test(q) && !/\([^)]*,/.test(q)) {
+    const live = q.split(",").map((x) => parseMediaQuery(x)).filter((m) => m.env !== false);
+    if (!live.length) return { ...out, env: false };
+    if (live.length === 1) return { ...live[0], raw: q };
+    return { ...out, env: { unknown: `@media ${q}` } };
+  }
+  // not all and (one width condition): the other side of it (Tailwind's max-* variants).
+  const neg = /^not\s+all\s+and\s+(\([^()]*\))$/i.exec(q);
+  if (neg) {
+    const m = parseMediaQuery(neg[1]);
+    const w = m.widths[0];
+    if (m.env === true && m.widths.length === 1 && !m.heights?.length && !m.dark)
+      return { ...out, widths: [w.op === "ge" ? { op: "lt", px: w.px, raw: w.raw } : { op: "ge", px: w.px, raw: w.raw }] };
+  }
   if (/,/.test(q) || /^not\b/.test(q)) return { ...out, env: { unknown: `@media ${q}` } };
   const parts = q.split(/\s+and\s+/i);
   for (const p0 of parts) {

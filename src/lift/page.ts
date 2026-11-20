@@ -279,6 +279,9 @@ export function longhands(prop: string, value: string): [string, string][] {
   };
   let m = /^(padding|margin)$/.exec(prop);
   if (m) return boxSides(value).map((v, i) => [`${prop}-${SIDES[i]}`, v]);
+  // Logical sizes: inline-size is the width, block-size the height (and their min- and max-).
+  m = /^(min-|max-)?(inline|block)-size$/.exec(prop);
+  if (m) return [[`${m[1] ?? ""}${m[2] === "inline" ? "width" : "height"}`, value]];
   m = /^(padding|margin|inset|scroll-margin|scroll-padding)-(inline|block|inline-start|inline-end|block-start|block-end)$/.exec(prop);
   if (m) {
     const sides = logical[m[2]];
@@ -290,6 +293,8 @@ export function longhands(prop: string, value: string): [string, string][] {
   if (m) return boxSides(value).map((v, i) => [`border-${SIDES[i]}-${m![1]}`, v]);
   m = /^border-(inline|block|inline-start|inline-end|block-start|block-end)-(width|style|color)$/.exec(prop);
   if (m) return logical[m[1]].map((s) => [`border-${s}-${m![2]}`, value]);
+  m = /^border-(inline|block|inline-start|inline-end|block-start|block-end)$/.exec(prop);
+  if (m) return logical[m[1]].flatMap((s) => longhands(`border-${s}`, value));
   m = /^border(?:-(top|right|bottom|left))?$/.exec(prop);
   if (m) {
     const sides = m[1] ? [m[1]] : [...SIDES];
@@ -3951,9 +3956,20 @@ export abstract class PageLifter {
         const basisRaw = own.get("flex-basis") ?? (fl ? own.get("flex") : undefined);
         const basis = own.get("flex-basis") ? this.resolveBox(el, si, own.get("flex-basis")!.value) : fl?.basis !== undefined && /\d/.test(fl.basis) ? (/\dem\b/.test(fl.basis) ? `${fmtNum(parseFloat(fl.basis) * this.textOf(el, si).size)}px` : fl.basis) : undefined;
         const px = basis !== undefined ? lengthExpr(this.mathValue(el, si, "flex-basis", basis, basisRaw?.utility ?? "flex")) : undefined;
+        // (A percentage of the row's width, which is definite there.)
+        const pct = basis !== undefined && /^\d*\.?\d+%$/.test(basis.trim()) ? basis.trim() : undefined;
+        const capped = ["min-width", "max-width"].some((p) => !/^(auto|none|0|0px)?$/.test(res(p) ?? ""));
         if (grow === 0 && shrink === 0 && px && !/^0(px)?$/.test(px.css)) {
           for (const p of ["flex", "flex-grow", "flex-shrink", "flex-basis"]) out.delete(p);
           decl("width", px.css, `${basisRaw?.utility ?? "flex"} (flex: 0 0 ${basis}: as wide as its basis)`);
+          el.noShrink[si] = undefined;
+        } else if (grow === 0 && isFinite(shrink) && shrink >= 0 && (px || pct) && !/^0(px|%)?$/.test(pct ?? px!.css) && !capped) {
+          // A basis that isn't 0 or auto, no grow: as wide as the basis (which beats a width), and it
+          // gives way in a full row by its shrink factor (Cadesa's width with shrink).
+          for (const p of ["flex", "flex-grow", "flex-shrink", "flex-basis"]) out.delete(p);
+          decl("width", pct ?? px!.css, `${basisRaw?.utility ?? "flex"} (flex-basis ${basis}: as wide as its basis)`);
+          if (shrink === 0) out.delete("row-shrink");
+          else decl("row-shrink", String(shrink), `${basisRaw?.utility ?? "flex"} (flex-shrink: ${shrink}, with a basis)`);
           el.noShrink[si] = undefined;
         }
       }

@@ -10,6 +10,10 @@
  *   that center or end-align their items: each sits where the sole item would; in a grid that
  *   isn't its containing block, at its content box's corner;
  * - legacy grid-gap, and tab-size and text-autospace (no effect on this text);
+ * - CSS nesting (& and nested media queries with bare declarations), media query lists with
+ *   print, `not all and (min-width)`, and another engine's properties and at-rules (ignored);
+ * - logical sizes and border shorthands (max-inline-size, min-block-size, border-inline-start);
+ * - flex items with a basis of their own and no grow (px, em, a percentage; shrinking or not);
  * - flex and grid items placed by order, set at a breakpoint (mobile first) and on every width;
  * - a placeholder svg with SVG-only properties (text-anchor), which only paint inside it;
  * - a chevron ::before with line-height: 0 and an image as its content (left ≈);
@@ -337,4 +341,107 @@ svg {
 
 .halo-text {
   margin: 0;
+}
+
+.notes {
+  max-inline-size: 960px;
+  margin-inline: auto;
+  padding: 12px;
+  border: 1px solid #d1d5db;
+
+  & .notes-title {
+    margin: 0 0 8px;
+    font-size: 20px;
+  }
+
+  p {
+    margin: 0;
+  }
+
+  > .notes-lead {
+    padding-left: 16px;
+  }
+
+  &.notes-wide {
+    padding: 24px;
+  }
+
+  @media (min-width: 700px) {
+    padding: 20px;
+
+    .notes-title {
+      font-size: 28px;
+    }
+  }
+}
+
+.shelf {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 4px 12px;
+  -ms-touch-action: manipulation;
+}
+
+.shelf-tag {
+  min-block-size: 36px;
+  padding: 4px 8px;
+  border: 1px solid #6b7280;
+  border-inline-start: 3px solid #4c1d95;
+  -moz-box-sizing: content-box;
+}
+
+@media print, screen and (min-width: 900px) {
+  .shelf {
+    padding: 12px 24px;
+  }
+}
+
+@media not all and (min-width: 600px) {
+  .shelf-tag {
+    padding: 2px 6px;
+  }
+}
+
+@media print {
+  .shelf {
+    display: block;
+  }
+}
+
+@-moz-document url-prefix() {
+  .shelf {
+    padding: 40px;
+  }
+}
+
+.bases {
+  display: flex;
+  gap: 8px;
+  padding: 4px 12px;
+}
+
+.bases-title {
+  flex-basis: 140px;
+  margin: 0;
+  font-size: 20px;
+}
+
+.bases-note {
+  flex: 0 1 10em;
+}
+
+.bases-wide {
+  flex: 0 1 300px;
+  min-width: 0;
+}
+
+.bases-cols {
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.bases-col {
+  flex: 0 0 33.333%;
+  padding: 0 4px;
 }
