@@ -18,6 +18,13 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- Fixed: `capture` and `check --verify` hung on a page with a lazy-loaded image below the fold
+  (`loading="lazy"`: Wikipedia, the Tailwind home page). Chromium never loads such an image, so
+  waiting for it to decode never ended; it is now loaded (its attribute is kept), and no image is
+  waited for longer than 10s.
+
 ## 0.1.24 (2026-11-20)
 
 - Fixed: with classic scrollbars (`--scrollbars classic`, `CADESA_SCROLLBARS=classic`) a scroll

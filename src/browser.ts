@@ -76,7 +76,15 @@ export async function serveFiles(root: string, overrides = new Map<string, strin
  */
 export async function settle(page: Page): Promise<void> {
   await page.evaluate("document.fonts.ready");
-  await page.evaluate("Promise.all([...document.images].map((i) => i.decode().catch(() => {})))");
+  // A lazy image below the fold never loads, and its decode() never settles: it is loaded now (its
+  // attribute is put back once it has), and no image is waited for longer than 10s.
+  await page.evaluate(`Promise.all([...document.images].map((i) => {
+    const lazy = i.getAttribute("loading");
+    if (lazy !== null && !i.complete) i.loading = "eager";
+    return Promise.race([i.decode().catch(() => {}), new Promise((r) => setTimeout(r, 10000))]).then(() => {
+      if (lazy !== null && i.getAttribute("loading") !== lazy) i.setAttribute("loading", lazy);
+    });
+  }))`);
   // Laid out again from scratch: a native select laid out before its web font loaded keeps the
   // baseline it had then (Chromium doesn't recompute it when the font arrives), so its place would
   // depend on when the font loaded. After a full relayout it is where it is when the font loads
