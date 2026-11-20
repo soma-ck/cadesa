@@ -60,6 +60,11 @@ export interface Box {
   /** Px this box's content extends past its fixed height. */
   overflowY?: number;
   assumptions: string[];
+  /**
+   * Laid out in a block formatting context after floats: where it goes decides how its lines (and
+   * those of what is in it) wrap beside them, so its size is known only where its place is.
+   */
+  afterFloats?: boolean;
   children: Box[];
   /** A run of text the browser wraps in an anonymous box: laid out, but not an element (no DOM box to compare). */
   anonymous?: boolean;
@@ -434,7 +439,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         const at = ctx.ex.place(p.float.value, m.left + b.w + m.right, m.top + b.h + m.bottom, from, L, R);
         b.x = at.x - ctx.x + m.left;
         b.y = at.y - ctx.y + m.top;
-        if (m.autoLeft || m.autoRight || p.maxWidth) b.assumptions.push("a float with auto margins isn't modelled");
+        // (A float's auto margins are 0, CSS 2.1 §10.3.5: it goes to its side whatever they are.)
         collapse.set(b, { top: NONE, bottom: NONE, empty: true, at: NONE });
         floated.add(b);
         boxes.push(b);
@@ -480,6 +485,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         b ??= measure(k.node, k.comp, k.slot, cell, kind);
         b.x = x;
         b.y = Y - ctx.y;
+        if (ctx.ex.floats.length) b.afterFloats = true;
         if (first && b.y > EPS) b.assumptions.push("the first box of a block whose top margin collapses with it, moved down by floats (or clearance), isn't modelled");
         if (Math.abs(b.x - offsetX(b, cell, true)) > EPS && (m0.autoLeft || m0.autoRight || p.maxWidth)) b.assumptions.push("a box beside floats with auto margins isn't modelled");
         if (first) top = join(pending, collapse.get(b)!.top);
@@ -508,6 +514,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       }
       b.x = x;
       b.y = y;
+      if (ctx.ex.floats.length) b.afterFloats = true;
       boxes.push(b);
       if (cleared && first && (c.top.pos !== 0 || c.top.neg !== 0)) b.assumptions.push("clearance on the first box of a block whose top margin collapses with it isn't modelled");
       if (c.empty && !cleared) {
@@ -1876,7 +1883,6 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
         for (const b of fboxes) {
           floated.add(b);
           collapse.set(b, { top: NONE, bottom: NONE, empty: true, at: NONE });
-          if (marginOf(b.props).autoLeft || marginOf(b.props).autoRight) b.assumptions.push("a float with auto margins isn't modelled");
         }
         children.push(...fboxes);
         const inlineFloat = (index: number) => {

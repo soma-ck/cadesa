@@ -86,6 +86,19 @@
           <p class="boxed-text">A box that hides its overflow holds its float.</p>
         </div>
       </section>
+      <section class="edges">
+        <div class="auto-float">Auto</div>
+        <div class="capped-float">Capped at a max width</div>
+        <p class="edge-text">Two floats whose margins are auto, one capped by a maximum width, sit at their sides as if those margins were zero, with these words beside them.</p>
+        <div class="clear-wrap">
+          <div class="clear-first">The first box of its block clears the floats above, and its top margin would have collapsed with its parent's.</div>
+        </div>
+        <div class="tall-float"></div>
+        <p class="edge-text">Beside a float, a line with <span class="big-run">larger words</span> in it is taller than the others, and the lines after it keep to the room the float leaves.</p>
+        <p class="edge-text">Beside it too, chips <span class="chip">first</span> and <span class="chip">second</span> share lines with the words around them and wrap with them.</p>
+        <p class="edge-text">A link <a class="edge-link" href="#">holding <span class="link-float">a float</span> of its own</a> carries on after it, and so does the line.</p>
+        <p class="edge-text">Some words then half<span class="word-float"></span>way through one a float is set, and the text carries on.</p>
+      </section>
     </main>
   </body>
 </html>

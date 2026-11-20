@@ -91,3 +91,17 @@ describe("floats in block flow", () => {
     expect(r.exact()).toBe(true);
   });
 });
+
+describe("floats with auto margins", () => {
+  // CSS 2.1 §10.3.5: a float's auto margins are 0; it goes to its side (as Chromium places it).
+  const r = run(
+    `<main><div class="a">A</div><div class="b">B</div><p class="t">Words beside both floats.</p></main>`,
+    `main { width: 300px } p { margin: 0 } .a { float: left; width: 72px; height: 40px; margin: 0 auto } .b { float: right; width: 100%; max-width: 140px; margin-inline: auto; height: 30px }`,
+  );
+  it("sits at its side, as if they were zero", () => {
+    expect(geo(r.box("a"))).toEqual([0, 0, 72, 40]);
+    expect(geo(r.box("b"))).toEqual([160, 0, 140, 30]);
+    expect(r.approx("a")).toBeUndefined();
+    expect(r.approx("b")).toBeUndefined();
+  });
+});

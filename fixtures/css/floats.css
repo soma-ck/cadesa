@@ -300,3 +300,76 @@ p {
   margin: 4px 8px 0 0;
   background: #9fb3c8;
 }
+
+/* Edge cases: floats with auto margins, clearance on a first child, lines beside a float with a
+   taller run or inline-blocks on them, a float inside a link and one inside a word. */
+.edges {
+  margin-top: 16px;
+  border-top: 1px solid #e4e7eb;
+}
+
+.auto-float {
+  float: left;
+  width: 72px;
+  height: 40px;
+  margin: 0 auto;
+  background: #d9e2ec;
+}
+
+.capped-float {
+  float: right;
+  width: 100%;
+  max-width: 140px;
+  margin-inline: auto;
+  padding: 4px;
+  background: #e4e7eb;
+}
+
+.edge-text {
+  margin: 0 0 8px;
+}
+
+.clear-wrap {
+  margin-top: 0;
+}
+
+.clear-first {
+  clear: both;
+  margin-top: 20px;
+  padding: 4px;
+  background: #f0f4f8;
+}
+
+.tall-float {
+  float: left;
+  width: 90px;
+  height: 120px;
+  margin: 0 12px 4px 0;
+  background: #bcccdc;
+}
+
+.big-run {
+  font-size: 26px;
+}
+
+.chip {
+  display: inline-block;
+  padding: 2px 8px;
+  border: 1px solid #9fb3c8;
+  border-radius: 10px;
+  font-size: 14px;
+}
+
+.link-float {
+  float: right;
+  width: 64px;
+  height: 30px;
+  background: #d9e2ec;
+}
+
+.word-float {
+  float: right;
+  width: 40px;
+  height: 24px;
+  background: #9fb3c8;
+}

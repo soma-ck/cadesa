@@ -168,6 +168,10 @@ export function sizeUncertainty(l: Layout, imp?: WidthImpact): { width: Set<stri
   const own = new Set<string>();
   for (const u of imp?.uncertain ?? []) if (u.reasons.some((r) => !PROPAGATED.test(r))) own.add(u.id);
   for (const b of walk(l.boxes)) if (b.assumptions.some((a) => !PROPAGATED.test(a))) own.add(b.id);
+  // Lines beside floats: where a box is moved to decides how its lines wrap there, so one whose
+  // place isn't known doesn't know its size either.
+  const moved = new Set((imp?.uncertain ?? []).map((u) => u.id));
+  for (const b of walk(l.boxes)) if ((moved.has(b.id) || b.assumptions.length) && (b.afterFloats || b.lines?.some((x) => x.room !== undefined))) own.add(b.id);
   // A box the engine reports an error on (content it can't measure, an unsupported margin) isn't known either.
   for (const i of l.issues) if (i.severity === "error") own.add(i.id);
   const inside = new Map<Box, boolean>();
