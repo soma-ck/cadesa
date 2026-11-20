@@ -343,7 +343,7 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 | `maxWidth` | size token | a centered column (`max-width` + `margin-inline: auto`), e.g. content inside a full-bleed band |
 | `measure` | size token | a left-aligned `max-width`: a comfortable line length |
 | `aspect` | `"16:9"` | `aspect-ratio`: the height follows the width |
-| `text` | text role | font family, size, weight, line height, color; optional `letterSpacing` (em), `transform: uppercase`, `style: italic`, `decoration`, `wrap: anywhere` (long words break) |
+| `text` | text role | font family, size, weight, line height, color; optional `letterSpacing` (em), `transform: uppercase`, `style: italic`, `decoration`, `wrap: anywhere` (long words break), `breaks: all` or `anywhere` (lines break inside any word: `word-break: break-all`, `line-break: anywhere`) |
 | `overflow` | `hidden`, `clip`, `auto`, `scroll`, or `{ x, y }` | `overflow-x` / `overflow-y`: what doesn't fit scrolls or is cut off. Anything but `clip` also keeps the children's margins inside and lets the box shrink below its content in a cluster |
 | `contain` | `"layout paint"`, `content`, `strict`, `size`, `inline-size`, `none` | `contain`: layout or paint keeps the children's margins inside and places absolute and fixed children in the box; size sizes it as if empty |
 | `textAlign` | `start`, `center`, `end` | `text-align` (fixed-height text is also centered vertically) |
@@ -360,8 +360,8 @@ Write it the way you would anyway: `version` is optional, names can be kebab-cas
 ## Roadmap
 
 - **Inline layout beyond one box per line:** the rectangle of an inline span (its lines are exact; its own content-area box is `≈`), a run aligned `middle` (or `text-top`, `text-bottom`) whose content reaches past its strut and that splits across lines, and inline-blocks holding more than lines of inline text (flex rows, tables other than KaTeX's stacks). Runs in another size, font or vertical-align, atomic inlines of set size, inline-blocks of lines or of blocks of lines, and KaTeX's superscripts, subscripts, fractions and roots are measured.
-- **Floats:** lines beside a float that hold inline boxes taller than the line or inline-blocks, and a float inside a word.
-- **Text:** `word-break: break-all`; a handwriting font's text that wraps (one line of it is exact once `cadesa fonts --measure` has laid it out).
+- **Floats:** a float inside a word or inside an inline box (lines beside a float holding taller runs and inline-blocks are exact).
+- **Text:** a handwriting font's text that wraps or holds inline elements (one line of it is exact once `cadesa fonts --measure` has laid it out); a line of `break-all` text with inline boxes of its own; a mid-word line start that fits only within a layout unit.
 - **Form controls:** a date input's inner parts styled beyond paint.
 - **More of Tailwind:** `dark:` and container queries.
 

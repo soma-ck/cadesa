@@ -18,6 +18,52 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- Flex items with a width that shrink are exact. A new property, `shrink`, sets a cluster item's
+  flex-shrink: an item with a width that still gives way when its row is too full (down to its
+  automatic minimum: its content's min-content width, at most its width), or one without a width
+  that doesn't (`shrink: 0`). The lift maps `flex-shrink` in a flex row to it where it differs from
+  the default. `fixtures/css/shrink.html` covers it in `conformance:css`.
+- An element with `display: table` that holds only text (a tag, a note) is laid out: one anonymous
+  row and cell around its text, as wide as a fit-content block in block flow and as an auto-width
+  block in a flex or grid container (probed), as tall as its lines. It was one box of unknown size.
+- Badges on lines of text are exact: an `inline-grid` or `inline-flex` box holding one line of its
+  own text (a digit centered in a circle of set size, or a pill as wide as its word) is one object
+  on its line, its baseline its item's first baseline, the item as tall as its line and placed by
+  `align-items` in layout units (a grid's row never shorter than its item, a flex line the
+  container's height). Baseline alignment inside a badge stays `≈`. `fixtures/css/badges.html`
+  covers badges and tables of text.
+- Animations that move or resize boxes are laid out at their start: keyframes that set `top`,
+  `left`, a width, margins, padding or other layout properties give the box their starting values
+  where the animation runs from t=0 or fills backwards, as Chromium draws it there.
+- Lines beside a float that hold inline boxes taller than the line (larger runs, raised words,
+  inline-blocks) are exact. Each line is as tall as its line box, and the band it is placed in must
+  hold it: as in LayoutNG, which lays a line out in a layout opportunity and moves on to the next one
+  when the line box is taller than it, a line found taller than its band is laid out again in the
+  band for its height. A float inside an inline box is flagged on its own.
+- `word-break: break-all` and `line-break: anywhere` are exact (`breaks: all | anywhere` in a text
+  role): their break opportunities come from tables measured in Chromium by `npm run breaks`, a
+  line that ends inside a word fits as Chromium's shaping line breaker decides (the rule found for
+  `overflow-wrap: anywhere`), a ligature is never broken, and the min-content width counts each
+  piece from where it starts in the text's shaping to where the next character starts, each rounded
+  up to a layout unit. `word-break: keep-all` breaks the measured characters as ordinary text does
+  (measured) and is lifted as such. Still `≈`: such a line with inline boxes or letter-spacing of
+  its own, a line starting inside a word that fits only within a layout unit, and "ffi" or "ffl" in
+  a font with ligatures. `fixtures/css/breaks.html` covers them.
+- Inter's contextual "x" between digits ("3x4", "2 x 6") is measured as the multiplication sign
+  Chromium draws (probed at weights 100 to 900; not after a lone 0, a hex prefix). It was `≈`.
+- `cadesa fonts` counts only text that is laid out: a positioned copy kept out of the way inside an
+  inline-block (KaTeX's MathML) no longer asks for a font to be measured again.
+- Fixed: an empty inline box (or one whose only space collapsed) where a line breaks stays on the
+  line before the break, as in Chromium (a box aligned to the middle made the next line taller);
+  a subgrid's own `column-gap: 0` was dropped, so it took its parent's gap; a box that makes a
+  formatting context of its own beside floats reaching past its container's end is placed in the
+  room there, as wide as nothing.
+- `fuzz-css` generates badges, flex items that shrink, tables of text, animated layout properties,
+  runs and atomic inlines on lines beside floats, and `break-all`, `anywhere` and `keep-all` text;
+  the source fuzzer generates `shrink`.
+
 ## 0.1.22 (2026-11-20)
 
 - Math set by KaTeX is exact with superscripts, subscripts, fractions and roots: KaTeX's vlist
