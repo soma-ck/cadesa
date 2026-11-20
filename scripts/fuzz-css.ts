@@ -68,11 +68,14 @@ export function genCssCase(seed: number): CssCase {
     "@keyframes kf-grow { 0%, 20% { transform: scale(0.8) rotate(4deg) } }",
     "@keyframes kf-drift { to { transform: translateX(30px) } }",
     "@keyframes kf-fade { 50% { opacity: 0.3 } }",
+    // Layout properties: the box is laid out with the starting keyframe's values.
+    "@keyframes kf-open { from { padding-left: 14px; margin-top: 6px } to { padding-left: 0; margin-top: 0 } }",
+    "@keyframes kf-narrow { 0%, 30% { width: 60%; letter-spacing: 1px } }",
   ];
   /** An animation: maybe delayed, filled, reversed, paused or two at once. */
   const animation = () => {
     const one = () =>
-      [r.pick(["kf-rise", "kf-slide", "kf-grow", "kf-drift", "kf-fade"]), `${r.pick(["0.3", "0.5", "1", "2"])}s`, ...(r.chance(0.4) ? [`${r.pick(["0", "0.2", "0.5"])}s`] : []), ...(r.chance(0.5) ? [r.pick(["both", "backwards", "forwards", "none"])] : []), ...(r.chance(0.2) ? [r.pick(["reverse", "alternate", "alternate-reverse"])] : []), ...(r.chance(0.2) ? [r.pick(["infinite", "2"])] : []), ...(r.chance(0.1) ? ["paused"] : []), ...(r.chance(0.3) ? [r.pick(["linear", "ease-out", "step-end", "cubic-bezier(0.2, 0.7, 0.2, 1)"])] : [])].join(" ");
+      [r.pick(["kf-rise", "kf-slide", "kf-grow", "kf-drift", "kf-fade", "kf-open", "kf-narrow"]), `${r.pick(["0.3", "0.5", "1", "2"])}s`, ...(r.chance(0.4) ? [`${r.pick(["0", "0.2", "0.5"])}s`] : []), ...(r.chance(0.5) ? [r.pick(["both", "backwards", "forwards", "none"])] : []), ...(r.chance(0.2) ? [r.pick(["reverse", "alternate", "alternate-reverse"])] : []), ...(r.chance(0.2) ? [r.pick(["infinite", "2"])] : []), ...(r.chance(0.1) ? ["paused"] : []), ...(r.chance(0.3) ? [r.pick(["linear", "ease-out", "step-end", "cubic-bezier(0.2, 0.7, 0.2, 1)"])] : [])].join(" ");
     return `animation: ${r.chance(0.2) ? `${one()}, ${one()}` : one()}`;
   };
   // A root font size other than 16px (maybe changed by a media query): rem lengths resolve against it.
@@ -83,7 +86,8 @@ export function genCssCase(seed: number): CssCase {
     css.push(`body { font-size: ${r.pick(["1rem", "1.4rem", "1.6rem", "0.875rem"])} }`, `p { margin-bottom: ${r.pick(["0.5rem", "1rem", "calc(0.25rem + 2px)"])} }`);
   }
   let n = 0;
-  const cls = (decls: string[]) => {
+  const cls = (all: string[]) => {
+    const decls = all.filter(Boolean);
     if (!decls.length) return "";
     const c = `k${++n}`;
     css.push(`.${c} { ${decls.join("; ")} }`);
@@ -161,6 +165,23 @@ export function genCssCase(seed: number): CssCase {
   /** An atomic inline: an inline-block of set size, or an image-like box, placed by its vertical-align. */
   const atomic = () => {
     if (r.chance(0.15)) return math();
+    // A badge: an inline-grid or inline-flex box holding a character or a word, of set size or sized by it.
+    if (r.chance(0.15)) {
+      const d = [`display: ${r.pick(["inline-grid", "inline-flex"])}`, "background: #dde"];
+      if (r.chance(0.7)) d.push(`align-items: ${r.pick(["center", "center", "start", "end", "stretch", "flex-start", "flex-end"])}`);
+      if (r.chance(0.4)) d.push("justify-content: center");
+      if (r.chance(0.7)) {
+        const s = r.pick(["18px", "20px", "25px", "1.3em", "28px"]);
+        d.push(`width: ${s}`, `height: ${r.chance(0.8) ? s : r.pick(["16px", "30px", "1em"])}`);
+      } else if (r.chance(0.5)) d.push(`height: ${r.int(14, 30)}px`, `padding: 0 ${r.int(0, 8)}px`);
+      if (r.chance(0.5)) d.push("box-sizing: border-box");
+      if (r.chance(0.3)) d.push(`border: ${r.int(1, 2)}px solid #889`);
+      if (r.chance(0.6)) d.push(`font-size: ${r.pick(["11px", "12px", "13px", "0.55em", "16px"])}`);
+      if (r.chance(0.6)) d.push(`line-height: ${r.pick(["1", "1.2", "16px", "normal"])}`);
+      if (r.chance(0.3)) d.push("font-weight: 700");
+      if (r.chance(0.25)) d.push(`vertical-align: ${r.pick(["middle", "-2px", "3px"])}`);
+      return `<b${attr(cls(d))}>${r.pick(["1", "7", "A", "x", "12", "ok", "May"])}</b>`;
+    }
     // An inline-block with content of its own: one line, or lines broken by <br>s with runs in them,
     // padded and bordered, maybe of set height.
     if (r.chance(0.4)) {
@@ -227,6 +248,22 @@ export function genCssCase(seed: number): CssCase {
     return `<div${attr(g)}>${items.join("")}</div>`;
   };
   /** Inline-blocks sharing their lines with each other: tiles of one or more lines (<br>s). */
+  /** Elements with display: table that hold only text (tags, notes), in block flow, a flex row or a flex column. */
+  const textTables = () => {
+    const t = () => {
+      const d = ["display: table", `padding: ${r.int(0, 8)}px ${r.int(0, 10)}px`, "background: #eef"];
+      if (r.chance(0.4)) d.push(`margin-top: ${r.int(0, 18)}px`);
+      if (r.chance(0.3)) d.push(`border: ${r.int(1, 3)}px solid #889`);
+      if (r.chance(0.5)) d.push(`font-size: ${r.pick(["12px", "12.5px", "13px", "15px"])}`);
+      if (r.chance(0.4)) d.push(`line-height: ${r.pick(["1.4", "1", "normal", "20px"])}`);
+      if (r.chance(0.3)) d.push("font-weight: 700");
+      return `<small${attr(cls(d))}>${words(r, 1, r.chance(0.3) ? 14 : 3)}</small>`;
+    };
+    const parent = r.pick(["", "", "display: flex; gap: 6px", "display: flex; flex-direction: column; align-items: flex-start", "display: grid"]);
+    const d = parent ? parent.split("; ") : [];
+    if (r.chance(0.3)) d.push(`width: ${r.int(120, 400)}px`);
+    return `<div${attr(cls(d))}>${Array.from({ length: r.int(1, 3) }, t).join("")}</div>`;
+  };
   const tiles = () => {
     const d = ["display: inline-block", `width: ${r.int(60, 220)}px`, `padding: ${r.int(0, 8)}px`, "border: 1px solid #ccc"];
     if (r.chance(0.4)) d.push(`font-size: ${r.pick(["13px", "14px", "18px"])}`);
@@ -254,6 +291,9 @@ export function genCssCase(seed: number): CssCase {
       if (r.chance(0.2)) d.push(`margin-top: ${r.int(0, 10)}px`);
       if (r.chance(0.15)) d.push(`border-top: ${r.int(1, 4)}px solid #999`);
       if (r.chance(0.15)) d.push(`width: ${r.int(40, 200)}px`);
+      // A width that still shrinks in a full row (or doesn't), or no width and no shrinking.
+      if (r.chance(0.2)) d.push(r.chance(0.6) ? `width: ${r.pick([`${r.int(80, 400)}px`, `${r.int(20, 70)}%`])}` : "", `flex-shrink: ${r.pick(["1", "2", "0", "0.5"])}`);
+      if (r.chance(0.1)) d.push("overflow: hidden");
       const kind = r.pick(["text", "text", "text", "runs", "nested", "empty"] as const);
       if (kind === "empty") d.push(`width: ${r.int(8, 40)}px`, `height: ${r.int(8, 50)}px`, "background: #ccd");
       const c = cls(d);
@@ -426,6 +466,10 @@ export function genCssCase(seed: number): CssCase {
     }
     if (r.chance(0.15)) {
       blocks.push(tiles());
+      continue;
+    }
+    if (r.chance(0.08)) {
+      blocks.push(textTables());
       continue;
     }
     if (r.chance(0.15)) {
