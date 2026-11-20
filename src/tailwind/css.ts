@@ -3,6 +3,7 @@
  * utility rule indexed by the class it styles, with its media conditions and source order.
  */
 import postcss, { type AtRule, type ChildNode, type Container, type Rule } from "postcss";
+import { lengthExpr } from "../fluid.js";
 
 export interface TwDecl {
   prop: string;
@@ -85,18 +86,54 @@ export function classesIn(selector: string): string[] {
 const LEN = /^(-?[\d.]+)(px|rem|em)$/;
 const toPx = (v: string) => {
   const m = LEN.exec(v.trim());
-  return m ? parseFloat(m[1]) * (m[2] === "px" ? 1 : 16) : undefined;
+  if (m) return parseFloat(m[1]) * (m[2] === "px" ? 1 : 16);
+  // calc() of px, rem and em (16px in a media query: the initial font size).
+  if (/^calc\(/i.test(v.trim())) {
+    const f = lengthExpr(v.trim(), { em: 16 });
+    const px = f && !f.fluid ? f.at(0) : NaN;
+    return isFinite(px) ? px : undefined;
+  }
+  return undefined;
 };
+
+/** `s` split where `sep` matches outside parentheses. */
+function splitTop(s: string, sep: RegExp): string[] {
+  const out: string[] = [];
+  let depth = 0;
+  let cur = "";
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (ch === "(") depth++;
+    else if (ch === ")") depth--;
+    const m = depth === 0 ? sep.exec(s.slice(i)) : null;
+    if (m) {
+      out.push(cur.trim());
+      cur = "";
+      i += m[0].length - 1;
+      continue;
+    }
+    cur += ch;
+  }
+  out.push(cur.trim());
+  return out.filter(Boolean);
+}
 
 /** Parse one media query (Tailwind v4 range syntax or min-/max-width). */
 export function parseMediaQuery(raw: string): MediaInfo {
   const q = raw.trim();
   const out: MediaInfo = { raw: q, widths: [], env: true };
-  // A list: the queries that can hold on a screen (print never does); one of them is that one.
-  if (/,/.test(q) && !/\([^)]*,/.test(q)) {
-    const live = q.split(",").map((x) => parseMediaQuery(x)).filter((m) => m.env !== false);
+  // A list (or `or`): the queries that can hold on a screen (print never does); one of them is
+  // that one, and several that each set one bound on the same side are the widest of them.
+  const list = splitTop(q, /^,|^\s+or\s+/i);
+  if (list.length > 1) {
+    const live = list.map((x) => parseMediaQuery(x)).filter((m) => m.env !== false);
     if (!live.length) return { ...out, env: false };
     if (live.length === 1) return { ...live[0], raw: q };
+    const one = live.every((m) => m.env === true && m.widths.length === 1 && !m.heights?.length && !m.dark && m.widths[0].op === live[0].widths[0].op);
+    if (one) {
+      const w = live.map((m) => m.widths[0]).reduce((a, b) => (a.op === "lt" ? (b.px > a.px ? b : a) : b.px < a.px ? b : a));
+      return { ...out, widths: [w] };
+    }
     return { ...out, env: { unknown: `@media ${q}` } };
   }
   // not all and (one width condition): the other side of it (Tailwind's max-* variants).
@@ -116,7 +153,7 @@ export function parseMediaQuery(raw: string): MediaInfo {
       out.env = false;
       continue;
     }
-    let m = /^\(\s*width\s*(>=|>|<=|<)\s*([^)]+?)\s*\)$/.exec(p);
+    let m = /^\(\s*width\s*(>=|>|<=|<)\s*(.+?)\s*\)$/.exec(p);
     if (m && toPx(m[2]) !== undefined) {
       const px = toPx(m[2])!;
       const raw = m[2].trim();
@@ -126,19 +163,19 @@ export function parseMediaQuery(raw: string): MediaInfo {
       else out.widths.push({ op: "lt", px: px + 0.01, raw: `${raw}+` });
       continue;
     }
-    m = /^\(\s*(min|max)-width\s*:\s*([^)]+?)\s*\)$/.exec(p);
+    m = /^\(\s*(min|max)-width\s*:\s*(.+?)\s*\)$/.exec(p);
     if (m && toPx(m[2]) !== undefined) {
       const px = toPx(m[2])!;
       out.widths.push(m[1] === "min" ? { op: "ge", px, raw: m[2].trim() } : { op: "lt", px: px + 0.01, raw: `${m[2].trim()}+` });
       continue;
     }
-    m = /^\(\s*(min|max)-height\s*:\s*([^)]+?)\s*\)$/.exec(p);
+    m = /^\(\s*(min|max)-height\s*:\s*(.+?)\s*\)$/.exec(p);
     if (m && toPx(m[2]) !== undefined) {
       const px = toPx(m[2])!;
       (out.heights ??= []).push(m[1] === "min" ? { op: "ge", px, raw: m[2].trim() } : { op: "lt", px: px + 0.01, raw: `${m[2].trim()}+` });
       continue;
     }
-    m = /^\(\s*height\s*(>=|>|<=|<)\s*([^)]+?)\s*\)$/.exec(p);
+    m = /^\(\s*height\s*(>=|>|<=|<)\s*(.+?)\s*\)$/.exec(p);
     if (m && toPx(m[2]) !== undefined) {
       const px = toPx(m[2])!;
       const raw = m[2].trim();

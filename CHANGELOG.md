@@ -52,6 +52,9 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 - Fixed: a run in another size (`font-size: .75em`) on the lines of text in a fractional size
   (21.33px: `1.6rem` of a `10pt` root) made its line a pixel taller in Chromium than Cadesa
   measured (found by `fuzz-css`, marked exact); it is `≈` there until it is understood.
+- Fixed: a run aligned `top` (or `bottom`, `middle`...) holding a raised run (`sup`) that holds a
+  run of its own put its line's baseline where Chromium doesn't (found by `fuzz-css`: a flex row
+  aligned on baselines placed such a text box 10px low, marked exact); it is `≈`.
 - Fixed: `check --css` stopped with an error on a page with `line-height: 0` (a chevron's
   `::before` in Bootstrap's cheatsheet); the box is `≈` instead.
 
@@ -90,9 +93,13 @@ now exact:
   layout's header, sidebar and content in a grid: MDN, Pico, Bootstrap's sign-in and cheatsheet) is
   laid out as the one box on the page, with its margins, padding and layout, and its children in
   it (every box was `≈`: "page-level display is not modelled"). `fixtures/css/body.html` keeps it.
+- A `<body>` with a width of its own (a blog's column: `max-width: 672px; margin: 0 auto`) is
+  laid out the same way (it was `≈`: "page-level max-width is not modelled").
+  `fixtures/css/column.html` keeps it.
+- Media queries with `calc()` widths (`(width < calc(1rem * 2 + 15rem + 2rem + 31rem))`, MDN's)
+  and lists joined by `or` that bound the width on one side are read (they were `≈`).
 - A grid placement set only from a breakpoint on (`@media (min-width: …) { .x { grid-column:
   1 / 3 } }`) is auto-placed below it (it was `≈`: "place is removed below …").
-- `scrollbar-gutter` changes nothing with overlay scrollbars (they take no room).
 - `flex-direction` and `flex-wrap` on a grid container do nothing (they made its boxes `≈`).
 - `grid-gap`, `grid-row-gap` and `grid-column-gap` are read as `gap`, `row-gap` and `column-gap`;
   `tab-size`, `text-autospace` and `text-spacing-trim` change nothing in the text Cadesa measures.

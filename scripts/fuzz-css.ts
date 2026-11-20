@@ -93,6 +93,8 @@ export function genCssCase(seed: number): CssCase {
       `display: grid; row-gap: ${r.int(0, 16)}px; align-items: start`,
       `display: grid; grid-template-columns: ${r.pick(["200px 1fr", "1fr 1fr", "repeat(3, 1fr)"])}; gap: ${r.int(0, 16)}px`,
       `display: flex; flex-wrap: wrap; gap: ${r.int(0, 12)}px; padding: ${r.int(0, 20)}px 0`,
+      // A centered column of its own width (a blog), content-box with padding.
+      `max-width: ${r.pick(["672px", "40rem", "520px"])}; margin: 0 auto; padding: ${r.int(0, 40)}px ${r.pick(["1.25rem", "16px", "0"])}`,
     ]);
     css.push(r.chance(0.4) ? `@media (min-width: ${r.pick([600, 800, 1000])}px) { body { ${body}; margin: 0 } }` : `body { ${body} }`);
   }

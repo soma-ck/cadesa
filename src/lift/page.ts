@@ -825,13 +825,16 @@ export abstract class PageLifter {
 
   /**
    * A <body> that is a flex or grid container (a sign-in page centered in the window, a docs
-   * layout's header, sidebar and main in a grid) is laid out as the one box on the page: an element
+   * layout's header, sidebar and main in a grid), or that has a width of its own (a blog's
+   * centered column), is laid out as the one box on the page: an element
    * of its own (its margins, padding, border and layout), with the page's children in it. The page
    * keeps what applies to the window (its background, overflow, the text everything inherits).
    */
   boxBody() {
     const body = this.bodyEl;
-    if (!body || !this.states.some((_, si) => /^(inline-)?(flex|grid)$/.test(this.resolve(body, si, body.own[si]?.get("display")?.value ?? "") ?? ""))) return;
+    const res = (si: number, p: string) => this.resolve(body!, si, body!.own[si]?.get(p)?.value ?? "") ?? "";
+    // (Or a body of its own width: a blog's column, max-width: 672px and auto margins.)
+    if (!body || !this.states.some((_, si) => /^(inline-)?(flex|grid)$/.test(res(si, "display")) || !/^(auto|none|100%)?$/.test(res(si, "max-width")) || !/^(auto|100%)?$/.test(res(si, "width")))) return;
     const pageOnly = (p: string) => /^overflow(-[xy])?$/.test(p);
     const inherited = (p: string) => p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p) || p === "background-color";
     const b: El = {
@@ -1449,6 +1452,11 @@ export abstract class PageLifter {
     // root): Chromium's line is a pixel taller than these metrics give (found by fuzz-css; not
     // understood yet), so it isn't measured.
     if (kt.size !== this.textOf(root, si).size && !Number.isInteger(this.textOf(root, si).size)) return false;
+    // A box aligned by its extent (top, bottom...) holding a raised or lowered box (sup) that holds
+    // another inline box: where the line's baseline goes isn't what these extents give (found by
+    // fuzz-css: a flex row aligned on baselines put such a text box 10px low).
+    const raised = (x: El): boolean => x.children.some((c) => (c.anonymous === undefined && !c.pseudo && this.displayOf(c, si) === "inline" && !/^(baseline)?$/.test(this.resolve(c, si, c.own[si].get("vertical-align")?.value ?? "") ?? "") && c.children.some((g) => g.anonymous === undefined && !g.pseudo)) || raised(c));
+    if (this.alignsByExtent(k, si) && raised(k)) return false;
     const e = this.inlineExtent(k, si);
     if (!e || !this.strutOf(root, si) || this.baselineShift(k, si) === undefined) return false;
     // Middle, text-top and text-bottom place a box by its extent on each line it is on: one whose
@@ -3598,8 +3606,6 @@ export abstract class PageLifter {
         // Grid lines place only a grid item.
         (/^grid-(row|column)-(start|end)$/.test(p) && !(inFlexOrGrid && /grid/.test(parentDisplay))) ||
         p.startsWith("--") || TEXT_PROPS.has(p) || INHERITED_OTHER.has(p) || INHERITED_PAINT.has(p) || p === "display" ||
-        // Overlay scrollbars take no room, so no gutter is kept for them.
-        (p === "scrollbar-gutter" && scrollbarPx() === 0) ||
         (pos === "sticky" && /^(top|right|bottom|left)$/.test(p)) || p === "z-index" ||
         // Offsets do nothing on a box that isn't positioned.
         (/^(top|right|bottom|left)$/.test(p) && !/^(relative|absolute|fixed|sticky)$/.test(pos ?? "static")) || p === "box-sizing" ||
@@ -4730,8 +4736,6 @@ export abstract class PageLifter {
           if (same && /^(margin|padding)-|^border-(top|right|bottom|left)-(width|style|color)$/.test(p)) continue;
           if (/^(height|min-height|box-sizing|display)$/.test(p) && (p !== "display" || v === "block")) continue;
           if (/^overflow-[xy]$/.test(p) && !(overflowBoth && el === this.bodyEl)) continue;
-          // Overlay scrollbars take no room, so no gutter is kept for them.
-          if (p === "scrollbar-gutter" && scrollbarPx() === 0) continue;
           const k = kindOf(p);
           if (k === "paint" || k === "none") continue;
           if (this.bodyEl) this.note(this.bodyEl, s, { decl: `${o.utility} (${p}: ${o.value})`, reason: `page-level ${p} is not modelled`, kind: k });

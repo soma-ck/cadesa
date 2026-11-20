@@ -1,0 +1,39 @@
+/*
+ * A <body> that is a centered column of its own width (a blog: max-width and auto margins, with
+ * padding, content-box), laid out as the one box on the page; and media queries whose widths are
+ * calc() of rem, or lists joined by `or`.
+ */
+body {
+  max-width: 672px;
+  margin: 0 auto;
+  padding: 40px 1.25rem;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+.masthead {
+  margin-bottom: 32px;
+}
+
+.title {
+  margin: 0 0 16px;
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+.text {
+  margin: 0 0 16px;
+}
+
+@media (width < calc(1rem * 2 + 15rem + 2rem + 31rem)) {
+  .title {
+    font-size: 24px;
+  }
+}
+
+@media (width <= 400px) or (width < calc(1rem * 30)) {
+  .text {
+    margin-bottom: 8px;
+  }
+}

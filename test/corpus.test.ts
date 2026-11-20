@@ -144,10 +144,27 @@ describe("a body that is a flex or grid container", () => {
   });
 });
 
+describe("a body that is a centered column", () => {
+  it("is laid out as the one box on the page", () => {
+    const r = run(`<main data-fixture="m"><p class="x">Harbor</p></main>`, `body { max-width: 672px; margin: 0 auto; padding: 40px 1.25rem } .x { margin: 0 }`, [400, 1200]);
+    const b = (w: number) => r.layout(w).boxes[0];
+    expect([b(1200).tag, b(1200).x, b(1200).w]).toEqual(["body", 244, 712]);
+    expect([b(400).x, b(400).w, r.box("m", 400).x]).toEqual([0, 400, 20]);
+    for (const w of [400, 1200]) expect(r.exact(w)).toBe(true);
+  });
+});
+
 describe("a run in another size in text of a fractional size", () => {
   it("is ≈ (Chromium's line is a pixel taller than the metrics give)", () => {
     const r = run(`<p class="p" data-fixture="p">field <span class="s">and</span> the field</p>`, `html { font-size: 10pt } .p { margin: 0; font-size: 1.6rem; line-height: 20px } .s { font-size: 0.75em }`);
     expect(r.approx("p")).toBeDefined();
+  });
+});
+
+describe("a top-aligned run holding a raised run with a run of its own", () => {
+  it("is ≈ (where its line's baseline goes isn't modelled)", () => {
+    const r = run(`<div class="k7" data-fixture="k7">the and <a href="#" class="t">every <sup class="s"><i class="i">May</i></sup></a> along</div>`, `.t { font-size: 20px; line-height: 2; vertical-align: top } .s { font-size: 13.6px } .i { font-size: smaller }`);
+    expect(r.approx("k7")).toBeDefined();
   });
 });
 
