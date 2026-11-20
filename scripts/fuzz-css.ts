@@ -466,7 +466,18 @@ export function genCssCase(seed: number): CssCase {
    */
   const loneAtomic = () => {
     const own = [`width: ${r.int(8, 60)}px`, `height: ${r.int(8, 60)}px`, ...(r.chance(0.4) ? ["position: relative", ...(r.chance(0.5) ? [`top: ${r.int(-4, 4)}px`, `left: ${r.int(-4, 4)}px`] : [])] : []), ...(r.chance(0.2) ? [`margin: ${r.int(0, 6)}px`] : [])];
+    // Aligned middle (a reset's img, svg { vertical-align: middle }) or by a length (an icon's -.125em).
+    if (r.chance(0.4)) own.push(`vertical-align: ${r.pick(["middle", "-0.125em", "-2px", "3px", "0.25em"])}`);
+    // SVG-only properties, which paint only inside the svg.
+    if (r.chance(0.2)) own.push("text-anchor: middle", "dominant-baseline: middle");
     const atom = r.chance(0.6) ? `<svg${attr(cls(own))} viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"></circle></svg>` : `<img${attr(cls(own))} src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">`;
+    // In a link that is a flex item (blockified: a block of its one line), between spaces, beside a pill.
+    if (r.chance(0.35)) {
+      const row = [`display: flex`, `align-items: ${r.pick(["center", "flex-start", "stretch"])}`, ...(r.chance(0.5) ? [`line-height: ${r.pick(["1", "1.5", "24px"])}`] : []), ...(r.chance(0.3) ? [`justify-content: ${r.pick(["flex-end", "space-between"])}`] : [])];
+      const link = r.chance(0.3) ? [`padding: ${r.int(0, 6)}px`] : [];
+      const pill = r.chance(0.5) ? `<a${attr(cls(["display: inline-block", `padding: ${r.int(0, 6)}px ${r.int(0, 10)}px`, "border: 1px solid #333333"]))}>${words(r, 1, 2)}</a>` : "";
+      return `<div${attr(cls(row))}><a${attr(cls(link))}>${r.chance(0.5) ? " " : ""}${atom}${r.chance(0.5) ? " " : ""}</a>${pill}</div>`;
+    }
     const d = [
       ...(r.chance(0.5) ? [`height: ${r.int(10, 80)}px`] : []),
       ...(r.chance(0.3) ? ["position: relative"] : []),
@@ -476,10 +487,23 @@ export function genCssCase(seed: number): CssCase {
     ];
     return `<div${attr(cls(d))}>${atom}</div>`;
   };
+  /** A toggle button (a flex row of an icon and text) whose caret is an ::after with borders in em. */
+  const toggle = () => {
+    const b = cls([`display: ${r.pick(["flex", "inline-flex", "flex"])}`, "align-items: center", `padding: ${r.int(0, 10)}px ${r.int(0, 14)}px`, `font-size: ${r.pick(["13px", "16px", "18px", "20px", "15px"])}`, "border: 1px solid #333333"]);
+    const em = () => r.pick(["0.3em", "0.25em", "0.35em", ".3em"]);
+    css.push(`.${b}::after { display: inline-block; margin-left: ${r.pick(["0.255em", "4px", "0"])}; vertical-align: 0.255em; content: ""; border-top: ${em()} solid; border-right: ${em()} solid transparent; border-bottom: 0; border-left: ${em()} solid transparent }`);
+    const icon = r.chance(0.5) ? `<svg${attr(cls(["width: 1em", "height: 1em"]))} viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"></circle></svg>` : "";
+    const row = cls(["display: flex", `justify-content: ${r.pick(["flex-start", "flex-end"])}`]);
+    return `<div${attr(row)}><button${attr(b)} type="button">${icon}${r.chance(0.5) ? `<span>${words(r, 1, 2)}</span>` : ""}</button></div>`;
+  };
   const count = r.int(2, 5);
   for (let i = 0; i < count; i++) {
     if (r.chance(0.06)) {
       blocks.push(loneAtomic());
+      continue;
+    }
+    if (r.chance(0.04)) {
+      blocks.push(toggle());
       continue;
     }
     if (r.chance(0.12)) {

@@ -24,6 +24,29 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   (`loading="lazy"`: Wikipedia, the Tailwind home page). Chromium never loads such an image, so
   waiting for it to decode never ended; it is now loaded (its attribute is kept), and no image is
   waited for longer than 10s.
+- Fixed: a flex row aligned on baselines with an item that clips its overflow (`overflow: hidden`
+  or `auto`) whose text is taller than its line was laid out with that item's baseline where its
+  text puts it; Chromium clamps a scroll container's baseline to its border box (found by
+  `fuzz-css`: the row's other items sat a pixel to 15px too low, marked exact).
+- Fixed: `check --css` stopped with an error on a page with `line-height: 0` (a chevron's
+  `::before` in Bootstrap's cheatsheet); the box is `≈` instead.
+
+Tested on a corpus of 20 real pages (the Bootstrap examples, documentation sites, a Wikipedia
+article, Hacker News, a blog, Material UI, Bulma and Pico pages), what they had most in common is
+now exact:
+
+- An icon alone in a link that is a flex item (a navbar's search icon): the link is blockified, a
+  block of the icon's one line, with the icon aligned `middle` or by a length
+  (`vertical-align: -.125em`, Bootstrap Icons'), which an inline svg or image alone on its line now
+  takes too.
+- A `<button>` with `display: block` or `flex` in block flow is as wide as its content, as Chromium
+  sizes it (it was `≈`): the theme toggle every Bootstrap example has.
+- Borders in `em` (a dropdown caret's `.3em`), drawn whole pixels wide as px borders are.
+- SVG-only properties (`text-anchor`, `dominant-baseline`, `paint-order`...) no longer make an svg
+  `≈`: they paint only inside it.
+
+`fixtures/css/corpus.html` keeps them (in `conformance:css`), and `fuzz-css` generates icons alone
+in flex-item links, aligned middle or by a length, and toggle buttons with em-bordered carets.
 
 ## 0.1.24 (2026-11-20)
 

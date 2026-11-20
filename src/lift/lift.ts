@@ -71,11 +71,12 @@ const VISUAL = /^(transform|translate|rotate|scale|perspective.*|transform-origi
 
 /**
  * Paint that changes neither a text's color nor what is painted behind it in the default state
- * (transitions, cursors, outlines, border colors and radii, the ellipsis of text-overflow): no
- * effect on boxes or on contrast.
+ * (transitions, cursors, outlines, border colors and radii, the ellipsis of text-overflow, and SVG
+ * properties such as text-anchor, which only paint inside an svg, laid out as one box): no effect
+ * on boxes or on contrast.
  */
 const COLORLESS =
-  /^((-webkit-)?transition.*|cursor|counter-(reset|increment|set)|text-rendering|font-display|image-rendering|shape-rendering|(page-)?break-(before|after|inside)|orphans|widows|speak|backface-visibility|scrollbar-(width|color)|-webkit-text-stroke.*|text-underline-offset|text-underline-position|(-webkit-|-moz-|-ms-)?user-select|pointer-events|touch-action|will-change|resize|scroll-.*|overscroll-.*|caret-color|accent-color|outline.*|border(-top|-right|-bottom|-left)?-color|border(-top|-bottom)?(-left|-right)?-radius|border-(start|end)-(start|end)-radius|list-style.*|isolation|text-decoration.*|(-webkit-)?print-color-adjust|color-adjust|forced-color-adjust|-webkit-tap-highlight-color|(-webkit-|-moz-|-ms-)?text-size-adjust|-webkit-font-smoothing|-moz-osx-font-smoothing|-webkit-touch-callout|-webkit-overflow-scrolling|z-index|text-align|text-overflow)$/;
+  /^((-webkit-)?transition.*|cursor|counter-(reset|increment|set)|text-rendering|font-display|image-rendering|shape-rendering|(page-)?break-(before|after|inside)|orphans|widows|speak|backface-visibility|scrollbar-(width|color)|-webkit-text-stroke.*|text-underline-offset|text-underline-position|(-webkit-|-moz-|-ms-)?user-select|pointer-events|touch-action|will-change|resize|scroll-.*|overscroll-.*|caret-color|accent-color|outline.*|border(-top|-right|-bottom|-left)?-color|border(-top|-bottom)?(-left|-right)?-radius|border-(start|end)-(start|end)-radius|list-style.*|isolation|text-decoration.*|(-webkit-)?print-color-adjust|color-adjust|forced-color-adjust|-webkit-tap-highlight-color|(-webkit-|-moz-|-ms-)?text-size-adjust|-webkit-font-smoothing|-moz-osx-font-smoothing|-webkit-touch-callout|-webkit-overflow-scrolling|z-index|text-align|text-overflow|text-anchor|dominant-baseline|paint-order|vector-effect|fill-(opacity|rule)|clip-rule|stop-(color|opacity)|flood-(color|opacity)|lighting-color|marker(-start|-mid|-end)?|color-interpolation(-filters)?)$/;
 
 export function kindOf(prop: string): ImpactKind {
   if (COLORLESS.test(prop)) return "none";
@@ -1091,7 +1092,7 @@ export function liftElements(input: LiftInput): LiftResult {
         const r = resolveVar(ff.value);
         return r ? (r.varName ? tokens.named("font", r.varName, r.raw) : tokens.literal("font", r.raw)) : undefined;
       })() : undefined;
-      const missing = [!sizeOk && "font-size (px or rem)", lineHeight === undefined && "line-height", !colorTok && "color", isNaN(weight) && "font-weight"].filter(Boolean);
+      const missing = [!sizeOk && "font-size (px or rem)", lineHeight === undefined && "line-height", lineHeight === 0 && "a line height above 0 (line-height: 0 is not modelled)", !colorTok && "color", isNaN(weight) && "font-weight"].filter(Boolean);
       if (missing.length) {
         // line-height: normal in a font whose table, from an older Cadesa, has no vertical metrics: measure it again.
         const fam = ff ? resolveVar(ff.value)?.raw : undefined;

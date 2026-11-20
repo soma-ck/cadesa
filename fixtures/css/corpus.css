@@ -1,0 +1,228 @@
+/*
+ * Patterns found on real pages (documentation sites, framework examples, blogs), rebuilt with
+ * neutral markup:
+ * - an icon <svg> alone in a link that is a flex item (blockified: a block of its one line), with
+ *   vertical-align: middle and inline margins, at line-height 1 and 1.5;
+ * - a toggle button whose caret is an ::after with borders in em (drawn whole pixels wide);
+ * - buttons with display: block or flex in block flow (and in a fixed corner box), as wide as
+ *   their content as an inline button is;
+ * - a placeholder svg with SVG-only properties (text-anchor), which only paint inside it;
+ * - a chevron ::before with line-height: 0 and an image as its content (left ≈);
+ * - a baseline-aligned row with an item that clips its overflow, its text taller than its line:
+ *   a scroll container's baseline is clamped to its border box.
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+svg {
+  vertical-align: middle;
+}
+
+.masthead {
+  display: flex;
+  flex-wrap: nowrap;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px 12px;
+  line-height: 1;
+  border-bottom: 1px solid #d1d5db;
+}
+
+.masthead-end {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+}
+
+.masthead-link {
+  color: #4b5563;
+}
+
+.masthead-icon {
+  margin: 0 16px;
+}
+
+.pill {
+  display: inline-block;
+  padding: 4px 8px;
+  font-size: 14px;
+  line-height: 1.5;
+  border: 1px solid #6b7280;
+  border-radius: 4px;
+  text-decoration: none;
+}
+
+.toolbar {
+  display: flex;
+  gap: 8px;
+  padding: 8px 12px;
+}
+
+.toolbar-icon {
+  margin-right: 4px;
+}
+
+.toolbar-small {
+  vertical-align: -0.125em;
+}
+
+.menu {
+  display: flex;
+  justify-content: flex-end;
+  padding: 8px 12px;
+}
+
+.menu-toggle {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  font: inherit;
+  color: #ffffff;
+  background: #4c1d95;
+  border: 1px solid #4c1d95;
+  border-radius: 6px;
+}
+
+.menu-large {
+  margin-left: 8px;
+  font-size: 20px;
+}
+
+.menu-glyph {
+  width: 1em;
+  height: 1em;
+  fill: currentColor;
+}
+
+.menu-toggle::after {
+  display: inline-block;
+  margin-left: 0.255em;
+  vertical-align: 0.255em;
+  content: "";
+  border-top: 0.3em solid;
+  border-right: 0.3em solid transparent;
+  border-bottom: 0;
+  border-left: 0.3em solid transparent;
+}
+
+.tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 16px;
+  padding: 12px;
+}
+
+.tile {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.tile-art {
+  display: block;
+  font-size: 18px;
+  text-anchor: middle;
+  dominant-baseline: middle;
+  user-select: none;
+}
+
+.tile-text {
+  margin: 0;
+  padding: 12px;
+}
+
+.tree {
+  margin: 0;
+  padding: 0 12px;
+  list-style: none;
+}
+
+.tree-toggle {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  font: inherit;
+  font-weight: 600;
+  background: transparent;
+  border: 0;
+}
+
+.tree-toggle::before {
+  width: 1.25em;
+  line-height: 0;
+  content: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3e%3cpath fill='none' stroke='%23999' stroke-width='2' d='M5 14l6-6-6-6'/%3e%3c/svg%3e");
+}
+
+.stats {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 12px;
+  line-height: 24px;
+}
+
+.stats-label {
+  font-size: 14px;
+}
+
+.stats-figure {
+  font-size: 36px;
+  overflow: hidden;
+}
+
+.stats-huge {
+  font-size: 60px;
+}
+
+.stats-padded {
+  overflow: auto;
+  padding: 3px 0 5px;
+}
+
+.stats-mark {
+  width: 10px;
+  height: 20px;
+  margin-top: 6px;
+  background: #d1d5db;
+}
+
+.actions {
+  padding: 8px 12px;
+}
+
+.actions-narrow {
+  width: 180px;
+}
+
+.actions-save {
+  display: block;
+  padding: 6px 12px;
+  font: inherit;
+  border: 1px solid #6b7280;
+  border-radius: 4px;
+}
+
+.corner {
+  position: fixed;
+  right: 0;
+  bottom: 0;
+  margin: 0 16px 16px 0;
+}
+
+.corner-toggle {
+  display: flex;
+  align-items: center;
+  padding: 8px 12px;
+  font: inherit;
+  border: 1px solid #6b7280;
+}

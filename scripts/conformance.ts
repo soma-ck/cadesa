@@ -130,7 +130,8 @@ for (const layout of layouts) {
   await page.goto(server.url(fixtureFile));
   await settle(page);
   for (const family of families) {
-    const ok = await page.evaluate(`document.fonts.check(${JSON.stringify(`16px "${family}"`)}) && ![...document.fonts].some((f) => f.status === "error")`);
+    // (A system font, with no @font-face of its own: nothing to load.)
+    const ok = await page.evaluate(`(document.fonts.check(${JSON.stringify(`16px "${family}"`)}) || ![...document.fonts].some((f) => f.family.replace(/^["']|["']$/g, "") === ${JSON.stringify(family)})) && ![...document.fonts].some((f) => f.status === "error")`);
     if (!ok) throw new Error(`font "${family}" did not load in ${fixtureFile}`);
   }
   const rects = await measureBoxes(page);

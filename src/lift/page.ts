@@ -1041,6 +1041,16 @@ export abstract class PageLifter {
     return d;
   }
 
+  /**
+   * An inline element in flow in a flex or grid container (a link holding an icon in a navbar): it
+   * is blockified, a block container of its own lines.
+   */
+  blockifiedInline(el: El, si: number): boolean {
+    const p = el.parent;
+    if (!p || p === this.bodyEl || el.pseudo || el.anonymous !== undefined || this.positioned(el, si)) return false;
+    return this.ownDisplay(el, si) === "inline" && !REPLACED_BLOCK.has(el.tag) && !CONTROL.has(el.tag) && /^(inline-)?(flex|grid)$/.test(this.displayOf(p, si));
+  }
+
   /** position: absolute or fixed (out of flow, laid out in its containing block). */
   positioned(el: El, si: number) {
     const p = el.own[si]?.get("position");
@@ -1602,7 +1612,12 @@ export abstract class PageLifter {
       // Its midpoint on the parent's baseline plus half its x-height (in layout units, as Chromium shifts it).
       const u = (x: number) => Math.round(x * 64);
       a = (u(a) - Math.trunc((u(a) - u(hm - a)) / 2)) / 64 + strut.xh2;
-    } else if (va !== "baseline") return undefined;
+    } else if (va !== "baseline") {
+      // A length (an icon's -.125em): raised by it (em of its own font size), in layout units.
+      const shift = /^-?(\d*\.)?\d+(px|r?em)$/.test(va) ? lengthPx(va, t.size) : undefined;
+      if (shift === undefined || !isFinite(shift)) return undefined;
+      a = (Math.round(a * 64) + Math.round(shift * 64)) / 64;
+    }
     return { a, hm, strut };
   }
 
@@ -1633,7 +1648,7 @@ export abstract class PageLifter {
   aloneOnLine(el: El, si: number): boolean {
     const parent = el.parent;
     if (!parent || (el.roles[si] !== "text" && el.roles[si] !== "leaf") || el.pseudo) return false;
-    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|inline-block|table-cell|table-caption)$/.test(this.displayOf(parent, si))) return false;
+    if (parent !== this.bodyEl && !/^(block|flow-root|list-item|inline-block|table-cell|table-caption)$/.test(this.displayOf(parent, si)) && !this.blockifiedInline(parent, si)) return false;
     if (parent.ownText || (parent.children.some((k) => k.pseudo && !this.outOfFlow(k, si) && this.displayOf(k, si) !== "none"))) return false;
     const shown0 = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
     const sibs0 = parent.children.filter((k) => k !== el && shown0(k));
@@ -3784,7 +3799,10 @@ export abstract class PageLifter {
           const w = own.get(`border-${s}-width`);
           const st = own.get(`border-${s}-style`);
           const c = own.get(`border-${s}-color`);
-          decl(`border-${s}-width`, w ? (this.resolve(el, si, w.value) ?? "0") : "0", w?.utility ?? (this.preflight ? "preflight" : "browser default"));
+          // In em (a dropdown caret's .3em): px at the element's own font size, which lift snaps as
+          // Chromium does (4.8px is drawn 4px wide).
+          const wv = w ? (this.resolve(el, si, w.value) ?? "0") : "0";
+          decl(`border-${s}-width`, /\dem\b/.test(wv) ? (this.resolveBox(el, si, w!.value) ?? wv) : wv, w?.utility ?? (this.preflight ? "preflight" : "browser default"));
           decl(`border-${s}-style`, st ? (this.resolve(el, si, st.value) ?? "solid") : this.preflight ? "solid" : "none", st?.utility ?? (this.preflight ? "preflight" : "browser default"));
           const cv = c ? this.resolve(el, si, c.value) : "currentcolor";
           const parsed = cv && !/^currentcolor$/i.test(cv) ? parseColor(cv, parseColor(text.color.hex)) : parseColor(text.color.hex);
@@ -4158,6 +4176,8 @@ export abstract class PageLifter {
     for (const k of kids) {
       // (Layout containment leaves an item no baseline.)
       if (k.roles[si] !== "text" || this.containOf(k, si)) return undefined;
+      // A scroll container's baseline is clamped to its border box: the engine places those.
+      if (["overflow-x", "overflow-y"].some((p) => /^(hidden|auto|scroll)$/.test(this.resolve(k, si, k.own[si].get(p)?.value ?? "") ?? ""))) return undefined;
       // An inline box that may make its first line taller than its strut: the engine places it (align baseline).
       const tall = (x: El): boolean => x.children.some((c) => (this.runStyle(c, si)?.above !== undefined || (this.atomicInline(c, si) !== undefined && this.pastStrut(c, si) !== undefined) || tall(c)));
       if (tall(k)) return undefined;

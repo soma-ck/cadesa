@@ -1833,6 +1833,9 @@ function layoutWith(
         w = fit(Math.max(0, avail - m.left - m.right), `sits in a stack aligned ${stackAlign}, which sizes it to its content`);
       // A float without a width is as wide as its content (shrink-to-fit in its containing block).
       else if (props.float && pw === undefined && !props.aspect && !props.maxWidth) w = fit(Math.max(0, avail - m.left - m.right), "floats, which sizes it to its content");
+      // A <button> isn't stretched in block flow either (display: block or flex too): it is as wide as its content.
+      else if ((parent === "flow" || parent === "page") && pw === undefined && n.tag === "button" && n.controlWidth === undefined && !props.aspect && !props.maxWidth && !m.autoLeft && !m.autoRight)
+        w = fit(Math.max(0, avail - m.left - m.right), "is a <button>, as wide as its content");
       else if (pw === "fill" || props.aspect || props.maxWidth) w = avail; // width: 100%
       // A table without a width is as wide as its columns want (fit-content), unless a flex column or grid stretches it.
       else if (grid && pw === undefined && parent !== "stack" && parent !== "grid" && parent !== "layer") w = fit(Math.max(0, avail - m.left - m.right), "is a table as wide as its content");
@@ -2153,7 +2156,7 @@ function layoutWith(
       else if (parent === "page" || parent === "flow") assumptions.push(`${parent === "page" ? "at the page level" : "in block flow"} its width follows the image file; ${say("add aspect or a width token", "give it a width or an aspect-ratio")}`);
     }
     // A form control is as wide as its content unless something sets its width.
-    if ((parent === "page" || parent === "flow") && CONTROLS.has(n.tag) && (pw === "fill" || (pw === undefined && n.controlWidth === undefined)) && !props.maxWidth)
+    if ((parent === "page" || parent === "flow") && CONTROLS.has(n.tag) && (pw === "fill" || (pw === undefined && n.controlWidth === undefined && (n.tag !== "button" || m.autoLeft || m.autoRight || !!props.aspect || !!props.maxWidth))) && (!props.maxWidth || n.tag === "button"))
       assumptions.push(`a <${n.tag}> ${parent === "page" ? "at the page level" : "in block flow"} is as wide as its content; ${say("give it a width token or maxWidth", "give it a width")}`);
     if (media && !props.aspect && !props.height)
       issues.push({
@@ -2411,7 +2414,11 @@ function layoutWith(
         c.assumptions.push(`its baseline (for align-items: baseline) isn't known: ${say("a cluster, grid or scrolling box inside", "a flex row, grid or scroll container inside")} gives it one Cadesa doesn't compute`);
       return m.top + c.h;
     }
-    return m.top + (fb === undefined ? c.h : PX(fb));
+    // A scroll container's (overflow other than visible) baseline is clamped to its border box
+    // (probed: 36px text on a 24px line in an overflow: hidden item sits a pixel higher).
+    const ov = c.props.overflow?.value;
+    const clamp = (b: number) => (ov && [ov.x, ov.y].some((v) => v === "hidden" || v === "auto" || v === "scroll") ? Math.min(Math.max(b, 0), c.h) : b);
+    return m.top + (fb === undefined ? c.h : clamp(PX(fb)));
   }
   /** The natural height of a flex line: its tallest item, or with baseline alignment the most any item reaches above the line's baseline plus the most any reaches below it. */
   function rowHeight(r: Box[], align: string | undefined): number {
