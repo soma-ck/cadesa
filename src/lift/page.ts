@@ -3297,7 +3297,7 @@ export abstract class PageLifter {
       let role: Role;
       if (d === "none" || (el.parent && el.parent.roles[si] === "hidden")) role = "hidden";
       else if (this.asideFloat(el, si)) role = "out";
-      else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || (this.isTable(el, si) && (!!this.tableWhy(el) || !el.children.some((k) => !this.ignorable(k))))) role = "leaf";
+      else if (el.tag === "svg" || REPLACED_BLOCK.has(el.tag) || CONTROL.has(el.tag) || (this.isTable(el, si) && !(hasText && el.children.length === 0 && this.ownDisplay(el, si) === "table") && (!!this.tableWhy(el) || !el.children.some((k) => !this.ignorable(k))))) role = "leaf";
       // A column's (or an empty row's) children aren't laid out.
       else if (d === "table-column" || (/^table-(row|row-group|header-group|footer-group|column-group)$/.test(d) && !el.children.some((k) => !this.ignorable(k)))) role = "leaf";
       else if (hasText && el.children.length === 0 && this.textOf(el, si).size === 0 && !CONTROL.has(el.tag)) {
@@ -3586,6 +3586,14 @@ export abstract class PageLifter {
           // it apart (a block of no height would let them collapse through it).
           if (!own.has("height")) decl("height", "0px", "an empty table (no rows)");
           if (!own.has("width")) decl("width", "fit-content", "an empty table (no columns)");
+          for (const p of ["border-collapse", "border-spacing", "caption-side", "table-layout", "vertical-align", "empty-cells"]) handled.add(p);
+        } else if (display === "table" && role === "text" && /^0(px)?( 0(px)?)?$/.test(this.tableProp(el, si, "border-spacing") ?? "0px") && !["width", "min-width", "max-width", "height", "min-height", "max-height"].some((p) => own.has(p) && !/^(auto|none)$/.test(res(p) ?? "auto"))) {
+          // Text in a table box: one anonymous row and cell around it, the table's padding and border
+          // around that. Probed: as wide as a fit-content block in block flow, and as an auto-width
+          // block in a flex or grid container (stretched, or shrunk to its min-content), as tall as its lines.
+          decl("display", "block", own.get("display")?.utility ?? "display: table");
+          if (!inFlexOrGrid) decl("width", "fit-content", "a table is as wide as its content");
+          decl("flow-root", "true", "a table is a formatting context of its own");
           for (const p of ["border-collapse", "border-spacing", "caption-side", "table-layout", "vertical-align", "empty-cells"]) handled.add(p);
         } else if (display === "table") {
           // One box as wide as its width says; its height comes from its rows, which aren't laid out.
