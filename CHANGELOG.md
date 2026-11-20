@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.22 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.22 mcp
+npx -y cadesa@0.1.23 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.23 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -18,7 +18,11 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## Unreleased
+## 0.1.23 (2026-11-20)
+
+- Correction: the README said the Bootstrap suite also passes with classic 15px scrollbars
+  (`CADESA_SCROLLBARS=classic`). It doesn't: 99 boxes in `.table-responsive` are 15px off, in
+  0.1.19–0.1.22 as well. Overlay scrollbars (the default) are unaffected.
 
 - Flex items with a width that shrink are exact. A new property, `shrink`, sets a cluster item's
   flex-shrink: an item with a width that still gives way when its row is too full (down to its
