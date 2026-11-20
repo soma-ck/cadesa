@@ -74,6 +74,11 @@ describe("a float inside a word, and inside an inline box (probed in Chromium)",
     expect(geo(inBox(150).box("f"))).toEqual([120, 0, 30, 10]);
     for (const w of [120, 130, 150]) expect(inBox(w).exact()).toBe(true);
   });
+
+  it("flags one at an edge of the inline box it is inside (an inline box with padding holding only the float: fuzz-css)", () => {
+    const r = run(`<main style="width: 204px"><p data-fixture="p">ridge leaving hand dawn <span class="pad" style="margin: 0 5px"><span class="f" data-fixture="f"></span></span> dawn north tides May</p></main>`, css, [800]);
+    expect(r.approx("f")).toMatch(/a float at an edge of the inline box it is inside/);
+  });
 });
 
 describe("floats in block flow", () => {

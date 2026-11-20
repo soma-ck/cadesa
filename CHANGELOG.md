@@ -57,8 +57,9 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   before it, the line ends before the word (the float, after that break, isn't placed yet) and the
   word starts the next line, meeting the float there. A float inside an inline box is placed where
   it occurs in the text, as one of the text box's own floats is. Fixed too: floats in underlined
-  text (a link) were placed twice. `fixtures/css/floats.html` adds floats inside words and inside a
-  run with padding, and `fuzz-css` generates both.
+  text (a link) were placed twice. A float at an edge of the inline box it is inside (a box with
+  padding holding only the float) stays `≈`. `fixtures/css/floats.html` adds floats inside words
+  and inside a run with padding, and `fuzz-css` generates both.
 
 ## 0.1.23 (2026-11-20)
 

@@ -554,7 +554,7 @@ export function layoutText(
      * a space at its end hanging, and its width within the line's room), and with no float before it waiting,
      * at that line's top, the line then shortened; any other below the line, at the next one's top.
      */
-    floats?: { at: number; w: number; fitsAt?: (top: number) => boolean; place: (top: number) => void }[];
+    floats?: { at: number; w: number; edge?: boolean; fitsAt?: (top: number) => boolean; place: (top: number) => void }[];
   } = {},
 ): TextLayout {
   // Beside floats, with inline boxes that may reach past the strut: each line's band must hold the
@@ -912,7 +912,8 @@ function layoutLines(
    * line if it fits beside what comes before it there, as at a break opportunity; the word, cut by
    * the float into two items, stays whole (probed in Chromium).
    */
-  const meetFloat = (f: { at: number; w: number; fitsAt?: (top: number) => boolean; place: (top: number) => void }, before = line) => {
+  const meetFloat = (f: { at: number; w: number; edge?: boolean; fitsAt?: (top: number) => boolean; place: (top: number) => void }, before = line) => {
+    if (f.edge) approximate ??= "a float at an edge of the inline box it is inside";
     if (!line && !deferred.length) return f.place(nextTop);
     if (besideLine(f, before)) {
       f.place(place!.top);

@@ -58,7 +58,7 @@ export interface RunMeta {
    * Floats among the run's text (element children of the text box that float): where each occurs
    * (a character offset) and which one it is (its index among the text box's floats, in order).
    */
-  floats?: { at: number; index: number }[];
+  floats?: { at: number; index: number; edge?: boolean }[];
 }
 
 export interface Span extends RunStyle {
@@ -191,13 +191,16 @@ const END = "\u0003";
 const FLOAT = "\u0005";
 
 /** collapse(), also returning where the EDGE marks fall (in characters of the collapsed text). */
-function collapseItems(raw: string): { text: string; items: number[]; marks: { id: number; open: boolean; at: number; lead?: boolean }[]; floats: { index: number; at: number }[] } {
+function collapseItems(raw: string): { text: string; items: number[]; marks: { id: number; open: boolean; at: number; lead?: boolean }[]; floats: { index: number; at: number; edge?: boolean }[] } {
   let out = "";
   let n = 0;
   let pending = false;
   const items: number[] = [];
   const marks: { id: number; open: boolean; at: number; lead?: boolean }[] = [];
-  const floats: { index: number; at: number }[] = [];
+  const floats: { index: number; at: number; edge?: boolean }[] = [];
+  /** Inline boxes open where the scan is, and the floats met inside one. */
+  const live = new Set<number>();
+  const nested = new Set<number>();
   const space = (edge = false) => {
     // A collapsible space after another one (even across an element edge) disappears.
     if (pending && n > 0 && !out.endsWith(" ")) {
@@ -218,6 +221,7 @@ function collapseItems(raw: string): { text: string; items: number[]; marks: { i
       // A float: an item edge where it occurs (the spaces around it collapse as if it weren't there).
       const end = chars.indexOf(END, i);
       floats.push({ index: Number(chars.slice(i + 1, end).join("")), at: n + (pending && n > 0 && !out.endsWith(" ") ? 1 : 0) });
+      if (live.size) nested.add(floats.length - 1);
       i = end;
       continue;
     }
@@ -226,6 +230,8 @@ function collapseItems(raw: string): { text: string; items: number[]; marks: { i
       if (ch === CLOSE) space();
       const end = chars.indexOf(END, i);
       marks.push({ id: Number(chars.slice(i + 1, end).join("")), open: ch === OPEN, at: n });
+      if (ch === OPEN) live.add(marks.at(-1)!.id);
+      else live.delete(marks.at(-1)!.id);
       i = end;
       continue;
     }
@@ -243,7 +249,10 @@ function collapseItems(raw: string): { text: string; items: number[]; marks: { i
   const text = out.replace(/ $/, "");
   const len = [...text].length;
   const cuts = [...new Set([...items, ...floats.map((f) => f.at)])].filter((b) => b > 0 && b < len).sort((a, b) => a - b);
-  return { text, items: cuts, marks: marks.map((m) => ({ ...m, at: Math.min(m.at, len) })), floats: floats.map((f) => ({ ...f, at: Math.min(f.at, len) })) };
+  // A float inside an inline box, at one of an inline box's edges: whether that edge comes before
+  // it on its line isn't told apart here (flagged, see layoutText).
+  const edge = (f: { at: number }, k: number) => nested.has(k) && marks.some((m) => m.at === f.at || m.at === f.at - 1);
+  return { text, items: cuts, marks: marks.map((m) => ({ ...m, at: Math.min(m.at, len) })), floats: floats.map((f, k) => ({ ...f, at: Math.min(f.at, len), ...(edge(f, k) && { edge: true }) })) };
 }
 
 function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) => InlineInfo | undefined): { runs: string[]; runMeta: FixtureNode["runMeta"] } {
