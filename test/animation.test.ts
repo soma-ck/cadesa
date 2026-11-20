@@ -44,10 +44,26 @@ describe("animations at their start", () => {
     expect([r.box("s5").x, r.box("s5").y]).toEqual([-10, 150 + 12 + 4]);
   });
 
+  it("lays a box out with the layout properties its starting keyframe sets", () => {
+    const r = run(
+      `<div class="w a"></div><div class="d a"></div><div class="p"><div class="t"></div></div>`,
+      `${KF}
+@keyframes move { 0%, 40% { top: 70%; left: var(--x) } to { top: 0; left: 0 } }
+.w { animation: wide 1s }
+.d { width: 30px; animation: wide 1s 1s }
+.p { position: relative; height: 100px; --x: 25% }
+.t { position: absolute; top: 0; left: 0; width: 10px; height: 10px; animation: move 2s both }`,
+    );
+    expect(r.exact()).toBe(true);
+    // From t=0 the keyframe's width; delayed without a backwards fill, the box's own.
+    expect([r.box("w").w, r.box("d").w]).toEqual([50, 30]);
+    expect([r.box("t").x, r.box("t").y - r.box("p").y]).toEqual([r.box("p").w / 4, 70]);
+  });
+
   it("leaves a start it doesn't model approximate", () => {
-    const r = run(`<div class="n a"></div><div class="w a"></div><div class="st a"></div>`, `${KF}\n.n { animation: rise 1s -.5s }\n.w { animation: wide 1s }\n.st { animation: rise 1s steps(4, start) }`);
+    const r = run(`<div class="n a"></div><div class="st a"></div><div class="nw a"></div>`, `${KF}\n.n { animation: rise 1s -.5s }\n.nw { animation: wide 1s -.5s }\n.st { animation: rise 1s steps(4, start) }`);
     expect(r.approx("n")).toMatch(/negative animation-delay/);
-    expect(r.approx("w")).toMatch(/set width/);
+    expect(r.approx("nw")).toMatch(/negative animation-delay/);
     expect(r.approx("st")).toMatch(/jumps at the start/);
   });
 });

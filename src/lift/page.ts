@@ -67,6 +67,9 @@ export interface P5 {
   sourceCodeLocation?: P5Loc;
 }
 
+/** Properties whose animated value moves or resizes boxes (applied at an animation's start, see animatedLayout). */
+const LAYOUT_ANIMATED = /^(top|right|bottom|left|inset|width|height|min-|max-|margin|padding|offset|font|line-height|letter-spacing|word-spacing|border-.*width|border-.*style|display|position|float|clear|flex|grid|gap|row-gap|column-gap|aspect|box-sizing|white-space|text-indent|vertical-align|order|align|justify|place)/;
+
 export type Role = "hidden" | "out" | "container" | "text" | "leaf";
 
 export interface Origin {
@@ -622,13 +625,23 @@ export abstract class PageLifter {
       // An easing that jumps at the start (steps(n, start), step-start) is part way already.
       if (delay === 0 && /^step-start$|^steps\(\s*\d+\s*,\s*(start|jump-start|jump-both)\s*\)$/.test(timing)) return { why: `animation-timing-function: ${timing} jumps at the start`, name };
       const kf = this.keyframesAt(name, /^(reverse|alternate-reverse)$/.test(dir) ? 1 : 0)!;
-      for (const [p, v] of kf) {
-        if (/^(top|right|bottom|left|inset|width|height|min-|max-|margin|padding|offset|font|line-height|letter-spacing|border-.*width|display|position|flex|grid|gap|aspect)/.test(p))
-          return { why: `its @keyframes set ${p}, which moves or resizes boxes as it runs`, name };
-        out.set(p, { value: v, name });
-      }
+      for (const [p, v] of kf) out.set(p, { value: v, name });
     }
     return out.size ? { decls: out } : undefined;
+  }
+
+  /**
+   * The values an element's animations give layout properties at their start (top, width, margin...,
+   * see animationStart) replace its own: at t=0 the box is laid out with them, as `--verify` measures
+   * it (every animation seeked to its start). Before roles are decided: they may change them.
+   */
+  animatedLayout(el: El) {
+    this.states.forEach((_, si) => {
+      const anim = this.animationStart(el, si);
+      if (!anim || anim.why !== undefined) return;
+      const layout = [...anim.decls].filter(([p]) => LAYOUT_ANIMATED.test(p));
+      if (layout.length) el.own[si] = new Map([...el.own[si], ...layout.map(([p, a]) => [p, { value: a.value, utility: `@keyframes ${a.name} (at its start)` }] as [string, Origin])]);
+    });
   }
   /** A registered (@property) custom property that doesn't inherit. */
   registered(_name: string): { inherits: boolean; initial?: string } | undefined {
@@ -665,6 +678,7 @@ export abstract class PageLifter {
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.evaluate(el);
     this.resolveRem();
     for (const el of [this.htmlEl, this.bodyEl, ...this.els]) if (el) this.expandDeferred(el);
+    for (const el of this.els) this.animatedLayout(el);
     this.presentationalHints();
     this.pseudoElements();
     this.anonymousText();
@@ -3680,8 +3694,11 @@ export abstract class PageLifter {
       // Animations: drawn as at their start (t=0), whose keyframe's transform, translate, rotate and
       // scale replace the box's own (as `--verify` measures it, every animation seeked to its start).
       const anim = this.animationStart(el, si);
-      if (anim?.why !== undefined)
-        this.note(el, si, { decl: `${own.get("animation-name")!.utility} (animation: ${anim.name})`, reason: `${anim.why}; boxes are predicted at an animation's start`, kind: "visual" });
+      if (anim?.why !== undefined) {
+        // Where it starts isn't known: what its keyframes set moves the box (layout properties) or only how it's drawn.
+        const layout = [0, 1].some((at) => [...(this.keyframesAt(anim.name, at)?.keys() ?? [])].some((p) => LAYOUT_ANIMATED.test(p)));
+        this.note(el, si, { decl: `${own.get("animation-name")!.utility} (animation: ${anim.name})`, reason: `${anim.why}; boxes are predicted at an animation's start`, kind: layout ? "geometry" : "visual" });
+      }
       const moved = anim?.why === undefined ? [...(anim?.decls ?? [])].filter(([p]) => /^(transform|translate|rotate|scale|transform-origin)$/.test(p)) : [];
       if (moved.length) {
         el.own[si] = new Map([...own, ...moved.map(([p, a]) => [p, { value: a.value, utility: `@keyframes ${a.name} (at its start)` }] as [string, Origin])]);

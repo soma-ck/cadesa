@@ -3,7 +3,9 @@
  * the animation runs from t=0 or fills backwards (a delay with backwards or both); reverse starts
  * at 100%; a keyframe that doesn't set a property leaves the box's own value; transform and
  * translate from two animations compose. A delayed animation without a backwards fill, a
- * forwards-only fill and a paused animation behave as Chromium draws them at t=0.
+ * forwards-only fill and a paused animation behave as Chromium draws them at t=0. Keyframes that
+ * set layout properties (top and left of a positioned pointer, a width, a margin, a padding, a
+ * height) lay the box out with their starting values.
  */
 *,
 *::before,
@@ -152,4 +154,88 @@ body {
   border-radius: 50%;
   background: #33aa66;
   animation: pulse 2s ease-in-out infinite;
+}
+
+@keyframes point {
+  0%,
+  40% {
+    top: 70%;
+    left: 60%;
+    opacity: 0;
+  }
+  80%,
+  to {
+    top: var(--target-y);
+    left: var(--target-x);
+    opacity: 1;
+  }
+}
+
+@keyframes open {
+  from {
+    width: 40%;
+    padding: 4px 8px;
+  }
+  to {
+    width: 100%;
+    padding: 12px 16px;
+  }
+}
+
+@keyframes fill {
+  to {
+    width: 100%;
+  }
+}
+
+@keyframes settle {
+  from {
+    margin-top: 24px;
+    height: 60px;
+  }
+}
+
+.stage {
+  --target-x: 20px;
+  --target-y: 30px;
+  position: relative;
+  height: 320px;
+  margin-top: 20px;
+  background: #ffffff;
+}
+
+.stage__pointer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 20px;
+  height: 24px;
+  background: #3355aa;
+  animation: point 4s cubic-bezier(0.35, 0, 0.2, 1) both;
+}
+
+.stage__panel {
+  width: 70%;
+  background: #e8ecf4;
+  animation: open 0.5s ease-out;
+}
+
+.stage__bar {
+  width: 30%;
+  height: 8px;
+  background: #33aa66;
+  animation: fill 2s 1s linear;
+}
+
+.stage__note {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
+.stage__note--later {
+  animation: settle 0.6s 0.3s backwards;
+}
+
+.stage__note--wide {
+  animation: open 0.4s 0.5s;
 }
