@@ -106,6 +106,24 @@ describe("date inputs (en-US)", () => {
     expect(r.approx("wide")).toBeUndefined();
   });
 
+  it("sizes time, month, week, datetime-local and file inputs as Chromium draws them", () => {
+    const r = run(
+      `<div><input data-fixture="t" type="time"></div><div><input data-fixture="m" type="month"></div><div><input data-fixture="w" type="week"></div><div><input data-fixture="l" type="datetime-local"></div><div><input data-fixture="f" type="file"></div>`,
+      `input { font: 16px Inter }`,
+      [400],
+    );
+    // Measured in Chromium (en-US): a time's picker is a 1.05em + 6px square, 8px after its fields
+    // (h:mm AM); a file input is 34 × "0" wide, as tall as its line with its Arial button on it.
+    expect(["t", "m", "w", "l", "f"].map((id) => geo(r.box(id)))).toEqual([
+      [0, 0, 110.797, 26.797],
+      [0, 26.797, 174, 26],
+      [0, 52.797, 162, 26],
+      [0, 78.797, 231, 26],
+      [0, 105.797, 344, 24],
+    ]);
+    expect(r.exact()).toBe(true);
+  });
+
   it("leaves a date input whose inner parts the page styles approximate", () => {
     const r = run(`<div class="a"><input data-fixture="d" type="date"></div>`, `input { font: 16px Inter } ::-webkit-datetime-edit { padding: 0 }`, [400]);
     expect(r.approx("d")).toBeDefined();

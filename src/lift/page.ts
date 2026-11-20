@@ -192,6 +192,8 @@ const BLOCK_TAGS = new Set(["html", "body", "div", "p", "section", "article", "h
 export const INLINE_BLOCK = new Set(["button", "input", "select", "textarea", "meter", "progress"]);
 export const REPLACED_BLOCK = new Set(["img", "svg", "video", "canvas", "audio", "iframe", "embed", "object"]);
 const CONTROL = new Set(["input", "select", "textarea"]);
+/** Inputs Chromium draws as fields with a picker (see dateFields). */
+const DATE_LIKE = /^(date|time|month|week|datetime-local)$/;
 /** Table elements' default display. */
 const TABLE_DISPLAY: Record<string, string> = {
   table: "table",
@@ -569,6 +571,10 @@ export abstract class PageLifter {
    * ::-webkit-calendar-picker-indicator), which changes how it lays out its fields.
    */
   styledDateParts(): boolean {
+    return false;
+  }
+  /** Whether the page's stylesheets style a file input's button (::file-selector-button, ::-webkit-file-upload-button). */
+  styledFileButton(): boolean {
     return false;
   }
 
@@ -1453,8 +1459,8 @@ export abstract class PageLifter {
         if (!v || !own) return undefined;
         a = mt + bt + pt + (ctype === "select" ? own.sa : v.ascent + Math.floor(v.lineGap / 2));
       }
-    } else if (ch !== undefined && ctype === "date") {
-      // A date input: its fields' baseline (controlBaseline).
+    } else if (ch !== undefined && (DATE_LIKE.test(ctype) || ctype === "file")) {
+      // A date, time, month, week or file input: its fields' (its line's) baseline (controlBaseline).
       const base = this.controlBaseline(el, si);
       if (base === undefined || !isFinite(base)) return undefined;
       hm = mt + ch + mb;
@@ -1845,11 +1851,12 @@ export abstract class PageLifter {
       // ceil(average × size + maximum (rounded) − average).
       return Math.ceil(avg * size + Math.round(v.maxChar) - avg - 1e-4);
     }
-    if (type === "date") {
-      if (this.styledDateParts()) return undefined;
-      const w = (s: string) => m.measure(s, t.size, t.weight) ?? NaN;
-      const fields = Math.max(w("mm"), w("12")) + Math.max(w("dd"), w("31")) + Math.max(w("yyyy"), w("275760")) + 2 * w("/");
-      return isFinite(fields) ? Math.floor(fields + 1e-6) + 7 + t.size + 4 : undefined;
+    if (DATE_LIKE.test(type)) return this.dateFields(el, type, si)?.width;
+    if (type === "file") {
+      // 34 times its font's "0", rounded up (its button and "No file chosen" sit inside that).
+      if (this.styledFileButton()) return undefined;
+      const z = m.measure("0", t.size, t.weight);
+      return z === undefined ? undefined : Math.ceil(34 * z - 1e-6);
     }
     if (/^(submit|reset|button)$/.test(type)) {
       const label = (attr(el.node, "value") ?? (type === "submit" ? "Submit" : type === "reset" ? "Reset" : "")).replace(/[ \t\n\r\f]+/g, " ").trim();
@@ -1858,6 +1865,48 @@ export abstract class PageLifter {
       return w === undefined ? undefined : Math.ceil(w * 64 - 1e-6) / 64;
     }
     return undefined;
+  }
+
+  /**
+   * A date, time, month, week or datetime-local input as Chromium (en-US) draws it, as probed with
+   * its UA shadow tree in two fonts at sizes from 12 to 24px: its fields (each its placeholder or its
+   * largest value, whichever is wider, 1px padding at each side) and the text between them, rounded
+   * down to a whole px, plus 1px; then its picker indicator: 1em + 4px (date, month, week,
+   * datetime-local), or for time a square of 1.05em (in layout units) + 6px, 8px after the fields.
+   * en-US: `mm/dd/yyyy`, `h:mm AM` (a narrow no-break space before AM/PM), `MMMM yyyy`, `Week ww,
+   * yyyy`, `mm/dd/yyyy, h:mm AM`. undefined when its inner parts are styled, a time has a step (its
+   * seconds field), or a text isn't measured.
+   */
+  dateFields(el: El, type: string, si: number): { width: number; picker: number } | undefined {
+    if (this.styledDateParts() || (/time/.test(type) && attr(el.node, "step") !== undefined)) return undefined;
+    const t = this.textOf(el, si);
+    const m = metricsFor(t.family.value, t.italic);
+    if (!m || t.fluid) return undefined;
+    const w = (s: string) => (m.unsupported(s).length ? NaN : (m.measure(s, t.size, t.weight) ?? NaN));
+    const mx = (...xs: string[]) => Math.max(...xs.map(w));
+    const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+    const date = [mx("mm", "12"), w("/"), mx("dd", "31"), w("/"), mx("yyyy", "275760")];
+    const time = [mx("--", "12"), w(":"), mx("--", "59"), w(" "), mx("--", "AM", "PM")];
+    const [parts, n] =
+      type === "date" ? [date, 3] : type === "time" ? [time, 3] : type === "month" ? [[mx("---------", ...MONTHS), w(" "), mx("----", "275760")], 2] : type === "week" ? [[w("Week "), mx("--", "53"), w(", "), mx("----", "275760")], 2] : [[...date, w(", "), ...time], 6];
+    const sum = parts.reduce((a, b) => a + b, 0);
+    if (!isFinite(sum)) return undefined;
+    const edit = Math.floor(sum + 2 * n + 1e-6) + 1;
+    const picker = type === "time" ? Math.floor(1.05 * t.size * 64 + 1e-6) / 64 + 6 : t.size + 4;
+    return { width: edit + (type === "time" ? 8 : 0) + picker, picker };
+  }
+
+  /**
+   * A file input's button ("Choose File", in Arial at its font size: 1px padding and 2px border
+   * above and below), on its line's baseline: how far it reaches above and below it. Arial's
+   * vertical metrics (Liberation Sans' on Linux: the same) are a fact of the font.
+   */
+  fileButton(size: number): { above: number; below: number } {
+    const asc = Math.round(0.905 * size);
+    const desc = Math.round(0.212 * size);
+    const gap = Math.round((67 / 2048) * size);
+    const above = 3 + asc + Math.floor(gap / 2);
+    return { above, below: asc + desc + gap + 6 - above };
   }
 
   /**
@@ -1897,7 +1946,12 @@ export abstract class PageLifter {
     if (/^(text|email|password|search|tel|url|number)$/.test(type)) return own.lh >= normal ? top + own.sa : NaN;
     // A date input: its fields' line (with their 1px padding) centered in its content box, which its
     // picker (1em + 4px) may make taller.
-    if (type === "date") return this.styledDateParts() ? NaN : top + (Math.max(own.lh + 2, t.size + 4) - own.lh - 2) / 2 + 1 + own.sa;
+    if (DATE_LIKE.test(type)) {
+      const f = this.dateFields(el, type, si);
+      return f ? top + Math.floor(((Math.max(own.lh + 2, f.picker) - own.lh - 2) / 2) * 64 + 1e-6) / 64 + 1 + own.sa : NaN;
+    }
+    // A file input: its line's, which its button may make taller above the baseline.
+    if (type === "file") return this.styledFileButton() ? NaN : top + Math.max(own.sa, this.fileButton(t.size).above);
     return NaN;
   }
 
@@ -2011,10 +2065,20 @@ export abstract class PageLifter {
     }
     // A date input: its fields' line (its line height, normal from its font) and their 1px padding
     // above and below, or its picker indicator (1em + 4px) where that's taller; appearance or not.
-    if (el.tag === "input" && type === "date" && !limited && !this.styledDateParts()) {
+    // (A time input's picker is 1.05em + 6px square: see dateFields.)
+    if (el.tag === "input" && DATE_LIKE.test(type) && !limited) {
+      const f = this.dateFields(el, type, si);
       const normal = this.normalLine(t);
       const line = t.lineHeight === "normal" ? normal : "num" in t.lineHeight ? lineHeightPx(t.size, t.lineHeight.num) : t.lineHeight.px;
-      const h = line === undefined || t.fluid ? NaN : Math.max(line + 2, t.size + 4) + edgesY();
+      const h = line === undefined || !f ? NaN : Math.max(line + 2, f.picker) + edgesY();
+      return isFinite(h) ? h : undefined;
+    }
+    // A file input: one line, holding its button (see fileButton) on the baseline.
+    if (el.tag === "input" && type === "file" && !limited && !this.styledFileButton()) {
+      const own = this.strutOf(el, si);
+      if (!own || t.fluid) return undefined;
+      const b = this.fileButton(t.size);
+      const h = Math.max(own.sa, b.above) + Math.max(own.sd, b.below) + edgesY();
       return isFinite(h) ? h : undefined;
     }
     // A text field's line, with or without native appearance, is never shorter than line-height:

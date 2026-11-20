@@ -52,6 +52,26 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   past its strut (larger words, `<sup>`, `<sub>` in it) and is split across lines is placed line by
   line, as Chromium places each of its fragments: by the extent of what of it is on that line, the
   boxes in it moving with it. Before, it was `≈` unless it could never be split.
+- Time, month, week and datetime-local inputs are laid out as Chromium (en-US) draws them, as
+  probed with their UA shadow trees in two fonts at sizes from 12 to 24px and four line heights
+  (336 cases, all exact): their fields (each its placeholder or its largest value, whichever is
+  wider, with 1px padding at each side) and the text between them (`h:mm AM` has a narrow no-break
+  space before AM/PM; `MMMM yyyy`; `Week ww, yyyy`; `mm/dd/yyyy, h:mm AM`), rounded down to a whole
+  px, plus 1px; then the picker indicator, 1em + 4px, or for time a square of 1.05em (in layout
+  units) + 6px, 8px after the fields. They are as tall as their line plus the fields' 1px padding,
+  or their picker where that's taller. A time input with a `step` (a seconds field) stays `≈`.
+- File inputs are laid out: `ceil(34 × width of "0")` wide (no padding or border of their own), as
+  tall as their line holding the "Choose File" button, which is set in Arial at the input's font
+  size (Arial's vertical metrics, which Liberation Sans shares; its line at line-height: normal plus
+  1px padding and a 2px border above and below) on the baseline; their baseline is that line's. A
+  page that styles the button (`::file-selector-button`) leaves one `≈`.
+- `--verify`, `capture` and the conformance scripts start Chromium in US English (`--lang=en-US`),
+  the locale form controls are predicted in: a time input follows the system's clock otherwise
+  (24-hour in en-CA or en-GB).
+- Grid: an item spanning several intrinsic tracks gives its extra max-content size to the growth
+  limits of the tracks that are infinitely growable (no item sized them yet) first, as CSS Grid
+  §12.5.1 and Chromium do, not to every track it spans. A `grid-auto-flow: column dense` grid with
+  an item spanning two auto columns had a column 25px off.
 
 ## 0.1.19 (2026-11-20)
 

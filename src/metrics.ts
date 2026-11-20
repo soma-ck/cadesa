@@ -217,7 +217,9 @@ export async function launchChromium(): Promise<Browser> {
   try {
     // Headless Chromium hides scrollbars (they take no space, as overlay ones); with classic ones they take 15px.
     const classic = process.env.CADESA_SCROLLBARS === "classic";
-    return await chromium.launch({ executablePath: findChrome(), ...(classic && { ignoreDefaultArgs: ["--hide-scrollbars"] }) });
+    // In US English, the locale Cadesa predicts form controls in (a time input's fields follow the
+    // system locale's clock otherwise: 24-hour in en-CA or en-GB).
+    return await chromium.launch({ executablePath: findChrome(), args: ["--lang=en-US"], env: { ...process.env, LANG: "en_US.UTF-8", LANGUAGE: "en_US", LC_ALL: "en_US.UTF-8" }, ...(classic && { ignoreDefaultArgs: ["--hide-scrollbars"] }) });
   } catch (e) {
     throw new Error(`could not start Chromium (${(e as Error).message.split("\n")[0]}); ${NEEDS_PLAYWRIGHT}`);
   }
