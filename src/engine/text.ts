@@ -862,7 +862,9 @@ export function layoutText(
         // full there: the kept space before it doesn't fit, so LayoutNG takes the trailing whitespace
         // (that collapsed space, and the box's start) onto this line.
         const leads = sp.lead && sp.from === b && l.width + measure(" ", sp.from - 1) + ls > maxWidth + 1e-6;
-        const on = sp.from === sp.to ? sp.from >= a && (sp.from < b || (b === all.length && sp.from === b)) : (leads ? sp.from - 1 : sp.from) < b && sp.to > a;
+        // An empty box where a line breaks stays with what is before it: it ends that line (probed:
+        // "dawn <a></a>quickly", the box on the line "dawn" ends whether or not its space fits).
+        const on = sp.from === sp.to ? (sp.from > a || i === 0) && sp.from <= b : (leads ? sp.from - 1 : sp.from) < b && sp.to > a;
         if (!on) continue;
         onLine.push(sp);
         if (sp.byExtent || sp.rel) continue;
