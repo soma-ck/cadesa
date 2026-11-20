@@ -413,6 +413,9 @@ const LETTER = /\p{L}/u;
 
 const SHY = "­";
 
+/** Grapheme clusters: where a word may break between characters (overflow-wrap: anywhere). */
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
 /** An atomic inline (an inline-block, an icon <svg>) in a run of text: no glyph, its width is its inline box's (a span's open edge). */
 export const OBJ = "\uFFFC";
 
@@ -710,15 +713,13 @@ export function layoutText(
     openLine(p);
     if (!opts.wrapAnywhere || fits(p)) return void (line = p);
     if (opts.band) approximate ??= "a word breaks between characters beside a float";
-    // Graphemes, with a soft hyphen kept with the character after it (Chromium never ends a
-    // fragment on one). A fragment that starts inside the word counts the kerning to the character
-    // that follows it (Chromium measures it as shaped with the rest of the word); one that starts
-    // the word is measured on its own.
+    // Grapheme clusters, with a soft hyphen kept with the cluster after it (Chromium never ends a
+    // fragment on one).
     if (p.includes(SHY)) approximate ??= "a word with a soft hyphen breaks between characters";
     if (spans.length || lead) approximate ??= "a word breaks between characters in text with inline boxes of their own";
     const chars: string[] = [];
     let pending = "";
-    for (const ch of trimSpaces(p)) {
+    for (const { segment: ch } of graphemes.segment(trimSpaces(p))) {
       if (ch === SHY) pending += ch;
       else {
         chars.push(pending + ch);
@@ -727,21 +728,57 @@ export function layoutText(
     }
     if (pending) chars.push(pending);
     let broke = false;
+    /**
+     * A fragment's width: on its own (`kerned` false), or as it sits in the word's shaping, with
+     * the kerning to the cluster after it (the word's last fragment: to a space after it, as a line
+     * end does).
+     */
     const fragW = (frag: string, k: number, kerned = mid || broke) => {
-      // The word's last fragment counts its kerning to a space after it, as a line end does.
       const next = chars[k]?.replaceAll(SHY, "") ?? (p.endsWith(" ") ? " " : undefined);
       return next && kerned ? w(frag + next) - w(next) : w(frag);
     };
+    // A fragment fits as Chromium's shaping line breaker decides (pinned with a random tester:
+    // 15,000 decisions on words in Inter, Roboto and Lato at 12-28px and four weights). It first
+    // measures the fragment where it sits in the text's shaping (kerned to what follows) against
+    // the line's width in layout units plus one. Where the break isn't safe (the font kerns across
+    // it), it reshapes the fragment from the last safe point in it (its start, where that is safe)
+    // to the break: the text before that point at its snapped position and the reshaped part's
+    // width rounded up must fit in the line's width. With no safe point in it (the fragment starts
+    // where the font kerns too), the shaping of its start already reached past the break: nothing
+    // is reshaped. A safe point is one the font doesn't kern across.
+    const lu = Math.floor(maxWidth * 64 + TEXT_EPS) / 64;
+    const room = lu + 1 / 64 + TEXT_EPS / 64;
+    const raw = (s: string) => measure(s, 0);
+    // (A word's last fragment breaks after the space that follows it, where the line ends: safe.)
+    const safeAt = (i: number) => i <= 0 || i >= all.length || all[i - 1] === " " || all[i] === " " || Math.abs(raw(all[i - 1] + all[i]) - raw(all[i - 1]) - raw(all[i])) < TEXT_EPS;
+    const xs = new Map<number, number>();
+    /** Where character i starts in the text's shaping. */
+    const xAt = (i: number) => {
+      let x = xs.get(i);
+      if (x === undefined) xs.set(i, (x = i <= 0 ? 0 : raw(all.slice(0, i + 1).join("")) - raw(all[i])));
+      return x;
+    };
+    const fitsFrag = (frag: string, k: number) => {
+      if (!(fragW(frag, k, true) <= room)) return false;
+      const s = consumed;
+      const e = s + [...frag].length;
+      // Letter-spaced text: on its own too (how its positions snap isn't pinned down).
+      if (ls) return fragW(frag, k, false) <= room;
+      if (e >= all.length || safeAt(e)) return true;
+      let p = e - 1;
+      while (p > s && !safeAt(p)) p--;
+      if (p === s && !safeAt(s)) {
+        // Kerned at both ends and everywhere inside: Chromium fits it by its width in the word's
+        // shaping, or on its own, by something not pinned down; where those disagree it's flagged.
+        if (!(raw(all.slice(s, e).join("")) <= room)) approximate ??= "a word breaks between characters the font kerns at both ends of a fragment";
+        return true;
+      }
+      const snap = (x: number) => Math.floor(x * 64 + TEXT_EPS) / 64;
+      return snap(xAt(p)) - snap(xAt(s)) + ceil64(raw(all.slice(p, e).join(""))) <= lu + TEXT_EPS / 64;
+    };
     let cur = "";
     chars.forEach((ch, k) => {
-      if (cur) {
-        // Both ways of measuring the fragment must agree, with room to spare.
-        const a = fragW(cur + ch, k + 1, false);
-        const b = fragW(cur + ch, k + 1, true);
-        if (a <= maxWidth !== b <= maxWidth || Math.abs(a - maxWidth) < 0.1 || Math.abs(b - maxWidth) < 0.1)
-          approximate ??= "a word breaks between characters close to the line's width";
-      }
-      if (cur && !(fragW(cur + ch, k + 1) <= maxWidth + 1e-6)) {
+      if (cur && !fitsFrag(cur + ch, k + 1)) {
         push({ text: cur, width: fragW(cur, k), at: consumed });
         consumed += [...cur].length;
         broke = true;

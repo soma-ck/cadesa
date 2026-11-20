@@ -1,5 +1,5 @@
 {
-  "note": "wrap: anywhere: a fragment within reach of the line width is approximate: flagged",
+  "note": "wrap: anywhere: a fragment the font kerns at both ends and inside (\"VA\" in \"AVATAR\") that fits only by its width in the word's shaping: flagged",
   "seed": 202522,
   "widths": [
     304

@@ -32,6 +32,15 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   padding of runs, spacers and inline-blocks are truncated to layout units, as Chromium stores them
   (a negative one toward zero). `fixtures/katex/scripts.html` (formulas rendered by KaTeX 0.19.1)
   covers them in `conformance:css`, and `fuzz-css` generates such stacks.
+- A word broken between characters (`overflow-wrap: anywhere` and `break-word`) is exact close to
+  the line's width, where it was `≈`: each fragment fits as Chromium's shaping line breaker
+  decides, pinned with a random tester (15,000 decisions on words in Inter, Roboto and Lato at
+  12-28px and four weights, letter-spaced too). It is measured where it sits in the text's shaping
+  (kerned to what follows) against the line's width in layout units plus one; where the font kerns
+  across the break, the part from the last point it doesn't kern across is reshaped and must fit
+  too (the text before that point at its snapped position, the reshaped part rounded up to a layout
+  unit). Words break between grapheme clusters. Still `≈`: a fragment the font kerns at both ends
+  and everywhere inside that fits only by its width in the word's shaping.
 - A line may break before and after an atomic inline (an inline-block, an image, an svg) whatever
   the characters beside it are: probed in Chromium, "(" before one and "." or ")" after one are
   broken from it. They were kept together.
