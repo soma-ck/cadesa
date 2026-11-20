@@ -647,6 +647,10 @@ function layoutLines(
       // full there: the kept space before it doesn't fit, so LayoutNG takes the trailing whitespace
       // (that collapsed space, and the box's start) onto this line.
       const leads = sp.lead && sp.from === b && lwidth + measure(" ", sp.from - 1) + ls > room + 1e-6;
+      // Which line such a box opens on decides a line's height when the box reaches past the strut,
+      // and that isn't pinned down (probed: one in another font opens on the full line, one in
+      // another size or vertical-align sometimes on the next).
+      if (leads && (sp.above !== undefined || sp.below !== undefined || sp.align || sp.byExtent)) approximate ??= "an inline box taller than the line opens where a full line breaks";
       // An empty box where a line breaks stays with what is before it: it ends that line (probed:
       // "dawn <a></a>quickly", the box on the line "dawn" ends whether or not its space fits).
       const on = sp.from === sp.to ? (sp.from > a || first) && sp.from <= b : (leads ? sp.from - 1 : sp.from) < b && sp.to > a;

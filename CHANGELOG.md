@@ -53,13 +53,19 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   a font with ligatures. `fixtures/css/breaks.html` covers them.
 - Inter's contextual "x" between digits ("3x4", "2 x 6") is measured as the multiplication sign
   Chromium draws (probed at weights 100 to 900; not after a lone 0, a hex prefix). It was `≈`.
+- Text in a handwriting font (Caveat) holding atomic inlines (a badge on a line of notes) is exact
+  where it stays on one line: Chromium shapes the text on either side of an atomic inline apart, so
+  `cadesa fonts --measure` lays each part out whole, and the run is as wide as its parts and its
+  atomic inlines. `--measure` lifts the page again once the tables are measured (the lift sizes
+  inline-blocks from them) and measures the lines that then appear.
 - `cadesa fonts` counts only text that is laid out: a positioned copy kept out of the way inside an
   inline-block (KaTeX's MathML) no longer asks for a font to be measured again.
 - Fixed: an empty inline box (or one whose only space collapsed) where a line breaks stays on the
   line before the break, as in Chromium (a box aligned to the middle made the next line taller);
   a subgrid's own `column-gap: 0` was dropped, so it took its parent's gap; a box that makes a
   formatting context of its own beside floats reaching past its container's end is placed in the
-  room there, as wide as nothing.
+  room there, as wide as nothing; a `<button>` stretched taller than its content (by a grid row or a
+  flex line) centers it, as Chromium does (its content was left at the top, and marked exact).
 - `fuzz-css` generates badges, flex items that shrink, tables of text, animated layout properties,
   runs and atomic inlines on lines beside floats, and `break-all`, `anywhere` and `keep-all` text;
   the source fuzzer generates `shrink`.
