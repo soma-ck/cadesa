@@ -124,7 +124,38 @@ export function genCssCase(seed: number): CssCase {
       if (r.chance(0.3)) d.push(`margin-right: ${r.pick(["0.0359em", "0.044em", "0.05em"])}`);
       return `<span${attr(cls(d))}>${r.pick(["a", "b", "x", "y", "2", "+", "=", "n"])}</span>`;
     };
-    const bases = Array.from({ length: r.int(1, 3) }, () => `<span${attr(base)}>${strut(r.pick([0.4306, 0.6444, 0.6944, 0.7778]), r.pick([0, 0, 0.0833, 0.1944]))}${Array.from({ length: r.int(1, 3) }, () => (r.chance(0.3) ? space() : "") + atom()).join("")}</span>`);
+    /**
+     * A stack as KaTeX sets superscripts, subscripts, fractions and roots: an inline table of a row
+     * whose cell has an em height (and is aligned to its bottom) holding blocks of no height, each a
+     * line of an empty strut and an inline-block of smaller text (or a rule as wide as the cell, or a
+     * root's body with em padding and its tail), moved up by relative offsets; maybe a second row
+     * (its depth) and a strut cell of 2px with a zero-width space, the table's margin taking it back.
+     */
+    const stack = (depth: number): string => {
+      const two = r.chance(0.6);
+      const em = () => r.pick(["0.3011em", "0.8141em", "0.7519em", "0.6444em", "0.8451em", "1.009em", "0.1514em", "0.6586em"]);
+      const piece = () => {
+        const kind = r.int(0, 5);
+        if (kind === 0) return `<span${attr(cls(["display: inline-block", "width: 100%", "border-bottom-style: solid", "min-height: 1px", `border-bottom-width: ${r.pick(["0.04em", "0.06em", "1px"])}`]))}></span>`;
+        if (kind === 1) return `<span${attr(cls(["display: inline-block", "width: 100%", "position: relative", "overflow: hidden", `min-width: ${r.pick(["0.853em", "1.02em"])}`, `height: ${r.pick(["1.08em", "1.28em"])}`]))}></span>`;
+        if (kind === 2) return `<span${attr(cls(["display: inline-block", `padding-left: ${r.pick(["0.833em", "1em"])}`]))}>${atom()}</span>`;
+        const nested = depth < 1 && r.chance(0.25) ? stack(depth + 1) : "";
+        return `<span${attr(cls(["display: inline-block", `font-size: ${r.pick(["0.7em", "0.5em", "0.6em"])}`]))}><span>${atom()}${r.chance(0.4) ? atom() : ""}${nested}</span></span>`;
+      };
+      const block = () => {
+        const d = ["display: block", "height: 0", "position: relative", `top: -${r.pick(["3.063em", "2.55em", "2.655em", "3.394em", "2.7603em"])}`];
+        if (r.chance(0.5)) d.push(`margin-right: ${r.pick(["0.05em", "0.0714em"])}`);
+        if (r.chance(0.2)) d.push(`margin-left: ${r.pick(["-0.1389em", "0em", "-0.1945em"])}`);
+        return `<span${attr(cls(d))}><span${attr(cls(["display: inline-block", "overflow: hidden", "width: 0", `height: ${r.pick(["2.7em", "3em", "2.5em"])}`]))}></span>${piece()}</span>`;
+      };
+      const cell = (h: string, blocks: number) => `<span${attr(cls(["display: table-cell", "vertical-align: bottom", "position: relative", `height: ${h}`]))}>${Array.from({ length: blocks }, block).join("")}</span>`;
+      const row = (inner: string) => `<span${attr(cls(["display: table-row"]))}>${inner}</span>`;
+      const sCell = `<span${attr(cls(["display: table-cell", "vertical-align: bottom", "font-size: 1px", "width: 2px", "min-width: 2px"]))}>​</span>`;
+      const table = cls(["display: inline-table", "table-layout: fixed", "border-collapse: collapse", ...(two ? ["margin-right: -2px"] : [])]);
+      const rows = row(cell(em(), r.int(1, 3)) + (two ? sCell : "")) + (two ? row(`<span${attr(cls(["display: table-cell", "vertical-align: bottom", "position: relative", `height: ${r.pick(["0.15em", "0.2587em", "0.345em", "0.2397em"])}`]))}><span${attr(cls(["display: block", "height: 0", "position: relative"]))}></span></span>`) : "");
+      return `<span>${atom()}<span${attr(cls(["text-align: left"]))}><span${attr(table)}>${rows}</span></span></span>`;
+    };
+    const bases = Array.from({ length: r.int(1, 3) }, () => `<span${attr(base)}>${strut(r.pick([0.4306, 0.6444, 0.6944, 0.7778, 1.0085, 1.1901]), r.pick([0, 0, 0.0833, 0.1944, 0.345]))}${Array.from({ length: r.int(1, 3) }, () => (r.chance(0.3) ? space() : "") + (r.chance(0.35) ? stack(0) : atom())).join("")}</span>`);
     return `<span${attr(box)}><span>${bases.join("")}</span></span>`;
   };
   /** An atomic inline: an inline-block of set size, or an image-like box, placed by its vertical-align. */

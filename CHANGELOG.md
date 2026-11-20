@@ -18,6 +18,29 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- Math set by KaTeX is exact with superscripts, subscripts, fractions and roots: KaTeX's vlist
+  stacks (an inline table whose rows are cells of a set height in em, aligned to their bottom,
+  holding blocks of no height whose line of inline-blocks overflows them, moved by relative offsets
+  that move nothing else; and a strut cell of 2px) are one object on their line, as Chromium lays
+  them out: as wide as their columns (each its widest cell: a line's inline-blocks, a rule or a
+  root's tail as wide as its min-width, and the blocks' margins), with their baseline at the bottom
+  of their first row and as tall as their rows, each the height of its cells in layout units
+  (truncated). Inline-blocks holding such lines (a formula kept whole in a box that doesn't wrap)
+  are one object too; the MathML copy KaTeX positions out of the way takes no room. Em margins and
+  padding of runs, spacers and inline-blocks are truncated to layout units, as Chromium stores them
+  (a negative one toward zero). `fixtures/katex/scripts.html` (formulas rendered by KaTeX 0.19.1)
+  covers them in `conformance:css`, and `fuzz-css` generates such stacks.
+- A line may break before and after an atomic inline (an inline-block, an image, an svg) whatever
+  the characters beside it are: probed in Chromium, "(" before one and "." or ")" after one are
+  broken from it. They were kept together.
+- `cadesa fonts` finds the italic table of a family whose text is all italic (KaTeX_Math), and
+  checks each character of a run in another font against that font's table.
+- A page of many nested inline-blocks (KaTeX's) is laid out in a fraction of the time: the
+  geometry of inline boxes and atomic inlines is computed once per element and width range, and
+  font tables are looked up once.
+
 ## 0.1.21 (2026-11-20)
 
 - Floats are laid out, as Chromium's LayoutNG keeps them in a block formatting context's exclusion

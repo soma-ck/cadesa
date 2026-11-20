@@ -26,3 +26,53 @@ p {
   padding: 8px 12px;
   border: 1px solid #d9e2ec;
 }
+
+/* scripts.html: paragraphs at other sizes, and boxes as wide as their formula. */
+.small {
+  font-size: 13px;
+}
+
+.large {
+  font-size: 21px;
+  line-height: 1.4;
+}
+
+.fit {
+  width: max-content;
+  margin: 0 0 8px;
+  padding: 4px 6px;
+  border: 1px solid #d9e2ec;
+}
+
+.row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+
+/* A reset of the kind apps apply to everything, and formulas kept whole in a box that doesn't wrap. */
+.boxed * {
+  box-sizing: border-box;
+  -webkit-user-drag: none;
+}
+
+.whole {
+  display: inline-block;
+  white-space: nowrap;
+  vertical-align: baseline;
+}
+
+.whole,
+.whole * {
+  line-height: normal;
+}
+
+.whole .katex {
+  font-size: 1.1em;
+  line-height: 1.2;
+}
+
+.tag {
+  padding: 2px 6px;
+  background: #f0f4f8;
+}

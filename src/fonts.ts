@@ -26,6 +26,8 @@ export interface FontUse {
   boxes: string[];
   /** The weights of its italic text (in a face the page may load as italic): measured with its italic table. */
   italicWeights?: number[];
+  /** Whether all of its text is italic (KaTeX's math letters): then its italic table is the one it needs. */
+  italicOnly?: boolean;
   /**
    * Characters its text uses beyond the standard measured set (icon fonts' Private Use Area
    * codepoints from `content:` values, other scripts): measured too.
@@ -48,7 +50,8 @@ export function fontUses(layouts: Layout[]): FontUse[] {
         const family = stack ? firstFamily(stack) : "(browser default)";
         const key = family.toLowerCase();
         let u = out.get(key);
-        if (!u) out.set(key, (u = { family, stack, weights: [], sizes: [], boxes: [] }));
+        if (!u) out.set(key, (u = { family, stack, weights: [], sizes: [], boxes: [], ...(italic && { italicOnly: true }) }));
+        if (!italic) delete u.italicOnly;
         if (!u.weights.includes(weight)) u.weights.push(weight);
         if (!u.sizes.includes(t.sizePx)) u.sizes.push(t.sizePx);
         if (!u.boxes.includes(b.id)) u.boxes.push(b.id);
@@ -331,7 +334,8 @@ export function fontReport(uses: FontUse[], sources: PageFontSources): FontRepor
     const key = u.family.toLowerCase();
     const faces = sources.faces.filter((f) => f.family.toLowerCase() === key);
     const google = sources.google.find((g) => g.families.some((f) => f.toLowerCase() === key));
-    const m = u.stack ? metricsFor(u.stack) : undefined;
+    // A family whose text is all italic (KaTeX_Math) needs only its italic table.
+    const m = u.stack ? (metricsFor(u.stack) ?? (u.italicOnly ? metricsFor(u.stack, true) : undefined)) : undefined;
     const base = { ...u, faces, ...(google && { google }) };
     if (m) {
       const r: FontReport = { ...base, status: "measured", metrics: { ...m.info, file: m.file } };

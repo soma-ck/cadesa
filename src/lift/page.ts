@@ -22,7 +22,7 @@ import { parseFixture, styled, textAndRuns, type Fixture, type FixtureNode, type
 import { ABSOLUTE, lengthExpr, MATHY } from "../fluid.js";
 import { borderPx, insets, scrollbarPx } from "../resolve.js";
 import { lineHeightPx, lineHeightRatio } from "../engine/layout.js";
-import { layoutText, metricsFor } from "../engine/text.js";
+import { layoutText, metricsFor, unsupportedInRuns } from "../engine/text.js";
 import { hexOf, INVALID, parseColor, simplify, substitute } from "../tailwind/values.js";
 import { containsLayout, parseContain, type Contain } from "../model.js";
 import { individual, originOf3, transformList4 } from "../engine/transform.js";
@@ -682,6 +682,25 @@ export abstract class PageLifter {
   rootFont: { px: number; fluid?: string }[] = [];
 
   /**
+   * Answers about inline geometry (extents, atomic inlines' boxes), kept once the elements' roles
+   * are settled (from lineBoxes on, nothing they depend on changes): nested inline-blocks (KaTeX's
+   * stacks in stacks) would otherwise be laid out again for every box around them.
+   */
+  settled = false;
+  memos = new Map<string, Map<El, unknown[]>>();
+  memo<T>(name: string, k: El, si: number, f: () => T): T {
+    if (!this.settled) return f();
+    let byEl = this.memos.get(name);
+    if (!byEl) this.memos.set(name, (byEl = new Map()));
+    let row = byEl.get(k);
+    if (!row) byEl.set(k, (row = []));
+    if (si in row) return row[si] as T;
+    const v = f();
+    row[si] = v;
+    return v;
+  }
+
+  /**
    * Rem lengths become px of the page's root font size, in every declaration (lengths, calc(),
    * clamp(), custom properties, font sizes), per width range: a media query that changes the
    * root's size changes them there. A root size that follows the viewport width makes them
@@ -1285,6 +1304,10 @@ export abstract class PageLifter {
    * differ from line to line). undefined when it can't be told.
    */
   inlineExtent(k: El, si: number): { sa: number; sd: number; lh?: number; grown: boolean } | undefined {
+    return this.memo("inlineExtent", k, si, () => this.inlineExtentOf(k, si));
+  }
+
+  inlineExtentOf(k: El, si: number): { sa: number; sd: number; lh?: number; grown: boolean } | undefined {
     const atom = this.atomicBox(k, si);
     if (atom) return { sa: atom.a, sd: atom.hm - atom.a, grown: false };
     const inlineBox = this.displayOf(k, si) === "inline" || (k.pseudo !== undefined && this.ownDisplay(k, si) === "inline");
@@ -1308,6 +1331,10 @@ export abstract class PageLifter {
    * vertical-align shift and those of the inline boxes it is in. undefined where one isn't modelled.
    */
   baselineShift(k: El, si: number): number | undefined {
+    return this.memo("baselineShift", k, si, () => this.baselineShiftOf(k, si));
+  }
+
+  baselineShiftOf(k: El, si: number): number | undefined {
     const p = k.parent;
     const root = this.lineRoot(k, si);
     const e = this.inlineExtent(k, si);
@@ -1328,6 +1355,10 @@ export abstract class PageLifter {
    * its strut), inside inline boxes that are measured too.
    */
   runModelled(k: El, si: number): boolean {
+    return this.memo("runModelled", k, si, () => this.runModelledOf(k, si));
+  }
+
+  runModelledOf(k: El, si: number): boolean {
     const root = this.lineRoot(k, si);
     if (!root || !k.parent) return false;
     const kt = this.textOf(k, si);
@@ -1399,6 +1430,10 @@ export abstract class PageLifter {
    * when that isn't known.
    */
   atomicExtent(k: El, si: number): { above: number; below: number; align?: "top" | "bottom" } | undefined {
+    return this.memo("atomicExtent", k, si, () => this.atomicExtentOf(k, si));
+  }
+
+  atomicExtentOf(k: El, si: number): { above: number; below: number; align?: "top" | "bottom" } | undefined {
     const atom = this.atomicBox(k, si);
     const root = this.lineRoot(k, si);
     if (!atom || !root || !this.strutOf(root, si)) return undefined;
@@ -1738,6 +1773,7 @@ export abstract class PageLifter {
 
   /** Inline-blocks alone on their line, laid out as blocks (before any element is synthesized: a parent may take padding from one). */
   lineBoxes() {
+    this.settled = true;
     for (const el of this.els) {
       if (!el.parent || el.anonymous !== undefined) continue;
       this.states.forEach((_, si) => {
@@ -2222,7 +2258,9 @@ export abstract class PageLifter {
       if (!o) return 0;
       const v = this.resolveBox(el, si, o.value);
       if (v === undefined || v === "auto") return v === "auto" && p.startsWith("margin") ? 0 : NaN;
-      return lengthPx(v, size) ?? NaN;
+      // In layout units: an em margin (KaTeX's italic corrections) is truncated, as Chromium stores it.
+      const x = lengthPx(v, size) ?? NaN;
+      return p.startsWith("border") ? x : Math.trunc(x * 64 + Math.sign(x) * 1e-6) / 64;
     };
     const border = (side: string) => (/^(none|hidden)$/.test(this.resolve(el, si, el.own[si].get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
     const open = px("margin-left") + border("left") + px("padding-left");
@@ -2281,8 +2319,20 @@ export abstract class PageLifter {
    * object on its line. undefined otherwise.
    */
   atomicInline(k: El, si: number): number | ((sizePx: number) => number) | undefined {
+    return this.memo("atomicInline", k, si, () => this.atomicInlineOf(k, si));
+  }
+
+  atomicInlineOf(k: El, si: number): number | ((sizePx: number) => number) | undefined {
     if (k.pseudo || k.anonymous !== undefined || !k.parent || this.outOfFlow(k, si)) return undefined;
     const d = this.displayOf(k, si);
+    if (d === "inline-table") {
+      // A stack of rows of set heights (KaTeX's vlist): one object on the line.
+      const g = this.stackTable(k, si);
+      const strut = g && this.strutOf(k.parent, si);
+      if (!g || !strut) return undefined;
+      const plain = !k.own[si].has("vertical-align");
+      return (plain && g.a <= strut.sa + 1e-6 && g.hm - g.a <= strut.sd + 1e-6) || this.atomicExtent(k, si) ? g.width : undefined;
+    }
     if (!(d === "inline-block" || (d === "inline" && REPLACED_BLOCK.has(k.tag)))) return undefined;
     if (CONTROL.has(k.tag)) {
       // A form control on a line of text: its own size and baseline (controlAtom).
@@ -2360,7 +2410,8 @@ export abstract class PageLifter {
         if (!(ratio > 0) || !isFinite(ratio) || insX || insY) return undefined;
         bw = h * ratio;
       }
-      const [ml, mr, mt, mb] = ["margin-left", "margin-right", "margin-top", "margin-bottom"].map((p) => px(p));
+      // In layout units (KaTeX's spacers of em margins are truncated, as Chromium stores them).
+      const [ml, mr, mt, mb] = ["margin-left", "margin-right", "margin-top", "margin-bottom"].map((p) => Math.trunc(px(p) * 64 + Math.sign(px(p)) * 1e-6) / 64);
       if (![ml, mr, mt, mb, bw, bh].every(isFinite)) return undefined;
       // The line's strut at this size, from the font's vertical metrics.
       const v = metricsFor(pt.family.value, pt.italic)?.vertical(size, pt.weight);
@@ -2406,6 +2457,10 @@ export abstract class PageLifter {
    * height and its parent's strut. undefined when it isn't one.
    */
   atomicTextBox(k: El, si: number): { width: number; a0: number; a: number; hm: number; strut: { sa: number; sd: number } } | undefined {
+    return this.memo("atomicTextBox", k, si, () => this.atomicTextBoxOf(k, si));
+  }
+
+  atomicTextBoxOf(k: El, si: number): { width: number; a0: number; a: number; hm: number; strut: { sa: number; sd: number } } | undefined {
     if (!k.parent || this.outOfFlow(k, si) || this.ownDisplay(k, si) !== "inline-block") return undefined;
     const t = this.textOf(k, si);
     if (t.fluid || this.textOf(k.parent, si).fluid) return undefined;
@@ -2451,7 +2506,8 @@ export abstract class PageLifter {
     const hset = /^(auto)?$/.test(res("height") ?? "") ? undefined : lengthPx(res("height")!, t.size);
     if (hset === undefined && !/^(auto)?$/.test(res("height") ?? "")) return undefined;
     const bdr = (side: string) => (/^(none|hidden)$/.test(this.resolve(k, si, own.get(`border-${side}-style`)?.value ?? "none") ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
-    const [ml, mr, mt, mb, pl, pr, pt, pb] = ["margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].map(px);
+    // Margins and padding in layout units (an em length truncated, as Chromium stores them).
+    const [ml, mr, mt, mb, pl, pr, pt, pb] = ["margin-left", "margin-right", "margin-top", "margin-bottom", "padding-left", "padding-right", "padding-top", "padding-bottom"].map((p) => Math.trunc(px(p) * 64 + Math.sign(px(p)) * 1e-6) / 64);
     if (![ml, mr, mt, mb, pl, pr, pt, pb].every(isFinite)) return undefined;
     // Its width: its text's max-content width (rounded up to a layout unit) and its edges.
     const textW = lines ? (fixedW !== Infinity ? fixedW : Math.max(...lines.map((l) => l.width))) : (m.measure(text, t.size, t.weight, t.letterSpacing !== 0) ?? NaN) + [...text].length * t.letterSpacing;
@@ -2515,18 +2571,29 @@ export abstract class PageLifter {
       if (d.tag === "br") return true;
       // Text beside elements (an anonymous text child) is part of the runs.
       if (d.anonymous !== undefined) return d.tag === "#text" && !d.pseudo;
+      // Absolutely positioned (KaTeX's MathML copy, clipped away): no room on the line, its text not in the runs.
+      if (!d.pseudo && this.positioned(d, si)) return true;
       if (d.pseudo || this.outOfFlow(d, si)) return false;
       if (this.displayOf(d, si) === "none") return true;
       // An empty inline-block of its own size (a strut, a spacer): one object on the line.
       if (this.displayOf(d, si) === "inline-block" && !d.children.length && !d.ownText && !REPLACED_BLOCK.has(d.tag) && !CONTROL.has(d.tag)) return this.atomicInline(d, si) !== undefined;
+      // An inline-block of lines of its own (a formula's bases in a wrapper that keeps them on one line): one object too.
+      if (this.displayOf(d, si) === "inline-block" && !REPLACED_BLOCK.has(d.tag) && !CONTROL.has(d.tag)) return this.atomicInline(d, si) !== undefined;
+      // A stack of rows (KaTeX's superscripts, fractions, roots): one object on the line.
+      if (this.displayOf(d, si) === "inline-table") return this.atomicInline(d, si) !== undefined;
       if (this.displayOf(d, si) !== "inline" || REPLACED_BLOCK.has(d.tag) || CONTROL.has(d.tag)) return false;
       const dt = this.textOf(d, si);
       const pt = this.textOf(d.parent, si);
       const same = dt.size === pt.size && dt.family.value === pt.family.value && !!dt.italic === !!pt.italic && JSON.stringify(dt.lineHeight) === JSON.stringify(pt.lineHeight) && dt.letterSpacing === pt.letterSpacing;
       const va = d.own[si].get("vertical-align");
       if ((!same || (va && this.resolve(d, si, va.value) !== "baseline")) && !this.runModelled(d, si)) return false;
-      for (const p of d.own[si].keys()) if (!p.startsWith("--") && !/^(color|background(-color|-image)?|font-(size|family|weight|style)|line-height|vertical-align|display|box-sizing|text-decoration.*|cursor|opacity|margin-(left|right)|position|-ms-high-contrast-adjust|forced-color-adjust|border-(top|right|bottom|left)-color|text-rendering)$/.test(p)) return false;
-      if (!this.stillRelative(d, si)) return false;
+      // (text-align on an inline box aligns nothing; relative offsets move only what is drawn, not
+      // the line; paint that moves nothing, -webkit-user-drag from a `*` rule, neither; nor
+      // text-indent: 0, KaTeX's, which inline-blocks inside inherit.)
+      for (const p of d.own[si].keys())
+        if (!p.startsWith("--") && !/^(color|background(-color|-image)?|font-(size|family|weight|style)|line-height|vertical-align|display|box-sizing|text-decoration.*|cursor|opacity|margin-(left|right)|position|top|left|right|bottom|text-align|-ms-high-contrast-adjust|forced-color-adjust|border-(top|right|bottom|left)-color|text-rendering)$/.test(p) && !(kindOf(p) === "none" || (kindOf(p) === "paint" && !/^(content|-webkit-(line-clamp|box.*|text-security)|appearance)$/.test(p))) && !(p === "text-indent" && /^0(px|em|%)?$/.test(this.resolve(d, si, d.own[si].get(p)!.value) ?? "")))
+          return false;
+      if (!/^(static|relative)$/.test(this.resolve(d, si, d.own[si].get("position")?.value ?? "static") ?? "")) return false;
       const dd = d.own[si].get("display");
       if (dd && this.resolve(d, si, dd.value) !== "inline") return false;
       return d.children.every(ok);
@@ -2536,13 +2603,13 @@ export abstract class PageLifter {
     // (Anonymous text children are the text nodes themselves: their text is in the runs.)
     const add = (e: El) => (e.anonymous === undefined && byNode.set(e.node, e), e.children.forEach(add));
     add(k);
-    const { runs, runMeta } = textAndRuns(k.node as unknown as P5Node, (x) => { const e = byNode.get(x as unknown as P5); return !!e && this.displayOf(e, si) === "none"; }, this.inlineInfo(k, si, byNode));
+    const { runs, runMeta } = textAndRuns(k.node as unknown as P5Node, (x) => { const e = byNode.get(x as unknown as P5); return !!e && (this.displayOf(e, si) === "none" || (!e.pseudo && this.positioned(e, si))); }, this.inlineInfo(k, si, byNode));
     if (!runs.length) return undefined;
     const out: { width: number; h: number; base: number }[] = [];
     for (let i = 0; i < runs.length; i++) {
       const spans = runMeta[i]?.spans?.filter((sp) => styled(sp) || sp.open || sp.close || sp.openAt);
-      const shown = runs[i].replaceAll("\uFFFC", "");
-      if (m.unsupported(shown).length) return undefined;
+      // Each character in its own font (a run in another font measured with its table).
+      if (unsupportedInRuns(m, runs[i], runMeta[i]?.spans).length) return undefined;
       // (Its inline elements' edges too: text in another font or size is measured item by item.)
       const items = runMeta[i]?.items;
       const l = layoutText(m, runs[i], t.size, t.weight, avail, { hangKern: false, ...(spans && { spans }), ...(items?.length && { items }), strut: { above: strut.sa, below: strut.sd } });
@@ -2609,9 +2676,127 @@ export abstract class PageLifter {
    * baseline from its margin box's top and its margin box's height, before its vertical-align.
    * Only at a font size that doesn't follow the viewport; undefined otherwise.
    */
+  /**
+   * An inline table that stacks rows of set heights, as KaTeX sets superscripts, subscripts,
+   * fractions and roots (`.vlist-t` of `.vlist-r` rows: a `.vlist` cell of an em height, aligned to
+   * its bottom, holding blocks of no height whose line of inline-blocks overflows them, moved by
+   * relative offsets that move nothing else; and a `.vlist-s` cell of 2px and a zero-width space):
+   * its margin-box width (its columns, each as wide as its widest cell, with its horizontal
+   * margins), its baseline from its top (`a`: the bottom of its first row, where no cell is
+   * baseline-aligned) and its height (`hm`: its rows'). A row is as tall as its tallest cell's
+   * height in layout units (truncated), as Chromium sizes them. undefined when it isn't that.
+   */
+  stackTable(k: El, si: number): { width: number; a: number; hm: number } | undefined {
+    return this.memo("stackTable", k, si, () => this.stackTableOf(k, si));
+  }
+
+  stackTableOf(k: El, si: number): { width: number; a: number; hm: number } | undefined {
+    // Lengths in layout units, truncated toward zero (a negative margin too), as Chromium stores them.
+    const lu = (x: number) => Math.trunc(x * 64 + Math.sign(x) * 1e-6) / 64;
+    const own = (e: El, p: string) => {
+      const o = e.own[si].get(p);
+      return o ? this.resolve(e, si, o.value) : undefined;
+    };
+    const len = (e: El, p: string, def = "0") => lengthPx(own(e, p) ?? def, this.textOf(e, si).size) ?? NaN;
+    /**
+     * Only these properties of its own (others at their initial value, or paint; box-sizing, as
+     * none of these elements has padding or a border it would move a size across; line-height,
+     * which sizes no row here: the rows have set heights and the blocks none, and the strut cell's
+     * line is measured at its own).
+     */
+    const paint = /^(color|border-(top|right|bottom|left)-color|background(-color|-image)?|-ms-high-contrast-adjust|forced-color-adjust|cursor|text-rendering|box-sizing|line-height)$/;
+    const only = (e: El, re: RegExp) =>
+      !e.pseudo && e.anonymous === undefined && [...e.own[si].keys()].every((p) => p.startsWith("--") || re.test(p) || paint.test(p) || /^(none|paint)$/.test(kindOf(p)) || isInitial(p, own(e, p)));
+    const shown = (e: El) => e.children.filter((c) => this.displayOf(c, si) !== "none" && !this.outOfFlow(c, si));
+    if (!only(k, /^(display|table-layout|border-collapse|margin-(left|right)|text-align)$/) || own(k, "border-collapse") !== "collapse" || k.ownText) return undefined;
+    const [ml, mr] = [lu(len(k, "margin-left")), lu(len(k, "margin-right"))];
+    const rows = shown(k);
+    if (!rows.length || !rows.every((row) => this.displayOf(row, si) === "table-row" && only(row, /^(display|text-align)$/) && !row.ownText)) return undefined;
+    const cols: number[] = [];
+    const heights: number[] = [];
+    for (const row of rows) {
+      const cells = shown(row);
+      if (!cells.length || !cells.every((c) => this.displayOf(c, si) === "table-cell")) return undefined;
+      let h = 0;
+      /** The least height of a cell holding a line of text (the strut cell): its line height. */
+      let line = 0;
+      for (const [j, c] of cells.entries()) {
+        if (!only(c, /^(display|vertical-align|height|width|min-width|font-size|position|text-align|color)$/) || own(c, "vertical-align") !== "bottom" || !this.stillRelative(c, si)) return undefined;
+        const ch = lu(len(c, "height"));
+        if (!(ch >= 0)) return undefined;
+        let w = 0;
+        if (c.ownText) {
+          // Only a zero-width space: as wide as its width or min-width, as tall as its line.
+          const text = (c.node.childNodes ?? []).map((n) => (n.nodeName === "#text" ? (n.value ?? "") : "\0")).join("");
+          if (!/^[​]+$/.test(text.replace(/[ \t\n\r\f]+/g, ""))) return undefined;
+          const strut = this.strutOf(c, si);
+          if (!strut) return undefined;
+          line = Math.max(line, strut.lh);
+          w = Math.max(lu(len(c, "width")), lu(len(c, "min-width")));
+        } else {
+          for (const b of shown(c)) {
+            // A block of no height: a line of inline-blocks (and the block's own horizontal margins).
+            if (this.displayOf(b, si) !== "block" || b.ownText || !only(b, /^(display|height|position|top|left|right|bottom|margin-(left|right)|text-align|color)$/) || len(b, "height", "auto") !== 0) return undefined;
+            let lw = lu(len(b, "margin-left")) + lu(len(b, "margin-right"));
+            for (const g of shown(b)) {
+              const gw = this.stackItemWidth(g, si);
+              if (gw === undefined) return undefined;
+              lw += gw;
+            }
+            if (!isFinite(lw)) return undefined;
+            w = Math.max(w, lw);
+          }
+          if (own(c, "width") !== undefined || own(c, "min-width") !== undefined) w = Math.max(w, lu(len(c, "width")), lu(len(c, "min-width")));
+        }
+        if (!isFinite(w)) return undefined;
+        cols[j] = Math.max(cols[j] ?? 0, w);
+        h = Math.max(h, ch);
+      }
+      // (The strut cell's line, 1.2px in KaTeX, must be well within the row: how its line box rounds isn't modelled.)
+      if (line && line > h - 0.5) return undefined;
+      heights.push(h);
+    }
+    const width = ml + cols.reduce((s, x) => s + x, 0) + mr;
+    if (![width, ...heights].every(isFinite)) return undefined;
+    return { width, a: heights[0], hm: heights.reduce((s, x) => s + x, 0) };
+  }
+
+  /** An inline-block on a line of a stack's cell (see stackTable): its margin-box width in the cell's max-content width. */
+  stackItemWidth(g: El, si: number): number | undefined {
+    if (g.pseudo || g.anonymous !== undefined || g.tag === "br") return undefined;
+    const d = this.displayOf(g, si);
+    if (d === "inline-table") return this.stackTable(g, si)?.width;
+    if (d !== "inline-block" || REPLACED_BLOCK.has(g.tag) || CONTROL.has(g.tag) || !this.stillRelative(g, si)) return undefined;
+    const flow = g.children.filter((c) => this.displayOf(c, si) !== "none" && !this.outOfFlow(c, si));
+    if (flow.length || g.ownText) return this.atomicTextBox(g, si)?.width;
+    // Empty (a strut, a rule, a root's tail whose drawing is positioned): its width, or a percentage
+    // width that is auto in its max-content contribution, at least its min-width, and its edges.
+    const lu = (x: number) => Math.trunc(x * 64 + Math.sign(x) * 1e-6) / 64;
+    const res = (p: string) => {
+      const o = g.own[si].get(p);
+      return o ? this.resolve(g, si, o.value) : undefined;
+    };
+    const size = this.textOf(g, si).size;
+    const px = (p: string, def = "0") => lengthPx(res(p) ?? def, size) ?? NaN;
+    if (!/^(none)?$/.test(res("max-width") ?? "")) return undefined;
+    const wv = res("width") ?? "auto";
+    const cw = wv === "auto" || /%$/.test(wv) ? 0 : lu(px("width"));
+    const minW = /%$/.test(res("min-width") ?? "") ? NaN : lu(px("min-width"));
+    const bdr = (side: string) => (/^(none|hidden)$/.test(res(`border-${side}-style`) ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
+    const insX = lu(px("padding-left")) + lu(px("padding-right")) + bdr("left") + bdr("right");
+    const box = res("box-sizing") === "border-box" ? Math.max(cw, minW, insX) : Math.max(cw, minW) + insX;
+    const w = lu(px("margin-left")) + box + lu(px("margin-right"));
+    return isFinite(w) ? w : undefined;
+  }
+
   atomicBox(k: El, si: number): { width: number; a: number; hm: number } | undefined {
+    return this.memo("atomicBox", k, si, () => this.atomicBoxOf(k, si));
+  }
+
+  atomicBoxOf(k: El, si: number): { width: number; a: number; hm: number } | undefined {
     if (k.anonymous !== undefined || !k.parent || this.outOfFlow(k, si)) return undefined;
     const d = this.ownDisplay(k, si);
+    if (d === "inline-table" && this.displayOf(k, si) === "inline-table") return this.stackTable(k, si);
     if (k.pseudo) {
       if (d !== "inline-block" || this.floatsAtStart(k, si)) return undefined;
       const g = this.atomicTextBox(k, si);

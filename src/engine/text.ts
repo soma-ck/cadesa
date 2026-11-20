@@ -59,6 +59,8 @@ export interface FontMetrics {
 }
 
 const registry = new Map<string, FontMetrics | undefined>();
+/** metricsFor's answers, by where tables are looked for and the family asked for. */
+const lookups = new Map<string, FontMetrics | undefined>();
 
 /** What a metrics table from an older Cadesa lacks: vertical metrics, or a text field's character widths. */
 function outdatedTable(m: { kind: string; weights: number[]; vertical?: { byWeight: Record<string, { avgChar?: number; maxChar?: number }> } }): string | undefined {
@@ -74,6 +76,7 @@ function outdatedTable(m: { kind: string; weights: number[]; vertical?: { byWeig
 /** Forget loaded (and missing) metrics, after new tables were written. */
 export function clearMetricsCache() {
   registry.clear();
+  lookups.clear();
 }
 
 /**
@@ -310,6 +313,14 @@ export function metricsDirs(): string[] {
  */
 export function metricsFor(fontFamily: string | undefined, italic = false): FontMetrics | undefined {
   if (!fontFamily) return undefined;
+  const asked = `${process.env.CADESA_METRICS ?? ""}\0${process.cwd()}\0${italic}\0${fontFamily}`;
+  if (lookups.has(asked)) return lookups.get(asked);
+  const found = lookupMetrics(fontFamily, italic);
+  lookups.set(asked, found);
+  return found;
+}
+
+function lookupMetrics(fontFamily: string, italic: boolean): FontMetrics | undefined {
   const first = fontFamily.split(",")[0].trim().replace(/^["']|["']$/g, "");
   const name = metricsFileName(first, italic);
   // A table may be gzipped (.metrics.json.gz), as the bundled ones are.
@@ -322,6 +333,31 @@ export function metricsFor(fontFamily: string | undefined, italic = false): Font
     registry.set(key, m && m.family.toLowerCase() === first.toLowerCase() && m.italic === italic ? m : undefined);
   }
   return registry.get(key);
+}
+
+/**
+ * The characters of a run of text that its fonts have no widths for, each in the font of its
+ * innermost span that sets one (or the italic face a span asks for), else the text's (`m`).
+ */
+export function unsupportedInRuns(m: FontMetrics, text: string, spans: readonly { from: number; to: number; font?: string; italic?: boolean }[] = []): string[] {
+  const out = new Set<string>();
+  let i = 0;
+  for (const c of text) {
+    if (c !== "￼") {
+      let font: string | undefined;
+      let italic: boolean | undefined;
+      for (const sp of spans) {
+        if (!(sp.from <= i && i < sp.to)) continue;
+        if (sp.font !== undefined) font = sp.font;
+        if (sp.italic !== undefined) italic = sp.italic;
+      }
+      const it = italic ?? m.italic;
+      const f = font !== undefined || it !== m.italic ? metricsFor(font ?? JSON.stringify(m.family), it) : m;
+      if (!f || f.unsupported(c).length) out.add(c);
+    }
+    i += c.length;
+  }
+  return [...out];
 }
 
 export interface Line {
@@ -386,10 +422,11 @@ const N = breakIndex.size;
 
 /** Whether Chromium may break between two non-space characters, given the character before `a`. */
 function canBreak(before: string | undefined, a: string, b: string): boolean {
-  // An atomic inline: a break before and after it (UAX #14 CB), except before closing punctuation
-  // and after opening punctuation.
-  if (a === OBJ) return !/[)\]}.,:;!?\/%»”’]/.test(b);
-  if (b === OBJ) return !/[([{«“‘]/.test(a);
+  // An atomic inline: a break before and after it (UAX #14 CB), punctuation or not (probed in
+  // Chromium: "(" before an inline-block, an image or an svg, and "." or ")" after one, are broken
+  // from it), except before a mark or joiner that attaches to it.
+  if (a === OBJ) return !/^[\p{M}‍⁠]$/u.test(b);
+  if (b === OBJ) return !/^[‍⁠]$/.test(a);
   const i = breakIndex.get(a);
   const j = breakIndex.get(b);
   // Outside the measured set the text is flagged anyway; keep to the plain rules.
