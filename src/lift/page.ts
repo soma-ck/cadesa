@@ -251,7 +251,7 @@ const UA_TEXT: Record<string, string> = {
 const TEXT_PROPS = new Set(["font-size", "line-height", "font-family", "font-weight", "color", "letter-spacing"]);
 const INHERITED_OTHER = new Set(["text-rendering", "text-transform", "text-align", "font-style", "white-space", "text-wrap", "text-wrap-mode", "text-wrap-style", "word-break", "overflow-wrap", "hyphens", "text-indent", "word-spacing", "font-variant", "font-variant-numeric", "font-variant-caps", "font-variant-ligatures", "font-variant-east-asian", "font-variant-position", "font-variant-alternates", "font-variant-emoji", "font-kerning", "font-optical-sizing", "font-synthesis", "font-stretch", "line-break", "tab-size", "direction"]);
 /** Inherited, but only paint: never affect a box. */
-const INHERITED_PAINT = new Set(["-webkit-font-smoothing", "-moz-osx-font-smoothing", "font-feature-settings", "font-variation-settings", "cursor", "visibility", "list-style-type", "list-style-position", "text-shadow", "caret-color", "accent-color", "fill", "stroke"]);
+const INHERITED_PAINT = new Set(["-webkit-font-smoothing", "-moz-osx-font-smoothing", "font-feature-settings", "font-variation-settings", "cursor", "visibility", "list-style-type", "list-style-position", "list-style-image", "text-shadow", "caret-color", "accent-color", "fill", "stroke"]);
 
 export const attr = (n: P5, name: string) => n.attrs?.find((a) => a.name === name)?.value;
 const isWs = (s: string) => /^[ \t\n\r\f]*$/.test(s);
@@ -367,6 +367,20 @@ export function longhands(prop: string, value: string): [string, string][] {
     const style = pre.find((x) => /^(italic|oblique)$/.test(x)) ?? "normal";
     const weight = pre.find((x) => /^(bold|bolder|lighter|\d{3})$/.test(x)) ?? "normal";
     return [["font-style", style], ["font-weight", weight], ["font-size", m[2]], ["line-height", m[3] ?? "normal"], ["font-family", m[4]]];
+  }
+  if (prop === "list-style") {
+    // list-style: <position> || <image> || <type> (none alone sets both the image and the type).
+    const parts = value.trim().split(/\s+(?![^(]*\))/);
+    if (parts.length === 1 && /^(inherit|initial|unset|revert)$/.test(parts[0])) return ["list-style-type", "list-style-position", "list-style-image"].map((p) => [p, parts[0]] as [string, string]);
+    const position = parts.find((x) => /^(inside|outside)$/.test(x));
+    const image = parts.find((x) => /^(url|image-set|(repeating-)?(linear|radial|conic)-gradient)\(/.test(x));
+    const rest = parts.filter((x) => x !== position && x !== image);
+    const type = rest.find((x) => x !== "none") ?? (rest.length ? "none" : undefined);
+    return [
+      ["list-style-position", position ?? "outside"],
+      ["list-style-image", image ?? "none"],
+      ["list-style-type", type ?? "disc"],
+    ];
   }
   if (prop === "animation") return animationLonghands(value);
   if (prop === "background") {
@@ -2400,6 +2414,18 @@ export abstract class PageLifter {
   }
   floatCache?: boolean[];
 
+  /** A list item's marker drawn inside it (list-style-position: inside, a type or image that isn't none): what sets it, or undefined. */
+  insideMarker(el: El, si: number): string | undefined {
+    if (el.pseudo || el.anonymous !== undefined || this.displayOf(el, si) !== "list-item") return undefined;
+    const inh = this.textOf(el, si).inherited;
+    const pos = inh.get("list-style-position");
+    if (pos?.value.trim() !== "inside") return undefined;
+    const type = inh.get("list-style-type")?.value.trim() ?? "disc";
+    const image = inh.get("list-style-image")?.value.trim() ?? "none";
+    if (type === "none" && image === "none") return undefined;
+    return pos.utility;
+  }
+
   /** A ::before / ::after floated to the start of its element's first line (Bootstrap's breadcrumb divider), when that is exact: see inlineContent. */
   floatsAtStart(p: El, si: number): boolean {
     const v = (q: string) => {
@@ -3566,6 +3592,11 @@ export abstract class PageLifter {
         decl("margin-right", lineAlign === "center" ? "auto" : "0px", why);
         if (lineAlign === "end") decl("margin-left", "auto", why);
       }
+
+      // A list item's marker inside it (list-style-position: inside) is inline content at the start
+      // of its first line, which takes room on it (and a line of its own before a block child).
+      const marker = this.insideMarker(el, si);
+      if (marker) this.note(el, si, { decl: marker, reason: "a list item's marker inside it (list-style-position: inside) takes room on its first line, which isn't modelled", kind: "geometry" });
 
       // A float in block flow (engine: floats.ts). In a page lifted as stacks (a preflight reset)
       // there is no block flow to float in.

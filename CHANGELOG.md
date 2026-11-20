@@ -18,6 +18,17 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
+## Unreleased
+
+- Fixed: a box that makes a formatting context of its own (a flex row) with negative margins, in a
+  container with a float somewhere inside, was laid out as if its margins were 0 on the sides no
+  float reaches: a docs site's content row (`margin: 0 calc(var(--gutter) * -1)` around a floated
+  code block) was claimed 32px narrower than Chromium draws it, at 20 widths.
+- Fixed: a list item's marker drawn inside it (`list-style-position: inside`, Tailwind's
+  `list-inside`) takes room on its first line, which Cadesa didn't count: a blog's list items were
+  claimed one line tall where Chromium wraps them onto two. Such a list item is `≈` now. The
+  `list-style` shorthand is read for it.
+
 ## 0.1.25 (2026-11-20)
 
 - Fixed: `capture` and `check --verify` hung on a page with a lazy-loaded image below the fold

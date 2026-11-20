@@ -19,7 +19,10 @@
  * - a placeholder svg with SVG-only properties (text-anchor), which only paint inside it;
  * - a chevron ::before with line-height: 0 and an image as its content (left ≈);
  * - a baseline-aligned row with an item that clips its overflow, its text taller than its line:
- *   a scroll container's baseline is clamped to its border box.
+ *   a scroll container's baseline is clamped to its border box;
+ * - a wrapping flex row pulled into its container's padding by negative margins in calc() of a
+ *   var(), holding a floated code block (a formatting context laid out among floats);
+ * - list items with their markers inside (list-style-position: inside; left ≈).
  */
 *,
 *::before,
@@ -449,4 +452,57 @@ svg {
 .bases-col {
   flex: 0 0 33.333%;
   padding: 0 4px;
+}
+
+.docs {
+  display: flex;
+  width: 100%;
+  --gutter: 1rem;
+}
+
+.docs-container {
+  width: 100%;
+  max-width: 1140px;
+  margin: 0 auto;
+  padding: 1rem var(--gutter) 2rem;
+}
+
+.docs-row {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 0 calc(var(--gutter) * -1);
+}
+
+.docs-col {
+  flex: 1 0 0;
+  max-width: 100%;
+  padding: 0 var(--gutter);
+}
+
+.snippet-pre {
+  margin: 0 0 1rem;
+  padding: 0;
+  overflow: auto;
+  background: #f3f4f6;
+}
+
+.snippet-code {
+  float: left;
+  min-width: 100%;
+  padding: 1rem;
+  font: 14px/1.5 Inter, sans-serif;
+  white-space: pre-wrap;
+}
+
+.steps {
+  margin: 0;
+  padding: 0 16px;
+  list-style: disc inside;
+}
+
+@media (min-width: 768px) {
+  .steps {
+    list-style-position: outside;
+    padding-left: 32px;
+  }
 }

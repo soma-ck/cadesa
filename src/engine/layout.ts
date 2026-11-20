@@ -525,8 +525,10 @@ function layoutWith(
           }
           for (const o of opps) {
             const u = save();
-            const ox = Math.max(o.l, L + m0.left);
-            const lim = Math.min(o.r, R - m0.right);
+            // (A side no float reaches is the container's edge, with the box's margin however
+            // negative: a row pulled into its container's padding is as wide as it is anywhere.)
+            const ox = o.l > L + EPS ? Math.max(o.l, L + m0.left) : L + m0.left;
+            const lim = o.r < R - EPS ? Math.min(o.r, R - m0.right) : R - m0.right;
             const kb = auto0 ? measure(k.node, k.comp, k.slot, Math.max(0, lim - ox) + m0.left + m0.right, kind, undefined, undefined, cell) : measure(k.node, k.comp, k.slot, cell, kind);
             // (A room past the container's end, beyond a float wider than it, is as wide as nothing.)
             // (Its whole height too: a room not beside a float ends where a float lower down starts.)
