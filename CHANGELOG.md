@@ -8,8 +8,8 @@ links each version to the commit and workflow run that built it, and
 To use Cadesa where updates must be reviewed, pin a version instead of `npx -y cadesa`:
 
 ```sh
-npx -y cadesa@0.1.20 check page.html --css app.css
-claude mcp add cadesa -- npx -y cadesa@0.1.20 mcp
+npx -y cadesa@0.1.21 check page.html --css app.css
+claude mcp add cadesa -- npx -y cadesa@0.1.21 mcp
 ```
 
 Cadesa reads the files you pass it. The only network requests are to Google Fonts, when you
@@ -18,7 +18,7 @@ to load the URL you give it; your pages are never sent anywhere. `metrics --meas
 `capture`, `check --verify` and the conformance scripts start a local Chromium; `--verify`
 serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 
-## Unreleased
+## 0.1.21 (2026-11-20)
 
 - Floats are laid out, as Chromium's LayoutNG keeps them in a block formatting context's exclusion
   space: `float: left` and `right` (inline-start and inline-end) in block flow, as wide as their
