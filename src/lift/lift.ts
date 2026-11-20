@@ -677,7 +677,8 @@ export function liftElements(input: LiftInput): LiftResult {
         const tok = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? (lengthToken("space", d.value) ?? pctToken(d.value)) : undefined);
         const val = (d: Decl | undefined) => (d && !isZero(resolveVar(d.value)?.raw ?? "x") ? resolveVar(d.value)?.raw : "0px");
         for (const d of [rowGap, colGap]) if (d && !isZero(resolveVar(d.value)?.raw ?? "x") && !tok(d)) note(e, s, d, "gap must be a px or rem length", "geometry");
-        const g = tok(colGap);
+        // A subgrid's own column gap of 0 is a gap of its own (unset, it takes its parent's).
+        const g = tok(colGap) ?? (cv === "subgrid" && colGap && isZero(resolveVar(colGap.value)?.raw ?? "x") ? lengthToken("space", "0px") : undefined);
         const rg = val(rowGap) !== val(colGap) || /%$/.test(val(rowGap) ?? "") ? (tok(rowGap) ?? lengthToken("space", "0px")) : undefined;
         return { ...(g && { gap: g }), ...(rg && { rowGap: rg }) };
       };

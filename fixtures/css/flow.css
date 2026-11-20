@@ -103,6 +103,13 @@ body {
   column-gap: 4px;
 }
 
+/* A column gap of 0 of its own: its items reach half the parent's gap into each gutter. */
+.entry--flush {
+  margin: 0 3px 0 0;
+  padding-left: 6px;
+  column-gap: 0;
+}
+
 .cards {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
