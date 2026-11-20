@@ -1118,6 +1118,16 @@ export function liftElements(input: LiftInput): LiftResult {
         const owv = ow?.value.trim();
         if (ow && !["anywhere", "break-word", "normal"].includes(owv!))
           note(e, s, ow, `overflow-wrap: ${owv} is not modelled`, "text");
+        // word-break: break-all and line-break: anywhere break lines inside words (breaks); keep-all
+        // breaks the measured characters as ordinary text does (probed: it only keeps CJK letters
+        // together); word-break: break-word is overflow-wrap: anywhere.
+        const wb = take("word-break");
+        const wbv = wb?.value.trim();
+        if (wb && !["normal", "keep-all", "break-all", "break-word"].includes(wbv!)) note(e, s, wb, `word-break: ${wbv} is not modelled`, "text");
+        const lb = take("line-break");
+        const lbv = lb?.value.trim();
+        if (lb && !["auto", "anywhere"].includes(lbv!)) note(e, s, lb, `line-break: ${lbv} is not modelled`, "text");
+        const breaks = lbv === "anywhere" ? "anywhere" : wbv === "break-all" ? "all" : undefined;
         const ws = take("white-space") ?? take("text-wrap-mode");
         const wsv = ws?.value.trim();
         if (ws && !["normal", "nowrap", "wrap"].includes(wsv!)) note(e, s, ws, `white-space: ${wsv} is not modelled`, "text");
@@ -1137,7 +1147,8 @@ export function liftElements(input: LiftInput): LiftResult {
           ...(letterSpacing !== undefined && { letterSpacing }),
           ...(transform === "uppercase" && { transform }),
           ...(italicStyle && { style: "italic" }),
-          ...(wsv === "nowrap" ? { wrap: "none" } : (owv === "anywhere" || owv === "break-word") && { wrap: owv }),
+          ...(wsv === "nowrap" ? { wrap: "none" } : (owv === "anywhere" || owv === "break-word") ? { wrap: owv } : wbv === "break-word" && { wrap: "anywhere" }),
+          ...(breaks && wsv !== "nowrap" && { breaks }),
         };
         const key = JSON.stringify(spec);
         let role = roles.get(key);

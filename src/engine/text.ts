@@ -12,7 +12,7 @@ import { delimiter, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Span } from "../fixture.js";
 import { metricsFileName, readMetrics, type MetricsFace } from "../metrics.js";
-import { BREAK_CHARS, BREAKS } from "./breaks.generated.js";
+import { BREAK_CHARS, BREAKS, BREAKS_ALL, BREAKS_ANYWHERE } from "./breaks.generated.js";
 
 export interface MetricsInfo {
   source: string;
@@ -432,11 +432,13 @@ const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 export const OBJ = "\uFFFC";
 
 const breakIndex = new Map([...BREAK_CHARS].map((c, i) => [c, i]));
-const breakBits = Buffer.from(BREAKS, "base64");
+/** How lines may break between characters: ordinary text (and word-break: keep-all, the same for the measured characters), word-break: break-all, line-break: anywhere. */
+export type BreakMode = "normal" | "all" | "anywhere";
+const breakTables: Record<BreakMode, Buffer> = { normal: Buffer.from(BREAKS, "base64"), all: Buffer.from(BREAKS_ALL, "base64"), anywhere: Buffer.from(BREAKS_ANYWHERE, "base64") };
 const N = breakIndex.size;
 
 /** Whether Chromium may break between two non-space characters, given the character before `a`. */
-function canBreak(before: string | undefined, a: string, b: string): boolean {
+function canBreak(before: string | undefined, a: string, b: string, mode: BreakMode = "normal"): boolean {
   // An atomic inline: a break before and after it (UAX #14 CB), punctuation or not (probed in
   // Chromium: "(" before an inline-block, an image or an svg, and "." or ")" after one, are broken
   // from it), except before a mark or joiner that attaches to it.
@@ -450,7 +452,7 @@ function canBreak(before: string | undefined, a: string, b: string): boolean {
   const ctx =
     before === undefined || before === " " ? 0 : ascii && /[A-Za-z]/.test(before) ? 1 : ascii && /[0-9]/.test(before) ? 2 : LETTER.test(before) ? 3 : 4;
   const bit = (ctx * N + i) * N + j;
-  return (breakBits[bit >> 3] & (1 << (bit & 7))) !== 0;
+  return (breakTables[mode][bit >> 3] & (1 << (bit & 7))) !== 0;
 }
 
 /**
@@ -458,14 +460,14 @@ function canBreak(before: string | undefined, a: string, b: string): boolean {
  * come after spaces, and between other characters where Chromium's line breaker allows them
  * (hyphens, dashes, soft hyphens, some punctuation), from a table measured in Chromium.
  */
-export function pieces(text: string): string[] {
+export function pieces(text: string, mode: BreakMode = "normal"): string[] {
   const out: string[] = [];
   let cur = "";
   const chars = [...text];
   chars.forEach((c, i) => {
     const next = chars[i + 1];
     cur += c;
-    const breakAfter = next !== undefined && (c === " " ? next !== " " : next !== " " && canBreak(chars[i - 1], c, next));
+    const breakAfter = next !== undefined && (c === " " ? next !== " " : next !== " " && canBreak(chars[i - 1], c, next, mode));
     if (breakAfter) {
       out.push(cur);
       cur = "";
@@ -491,6 +493,11 @@ export function layoutText(
     wrapAnywhere?: boolean;
     /** With wrapAnywhere: overflow-wrap: break-word, whose min-content still counts whole words. */
     breakWord?: boolean;
+    /**
+     * word-break: break-all or line-break: anywhere: lines may break between the characters of a
+     * word wherever Chromium's table for it allows (see canBreak), not only where it doesn't fit.
+     */
+    breaks?: BreakMode;
     /** Inline element edges (character offsets): the text between them is shaped separately. */
     items?: number[];
     /** Inline boxes with text at another weight, or margin, border and padding at their edges. */
@@ -684,7 +691,31 @@ function layoutLines(
     }
     return { h: above + below, base: above };
   };
-  const ps = pieces(text);
+  const mode = opts.breaks ?? "normal";
+  /**
+   * Pieces of the text. Broken inside words (break-all, line-break: anywhere), a ligature glyph
+   * ("fi" in Roboto) is never broken: its characters stay in one piece.
+   */
+  const piecesOf = (t: string) => {
+    const out = pieces(t, mode);
+    if (mode === "normal" || ls) return out;
+    const merged: string[] = [];
+    let at = 0;
+    const cs = [...t];
+    for (const q of out) {
+      const prev = merged.at(-1);
+      // A break at `at`, between cs[at - 1] and cs[at]: inside a ligature that spans it?
+      const inside = prev !== undefined && cs[at - 1] !== " " && [cs.slice(at - 1, at + 1), cs.slice(at - 2, at + 1), cs.slice(at - 1, at + 2)].some((win) => {
+        const lig = m.ligatureIn(win.join(""));
+        return lig !== undefined && [...lig].length === win.length;
+      });
+      if (inside) merged[merged.length - 1] = prev + q;
+      else merged.push(q);
+      at += [...q].length;
+    }
+    return merged;
+  };
+  const ps = piecesOf(text);
   const lines: Line[] = [];
   const all = [...text];
   /** Characters of the text already placed on earlier lines. */
@@ -713,6 +744,9 @@ function layoutLines(
   const floor64 = (v: number) => Math.floor(v * 64 + TEXT_EPS) / 64;
   const ceil64 = (v: number) => Math.ceil(v * 64 - TEXT_EPS) / 64;
   let approximate: string | undefined;
+  // Broken inside words: "ffi" and "ffl" may be one ligature glyph of three characters, whose
+  // breaks the font table (which knows "fi" and "fl") can't tell.
+  if (mode !== "normal" && !ls && /ff[il]/.test(text) && (m.ligatureIn("fi") || m.ligatureIn("fl"))) approximate = `a word with a ligature ("${text.match(/ff[il]/)![0]}") breaks between characters`;
   // A line fits when its width is at most the available width plus one layout unit (1/64 px):
   // "a b" at 55.515px fits in 55.5px. Text split by inline elements is measured item by item: the items
   // before the last on the line count their widths rounded up. A line that starts after a break
@@ -739,7 +773,45 @@ function layoutLines(
     const lw = edges.includes(consumed + cs.length) ? w(last, true, consumed + from) : w(last, undefined, consumed + from);
     return { used, lw, last, from };
   };
+  /**
+   * break-all, line-break: anywhere: a line that ends between two characters of a word fits as
+   * Chromium's shaping line breaker decides (as for a word broken by overflow-wrap: anywhere, see
+   * start): measured where it sits in the text's shaping (kerned to the character after it)
+   * against the line's width in layout units plus one; where the font kerns across the break, the
+   * part from the last point it doesn't kern across is reshaped and must fit too.
+   */
+  const shaped = new Map<number, number>();
+  const xIn = (i: number) => {
+    let x = shaped.get(i);
+    if (x === undefined) shaped.set(i, (x = i <= 0 ? 0 : measure(all.slice(0, i + 1).join(""), 0) - measure(all[i] ?? "", 0)));
+    return x;
+  };
+  const safeIn = (i: number) => i <= 0 || i >= all.length || all[i - 1] === " " || all[i] === " " || Math.abs(measure(all[i - 1] + all[i], 0) - measure(all[i - 1], 0) - measure(all[i], 0)) < TEXT_EPS;
+  const midWord = (s: string) => {
+    if (mode === "normal") return false;
+    const e = consumed + [...s].length;
+    return e < all.length && all[e] !== " " && all[e - 1] !== " " && all[e - 1] !== SHY;
+  };
+  const fitsMid = (s: string) => {
+    const a = consumed;
+    const e = a + [...s].length;
+    const lu = Math.floor(maxWidth * 64 + TEXT_EPS) / 64;
+    if (!(xIn(e) - xIn(a) <= lu + 1 / 64 + TEXT_EPS / 64)) return false;
+    if (safeIn(e)) return true;
+    let q = e - 1;
+    while (q > a && !safeIn(q)) q--;
+    if (q === a && !safeIn(a)) {
+      if (!(measure(all.slice(a, e).join(""), 0) <= lu + 1 / 64 + TEXT_EPS / 64)) approximate ??= "a line ends inside a word the font kerns at both ends of the line";
+      return true;
+    }
+    const snap = (x: number) => Math.floor(x * 64 + TEXT_EPS) / 64;
+    return snap(xIn(q)) - snap(xIn(a)) + ceil64(measure(all.slice(q, e).join(""), 0)) <= lu + TEXT_EPS / 64;
+  };
   const fits = (s: string) => {
+    if (midWord(s)) {
+      if (!spans.length && !lead && !ls && !edges.length) return fitsMid(s);
+      approximate ??= "a line ends inside a word (word-break: break-all or line-break: anywhere) in text with inline boxes or letter-spacing of its own";
+    }
     const { used, lw, last, from } = lineWidth(s);
     // A line ending in a soft hyphen's "-" gets no slack (and how much isn't pinned down: flagged).
     const hyphenated = trimSpaces(last).endsWith(SHY);
@@ -937,7 +1009,7 @@ function layoutLines(
     }
     mid = open !== undefined;
     if (open !== undefined) {
-      queue = pieces(open + queue.slice(i + 1).join(""));
+      queue = piecesOf(open + queue.slice(i + 1).join(""));
       i = -1;
     }
   }
@@ -965,7 +1037,19 @@ function layoutLines(
         const kern = next && next !== SHY ? measure(c + next) - measure(c) - measure(next) : 0;
         return [{ text: c, width: w(c) + kern }];
       })
-    : piecesAt.map(({ p, at }) => {
+    : mode !== "normal" && !spans.length && !edges.length
+      ? piecesAt.map(({ p, at }) => {
+          // Broken inside words (break-all, line-break: anywhere): as overflow-wrap: anywhere
+          // counts a character, each piece with its kerning to the character after it.
+          const body = trimSpaces(p).replaceAll(SHY, "");
+          const next = all[at + [...trimSpaces(p)].length];
+          // Its ends where they sit in the text's shaping, each rounded up to a layout unit (its end
+          // is where the character after it starts: kerned to it).
+          const n = [...body].length;
+          const x1 = next && next !== SHY ? xIn(at + n) : xIn(at) + measure(body, at);
+          return { text: body, width: ceil64(x1) - ceil64(xIn(at)) + spacing(body) };
+        })
+      : piecesAt.map(({ p, at }) => {
         // A piece is as wide as the distance between its ends in its item, each rounded up to a
         // layout unit (min-content is in layout units, like the line positions).
         // Positions include the letter-spacing of the characters before.

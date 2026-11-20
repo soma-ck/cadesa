@@ -68,6 +68,8 @@ export interface ResolvedText {
   /** white-space: nowrap: one line per paragraph. */
   nowrap: boolean;
   underline: boolean;
+  /** word-break: break-all ("all") or line-break: anywhere: lines break inside words too. */
+  breaks?: "all" | "anywhere";
 }
 
 /**
@@ -569,6 +571,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
             breakWord: role.wrap === "break-word",
             nowrap: role.wrap === "none",
             underline: role.decoration === "underline",
+            ...(role.breaks && role.breaks !== "normal" && { breaks: role.breaks }),
           },
           display: `${role.name} (${fmtPx(sizePx)}px/${role.lineHeight}, ${role.weight})`,
           steps: [{ kind: "text", label: `text.${role.name}`, path: role.path }, ...pre, src(r.path)],

@@ -700,7 +700,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
           const g = inlineFloat(f.index);
           return { at: moved(raw[i], f.at), w: g.w, fitsAt: (top: number) => g.fitsAt(top + off), place: (top: number) => g.place(top + off) };
         });
-        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i], strut, ...(runBand && { band: runBand, lineH }), ...(floats?.length && { floats }) };
+        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, ...(t.breaks && { breaks: t.breaks }), items: items[i], spans: spans[i], lead: leads[i], strut, ...(runBand && { band: runBand, lineH }), ...(floats?.length && { floats }) };
         /** Lines beside floats: placed from the content box's top. */
         const done = <T extends { lines: Line[] }>(x: T): T => {
           if (!band) return x;

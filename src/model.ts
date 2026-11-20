@@ -55,6 +55,11 @@ export interface TextRole {
    * (white-space: nowrap).
    */
   wrap?: "anywhere" | "break-word" | "none" | "normal";
+  /**
+   * "all": lines may break between the letters of any word (word-break: break-all), filling each
+   * line. "anywhere": between any two characters, punctuation too (line-break: anywhere).
+   */
+  breaks?: "all" | "anywhere" | "normal";
 }
 
 export interface Breakpoint {

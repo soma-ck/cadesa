@@ -163,6 +163,14 @@
               "none"
             ],
             "description": "anywhere: a word too long for a line breaks between characters (and min-content counts single characters); break-word: the same breaking, min-content counts whole words; none: never wraps (white-space: nowrap)"
+          },
+          "breaks": {
+            "enum": [
+              "all",
+              "anywhere",
+              "normal"
+            ],
+            "description": "all: lines may break between the letters of any word (word-break: break-all); anywhere: between any two characters, punctuation too (line-break: anywhere)"
           }
         }
       }

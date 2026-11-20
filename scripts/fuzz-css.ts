@@ -488,6 +488,8 @@ export function genCssCase(seed: number): CssCase {
     else if (r.chance(0.15)) decls.push("font-family: Lato");
     else if (r.chance(0.1)) decls.push('font-family: "Lato Text"', `font-weight: ${r.pick(["400", "600", "700", "800"])}`);
     if (r.chance(0.12)) decls.push("font-style: italic");
+    // Lines that break inside words (or keep-all, the same as ordinary text for these letters).
+    if (r.chance(0.1)) decls.push(r.pick(["word-break: break-all", "word-break: break-all", "line-break: anywhere", "word-break: keep-all"]));
     if (r.chance(0.12)) decls.push(animation());
     const parts: string[] = [];
     const k = r.int(1, 5);

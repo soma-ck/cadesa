@@ -93,7 +93,7 @@ function asColor(v: unknown): string | undefined {
 const TOP_KEYS = ["version", "prefix", "tokens", "text", "breakpoints", "page", "styles"];
 const PAINT = /^(?:(?:repeating-)?(?:linear|radial|conic)-gradient|url|image-set)\(/;
 const PREFIX = /^(?:[a-z][a-z0-9]*-)?$/;
-const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration", "letterSpacing", "transform", "style", "wrap"];
+const TEXT_KEYS = ["font", "size", "weight", "lineHeight", "color", "decoration", "letterSpacing", "transform", "style", "wrap", "breaks"];
 const ROOT_PROPS = PROP_ORDER as string[];
 const SLOT_PROPS = ROOT_PROPS;
 
@@ -403,6 +403,10 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         err([...path, "wrap"], "invalid wrap", { expected: "anywhere (long words may break between letters), break-word (the same, but a word's width still counts whole), none (never wraps) or normal", got: role.wrap });
         ok = false;
       }
+      if (role.breaks !== undefined && !["all", "anywhere", "normal"].includes(role.breaks as string)) {
+        err([...path, "breaks"], "invalid breaks", { expected: "all (lines break between the letters of any word, word-break: break-all), anywhere (between any two characters, line-break: anywhere) or normal", got: role.breaks });
+        ok = false;
+      }
       if (role.transform !== undefined && role.transform !== "uppercase" && role.transform !== "none") {
         err([...path, "transform"], "invalid text transform", { expected: "uppercase or none", got: role.transform });
         ok = false;
@@ -430,6 +434,7 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         transform: role.transform as "uppercase" | "none" | undefined,
         ...(role.style === "italic" && { style: "italic" as const }),
         wrap: role.wrap as TextRole["wrap"],
+        ...(role.breaks !== undefined && role.breaks !== "normal" && { breaks: role.breaks as "all" | "anywhere" }),
         color,
       });
     }

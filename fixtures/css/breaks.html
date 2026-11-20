@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: lines that break inside words</title>
+    <link rel="stylesheet" href="breaks.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <main class="log">
+      <section class="card">
+        <h2 class="card__title">Ledger codes</h2>
+        <p class="all">Batch references such as LDGR-2024-0098-STOREROOM and AVATARWAVETYPOGRAPHY run on without spaces, so every line is filled to its end, letters broken wherever they fall: shipped quickly every week along the ridge.</p>
+        <p class="all narrow">Containers 0098/0099/0100, pallets (quoted) and "crates", 12 May 08:00, orders shipped quickly; nets mended by hand, north wind.</p>
+        <p class="all centered">Centered lines of a long reference: ARCHIVEBOXNUMBERFORTYSEVENB stored on the third shelf.</p>
+        <p class="anywhere">With line-break anywhere even punctuation (like this, and "quotes"!) and hyphen-ated words break wherever the line is full, mid-word or not.</p>
+        <p class="anywhere bold">Inventory: 12 boxes; 3 crates; 7 sacks of flour, oats, barley and rye, counted twice.</p>
+        <p class="keep">Keep-all text in Latin letters breaks as ordinary text does: at spaces and after hyphens, well-known and long-standing.</p>
+        <p class="soft">An ex&shy;tra&shy;or&shy;di&shy;nar&shy;i&shy;ly long in&shy;ven&shy;to&shy;ry list breaks at soft hy&shy;phens, show&shy;ing a hy&shy;phen where it does.</p>
+      </section>
+      <section class="card">
+        <h2 class="card__title">Tags</h2>
+        <div class="tags">
+          <span class="tag all">STOREROOMKEY</span>
+          <span class="tag all">LEDGERBOOK2024</span>
+          <span class="tag anywhere">north-wind</span>
+        </div>
+        <div class="min all">ARCHIVE BOXES</div>
+        <div class="min anywhere">shelf (top)</div>
+        <div class="row">
+          <div class="cell all">REFERENCEWITHOUTSPACES</div>
+          <div class="cell">plain words that wrap</div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

@@ -215,6 +215,8 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
     out.push(`text-transform: ${role.transform ?? "none"}`);
     if (role.style === "italic") out.push("font-style: italic");
     out.push(`overflow-wrap: ${role.wrap === "anywhere" || role.wrap === "break-word" ? role.wrap : "normal"}`);
+    if (role.breaks === "all") out.push("word-break: break-all");
+    if (role.breaks === "anywhere") out.push("line-break: anywhere");
     // white-space: nowrap; restated on the inline content (the reset sets white-space: normal on every element).
     if (role.wrap === "none" || ctx.nowrap) out.push(`white-space: ${role.wrap === "none" ? "nowrap" : "normal"}`);
     if (role.decoration) out.push(`text-decoration: ${role.decoration}`);
