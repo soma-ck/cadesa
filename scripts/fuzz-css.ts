@@ -310,7 +310,13 @@ export function genCssCase(seed: number): CssCase {
     const parts: string[] = [];
     const k = r.int(2, 7);
     for (let j = 0; j < k; j++) {
-      const what = r.pick(["float", "float", "para", "para", "root", "nested", "clear", "clearfix", "lead"] as const);
+      const what = r.pick(["float", "float", "para", "para", "root", "nested", "clear", "clearfix", "lead", "inline", "inline"] as const);
+      if (what === "inline") {
+        // Floats among a paragraph's text (a count floated to the end of a list item, a tile mid-paragraph).
+        const f = () => `<span${attr(cls([`float: ${r.pick(["left", "right"])}`, "background: #cdd", ...(r.chance(0.5) ? [`width: ${r.int(10, 120)}px`, `height: ${r.int(8, 60)}px`] : [`padding: 0 ${r.int(0, 8)}px`]), ...(r.chance(0.3) ? [`margin: ${r.int(0, 6)}px ${r.int(0, 8)}px`] : [])]))}>${r.chance(0.5) ? words(r, 1, 2) : ""}</span>`;
+        parts.push(`<p>${words(r, 0, 12)} ${f()}${r.chance(0.5) ? " " : ""}${words(r, 1, 20)}${r.chance(0.3) ? ` ${f()} ${words(r, 1, 10)}` : ""}</p>`);
+        continue;
+      }
       if (what === "float") parts.push(float());
       else if (what === "para") parts.push(para());
       else if (what === "root") parts.push(root());

@@ -198,3 +198,23 @@ p {
 .foot {
   font-size: 13px;
 }
+
+.split {
+  font-size: 15px;
+}
+
+.mid {
+  vertical-align: middle;
+}
+
+.top-of {
+  vertical-align: text-top;
+}
+
+.bottom-of {
+  vertical-align: text-bottom;
+}
+
+.tall {
+  font-size: 24px;
+}

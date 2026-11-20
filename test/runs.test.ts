@@ -32,9 +32,19 @@ describe("a line box is the union of its inline boxes around the baseline", () =
     const h = (id: string) => +r.box(id).h.toFixed(4);
     expect(["a", "b", "c", "d", "e", "f", "g", "i"].map(h)).toEqual([24, 24, 26.3281, 28.1719, 36, 24, 19.3281, 29]);
     expect(["j", "k", "m", "n", "o", "q"].map(h)).toEqual([25.625, 36, 47, 47, 61.5, 45]);
-    // A middle-aligned box whose child reaches past its strut: its extent (and so its shift) may differ from line to line.
-    expect(r.approx("l")).toMatch(/inline runs in another style/);
+    // A middle-aligned box whose child reaches past its strut: placed by its extent on each line it is on.
+    expect(h("l")).toBe(36);
+    expect(r.approx("l")).toBeUndefined();
     expect(["a", "b", "c", "d", "e", "f", "g", "i", "j", "k", "m", "n", "o", "q"].every((id) => !r.approx(id))).toBe(true);
+  });
+});
+
+describe("a box placed by its extent, split across lines", () => {
+  it("is placed on each line by what of it is there", () => {
+    const r = run(`<div class="w"><p data-fixture="l2">x <span style="vertical-align: middle">the <strong style="vertical-align: -50%">nest</strong> y and more words</span></p></div>`, `p { margin: 0 } .w { width: 60px }`, [800]);
+    // Chromium: the line holding the shifted <strong> is taller than the others.
+    expect(+r.box("l2").h.toFixed(4)).toBe(138.5);
+    expect(r.exact()).toBe(true);
   });
 });
 

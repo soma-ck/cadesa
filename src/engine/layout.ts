@@ -372,6 +372,12 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     }
     return r;
   };
+  /** A text box's classed children when every one of them floats (floats among its text), else none. */
+  const textFloatsOf = (n: FixtureNode, c: Component, p: ResolvedProps): Kid[] => {
+    if (!p.text || !n.runMeta.some((r) => r.floats?.length)) return [];
+    const kids = classedOf(n, c).map((k) => ({ node: k, ...childOf(k, c, true) }));
+    return kids.length && kids.every((k) => k.comp && resolveElement(model, k.comp, k.slot, width).float) ? (kids as Kid[]) : [];
+  };
   /** Boxes that float: out of their parent's block flow (their margins collapse with nothing). */
   const floated = new WeakSet<Box>();
 
@@ -601,7 +607,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // Inline boxes that may reach past the strut: lines are sized around the baseline, from the
     // font's vertical metrics (the leading split as Chromium splits it, floor(leading / 2) above).
     let strut: { above: number; below: number } | undefined;
-    if (n.runMeta.some((r) => r.spans?.some((sp) => sp.above !== undefined || sp.below !== undefined))) {
+    if (n.runMeta.some((r) => r.spans?.some((sp) => sp.above !== undefined || sp.below !== undefined || sp.byExtent))) {
       const v = m!.vertical(t.sizePx, t.weight);
       if (!v) assumptions.push(`font-family: ${m!.family}: re-measure: cadesa fonts … --measure${m!.info.machineSpecific ? " --system" : ""}; its metrics table has no vertical metrics, so its line heights assume the strut`);
       else {
@@ -617,7 +623,8 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     const align = props.textAlign?.value ?? (n.tag === "button" ? "center" : "start");
     // Each run (paragraph, list item, line after <br>) starts on a new line.
     // Beside floats (band): each run's lines go on from where the run before it ended.
-    return (maxWidth: number, band?: Band) => {
+    // Floats among the text (inlineFloat: the width of one, and where it goes) are placed as its lines are.
+    return (maxWidth: number, band?: Band, inlineFloat?: (index: number) => { w: number; place: (top: number) => void }) => {
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
       let off = 0;
       if (band && strut) assumptions.push("lines beside a float, with inline boxes that reach past the text's strut, aren't modelled");
@@ -626,7 +633,11 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
           const at = band(top + off, h, fits);
           return { ...at, top: at.top - off };
         });
-        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i], strut, ...(runBand && { band: runBand, lineH }) };
+        const floats = inlineFloat && meta[i].floats?.map((f) => {
+          const g = inlineFloat(f.index);
+          return { at: moved(raw[i], f.at), w: g.w, place: (top: number) => g.place(top + off) };
+        });
+        const opts = { letterSpacing: t.letterSpacing, spacesOnly, wrapAnywhere: t.wrapAnywhere, breakWord: t.breakWord, items: items[i], spans: spans[i], lead: leads[i], strut, ...(runBand && { band: runBand, lineH }), ...(floats?.length && { floats }) };
         /** Lines beside floats: placed from the content box's top. */
         const done = <T extends { lines: Line[] }>(x: T): T => {
           if (!band) return x;
@@ -1612,7 +1623,9 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     const insY = ins.top + ins.bottom;
 
     const classed = classedOf(n, c);
-    const isText = !!props.text && classed.length === 0;
+    // Floats among a text box's text: boxes of their own, placed on the lines where they occur.
+    const textFloats = textFloatsOf(n, c, props);
+    const isText = !!props.text && (classed.length === 0 || textFloats.length > 0);
     const measureText = isText && n.text ? text(n, props, id, assumptions) : undefined;
 
     const m = marginOf(props);
@@ -1846,15 +1859,38 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
       const t = props.text!.value;
       const lineH = lineHeightPx(t.sizePx, t.lineHeight);
       if (measureText) {
+        // Its floats, laid out first (each as wide as its content in this box, unless set), placed
+        // when their line is (see layoutText's floats).
+        const fboxes = textFloats.map((k) => measure(k.node, k.comp, k.slot, innerW, "flow"));
+        for (const b of fboxes) {
+          floated.add(b);
+          collapse.set(b, { top: NONE, bottom: NONE, empty: true, at: NONE });
+          if (marginOf(b.props).autoLeft || marginOf(b.props).autoRight) b.assumptions.push("a float with auto margins isn't modelled");
+        }
+        children.push(...fboxes);
+        const inlineFloat = (index: number) => {
+          const b = fboxes[index];
+          const fm = marginOf(b.props);
+          const fw = fm.left + b.w + fm.right;
+          return {
+            w: fw,
+            place: (top: number) => {
+              const from = Math.max(flowCtx.y + top, b.props.clear ? flowCtx.ex.clearance(b.props.clear.value) : -Infinity);
+              const at = flowCtx.ex.place(b.props.float!.value, fw, fm.top + b.h + fm.bottom, from, flowCtx.x, flowCtx.x + innerW);
+              b.x = at.x - flowCtx.x + fm.left;
+              b.y = at.y - flowCtx.y + fm.top;
+            },
+          };
+        };
         // Beside floats (any below its top in its formatting context): each line in the room they leave.
-        const beside = flowCtx.ex.bottom > flowCtx.y + EPS;
+        const beside = fboxes.length > 0 || flowCtx.ex.bottom > flowCtx.y + EPS;
         const band: Band | undefined = beside
           ? (top, h, fits) => {
               const at = flowCtx.ex.find(flowCtx.y + top, h, flowCtx.x, flowCtx.x + innerW, fits);
               return { top: at.top - flowCtx.y, l: at.l - flowCtx.x, r: at.r - flowCtx.x };
             }
           : undefined;
-        const tl = measureText(innerW, band);
+        const tl = measureText(innerW, band, fboxes.length ? inlineFloat : undefined);
         lines = tl.lines;
         const last = lines.at(-1);
         contentH = band && last?.top !== undefined ? last.top + lineH : lines.reduce((s, l) => s + (l.h ?? lineH), 0);
@@ -2057,7 +2093,7 @@ function layoutWith(model: Model, fixture: Fixture, width: number, rootBars: { x
     // aren't overlaid (Windows, many Linux setups); Cadesa predicts overlay scrollbars.
     const clipsX = (!!ov && ov.x !== "visible") || !!props.contain?.value.paint;
     if (clipsX && widest > innerW + 0.5) box.overflowX = widest - innerW;
-    else if (widest > innerW + 0.5 && children.length) {
+    else if (widest > innerW + 0.5 && children.some((b) => b.x + b.w + Math.min(0, marginOf(b.props).right) > innerW + EPS)) {
       box.overflowX = widest - innerW;
       const culprit = children.find((b) => b.x + b.w + Math.min(0, marginOf(b.props).right) > innerW + EPS)!;
       issues.push({

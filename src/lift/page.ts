@@ -1209,6 +1209,28 @@ export abstract class PageLifter {
     return s.length > 0 && !/[\s\-\u2010-\u2015\/?!\u00ad\u200b]/.test(s);
   }
 
+  /**
+   * An inline box with vertical-align: middle, text-top or text-bottom whose content reaches past
+   * its strut and may be split across lines, holding only text and inline boxes on its baseline or
+   * shifted by a length (nothing placed by its own extent, nothing atomic), inside no such box: on
+   * each line it is placed by the extent of what of it is there (RunStyle.byExtent).
+   */
+  splitAligned(k: El, si: number): boolean {
+    const o = k.own[si]?.get("vertical-align");
+    if (!/^(middle|text-top|text-bottom)$/.test((o ? this.resolve(k, si, o.value) : undefined) ?? "")) return false;
+    if (k.pseudo || this.displayOf(k, si) !== "inline" || this.unbreakable(k, si) || !this.inlineExtent(k, si)?.grown) return false;
+    const ok = (x: El): boolean =>
+      x.children.every((c) => c.anonymous !== undefined || this.displayOf(c, si) === "none" || this.outOfFlow(c, si) || (!c.pseudo && c.tag !== "br" && this.displayOf(c, si) === "inline" && !REPLACED_BLOCK.has(c.tag) && !this.alignsByExtent(c, si) && ok(c)));
+    return ok(k) && !this.extentAncestor(k, si);
+  }
+
+  /** The box placed line by line by its extent (splitAligned) that `k` is in, below its line root. */
+  extentAncestor(k: El, si: number): El | undefined {
+    const root = this.lineRoot(k, si);
+    for (let p = k.parent; p && p !== root; p = p.parent) if (this.splitAligned(p, si)) return p;
+    return undefined;
+  }
+
   /** Whether a box's vertical-align depends on its extent (middle, text-top, text-bottom). */
   alignsByExtent(k: El, si: number): boolean {
     const o = k.own[si].get("vertical-align");
@@ -1283,7 +1305,8 @@ export abstract class PageLifter {
     // Middle, text-top and text-bottom place a box by its extent on each line it is on: one whose
     // content reaches past its strut is measured when it is never split across lines (no break
     // opportunity in it, nothing atomic in it), so that its one fragment holds all of its content.
-    if (e.grown && this.alignsByExtent(k, si) && !this.unbreakable(k, si)) return false;
+    // (Middle, text-top and text-bottom on a box of inline boxes and text only: placed line by line, see splitAligned.)
+    if (e.grown && this.alignsByExtent(k, si) && !this.unbreakable(k, si) && !this.splitAligned(k, si)) return false;
     return k.parent === root || (this.displayOf(k.parent, si) === "inline" && this.runModelled(k.parent, si));
   }
 
@@ -1307,7 +1330,18 @@ export abstract class PageLifter {
     const above = own.sa - shift;
     const below = own.sd + shift;
     const align = this.edgeAlign(k, si);
-    if (align) {
+    const xa = this.extentAncestor(k, si);
+    if (this.splitAligned(k, si)) {
+      // Placed on each line by what of it is there (text.ts): its strut, around its parent's baseline.
+      const p = k.parent!;
+      const ps = this.strutOf(p, si)!;
+      const mode = this.resolve(k, si, k.own[si].get("vertical-align")!.value) as "middle" | "text-top" | "text-bottom";
+      out.byExtent = { mode, sa: own.sa, sd: own.sd, base: p === this.lineRoot(k, si) ? 0 : this.baselineShift(p, si)!, xh2: ps.xh2, ascent: ps.ascent, descent: ps.descent };
+    } else if (xa) {
+      // Inside such a box: from its baseline.
+      const rel = shift - this.baselineShift(xa, si)!;
+      Object.assign(out, { above: own.sa - rel, below: own.sd + rel, rel: true });
+    } else if (align) {
       // Against the line box's top or bottom: its whole extent (its strut and what is in it).
       const e = this.inlineExtent(k, si)!;
       Object.assign(out, { above: e.sa, below: e.sd, align });
@@ -2517,6 +2551,8 @@ export abstract class PageLifter {
     return (n) => {
       const el = byNode.get(n as unknown as P5);
       if (!el) return undefined;
+      // A float among the text: a box of its own, placed where it occurs.
+      if (el !== root && el.parent === root && this.textFloat(el) && this.floated(el, si)) return { float: true };
       const out: InlineInfo = {};
       const atomic = el !== root ? this.atomicInline(el, si) : undefined;
       if (atomic !== undefined) return { atomic, ...this.pastStrut(el, si) };
@@ -2833,11 +2869,20 @@ export abstract class PageLifter {
   }
 
   /**
+   * A float among its parent's inline content (floated wherever it is displayed): its parent stays a
+   * text box, and the float is a box of its own placed on the line where it occurs.
+   */
+  textFloat(el: El): boolean {
+    return !!el.parent && el.parent !== this.bodyEl && !el.pseudo && el.anonymous === undefined && this.blockFlow === "flow" && this.states.some((_, si) => this.displayOf(el, si) !== "none") && this.states.every((_, si) => this.displayOf(el, si) === "none" || !!this.floated(el, si));
+  }
+
+  /**
    * Inline children make an element a text box when every element child is inline in every state
-   * where it is displayed (`<span class="d-none d-md-inline">`: its text is left out where it's hidden).
+   * where it is displayed (`<span class="d-none d-md-inline">`: its text is left out where it's
+   * hidden), or a float among them.
    */
   inlineChild(el: El): boolean {
-    if (el.tag === "br" || this.ignorable(el)) return true;
+    if (el.tag === "br" || this.ignorable(el) || this.textFloat(el)) return true;
     // A replaced element or control is inline content only as an atomic inline of known size (see atomicInline).
     if (REPLACED_BLOCK.has(el.tag) || INLINE_BLOCK.has(el.tag)) return this.states.some((_, si) => this.displayOf(el, si) !== "none") && this.states.every((_, si) => this.displayOf(el, si) === "none" || this.atomicInline(el, si) !== undefined);
     return this.states.every((_, si) => this.displayOf(el, si) === "none" || (this.isInlineLevel(el, si) && !this.outOfFlow(el, si)));
@@ -2854,12 +2899,13 @@ export abstract class PageLifter {
   }
 
   visibleText(el: El): boolean {
-    return el.ownText || el.children.some((c) => !this.ignorable(c) && this.inlineChild(c) && this.visibleText(c));
+    return el.ownText || el.children.some((c) => !this.ignorable(c) && !this.textFloat(c) && this.inlineChild(c) && this.visibleText(c));
   }
 
   classify(el: El) {
     // Parents decide first (a text box's descendants are inline content, not boxes).
-    if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length && el.parent.roles.every((r) => r === "text" || r === "hidden" || r === "out")) return;
+    // (A float among a text box's lines is a box of its own.)
+    if (el.parent && el.parent !== this.bodyEl && el.parent.roles.length && el.parent.roles.every((r) => r === "text" || r === "hidden" || r === "out") && !(this.textFloat(el) && el.parent.roles.some((r) => r === "text"))) return;
     // A table Cadesa can't lay out as one is one box; what's inside it isn't laid out. (Its parts
     // hold only parts, or a cell's content: a column's children aren't laid out either.)
     if (el.parent && el.parent !== this.bodyEl && this.states.some((_, si) => this.isTable(el.parent!, si)) && this.tableWhy(el.parent)) return;
@@ -2956,7 +3002,7 @@ export abstract class PageLifter {
       const side = this.floated(el, si);
       if (side) {
         if (this.blockFlow !== "flow") this.note(el, si, { decl: own.get("float")!.utility, reason: "a float in block flow lifted as a stack (the page resets margins) isn't modelled", kind: "geometry" });
-        else if (!this.floatLeads(el, si)) this.note(el, si, { decl: own.get("float")!.utility, reason: "a float after inline content on its line isn't modelled", kind: "geometry" });
+        else if (parentRole !== "text" && !this.floatLeads(el, si)) this.note(el, si, { decl: own.get("float")!.utility, reason: "a float after inline content on its line isn't modelled", kind: "geometry" });
         decl("float", side, own.get("float")!.utility);
       } else if (/^(left|right|inline-start|inline-end)$/.test(res("float") ?? "") && !inFlexOrGrid && !abs && !this.floatsAtStart(el, si) && !this.asideFloat(el, si))
         this.note(el, si, { decl: own.get("float")!.utility, reason: `floated generated content (${el.tag}) isn't modelled`, kind: "geometry" });
@@ -3786,6 +3832,11 @@ export abstract class PageLifter {
     const lh = (x: TextCtx) => (x.lineHeight === "normal" ? NaN : "num" in x.lineHeight ? lineHeightPx(x.size, x.lineHeight.num) : x.lineHeight.px);
     const visit = (k: El) => {
       if (k.tag === "br" || this.outOfFlow(k, si) || this.displayOf(k, si) === "none") return;
+      // A float among the text: a box of its own, placed on the line where it occurs (see textFloat).
+      if (this.floated(k, si)) {
+        if (!this.textFloat(k)) this.note(el, si, { decl: `<${k.tag}> (float: ${this.floated(k, si)})`, reason: "a float inside an inline box isn't modelled", kind: "geometry" });
+        return;
+      }
       // An atomic inline of known size whose line box stays the same: one object on the line, measured.
       if (this.atomicInline(k, si) !== undefined) return;
       if (k.pseudo && this.ownDisplay(k, si) === "inline-block" && !this.floatsAtStart(k, si) && this.atomicText(k, si) !== undefined) return;
@@ -3939,10 +3990,10 @@ export abstract class PageLifter {
           k.className = `${root.block}__${slot}`;
           k.signature = k.className;
           k.id = attr(k.node, "data-fixture") ?? uniqueId(slot);
-          if (k.roles.some((r) => r === "container")) visit(k);
+          if (k.roles.some((r) => r === "container" || r === "text")) visit(k);
         }
       };
-      if (root.roles.some((r) => r === "container")) visit(root);
+      if (root.roles.some((r) => r === "container" || r === "text")) visit(root);
     }
   }
 
@@ -4112,9 +4163,11 @@ export abstract class PageLifter {
         const isText = si === undefined ? el.roles.includes("text") : el.roles[si] === "text";
         // Element children, with anonymous text runs between them.
         const byEl = new Map(n.children.map((c) => [c.fixtureId ? byId.get(c.fixtureId) : undefined, c] as const));
+        // A text box's floats are boxes of their own (see textFloat).
+        const floatsIn = isText && el.children.some((k) => this.textFloat(k) && (si === undefined || !!this.floated(k, si)));
         const children =
           isText || el.tag === "svg"
-            ? el.tag === "svg" ? [] : n.children
+            ? el.tag === "svg" ? [] : floatsIn ? (n.children.map((c) => (c.fixtureId && this.textFloat(byId.get(c.fixtureId)!) ? keep(c) : c)).filter(Boolean) as FixtureNode[]) : n.children
             : (el.children.map((k) => (k.anonymous !== undefined ? anonNode(k, si) : k.pseudo ? pseudoNode(k, si) : byEl.has(k) ? keep(byEl.get(k)!) : undefined)).filter(Boolean) as FixtureNode[]);
         if (!isText && el.children.some((k) => k.anonymous !== undefined)) return { ...n, children, ownText: "" };
         // A replaced element or form control has no text box (a textarea's text is its value).
@@ -4128,7 +4181,7 @@ export abstract class PageLifter {
         const hidden = si === undefined ? hiddenNodes : hiddenAt[si];
         // Inline boxes with a weight or edges of their own, and generated content, are part of the text.
         const inline = this.inlineInfo(el, si ?? 0, byNodeAll);
-        if (isText && (hidden.size || hasGenerated || this.styledInline(el, si ?? 0)))
+        if (isText && (hidden.size || hasGenerated || floatsIn || this.styledInline(el, si ?? 0)))
           return { ...n, children, ...textAndRuns(el.node as unknown as P5Node, (x) => hidden.has(x as unknown as P5), inline) };
         return { ...n, children };
       };

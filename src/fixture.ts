@@ -54,6 +54,11 @@ export interface RunMeta {
    * margin, border and padding (px). The first line fits beside it.
    */
   lead?: { text: string; weight?: number; extra: number };
+  /**
+   * Floats among the run's text (element children of the text box that float): where each occurs
+   * (a character offset) and which one it is (its index among the text box's floats, in order).
+   */
+  floats?: { at: number; index: number }[];
 }
 
 export interface Span extends RunStyle {
@@ -91,10 +96,19 @@ export interface RunStyle {
    * top or bottom once the rest of the line is, growing the line box below or above if it is taller.
    */
   align?: "top" | "bottom";
+  /**
+   * vertical-align: middle, text-top or text-bottom on an inline box whose content reaches past its
+   * strut and is split across lines: it is placed by its extent on each line it is on (its strut
+   * `sa` / `sd` and what of it is on that line), around its parent's baseline, `base` px below the
+   * line's (in its parent: x-height / 2 `xh2`, ascent and descent). Instead of `above` / `below`.
+   */
+  byExtent?: { mode: "middle" | "text-top" | "text-bottom"; sa: number; sd: number; base: number; xh2: number; ascent: number; descent: number };
+  /** Inside such a box: `above` and `below` are from its baseline, not the line's. */
+  rel?: boolean;
 }
 
 /** Whether a run style changes anything. */
-export const styled = (s: RunStyle | undefined) => !!s && (s.weight !== undefined || s.font !== undefined || s.size !== undefined || s.italic !== undefined || s.above !== undefined || s.below !== undefined);
+export const styled = (s: RunStyle | undefined) => !!s && (s.weight !== undefined || s.font !== undefined || s.size !== undefined || s.italic !== undefined || s.above !== undefined || s.below !== undefined || s.byExtent !== undefined);
 
 /** What an inline element adds to the text it is part of (see textAndRuns). */
 export interface InlineInfo extends RunStyle {
@@ -108,6 +122,8 @@ export interface InlineInfo extends RunStyle {
    */
   atomic?: number | ((sizePx: number) => number);
   after?: Generated;
+  /** A float among the text: a box of its own (see RunMeta.floats); its text isn't the text box's. */
+  float?: boolean;
 }
 
 export interface Generated extends RunStyle {
@@ -151,6 +167,7 @@ const BLOCK = new Set([
 function textOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) => InlineInfo | undefined): string {
   if (n.nodeName === "#text") return n.value ?? "";
   const info = inline?.(n);
+  if (info?.float) return "";
   if (info?.atomic !== undefined) return "\uFFFC";
   const inner = (n.childNodes ?? []).filter((c) => !skip?.(c)).map((c) => textOf(c, skip, inline)).join("");
   const gen = (g?: Generated) => (!g || g.float ? "" : g.atomic !== undefined ? "\uFFFC" : g.text);
@@ -166,14 +183,17 @@ const EDGE = "\u0001";
 const OPEN = "\u0002";
 const CLOSE = "\u0004";
 const END = "\u0003";
+/** Marks float `i` among the text (FLOAT i END): an item edge, no text. */
+const FLOAT = "\u0005";
 
 /** collapse(), also returning where the EDGE marks fall (in characters of the collapsed text). */
-function collapseItems(raw: string): { text: string; items: number[]; marks: { id: number; open: boolean; at: number; lead?: boolean }[] } {
+function collapseItems(raw: string): { text: string; items: number[]; marks: { id: number; open: boolean; at: number; lead?: boolean }[]; floats: { index: number; at: number }[] } {
   let out = "";
   let n = 0;
   let pending = false;
   const items: number[] = [];
   const marks: { id: number; open: boolean; at: number; lead?: boolean }[] = [];
+  const floats: { index: number; at: number }[] = [];
   const space = (edge = false) => {
     // A collapsible space after another one (even across an element edge) disappears.
     if (pending && n > 0 && !out.endsWith(" ")) {
@@ -190,6 +210,13 @@ function collapseItems(raw: string): { text: string; items: number[]; marks: { i
   const chars = [...raw];
   for (let i = 0; i < chars.length; i++) {
     const ch = chars[i];
+    if (ch === FLOAT) {
+      // A float: an item edge where it occurs (the spaces around it collapse as if it weren't there).
+      const end = chars.indexOf(END, i);
+      floats.push({ index: Number(chars.slice(i + 1, end).join("")), at: n + (pending && n > 0 && !out.endsWith(" ") ? 1 : 0) });
+      i = end;
+      continue;
+    }
     if (ch === OPEN || ch === CLOSE) {
       // A space before an inline box's end is its text (the spaces after it collapse into it).
       if (ch === CLOSE) space();
@@ -211,7 +238,8 @@ function collapseItems(raw: string): { text: string; items: number[]; marks: { i
   }
   const text = out.replace(/ $/, "");
   const len = [...text].length;
-  return { text, items: items.filter((b) => b < len), marks: marks.map((m) => ({ ...m, at: Math.min(m.at, len) })) };
+  const cuts = [...new Set([...items, ...floats.map((f) => f.at)])].filter((b) => b > 0 && b < len).sort((a, b) => a - b);
+  return { text, items: cuts, marks: marks.map((m) => ({ ...m, at: Math.min(m.at, len) })), floats: floats.map((f) => ({ ...f, at: Math.min(f.at, len) })) };
 }
 
 function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) => InlineInfo | undefined): { runs: string[]; runMeta: FixtureNode["runMeta"] } {
@@ -230,13 +258,15 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     ...(sp.above !== undefined && { above: sp.above }),
     ...(sp.below !== undefined && { below: sp.below }),
     ...(sp.align !== undefined && { align: sp.align }),
+    ...(sp.byExtent !== undefined && { byExtent: sp.byExtent }),
+    ...(sp.rel && { rel: true }),
   });
   const live: number[] = [];
   let lead: RunMeta["lead"];
   /** Spans open when a run starts (split from the run before by a <br>): they start at 0, with no open edge. */
   let carried: number[] = [];
   const flush = () => {
-    const { text: t, items, marks } = collapseItems(cur);
+    const { text: t, items, marks, floats } = collapseItems(cur);
     if (t) {
       runs.push(t);
       const out: Span[] = [];
@@ -263,7 +293,7 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
         order.set(s, id);
       }
       const useful = out.filter((s) => styled(s) || s.open || s.close);
-      runMeta.push({ inBlock: depth > 0, underlined, items, ...(useful.length && { spans: useful.sort((a, b) => a.from - b.from || b.to - a.to || order.get(a)! - order.get(b)!) }), ...(lead !== undefined && runs.length === 1 && { lead }) });
+      runMeta.push({ inBlock: depth > 0, underlined, items, ...(useful.length && { spans: useful.sort((a, b) => a.from - b.from || b.to - a.to || order.get(a)! - order.get(b)!) }), ...(lead !== undefined && runs.length === 1 && { lead }), ...(floats.length && { floats }) });
     }
     carried = [...live];
     cur = "";
@@ -291,8 +321,14 @@ function runsOf(n: P5Node, skip?: (n: P5Node) => boolean, inline?: (n: P5Node) =
     else if (g.atomic !== undefined) span({ open: g.atomic, ...(g.above !== undefined && { above: g.above, below: g.below }), ...(g.align && { align: g.align }) }, () => (cur += "\uFFFC"));
     else span(g, () => (cur += g.text));
   };
+  /** Floats among the text, in order. */
+  let floatCount = 0;
   const walk = (k: P5Node, u: boolean) => {
     if (skip?.(k)) return;
+    if (k.tagName && inline?.(k)?.float) {
+      cur += FLOAT + floatCount++ + END;
+      return;
+    }
     if (k.nodeName === "#text") {
       cur += k.value ?? "";
       if (u && /\S/.test(k.value ?? "")) underlined = true;

@@ -32,12 +32,15 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   clear: both }`) holds its floats. A box that makes a formatting context of its own (`overflow`
   other than visible, `display: flow-root`, a flex, grid or table container, a form control or
   image) sits beside floats, in the first room it fits (as wide as that room when its width is
-  auto, its margins inside the floats'), and is as tall as the floats in it. A float that leads
-  its line (a drop cap, an image at the start of a paragraph) is placed there and the text after
-  it goes around it. In a source: `float: left | right`, `clear: left | right | both`, `root:
-  true` (flow-root). Still `≈`: a float after inline content on its line, lines beside a float
-  holding inline boxes that reach past the strut, inline-blocks sharing lines beside a float, and
-  floats in a page lifted as stacks (a preflight reset).
+  auto, its margins inside the floats'), and is as tall as the floats in it. Floats among a
+  paragraph's text (a drop cap, an image mid-paragraph, a count floated to the end of a list item)
+  are placed as Chromium's line breaker places them: at the start of a line, at its top; on a line
+  they fit beside (what is on it so far, a space at its end hanging), at its top, the line shortened (and
+  moved over by a left float); otherwise below the line. In a source: `float: left | right`,
+  `clear: left | right | both`, `root: true` (flow-root). Still `≈`: a float inside an inline
+  box or inside a word, lines beside a float holding inline boxes that reach past the strut,
+  inline-blocks sharing lines beside a float, and floats in a page lifted as stacks (a preflight
+  reset).
 - An inline element alone between blocks (`<span>`, `<a>`, `<strong>` as the whole content of an
   anonymous block) is exact, rectangle and all: as `getBoundingClientRect()` reports it, the union
   of its text's content area on each of its lines (its font's ascent and descent, rounded as
@@ -45,6 +48,10 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   text starts on the line (aligned as `text-align` says, in layout units) to where it ends (its
   width rounded up to a layout unit), across every line it is broken onto. `conformance:bootstrap`
   goes from 68,858 to 69,310 exact boxes of 69,310.
+- An inline box with `vertical-align: middle`, `text-top` or `text-bottom` whose content reaches
+  past its strut (larger words, `<sup>`, `<sub>` in it) and is split across lines is placed line by
+  line, as Chromium places each of its fragments: by the extent of what of it is on that line, the
+  boxes in it moving with it. Before, it was `≈` unless it could never be split.
 
 ## 0.1.19 (2026-11-20)
 

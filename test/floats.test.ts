@@ -23,6 +23,30 @@ describe("the exclusion space", () => {
   });
 });
 
+describe("floats among a paragraph's text", () => {
+  const r = run(
+    `<main><p class="p1">Some text <span class="f">x</span>more text that goes on and wraps around the float here.</p>
+<p class="p2">A first line of text that is long enough <span class="f">x</span>to fill, then more text after it.</p>
+<p class="p3">Text then a left one <span class="l">x</span>in the middle of the line and on.</p></main>`,
+    `main { width: 300px } p { margin: 0 0 10px }
+.f { float: right; width: 100px; height: 30px } .l { float: left; width: 60px; height: 40px }`,
+    [800],
+  );
+
+  it("one that fits beside the line so far goes at the line's top, the line shortened (moved over by a left one)", () => {
+    expect(geo(r.box("f"))).toEqual([200, 0, 100, 30]);
+    expect(geo(r.box("p1"))).toEqual([0, 0, 300, 72]);
+    expect(geo(r.box("l"))).toEqual([0, 140, 60, 40]);
+    expect(r.box("p3").lines!.map((l) => l.x)).toEqual([60, 60]);
+  });
+
+  it("one that doesn't fit goes below the line", () => {
+    expect(geo(r.box("f-2"))).toEqual([200, 106, 100, 30]);
+    expect(geo(r.box("p2"))).toEqual([0, 82, 300, 48]);
+    expect(r.exact()).toBe(true);
+  });
+});
+
 describe("floats in block flow", () => {
   const r = run(
     `<section><div class="fl m"></div><div class="bfc">A box of its own beside the float</div><div class="wide">Margin wider than the float</div></section>
