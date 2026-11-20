@@ -67,6 +67,19 @@ p {
   vertical-align: middle;
 }
 
+/* Shorter than their text: the grid's row grows to it, the flex line doesn't. */
+.tick.low {
+  height: 12px;
+  align-items: end;
+  font-size: 14px;
+  line-height: normal;
+}
+
+.pill.low {
+  height: 10px;
+  font-size: 16px;
+}
+
 .dot {
   display: inline-grid;
   place-items: center;

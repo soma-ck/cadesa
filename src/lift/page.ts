@@ -2675,10 +2675,13 @@ export abstract class PageLifter {
     const bh = ch + insY;
     const al = res("align-items") ?? "normal";
     const U = (x: number) => Math.round(x * 64);
+    // A grid's row is never shorter than its item (an auto row); a flex line is the container's
+    // height, which an item taller than it overflows on both sides when centered (unsafe alignment).
+    const room = d === "inline-grid" ? Math.max(ch, ih) : ch;
     let off: number;
-    if (/^(normal|stretch|start|flex-start|self-start|baseline|first baseline)$/.test(al)) off = 0;
-    else if (al === "center") off = Math.trunc((U(ch) - U(ih)) / 2) / 64;
-    else if (/^(end|flex-end|self-end)$/.test(al)) off = ch - ih;
+    if (/^(normal|stretch|start|flex-start|self-start)$/.test(al)) off = 0;
+    else if (al === "center") off = Math.trunc((U(room) - U(ih)) / 2) / 64;
+    else if (/^(end|flex-end|self-end)$/.test(al)) off = room - ih;
     else return undefined;
     const hm = mt + bh + mb;
     const a0 = mt + bdr("top") + pt + off + sa;
