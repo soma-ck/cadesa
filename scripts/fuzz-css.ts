@@ -486,7 +486,7 @@ export function genCssCase(seed: number): CssCase {
     if (r.chance(0.4)) own.push(`vertical-align: ${r.pick(["middle", "-0.125em", "-2px", "3px", "0.25em"])}`);
     // SVG-only properties, which paint only inside the svg.
     if (r.chance(0.2)) own.push("text-anchor: middle", "dominant-baseline: middle");
-    const atom = r.chance(0.6) ? `<svg${attr(cls(own))} viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"></circle></svg>` : `<img${attr(cls(own))} src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" alt="">`;
+    const atom = r.chance(0.6) ? `<svg${attr(cls(own))} viewBox="0 0 10 10"><circle cx="5" cy="5" r="5"></circle></svg>` : `<img${attr(cls(own))} src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7" alt="">`;
     // In a link that is a flex item (blockified: a block of its one line), between spaces, beside a pill.
     if (r.chance(0.35)) {
       const row = [`display: flex`, `align-items: ${r.pick(["center", "flex-start", "stretch"])}`, ...(r.chance(0.5) ? [`line-height: ${r.pick(["1", "1.5", "24px"])}`] : []), ...(r.chance(0.3) ? [`justify-content: ${r.pick(["flex-end", "space-between"])}`] : [])];
