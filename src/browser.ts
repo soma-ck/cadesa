@@ -70,6 +70,17 @@ export async function serveFiles(root: string, overrides = new Map<string, strin
 }
 
 /**
+ * Freeze the page's animations from the start, through the browser (DevTools' animation playback
+ * rate 0): an animation shorter than the time the page takes to load can't end before settle()
+ * pauses it at its start (under load, one did: its end state was measured). Call before loading.
+ */
+export async function freezeAnimations(page: Page): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  await cdp.send("Animation.enable");
+  await cdp.send("Animation.setPlaybackRate", { playbackRate: 0 });
+}
+
+/**
  * Wait for web fonts and images, so text and replaced elements have their final size; then seek
  * every animation to its start (t=0) and hold it there, where Cadesa predicts boxes: what is drawn
  * at load would otherwise depend on how long loading took.

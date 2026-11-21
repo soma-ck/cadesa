@@ -6,7 +6,7 @@
  * with the data-fixture ids the engine's boxes carry, so each box is matched to its element.
  */
 import { basename, dirname, relative, resolve, sep } from "node:path";
-import { measureBoxes, rectDelta, serveFiles, settle, type Page } from "./browser.js";
+import { freezeAnimations, measureBoxes, rectDelta, serveFiles, settle, type Page } from "./browser.js";
 import { composite, contrast, type Finding } from "./check.js";
 import { walk, type Layout } from "./engine/layout.js";
 import type { WidthImpact } from "./lift/impact.js";
@@ -341,6 +341,7 @@ export async function verifyFindings(opts: {
   const results = new Map<number, Map<string, Verdict>>();
   try {
     const page: Page = await browser.newPage({ viewport: { width: widths[0] ?? 1280, height: opts.height ?? 800 } });
+    await freezeAnimations(page);
     await page.goto(server.url(pagePath));
     await settle(page);
     const failed = await page.evaluate("[...document.fonts].filter((f) => f.status === 'error').map((f) => f.family)");

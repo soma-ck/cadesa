@@ -13,7 +13,7 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { measureBoxes, rectDelta, serveFiles, settle } from "../src/browser.js";
+import { freezeAnimations, measureBoxes, rectDelta, serveFiles, settle } from "../src/browser.js";
 import { walk } from "../src/engine/layout.js";
 import { cssPageFile, tailwindImpact } from "../src/commands.js";
 import { loadSource } from "../src/load.js";
@@ -213,6 +213,7 @@ async function runCase(seed: number) {
     const uncertain = new Set<string>(impacts.find((i) => i.width === l.width)?.uncertain.map((u) => u.id));
     for (const b of walk(l.boxes)) if (b.assumptions.length) uncertain.add(b.id);
     const page = await browser.newPage({ viewport: { width: l.width, height: 800 } });
+    await freezeAnimations(page);
     await page.goto(server.url(pagePath));
     await settle(page);
     const rects = await measureBoxes(page);

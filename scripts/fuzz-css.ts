@@ -14,7 +14,7 @@
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { measureBoxes, rectDelta, serveFiles, settle } from "../src/browser.js";
+import { freezeAnimations, measureBoxes, rectDelta, serveFiles, settle } from "../src/browser.js";
 import { cssPageFile, tailwindImpact } from "../src/commands.js";
 import { walk } from "../src/engine/layout.js";
 import { loadSource } from "../src/load.js";
@@ -702,6 +702,7 @@ export async function runCssFuzz(seeds: number[], opts: { tolerance: number; out
       const uncertain = new Set<string>(unc.map((u) => u.id));
       for (const b of walk(l.boxes)) if (b.assumptions.length) uncertain.add(b.id);
       const page = await browser.newPage({ viewport: { width: l.width, height: 800 } });
+      await freezeAnimations(page);
       await page.goto(server.url(pagePath));
       await settle(page);
       const rects = await measureBoxes(page);

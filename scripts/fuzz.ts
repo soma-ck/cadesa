@@ -29,6 +29,7 @@ import { layout, walk, type Layout } from "../src/engine/layout.js";
 import { parseFixture } from "../src/fixture.js";
 import { loadSource } from "../src/load.js";
 import { findChrome } from "../src/metrics.js";
+import { freezeAnimations } from "../src/browser.js";
 import { validate } from "../src/validate.js";
 
 const { values: args } = parseArgs({
@@ -517,6 +518,11 @@ function genOverrides(g: Gen) {
       if (Object.keys(o).length) when[bp] = o;
     }
     if (Object.keys(when).length) style.when = when;
+    // A maxWidth anywhere (base or at a breakpoint) centers the box with auto inline margins at the
+    // widths where it applies, which then can't also have a left or right margin: none anywhere.
+    const levels = (pick: (o: Obj) => Obj | undefined) => [pick(style), ...Object.values(when).map((o) => pick(o as Obj))].filter(Boolean) as Obj[];
+    const groups = [levels((o) => o), ...Object.keys(style.slots ?? {}).map((sl) => levels((o) => (o === style ? style.slots[sl] : (o.slots as Obj | undefined)?.[sl])))];
+    for (const objs of groups) if (objs.some((o) => o.maxWidth !== undefined && o.maxWidth !== "none")) for (const o of objs) if (inlineMargin(o.margin)) delete o.margin;
   }
 }
 
@@ -1055,6 +1061,7 @@ async function startServer() {
 async function newWorkerPage(browser: Browser, base: string): Promise<Page> {
   const ctx = await browser.newContext({ viewport: { width: 800, height: 800 } });
   const page = await ctx.newPage();
+  await freezeAnimations(page);
   // Relative URLs in the fixture (the font, local images) resolve as they do from fuzz/failures/<hash>/.
   await page.goto(`${base}/fuzz/failures/_/`);
   return page;

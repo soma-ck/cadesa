@@ -12,7 +12,7 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
-import { measureBoxes, measureLineCounts, rectDelta, serveFiles, settle, sha256 as sha } from "../src/browser.js";
+import { measureBoxes, measureLineCounts, rectDelta, serveFiles, freezeAnimations, settle, sha256 as sha } from "../src/browser.js";
 import { findChrome, launchChromium } from "../src/metrics.js";
 import { sizeUncertainty } from "../src/check.js";
 import { compile } from "../src/compile.js";
@@ -133,6 +133,7 @@ for (const layout of layouts) {
   // A text box the engine couldn't measure (no font metrics) is flagged in every report: uncertain.
   if (tw) for (const b of walk(layout.boxes)) if (b.assumptions.length) (uncertain.add(b.id), assumed++);
   const page = await browser.newPage({ viewport: { width: layout.width, height: viewportHeight } });
+  await freezeAnimations(page);
   await page.goto(server.url(fixtureFile));
   await settle(page);
   for (const family of families) {
