@@ -342,6 +342,13 @@ export function longhands(prop: string, value: string): [string, string][] {
     const [s, e = named(s)] = parts;
     return [[`${prop}-start`, s], [`${prop}-end`, e]];
   }
+  // grid-template: none, or <rows> / <columns> (the form with area strings stays as written).
+  if (prop === "grid-template" && !/["']/.test(value) && !/\bvar\(/.test(value)) {
+    const v = value.trim();
+    if (/^(none|initial|unset|inherit|revert)$/.test(v)) return [["grid-template-rows", v], ["grid-template-columns", v], ["grid-template-areas", v]];
+    const parts = v.split(/\/(?![^(]*\))/);
+    if (parts.length === 2 && parts.every((x) => x.trim())) return [["grid-template-rows", parts[0].trim()], ["grid-template-columns", parts[1].trim()], ["grid-template-areas", "none"]];
+  }
   if (prop === "overflow") {
     const p = value.trim().split(/\s+/);
     return [["overflow-x", p[0]], ["overflow-y", p[1] ?? p[0]]];
@@ -454,6 +461,7 @@ const DEFERRED: Record<string, string[]> = (() => {
     gap: ["row-gap", "column-gap"],
     inset: [...SIDES],
     font: ["font-style", "font-weight", "font-size", "line-height", "font-family"],
+    "grid-template": ["grid-template-rows", "grid-template-columns", "grid-template-areas", "grid-template"],
     background: ["background-color", "background-image", "background"],
     animation: ANIMATION,
     "border-radius": ["border-radius", "border-top-left-radius", "border-top-right-radius", "border-bottom-right-radius", "border-bottom-left-radius"],
@@ -1018,7 +1026,7 @@ export abstract class PageLifter {
     if (v === undefined || v === "") return [];
     const rawParts = raw.trim().split(/\s+(?![^(]*\))/);
     const resParts = rawParts.map((p) => this.resolve(el, si, p));
-    if (prop === "animation" || resParts.some((p) => p === undefined || p === "" || /\s/.test(p))) return longhands(prop, v);
+    if (prop === "animation" || prop === "grid-template" || resParts.some((p) => p === undefined || p === "" || /\s/.test(p))) return longhands(prop, v);
     if (!/^(border|border-(top|right|bottom|left|inline|block|inline-start|inline-end|block-start|block-end)|font|background)$/.test(prop)) return longhands(prop, raw);
     return longhands(prop, resParts.join(" ")).map(([p, x]) => {
       const i = resParts.indexOf(x);

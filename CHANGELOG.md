@@ -45,6 +45,8 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   line: a blog's avatar in its byline made every box below it `≈`.
 - `align-content` on a flex container that doesn't wrap is ignored, as Chromium ignores it (it was
   `≈`: "align-content moves content inside the box").
+- The `grid-template` shorthand (`auto / 200px minmax(0, 1fr)`, `none`) is read as its rows and
+  columns (it was `≈`: "grid-template is not modelled"; the form with area strings still is).
 - Conformance, the fuzzers and `check --verify` freeze the page's animations through the browser
   as it is created (DevTools' animation playback rate 0), so an animation shorter than the page's
   load can't end before it is held at its start (a fuzz case failed so under load).
