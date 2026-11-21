@@ -49,6 +49,12 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   its content, and in the intrinsic sizes of what holds it); on a flex item it replaces the
   automatic minimum, and `min-width: 0` switches that off (it was `≈`: "min-width is not
   modelled"). In a grid, where it may take part in sizing the tracks, the item is `≈`.
+- `max-height` (px or rem) is laid out in block flow: a taller box is cut to it, its content
+  overflowing (it was `≈`: "max-height is not modelled"). Where a flex container or grid sizes
+  the box and it binds, it is `≈`.
+- Fixed: a flex row's item with a `max-width`, auto inline margins and no width was laid out as
+  wide as the max-width; Chromium makes it as wide as its content up to it (found by `fuzz-css`,
+  marked exact: 140px against 47px). It is `≈`.
 - Fixed: a line that ends where an inline box ends (inline code with em padding after bold text)
   one layout unit past its room was broken, where Chromium kept it on the line: a blog paragraph
   was claimed a line taller than Chromium draws it. Such a line is `≈`.
@@ -58,7 +64,7 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 - An image or an inline-block alone in its anonymous block, with inline content further along
   its parent past a block (a sign-in form's logo, its full-width button), is laid out on its own
   line as when it is its parent's only inline content; an image may have vertical margins there
-  (its baseline is its border box's bottom, its bottom margin hanging below it).
+  (its margin box sits on the line, as an inline-block's does).
 - An image's own ratio, once loaded, sizes it where its height is auto, also when it has `width`
   and `height` attributes (they only give the ratio before it loads).
 - Fixed: a flex item with a basis of its own in a row that is itself a flex item without a width

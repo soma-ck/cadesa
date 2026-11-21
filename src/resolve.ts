@@ -194,6 +194,7 @@ export interface ResolvedProps {
   height?: Resolved<number>;
   minHeight?: Resolved<number>;
   minWidth?: Resolved<number>;
+  maxHeight?: Resolved<number>;
   /** A height that is a percentage of the parent's content height, once that is definite (stretched or set); auto until then. */
   heightPct?: Resolved<number | Pct>;
   text?: Resolved<ResolvedText>;
@@ -514,6 +515,7 @@ export function resolveElement(model: Model, component: Component, slot: string 
       case "radius":
       case "minHeight":
       case "minWidth":
+      case "maxHeight":
         out[key] = lengthOf(p[key]!);
         break;
       case "background":

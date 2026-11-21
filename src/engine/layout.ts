@@ -2148,6 +2148,16 @@ function layoutWith(
       // A grid sized by its aspect ratio whose rows need more: Chromium sizes the rows within the ratio's height (not modelled).
       if (gridArr && contentMin > ratioH + EPS) assumptions.push("a grid with an aspect ratio whose content is taller than the ratio: its height isn't modelled");
     }
+    // max-height: never taller (its content overflows); min-height wins over it. In a flex row,
+    // a stack or a grid, where its container sizes it along with the others: not modelled where it binds.
+    if (props.maxHeight && tableH === undefined && h > props.maxHeight.value + EPS) {
+      if (parent === "flow" || parent === "page" || parent === "layer") {
+        h = props.maxHeight.value;
+        // (Its last child's bottom margin, escaping it, now leaves from a box cut shorter: not modelled.)
+        if (throughBottom) assumptions.push("a box cut by its max-height whose last child's bottom margin collapses through it isn't modelled");
+      }
+      else assumptions.push(`its max-height (${props.maxHeight.value}px) binds here, where its container sizes it, which isn't modelled`);
+    }
     // min-height: never shorter (border-box; content taller than it makes the box taller as usual).
     if (props.minHeight && tableH === undefined) h = Math.max(h, props.minHeight.value);
     h = Math.max(h, insY);

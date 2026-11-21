@@ -171,6 +171,7 @@ function decls(model: Model, p: Props, ctx: Ctx): string[] {
   else if (unset("grow") || (p.shrink && !p.width && !unset("width"))) out.push(`flex: ${flexOf(!!e.width)}`);
   if (p.order) out.push(`order: ${p.order.value}`);
   if (p.minWidth) out.push(`min-width: ${v(p.minWidth)}`);
+  if (p.maxHeight) out.push(`max-height: ${v(p.maxHeight)}`);
   // min-height too: a column flex parent shorter than its content would otherwise shrink the box.
   // With a minHeight, the larger of the two (CSS's used height when both apply).
   const minOf = (h?: Ref, m?: Ref) => (h && m ? `max(${v(h)}, ${v(m)})` : h ? v(h) : m ? v(m) : "auto");
@@ -289,6 +290,7 @@ function usedTokens(model: Model, c: Component): string[] {
       p.height,
       p.minHeight,
       p.minWidth,
+      p.maxHeight,
     ];
     for (const r of refs) if (r) used.add(tokenKey(r.kind, r.name));
     if (p.text) {

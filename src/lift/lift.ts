@@ -1042,6 +1042,13 @@ export function liftElements(input: LiftInput): LiftResult {
       }
       // min-height equal to the height is what Cadesa emits with every height.
       if (p === "min-height" && d && height && (d.value.trim() === height.value.trim() || (/^[\d.]+px$/.test(resolveVar(d.value)?.raw ?? "") && /^[\d.]+px$/.test(resolveVar(height.value)?.raw ?? "") && parseFloat(resolveVar(d.value)!.raw) <= parseFloat(resolveVar(height.value)!.raw)))) continue;
+      // max-height: a px or rem length (the engine cuts the box to it where it binds).
+      if (p === "max-height" && d && !["none", "initial", "unset"].includes(d.value.trim())) {
+        const t = lengthToken("size", d.value);
+        if (t) out.maxHeight = t;
+        else note(e, s, d, "max-height must be a px or rem length", "geometry");
+        continue;
+      }
       if (p === "min-height" && d && !["0", "auto", "none", "0px"].includes(d.value.trim())) {
         const t = lengthToken("size", d.value);
         if (t) out.minHeight = t;

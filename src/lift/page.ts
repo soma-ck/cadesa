@@ -1726,9 +1726,7 @@ export abstract class PageLifter {
       else if (!el.own[si].has("height") || !(h >= 0) || (el.children.length && el.tag !== "svg")) return undefined;
       const border = el.ratioW?.[si] !== undefined ? h + pt + pb + bt + bb : res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb;
       hm = mt + border + mb;
-      // A replaced element's baseline is its border box's bottom (its bottom margin hangs below it,
-      // probed: an image with margins on its line); an empty inline-block's, its margin box's.
-      a = REPLACED_BLOCK.has(el.tag) ? hm - mb : hm;
+      a = hm;
     } else {
       const own = this.strutOf(el, si);
       if (!own) return undefined;
@@ -2695,7 +2693,7 @@ export abstract class PageLifter {
       const strut = { sa: v.ascent + above0, sd: v.descent + leading / 64 - above0, xh2: Math.round((v.xHeight / 2) * 64) / 64 };
       // Vertically: its margin box's bottom edge on the baseline (raised by a vertical-align length, or its middle on the x-height's).
       const hm = mt + bh + mb;
-      const a0 = themed || REPLACED_BLOCK.has(k.tag) ? hm - mb : hm;
+      const a0 = themed ? hm - mb : hm;
       let a = a0;
       if (va === "middle") {
         const u = (x: number) => Math.round(x * 64);
@@ -3787,6 +3785,10 @@ export abstract class PageLifter {
         if (lineAlign === "end") decl("margin-left", "auto", why);
       }
 
+      // A flex row's item with a max-width and auto inline margins, no width: as wide as its content
+      // up to the max-width (Cadesa's maxWidth fills its container up to it).
+      if (inFlexOrGrid && /flex/.test(parentDisplay) && el.parent && !this.isColumn(el.parent, si) && !/^(auto|none)?$/.test(res("max-width") ?? "") && !/^(?!auto$).+/.test(res("width") ?? "auto") && ["margin-left", "margin-right"].some((p) => res(p) === "auto"))
+        this.note(el, si, { decl: own.get("max-width")!.utility, reason: "a flex item with a max-width and auto margins is as wide as its content up to it, which isn't modelled", kind: "geometry" });
       // A list item's marker inside it (list-style-position: inside) is inline content at the start
       // of its first line, which takes room on it (and a line of its own before a block child).
       // (An anonymous block that comes first in its list item has the marker on its first line.)

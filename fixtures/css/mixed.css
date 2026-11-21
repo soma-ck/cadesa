@@ -11,6 +11,8 @@
  * - a list item with its marker inside it before a nested list (left ≈);
  * - a sign-in form: a logo <img> with a bottom margin and a full-width button, each alone on its
  *   line between blocks, aligned middle (a reset's img, .btn);
+ * - max-height: a block cut by it (its content overflowing), one it never reaches, and a flex
+ *   item cut by it (left ≈);
  * - grids set up with the grid-template shorthand (rows / columns, a var() in it);
  * - min-width: on a block (wider than its parent), on flex items (in px and rem, 0 switching off
  *   the automatic minimum, with a basis, grow and shrink) and on an inline-block as wide as its content.
@@ -215,4 +217,24 @@ img {
 
 .signin-small {
   margin: 3rem 0 1rem;
+}
+
+.mh-menu {
+  max-height: 60px;
+  padding: 4px;
+  border: 1px solid #888888;
+}
+
+.mh-menu p {
+  margin: 0 0 4px;
+}
+
+.mh-tall {
+  max-height: 200px;
+  padding: 6px;
+}
+
+.mh-cut {
+  max-height: 3rem;
+  overflow: hidden;
 }

@@ -104,6 +104,7 @@ const PROPS: (keyof ResolvedProps)[] = [
   "height",
   "minHeight",
   "minWidth",
+  "maxHeight",
   "text",
   "justify",
   "wrap",

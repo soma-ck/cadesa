@@ -374,6 +374,7 @@ export function genCssCase(seed: number): CssCase {
     if (ov.includes(" ")) d.push(`overflow-x: ${ov.split(" ")[0]}`, `overflow-y: ${ov.split(" ")[1]}`);
     else d.push(r.chance(0.5) ? `overflow: ${ov}` : `overflow-x: ${ov}`);
     if (r.chance(0.5)) d.push(`height: ${r.int(30, 160)}px`);
+    else if (r.chance(0.4)) d.push(`max-height: ${r.pick([`${r.int(20, 200)}px`, "4rem"])}`);
     if (r.chance(0.4)) d.push(`padding: ${r.int(0, 12)}px ${r.int(0, 16)}px`);
     if (r.chance(0.3)) d.push(`border: ${r.int(1, 4)}px solid #889`);
     if (r.chance(0.3)) d.push(`width: ${r.int(120, 500)}px`);
@@ -582,6 +583,7 @@ export function genCssCase(seed: number): CssCase {
     if (r.chance(0.3)) d.push(`line-height: ${r.pick(["1.25", "1.6", "normal", "26px"])}`);
     if (r.chance(0.2)) d.push(`text-align: ${r.pick(["center", "right"])}`);
     if (r.chance(0.2)) d.push(`width: ${r.int(150, 500)}px`);
+    if (r.chance(0.15)) d.push(`max-height: ${r.int(20, 160)}px`, ...(r.chance(0.5) ? ["overflow: hidden"] : []));
     const tag = r.chance(0.4) ? "li" : "div";
     const kids: string[] = [];
     const k = r.int(2, 5);
