@@ -1,0 +1,38 @@
+/*
+ * scrollbar-gutter: stable on the root (a docs site's): room for the page's scrollbar is kept on
+ * the right at every width, whether the page scrolls or not (and with its scrollbar hidden).
+ */
+:root {
+  scrollbar-gutter: stable;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+}
+
+.bar {
+  display: flex;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid #d1d5db;
+}
+
+.sheet {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.cols {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}

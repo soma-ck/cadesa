@@ -588,6 +588,8 @@ export abstract class PageLifter {
   vars = new Map<string, Decl>();
   pageBackground?: Decl;
   /** The page's insets per side (CSS lengths): the body's margin and padding (with its border), and the root element's (outer). */
+  /** The root's scrollbar-gutter: stable is laid out (as room on the page's side, see assemble). */
+  gutterKept = false;
   pageSides: { margin?: string[]; padding?: string[]; outer?: string[]; overflow?: string; overflowY?: string; windowHeight?: number } = {};
   rootText!: TextCtx;
   /** Custom properties defined on :root (unresolved): token names come from them. */
@@ -4958,6 +4960,19 @@ export abstract class PageLifter {
         if (el === this.bodyEl) this.pageSides = { ...this.pageSides, margin: m, padding: p };
         else this.pageSides = { ...this.pageSides, outer: m.map((x, i) => (x === "0px" ? p[i] : p[i] === "0px" ? x : lengthExpr(`calc(${x} + ${p[i]})`)!.css)) };
       }
+      // scrollbar-gutter: stable on the root (the viewport's): room for a vertical scrollbar is kept
+      // on the right (both sides with both-edges), the same at every width, even where the
+      // scrollbar is hidden (headless Chromium) or the page doesn't scroll. With classic
+      // scrollbars, where the page's own scrollbar also takes room, it isn't modelled.
+      if (el === this.htmlEl && this.pageSides.outer && !scrollbarPx()) {
+        const g = this.states.map((_, s) => this.resolve(el, s, el.own[s]?.get("scrollbar-gutter")?.value ?? "auto")?.trim() ?? "auto");
+        if (g.every((x) => x === g[0]) && /^stable( both-edges)?$/.test(g[0])) {
+          const add = (x: string) => (x === "0px" ? "15px" : lengthExpr(`calc(${x} + 15px)`)!.css);
+          const o = this.pageSides.outer;
+          this.pageSides = { ...this.pageSides, outer: o.map((x, i) => (i === 1 || (i === 3 && g[0] === "stable both-edges") ? add(x) : x)) };
+          this.gutterKept = true;
+        }
+      }
       // The viewport takes <html>'s overflow, or <body>'s when <html>'s is visible: hidden or clip
       // there cuts off what is past the right edge instead of scrolling to it.
       if (el === this.bodyEl) {
@@ -4980,6 +4995,7 @@ export abstract class PageLifter {
           if (same && /^(margin|padding)-|^border-(top|right|bottom|left)-(width|style|color)$/.test(p)) continue;
           if (/^(height|min-height|box-sizing|display)$/.test(p) && (p !== "display" || v === "block")) continue;
           if (/^overflow-[xy]$/.test(p) && !(overflowBoth && el === this.bodyEl)) continue;
+          if (p === "scrollbar-gutter" && (v === "auto" || (el === this.htmlEl && this.gutterKept))) continue;
           const k = kindOf(p);
           if (k === "paint" || k === "none") continue;
           if (this.bodyEl) this.note(this.bodyEl, s, { decl: `${o.utility} (${p}: ${o.value})`, reason: `page-level ${p} is not modelled`, kind: k });
