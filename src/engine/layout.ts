@@ -1890,7 +1890,7 @@ function layoutWith(
       // or a grid it takes part in the sizing of the line or tracks: where it binds there, not modelled.
       const minW = props.minWidth?.value;
       if (minW !== undefined && parent === "grid") {
-        if (w <= minW + EPS) assumptions.push(`its min-width (${minW}px) may bind here, in a grid (its tracks' sizing), which isn't modelled`);
+        assumptions.push(`its min-width (${minW}px) takes part in its grid's track sizing, which isn't modelled`);
       } else if (minW !== undefined && w < minW - EPS) {
         if (forcedW !== undefined) assumptions.push(`its min-width (${minW}px) binds here, where its width is set by its container, which isn't modelled`);
         else w = minW;

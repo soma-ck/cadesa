@@ -935,7 +935,8 @@ export abstract class PageLifter {
         if (vb && vb.length === 4 && vb[2] > 0 && vb[3] > 0 && vb.every(isFinite)) hint("aspect-ratio", `${vb[2]} / ${vb[3]}`, "viewBox attribute");
         // An image's natural size (from the capture, or the file next to the page): its ratio, and
         // its width where nothing else sizes it (no width, and its height auto).
-        const nat = el.tag === "img" && (w === undefined || h === undefined) ? this.naturalSize(el) : undefined;
+        // (With both attributes too: once loaded, an image's own ratio wins over theirs where its height is auto.)
+        const nat = el.tag === "img" ? this.naturalSize(el) : undefined;
         if (nat) {
           const why = `the image's natural size (${nat.width}×${nat.height}, ${nat.from})`;
           if (w === undefined && h === undefined && !own.has("width") && /^(auto)?$/.test(this.resolve(el, si, own.get("height")?.value ?? "auto") ?? "")) hint("width", `${nat.width}px`, why);
@@ -1725,7 +1726,9 @@ export abstract class PageLifter {
       else if (!el.own[si].has("height") || !(h >= 0) || (el.children.length && el.tag !== "svg")) return undefined;
       const border = el.ratioW?.[si] !== undefined ? h + pt + pb + bt + bb : res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb;
       hm = mt + border + mb;
-      a = hm;
+      // A replaced element's baseline is its border box's bottom (its bottom margin hangs below it,
+      // probed: an image with margins on its line); an empty inline-block's, its margin box's.
+      a = REPLACED_BLOCK.has(el.tag) ? hm - mb : hm;
     } else {
       const own = this.strutOf(el, si);
       if (!own) return undefined;
@@ -1801,7 +1804,11 @@ export abstract class PageLifter {
     if (parent.ownText || (parent.children.some((k) => k.pseudo && !this.outOfFlow(k, si) && this.displayOf(k, si) !== "none"))) return false;
     const shown0 = (k: El) => this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si);
     const sibs0 = parent.children.filter((k) => k !== el && shown0(k));
-    if (sibs0.some((k) => this.isInlineLevel(k, si) || k.tag === "br" || k.anonymous !== undefined)) return false;
+    // (Alone in its anonymous block: what is next to it on either side is block-level; inline
+    // content further away, past a block, is on lines of its own.)
+    const at0 = parent.children.indexOf(el);
+    const near0 = [parent.children.slice(0, at0).filter((k) => k.anonymous !== undefined || shown0(k)).at(-1), parent.children.slice(at0 + 1).find((k) => k.anonymous !== undefined || shown0(k))];
+    if (near0.some((k) => k && (this.isInlineLevel(k, si) || k.tag === "br" || k.anonymous !== undefined))) return false;
     const pt0 = this.textOf(parent, si);
     // Centered or end-aligned, it sits where auto inline margins put a block (with no margins of its own).
     const ta = pt0.inherited.get("text-align")?.value ?? "";
@@ -1972,9 +1979,7 @@ export abstract class PageLifter {
         const parentDisplay = el.parent !== this.bodyEl ? this.displayOf(el.parent!, si) : "block";
         if (/flex|grid/.test(parentDisplay) && parentRole === "container") return;
         // (An inline replaced element, an svg or an image of set size, is an atomic inline as an inline-block is.)
-        // (Vertical margins of its own aren't laid out as an inline-block's are: probed, flagged.)
-        const noMargin = ["margin-top", "margin-bottom"].every((p) => /^(0|0px)?$/.test(this.resolve(el, si, el.own[si].get(p)?.value ?? "") ?? "x"));
-        const atomic = this.ownDisplay(el, si) === "inline-block" || (this.ownDisplay(el, si) === "inline" && REPLACED_BLOCK.has(el.tag) && role === "leaf" && noMargin);
+        const atomic = this.ownDisplay(el, si) === "inline-block" || (this.ownDisplay(el, si) === "inline" && REPLACED_BLOCK.has(el.tag) && role === "leaf");
         if (atomic && this.aloneOnLine(el, si)) el.alone[si] = true;
         if (role === "container") this.inlineRow(el, si);
         if (this.ownDisplay(el, si) === "inline" && role === "text") {
@@ -2010,7 +2015,8 @@ export abstract class PageLifter {
     if (!/^(normal|nowrap)?$/.test(pt.inherited.get("white-space")?.value ?? "") || !/^(0|0px)?$/.test(pt.inherited.get("text-indent")?.value ?? "")) return undefined;
     // Its inline children in its own font and size (another one adds its own box to the line).
     const t = this.textOf(el, si);
-    const same = (k: El): boolean => k.anonymous !== undefined || ((this.displayOf(k, si) === "none" || (this.textOf(k, si).size === t.size && this.textOf(k, si).family.value === t.family.value && !!this.textOf(k, si).italic === !!t.italic && JSON.stringify(this.textOf(k, si).lineHeight) === JSON.stringify(t.lineHeight))) && k.children.every(same));
+    // (And on its baseline: a run raised or lowered by vertical-align makes the line taller.)
+    const same = (k: El): boolean => k.anonymous !== undefined || ((this.displayOf(k, si) === "none" || (/^(baseline)?$/.test(this.resolve(k, si, k.own[si].get("vertical-align")?.value ?? "") ?? "") && this.textOf(k, si).size === t.size && this.textOf(k, si).family.value === t.family.value && !!this.textOf(k, si).italic === !!t.italic && JSON.stringify(this.textOf(k, si).lineHeight) === JSON.stringify(t.lineHeight))) && k.children.every(same));
     if (!el.children.every(same)) return undefined;
     const a = this.strutOf(parent, si);
     const b = this.strutOf(el, si);
@@ -2689,7 +2695,7 @@ export abstract class PageLifter {
       const strut = { sa: v.ascent + above0, sd: v.descent + leading / 64 - above0, xh2: Math.round((v.xHeight / 2) * 64) / 64 };
       // Vertically: its margin box's bottom edge on the baseline (raised by a vertical-align length, or its middle on the x-height's).
       const hm = mt + bh + mb;
-      const a0 = themed ? hm - mb : hm;
+      const a0 = themed || REPLACED_BLOCK.has(k.tag) ? hm - mb : hm;
       let a = a0;
       if (va === "middle") {
         const u = (x: number) => Math.round(x * 64);
@@ -5136,7 +5142,9 @@ export abstract class PageLifter {
         // A row as wide as its content counts its items at their max-content width, not their
         // basis (Chromium's flex intrinsic sizes; fuzz-css: a centered row 17px narrower).
         const rowBox = parentOf.get(b);
-        if (el.basisLifted?.[si] && rowBox && (rowBox.fromContent || rowBox.props.width?.value === "fit" || rowBox.props.width?.value === "max-content" || rowBox.props.width?.value === "min-content"))
+        // (A flex item without a width in a row is as wide as its content too: its flex base size.)
+        const rowItem = !!rowBox && parentOf.get(rowBox)?.props.pattern?.value === "cluster" && rowBox.props.width === undefined;
+        if (el.basisLifted?.[si] && rowBox && (rowBox.fromContent || rowItem || rowBox.props.width?.value === "fit" || rowBox.props.width?.value === "max-content" || rowBox.props.width?.value === "min-content"))
           for (const k of [rowBox, ...walk(rowBox.children)])
             out.push({ file: this.page, line: el.line, selector: `[data-fixture="${k.id}"]`, decl: el.basisLifted[si]!, reason: `its row is as wide as its content at ${layout.width}px, which counts an item at its content's width, not its basis`, kind: "geometry" });
         if (el.basisAutoMin?.[si] && (b.overflowX ?? 0) > 1e-6)

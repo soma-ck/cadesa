@@ -9,6 +9,8 @@
  * - images without a size, laid out from their files' natural size: alone in a paragraph, in a
  *   line of text, and capped by max-width: 100% (aligned middle);
  * - a list item with its marker inside it before a nested list (left ≈);
+ * - a sign-in form: a logo <img> with a bottom margin and a full-width button, each alone on its
+ *   line between blocks, aligned middle (a reset's img, .btn);
  * - grids set up with the grid-template shorthand (rows / columns, a var() in it);
  * - min-width: on a block (wider than its parent), on flex items (in px and rem, 0 switching off
  *   the automatic minimum, with a basis, grow and shrink) and on an inline-block as wide as its content.
@@ -175,4 +177,42 @@ img {
   min-width: 3rem;
   padding: 0 8px;
   border: 1px solid #333333;
+}
+
+.signin {
+  max-width: 330px;
+  margin: 0 auto;
+  padding: 16px;
+}
+
+.signin-logo {
+  vertical-align: middle;
+  margin-bottom: 1.5rem;
+}
+
+.signin-title {
+  margin: 0 0 1rem;
+  font-size: 1.75rem;
+  line-height: 1.2;
+  font-weight: 400;
+}
+
+.signin-note {
+  margin: 1rem 0;
+}
+
+.signin-go {
+  display: inline-block;
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  font: inherit;
+  line-height: 1.5;
+  vertical-align: middle;
+  border: 1px solid #1d4ed8;
+  background: #1d4ed8;
+  color: #ffffff;
+}
+
+.signin-small {
+  margin: 3rem 0 1rem;
 }

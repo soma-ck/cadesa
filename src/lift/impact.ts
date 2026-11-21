@@ -230,6 +230,9 @@ function impactAt(lifted: LiftResult, located: Located[], l: Layout): WidthImpac
         // A grid's items share its tracks: one of unknown size may resize every column (fuzz-css
         // found an earlier item kept exact beside one whose content sizes the only column).
         for (const s of p.children) if (s !== cur && !outOfFlow(s)) subtree(s, "size", `resized with #${b.id}: ${why}`);
+        // (Its own tracks move with theirs, and what is inside it: fuzz-css found a float in an item of
+        // a later row kept exact while the rows above it changed height.)
+        subtree(cur, "position", moved);
       } else {
         const shared = pattern === "cluster" || grows;
         const sibs = shared ? p.children.filter((c) => c !== cur) : p.children.slice(i + 1);

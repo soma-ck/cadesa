@@ -55,6 +55,20 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 - Fixed: an inline-block of several lines in a text box as wide as its content (a centered flex
   item) was checked against the text box's own width, which it sets: wider than its container,
   its lines wrap in Chromium, while it was marked exact (found by `fuzz-css`).
+- An image or an inline-block alone in its anonymous block, with inline content further along
+  its parent past a block (a sign-in form's logo, its full-width button), is laid out on its own
+  line as when it is its parent's only inline content; an image may have vertical margins there
+  (its baseline is its border box's bottom, its bottom margin hanging below it).
+- An image's own ratio, once loaded, sizes it where its height is auto, also when it has `width`
+  and `height` attributes (they only give the ratio before it loads).
+- Fixed: a flex item with a basis of its own in a row that is itself a flex item without a width
+  (as wide as its content) was marked exact; Chromium counts its content's width there, not its
+  basis (found by `fuzz-css`). It is `≈`, as in other rows as wide as their content.
+- Fixed: in a grid whose item has content of unknown size, what is inside that item (a float
+  before the unknown text) kept its position "known", though the rows above it change with the
+  item's siblings; and an inline element alone between blocks holding a run raised by
+  `vertical-align` was laid out on a line as tall as unraised text (both found by `fuzz-css`,
+  marked exact). A grid item with a `min-width` is `≈`: it takes part in sizing the tracks.
 - `scrollbar-gutter: stable` on the root keeps 15px for the page's scrollbar on the right (both
   sides with `both-edges`) at every width, as Chromium does even where the scrollbar is hidden or
   the page doesn't scroll (it was `≈`: "page-level scrollbar-gutter is not modelled", every box of
