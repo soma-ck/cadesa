@@ -1,6 +1,7 @@
 /*
  * scrollbar-gutter: stable on the root (a docs site's): room for the page's scrollbar is kept on
- * the right at every width, whether the page scrolls or not (and with its scrollbar hidden).
+ * the right at every width, whether the page scrolls or not (and with its scrollbar hidden). A
+ * fixed box, placed in the window less the gutter, is left ≈.
  */
 :root {
   scrollbar-gutter: stable;
@@ -35,4 +36,12 @@ body {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   gap: 8px;
+}
+
+.toast {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  padding: 8px;
 }

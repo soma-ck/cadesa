@@ -4979,6 +4979,17 @@ export abstract class PageLifter {
           const o = this.pageSides.outer;
           this.pageSides = { ...this.pageSides, outer: o.map((x, i) => (i === 1 || (i === 3 && g[0] === "stable both-edges") ? add(x) : x)) };
           this.gutterKept = true;
+          // A box placed in the window (fixed, or absolute with no positioned ancestor) has the
+          // window less the gutter as its containing block, which Cadesa's window doesn't take off.
+          const pos = (x: El, s: number) => this.resolve(x, s, x.own[s]?.get("position")?.value ?? "static") ?? "static";
+          for (const e of this.els)
+            this.states.forEach((_, s) => {
+              if (!this.positioned(e, s)) return;
+              let anc = e.parent;
+              while (anc && anc !== this.bodyEl && pos(anc, s) === "static" && !this.containOf(anc, s)) anc = anc.parent;
+              if (pos(e, s) === "fixed" || !anc || anc === this.bodyEl && pos(anc, s) === "static")
+                this.note(e, s, { decl: `${el.own[s]?.get("scrollbar-gutter")?.utility ?? "scrollbar-gutter"} (scrollbar-gutter: ${g[0]})`, reason: "a box placed in the window, whose scrollbar gutter is kept, isn't modelled", kind: "geometry" });
+            });
         }
       }
       // The viewport takes <html>'s overflow, or <body>'s when <html>'s is visible: hidden or clip

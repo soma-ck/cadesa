@@ -78,7 +78,8 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
 - `scrollbar-gutter: stable` on the root keeps 15px for the page's scrollbar on the right (both
   sides with `both-edges`) at every width, as Chromium does even where the scrollbar is hidden or
   the page doesn't scroll (it was `≈`: "page-level scrollbar-gutter is not modelled", every box of
-  MDN's page). With `CADESA_SCROLLBARS=classic` it stays `≈`.
+  MDN's page). With `CADESA_SCROLLBARS=classic` it stays `≈`, and so does a box placed in the
+  window (fixed, or absolute without a positioned ancestor) on such a page.
 - The `grid-template` shorthand (`auto / 200px minmax(0, 1fr)`, `none`) is read as its rows and
   columns (it was `≈`: "grid-template is not modelled"; the form with area strings still is).
 - Conformance, the fuzzers and `check --verify` freeze the page's animations through the browser
