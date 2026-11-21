@@ -45,6 +45,16 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   line: a blog's avatar in its byline made every box below it `≈`.
 - `align-content` on a flex container that doesn't wrap is ignored, as Chromium ignores it (it was
   `≈`: "align-content moves content inside the box").
+- `min-width` (px or rem) is laid out: a box is never narrower than it (in block flow, as wide as
+  its content, and in the intrinsic sizes of what holds it); on a flex item it replaces the
+  automatic minimum, and `min-width: 0` switches that off (it was `≈`: "min-width is not
+  modelled"). In a grid, where it may take part in sizing the tracks, the item is `≈`.
+- Fixed: a line that ends where an inline box ends (inline code with em padding after bold text)
+  one layout unit past its room was broken, where Chromium kept it on the line: a blog paragraph
+  was claimed a line taller than Chromium draws it. Such a line is `≈`.
+- Fixed: an inline-block of several lines in a text box as wide as its content (a centered flex
+  item) was checked against the text box's own width, which it sets: wider than its container,
+  its lines wrap in Chromium, while it was marked exact (found by `fuzz-css`).
 - The `grid-template` shorthand (`auto / 200px minmax(0, 1fr)`, `none`) is read as its rows and
   columns (it was `≈`: "grid-template is not modelled"; the form with area strings still is).
 - Conformance, the fuzzers and `check --verify` freeze the page's animations through the browser

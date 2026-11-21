@@ -51,6 +51,7 @@ const PROP_OF: Record<keyof ResolvedProps, keyof Props> = {
   height: "height",
   heightPct: "height",
   minHeight: "minHeight",
+  minWidth: "minWidth",
   text: "text",
   justify: "layout",
   wrap: "layout",

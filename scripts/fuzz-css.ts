@@ -307,6 +307,8 @@ export function genCssCase(seed: number): CssCase {
       // A width that still shrinks in a full row (or doesn't), or no width and no shrinking.
       if (r.chance(0.2)) d.push(r.chance(0.6) ? `width: ${r.pick([`${r.int(80, 400)}px`, `${r.int(20, 70)}%`])}` : "", `flex-shrink: ${r.pick(["1", "2", "0", "0.5"])}`);
       if (r.chance(0.1)) d.push("overflow: hidden");
+      // A minimum width of its own (0 switches off the automatic minimum).
+      if (r.chance(0.15)) d.push(`min-width: ${r.pick(["0", "60px", "8rem", "150px", "0px"])}`);
       const kind = r.pick(["text", "text", "text", "runs", "nested", "empty"] as const);
       if (kind === "empty") d.push(`width: ${r.int(8, 40)}px`, `height: ${r.int(8, 50)}px`, "background: #ccd");
       const c = cls(d);
@@ -529,7 +531,7 @@ export function genCssCase(seed: number): CssCase {
     const many = r.int(2, 5);
     const items: string[] = [];
     for (let j = 0; j < many; j++) {
-      const own = [...(kind === "wrap" ? [`width: ${r.pick(["30%", "45%", "100%", "120px"])}`] : []), ...(r.chance(0.3) ? [`padding: ${r.int(0, 6)}px`] : [])];
+      const own = [...(kind === "wrap" ? [`width: ${r.pick(["30%", "45%", "100%", "120px"])}`] : []), ...(r.chance(0.3) ? [`padding: ${r.int(0, 6)}px`] : []), ...(r.chance(0.15) ? [`min-width: ${r.pick(["0", "90px", "12rem", "300px"])}`] : [])];
       // A basis of its own, no grow (shrinking or not): as wide as the basis in a row.
       if ((kind === "row" || kind === "wrap") && r.chance(0.35)) own.push(r.chance(0.5) ? `flex: 0 ${r.pick([0, 1, 2])} ${r.pick(["120px", "30%", "8rem", "45%", "200px"])}` : `flex-basis: ${r.pick(["90px", "25%", "10em"])}`, "box-sizing: border-box");
       let bp = "";

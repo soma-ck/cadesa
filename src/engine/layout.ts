@@ -1009,6 +1009,9 @@ function layoutWith(
     let r = cache.get(n);
     if (!r) {
       r = intrinsicOf(n, c, slot, contentOnly);
+      // A min-width: its contributions are never narrower.
+      const mw = contentOnly ? undefined : resolveElement(model, c, slot, width).minWidth?.value;
+      if (mw !== undefined && !r.why) r = { ...r, min: Math.max(r.min, mw), max: Math.max(r.max, mw) };
       cache.set(n, r);
     }
     return r;
@@ -1237,6 +1240,11 @@ function layoutWith(
         min = insX;
         minKnown = true;
       }
+      // A min-width of its own replaces the automatic minimum (CSS Flexbox §4.5), and clamps its hypothetical size.
+      if (p.minWidth) {
+        min = Math.max(insX, p.minWidth.value);
+        minKnown = true;
+      }
       min = Math.min(min, Math.max(cap, insX));
       // The flex base size is never below the padding and border (its content size is at least 0).
       base = Math.max(base, insX);
@@ -1246,7 +1254,7 @@ function layoutWith(
         min = Math.max(min, tableMin);
         minKnown = true;
       }
-      const hyp = Math.max(Math.min(base, cap), g?.basis === "zero" ? min : 0, insX, tableMin);
+      const hyp = Math.max(Math.min(base, cap), g?.basis === "zero" ? min : 0, insX, tableMin, p.minWidth?.value ?? 0);
       // An aspect box that grows: its minimum width also follows its height, which isn't modelled.
       if (g && p.aspect) notes.push("grow on a box with an aspect ratio: its minimum width also follows its height, which isn't modelled");
       return { k, p, km, out, base, hyp, min, cap, insX, shrink, shrinkUnknown: shrink > 0 && !minKnown, wraps, intr, factor: g?.factor ?? 0, notes, errors };
@@ -1878,6 +1886,15 @@ function layoutWith(
       else if ((parent === "flow" || parent === "page") && pw === undefined && CONTROLS.has(n.tag) && n.controlWidth !== undefined && !m.autoLeft && !m.autoRight) w = n.controlWidth + insX;
       else w = Math.max(0, avail - m.left - m.right); // page, flow, stack, grid cell, layer: stretch inside the margins
       if (w > maxW) w = maxW;
+      // min-width wins over everything else that sizes the box, max-width included. In a flex row
+      // or a grid it takes part in the sizing of the line or tracks: where it binds there, not modelled.
+      const minW = props.minWidth?.value;
+      if (minW !== undefined && parent === "grid") {
+        if (w <= minW + EPS) assumptions.push(`its min-width (${minW}px) may bind here, in a grid (its tracks' sizing), which isn't modelled`);
+      } else if (minW !== undefined && w < minW - EPS) {
+        if (forcedW !== undefined) assumptions.push(`its min-width (${minW}px) binds here, where its width is set by its container, which isn't modelled`);
+        else w = minW;
+      }
       // box-sizing: border-box never makes a box narrower than its padding and border.
       w = Math.max(w, insX);
     }

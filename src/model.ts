@@ -232,6 +232,8 @@ export interface Props {
   height?: Ref;
   /** The least height (min-height): the box is as tall as its content or its height, and never less. */
   minHeight?: Ref;
+  /** The least width (min-width): the box is never narrower, whatever else sizes it. */
+  minWidth?: Ref;
   /** Width / height ratio; height follows the width (images, media, cards). */
   aspect?: { value: number; raw: string; path: string };
   /** How an image fills an aspect box. Paint only. */
@@ -380,6 +382,7 @@ export const PROP_ORDER: (keyof Props)[] = [
   "width",
   "height",
   "minHeight",
+  "minWidth",
   "aspect",
   "fit",
   "text",

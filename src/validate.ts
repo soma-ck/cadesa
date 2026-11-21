@@ -718,6 +718,9 @@ export function validate(src: Source): { model?: Model; diagnostics: Diagnostic[
         case "minHeight":
           out.minHeight = fixedRef(v, p, "a minimum height");
           break;
+        case "minWidth":
+          out.minWidth = fixedRef(v, p, "a minimum width");
+          break;
         case "text":
           out.text = ref(v, p, "text");
           break;

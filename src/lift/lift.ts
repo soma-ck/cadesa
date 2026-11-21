@@ -1032,6 +1032,14 @@ export function liftElements(input: LiftInput): LiftResult {
     }
     for (const p of ["min-width", "min-height", "max-height"]) {
       const d = take(p);
+      // min-width: a px or rem length (the engine keeps the box at least that wide).
+      // (0 too: on a flex item it switches off the automatic minimum, its content's min-content width.)
+      if (p === "min-width" && d && !["auto", "none", "initial", "unset"].includes(d.value.trim())) {
+        const t = lengthToken("size", d.value);
+        if (t) out.minWidth = t;
+        else note(e, s, d, "min-width must be a px or rem length", "geometry");
+        continue;
+      }
       // min-height equal to the height is what Cadesa emits with every height.
       if (p === "min-height" && d && height && (d.value.trim() === height.value.trim() || (/^[\d.]+px$/.test(resolveVar(d.value)?.raw ?? "") && /^[\d.]+px$/.test(resolveVar(height.value)?.raw ?? "") && parseFloat(resolveVar(d.value)!.raw) <= parseFloat(resolveVar(height.value)!.raw)))) continue;
       if (p === "min-height" && d && !["0", "auto", "none", "0px"].includes(d.value.trim())) {

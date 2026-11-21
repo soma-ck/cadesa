@@ -5081,7 +5081,9 @@ export abstract class PageLifter {
         // An inline-block of several lines in a text box (atomicLines) is as wide as its longest line
         // only while that fits the text box; narrower, it would wrap.
         if (b.lines && el.roles[si] === "text") {
-          const inner = innerWidth(b);
+          // (Its own width may come from that content, shrink-to-fit: then its container's is the room.)
+          const up = parentOf.get(b);
+          const inner = Math.min(innerWidth(b), (up ? innerWidth(up) : layout.width) - (b.w - innerWidth(b)));
           const visit = (k: El) => {
             if (k.pseudo || this.displayOf(k, si) === "none") return;
             const w = this.atomicLines(k, si) && this.ownDisplay(k, si) === "inline-block" ? this.atomicInline(k, si) : undefined;

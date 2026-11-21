@@ -868,6 +868,11 @@ function layoutLines(
     const at = consumed + from;
     if (ok && at > 0 && !edges.includes(at) && all[at - 1] !== " " && used + lw > maxWidth + 1e-6)
       approximate ??= "a line after a break inside a word fits within a layout unit";
+    // A line that ends where an inline box ends, its last item a box of its own after others: one
+    // layout unit too wide is how Chromium kept such a line once (bold text, then inline code with
+    // em padding, 1/64px past its room), while others it breaks: flagged.
+    if (!ok && edges.includes(consumed + [...trimSpaces(s)].length) && used + lw - (maxWidth + 1 / 64) <= 1 / 64 + TEXT_EPS)
+      approximate ??= "a line with inline boxes of their own is within a layout unit of its width";
     return ok;
   };
   let line = "";

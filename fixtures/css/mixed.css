@@ -9,7 +9,9 @@
  * - images without a size, laid out from their files' natural size: alone in a paragraph, in a
  *   line of text, and capped by max-width: 100% (aligned middle);
  * - a list item with its marker inside it before a nested list (left ≈);
- * - grids set up with the grid-template shorthand (rows / columns, a var() in it).
+ * - grids set up with the grid-template shorthand (rows / columns, a var() in it);
+ * - min-width: on a block (wider than its parent), on flex items (in px and rem, 0 switching off
+ *   the automatic minimum, with a basis, grow and shrink) and on an inline-block as wide as its content.
  */
 *,
 *::before,
@@ -127,4 +129,50 @@ img {
   display: grid;
   grid-template: auto / var(--side) minmax(0, 1fr);
   column-gap: 10px;
+}
+
+.mw-narrow {
+  width: 50%;
+}
+
+.mw-wide {
+  min-width: 400px;
+  padding: 4px;
+  background: #eef2f7;
+}
+
+.mw-row {
+  display: flex;
+  gap: 8px;
+}
+
+.mw-a {
+  min-width: 150px;
+}
+
+.mw-b {
+  min-width: 0;
+}
+
+.mw-c {
+  min-width: 6rem;
+  flex-shrink: 2;
+}
+
+.mw-grow {
+  flex: 1;
+  min-width: 80px;
+}
+
+.mw-held {
+  width: 200px;
+  min-width: 120px;
+  flex-shrink: 1;
+}
+
+.mw-pill {
+  display: inline-block;
+  min-width: 3rem;
+  padding: 0 8px;
+  border: 1px solid #333333;
 }
