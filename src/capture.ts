@@ -156,8 +156,16 @@ const DOM_SCRIPT = `(() => {
     if (!collapse(cs)) f += "p";
     if (f) { el.setAttribute(FLAG, f); marked.push(el); }
   }
+  // Each image's natural size (what lays it out where nothing sizes it), as Chromium decoded it:
+  // the image files aren't saved. Not for one that picks its file by width (srcset, <picture>).
+  const natural = [];
+  for (const im of document.images) {
+    if (im.hasAttribute("srcset") || (im.parentElement && im.parentElement.localName === "picture" && im.parentElement.querySelector("source"))) continue;
+    if (im.complete && im.naturalWidth > 0 && im.naturalHeight > 0) { im.setAttribute("data-cadesa-natural", im.naturalWidth + "x" + im.naturalHeight); natural.push(im); }
+  }
   const root = document.documentElement.cloneNode(true);
   for (const el of marked) el.removeAttribute(FLAG);
+  for (const im of natural) im.removeAttribute("data-cadesa-natural");
   const drop = (sel) => root.querySelectorAll(sel).forEach((e) => e.remove());
   drop("script, noscript, style, base, iframe[srcdoc]");
   drop('link[rel~="stylesheet"], link[rel~="preload"], link[rel~="modulepreload"], link[rel~="prefetch"], link[rel~="preconnect"], link[rel~="dns-prefetch"], link[rel~="manifest"]');

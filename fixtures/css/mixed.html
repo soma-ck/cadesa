@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Cadesa fixture: inline content among blocks, images of natural size</title>
+    <link rel="stylesheet" href="mixed.css" />
+    <style>
+      @font-face {
+        font-family: "Inter";
+        font-weight: 100 900;
+        src: url("../../fonts/InterVariable-latin.woff2") format("woff2");
+      }
+    </style>
+  </head>
+  <body>
+    <header class="top">
+      <a class="brand" href="#"><span>Harbor notes</span></a>
+      <span class="byline">by <a href="#"><img class="face" src="images/avatar.png" alt="" /></a></span>
+    </header>
+    <main class="page">
+      <ul class="steps">
+        <li><strong>Tide tables:</strong> the boats leave at dawn, and the nets are mended by hand before the wind turns north
+          <ul>
+            <li>Check the <em>north</em> wind and the <a href="#">harbor log</a> first.</li>
+            <li>Count the boats.</li>
+          </ul>
+        </li>
+        <li><strong>Nets:</strong> mended by hand
+          <ul>
+            <li>Along the ridge.</li>
+          </ul>
+          and then stored in the shed by the water.
+        </li>
+      </ul>
+      <div class="note">Before the paragraph, a run with <code class="mark">inline code</code> and a <b>bold word</b> beside it.<p class="note-body">A paragraph between the runs of text.</p><span class="tag">after</span> the paragraph, more words follow until the line wraps at narrow widths.</div>
+      <p class="figure"><img src="images/landscape.png" alt="" /></p>
+      <p>Words before <img class="small" src="images/avatar.png" alt="" /> and after the avatar, long enough to wrap at small widths.</p>
+      <div class="banner"><img src="images/banner.png" alt="" /></div>
+      <ul class="inside">
+        <li><strong>Inside:</strong> a marker inside its list item, before a nested list
+          <ul>
+            <li>Nested.</li>
+          </ul>
+        </li>
+      </ul>
+    </main>
+  </body>
+</html>

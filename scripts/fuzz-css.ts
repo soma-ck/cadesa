@@ -553,8 +553,46 @@ export function genCssCase(seed: number): CssCase {
     if (r.chance(0.3)) css.push(`.${dc} { & > :first-child { padding-top: ${r.int(0, 8)}px } @media (min-width: ${r.pick([500, 700, 900])}px) { padding-left: ${r.int(0, 12)}px; & > :last-child { margin-left: ${r.int(0, 6)}px } } }`);
     return `<div${attr(dc)}>${items.join("")}</div>`;
   };
+  /**
+   * Text and inline elements among block-level siblings (anonymous blocks, CSS 2.1 §9.2.1.1): a
+   * list item with a bold label and a nested list, a box whose text runs on either side of a
+   * paragraph, inline runs in other styles and atomic inlines among them.
+   */
+  const mixed = () => {
+    const plain = () => {
+      const tag = r.pick(["strong", "em", "a", "code", "span"]);
+      return `<${tag}${tag === "a" ? ' href="#"' : ""}>${words(r, 1, 3)}</${tag}>`;
+    };
+    const inl = () => (r.chance(0.45) ? plain() : r.chance(0.6) ? run(0) : atomic());
+    const piece = () => {
+      const t = r.chance(0.8) ? words(r, 1, 12) : "";
+      return r.chance(0.5) ? `${t} ${inl()} ${words(r, 0, 8)}` : `${inl()} ${t}`;
+    };
+    const blockKid = () => {
+      const k = r.pick(["p", "list", "div"] as const);
+      if (k === "list") return `<ul${attr(cls([`padding-left: ${r.int(0, 30)}px`, `margin: ${r.int(0, 10)}px 0`]))}>${Array.from({ length: r.int(1, 3) }, () => `<li>${r.chance(0.5) ? piece() : words(r, 1, 8)}</li>`).join("")}</ul>`;
+      if (k === "div") return `<div${attr(cls(r.chance(0.5) ? [`padding: ${r.int(0, 8)}px`, "background: #eef"] : []))}>${words(r, 1, 10)}</div>`;
+      return `<p>${words(r, 2, 14)}</p>`;
+    };
+    const d: string[] = [];
+    if (r.chance(0.3)) d.push(`padding: ${r.int(0, 12)}px`);
+    if (r.chance(0.3)) d.push(`font-size: ${r.pick(["14px", "15px", "18px"])}`);
+    if (r.chance(0.3)) d.push(`line-height: ${r.pick(["1.25", "1.6", "normal", "26px"])}`);
+    if (r.chance(0.2)) d.push(`text-align: ${r.pick(["center", "right"])}`);
+    if (r.chance(0.2)) d.push(`width: ${r.int(150, 500)}px`);
+    const tag = r.chance(0.4) ? "li" : "div";
+    const kids: string[] = [];
+    const k = r.int(2, 5);
+    for (let j = 0; j < k; j++) kids.push(r.chance(0.5) ? piece() : blockKid());
+    const inner = `<${tag}${attr(cls(d))}>${kids.join("\n")}</${tag}>`;
+    return tag === "li" ? `<ul${attr(cls([`padding-left: ${r.int(0, 30)}px`]))}>${inner}</ul>` : inner;
+  };
   const count = r.int(2, 5);
   for (let i = 0; i < count; i++) {
+    if (r.chance(0.12)) {
+      blocks.push(mixed());
+      continue;
+    }
     if (r.chance(0.06)) {
       blocks.push(ordered());
       continue;

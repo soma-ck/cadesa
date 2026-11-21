@@ -609,6 +609,8 @@ export function liftElements(input: LiftInput): LiftResult {
 
     // layout
     const display = take("display");
+    // A single-line flex container (no wrapping) ignores align-content: its one line is as tall as it.
+    if (display && /^(inline-)?flex$/.test(display.value.trim()) && (m.get("flex-wrap")?.value.trim() ?? "nowrap") === "nowrap") m.delete("align-content");
     if (display && display.value.trim() === "flex") {
       const dir = take("flex-direction")?.value.trim() ?? "row";
       const wrap = take("flex-wrap")?.value.trim() ?? "nowrap";

@@ -1,0 +1,115 @@
+/*
+ * Inline content among block-level siblings and images laid out from their natural size, rebuilt
+ * with neutral markup from patterns found on real pages:
+ * - list items whose bold label and text sit beside a nested list (an anonymous block around the
+ *   text and inline elements), and text on both sides of a paragraph;
+ * - inline code with white-space: normal (what it inherits anyway) and em padding;
+ * - a header row (no wrapping) with align-content, which a single-line flex container ignores;
+ *   an avatar <img> with a set size, a percentage max-width and a relative offset in its byline;
+ * - images without a size, laid out from their files' natural size: alone in a paragraph, in a
+ *   line of text, and capped by max-width: 100% (aligned middle);
+ * - a list item with its marker inside it before a nested list (left ≈).
+ */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font: 16px/1.5 Inter, sans-serif;
+  color: #1f2933;
+  background: #ffffff;
+}
+
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+.top {
+  display: flex;
+  flex-direction: row;
+  place-content: space-between;
+  padding: 24px 20px;
+}
+
+.brand {
+  display: inline-block;
+  font-size: 1.5rem;
+  line-height: 2rem;
+  font-weight: 800;
+  color: #1f2933;
+}
+
+.byline {
+  position: relative;
+  top: 4px;
+}
+
+.face {
+  position: relative;
+  top: -0.25rem;
+  margin: 0 0.25rem;
+  display: inline;
+  width: 2rem;
+  height: 2rem;
+  border-radius: 9999px;
+}
+
+.page {
+  padding: 0 20px 40px;
+}
+
+.steps {
+  margin: 0 0 16px;
+  padding-left: 24px;
+}
+
+.steps ul {
+  margin: 4px 0;
+  padding-left: 20px;
+}
+
+.note {
+  margin-bottom: 16px;
+}
+
+.mark {
+  font-family: Inter, sans-serif;
+  padding: 0.15em 0.2em;
+  white-space: normal;
+  background: #eef2f7;
+  border-radius: 6px;
+}
+
+.note-body {
+  margin: 8px 0;
+}
+
+.tag {
+  font-weight: 600;
+}
+
+.figure {
+  margin: 0 0 16px;
+}
+
+.small {
+  vertical-align: middle;
+}
+
+.banner {
+  margin-bottom: 16px;
+}
+
+.banner img {
+  vertical-align: middle;
+}
+
+.inside {
+  list-style: disc inside;
+  margin: 0;
+  padding: 0;
+}

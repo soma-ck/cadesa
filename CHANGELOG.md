@@ -28,6 +28,25 @@ serves the page and its stylesheets to it from 127.0.0.1 while it runs.
   `list-inside`) takes room on its first line, which Cadesa didn't count: a blog's list items were
   claimed one line tall where Chromium wraps them onto two. Such a list item is `≈` now. The
   `list-style` shorthand is read for it.
+- Text and inline elements together among block-level siblings (a list item's bold label and text
+  beside a nested list, text on both sides of a paragraph) are laid out as the anonymous block
+  CSS 2.1 §9.2.1.1 wraps them in: a text box of their own, its inline runs and atomic inlines on
+  its lines as a paragraph's are (they were `≈`: "text next to inline elements among block
+  children is not modelled").
+- Images without a size are laid out from their natural size: `capture` records each image's
+  natural width and height (`data-cadesa-natural="640x360"`, from Chromium), and `check --css`
+  reads PNG, GIF, JPEG, WebP and SVG files next to the page. An image that picks its file by width
+  (`srcset`, `<picture>`) stays `≈`.
+- An image alone on its line (or among text) of set width and natural ratio, without a height, is
+  laid out as an atomic inline; where `max-width: 100%` caps it, it stays exact while its line box
+  doesn't change, and is `≈` where it does.
+- An atomic inline with a percentage `max-width` (a reset's `img { max-width: 100% }`) and a
+  relative offset (`position: relative; top: -.25rem`, which only moves it) is measured on its
+  line: a blog's avatar in its byline made every box below it `≈`.
+- `align-content` on a flex container that doesn't wrap is ignored, as Chromium ignores it (it was
+  `≈`: "align-content moves content inside the box").
+- An inherited property on an inline run at the value its parent has anyway
+  (`white-space: normal` on `code` in normal text) no longer makes the text box `≈`.
 
 ## 0.1.25 (2026-11-20)
 

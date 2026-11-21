@@ -16,6 +16,8 @@
  *      boxes it can move as ≈. A few things can only be decided after layout (a non-wrapping flex
  *      row that would wrap); `dynamic()` reports those per width.
  */
+import { dirname, resolve as resolvePath } from "node:path";
+import { imageFileSize } from "./image-size.js";
 import { parse } from "parse5";
 import { walk, type Box, type Issue, type Layout } from "../engine/layout.js";
 import { parseFixture, styled, textAndRuns, type Fixture, type FixtureNode, type Generated, type InlineInfo, type P5Node, type RunStyle } from "../fixture.js";
@@ -179,8 +181,20 @@ export interface El {
   baselineShift: (number | undefined)[];
   /** Text in a font size of 0 (per state): the px of its one line (its line height in px, else 0). */
   zeroText?: (number | undefined)[];
+  /** An image alone on its line whose height comes from its ratio (per state): its border-box width there, unless something caps it (see lineExtents). */
+  ratioW?: (number | undefined)[];
+  /** With ratioW, on its baseline: its baseline less its border-box height, and the strut's ascent (see lineExtents). */
+  ratioTop?: ({ dA: number; sa: number; ok: boolean } | undefined)[];
+  /** An atomic inline's percentage max-width (per state): it caps it on a line narrower than its width (see atomicSized). */
+  maxPct?: (number | undefined)[];
   /** A run of text among element children (added after the cascade): its anonymous box. */
   anonymous?: string;
+  /**
+   * An anonymous block around a run of inline content among block-level siblings (text and inline
+   * elements together, CSS 2.1 §9.2.1.1): its children are that content, and it is laid out as a
+   * text box of its own (see anonymousBlocks). Its node holds the run's DOM nodes.
+   */
+  wrap?: boolean;
   /** The (shared) slot or root this element's styles are emitted under. */
   signature?: string;
   /** Per state, from the front end: the declarations the cascade gives the element's ::before and ::after (when content is set). */
@@ -250,6 +264,8 @@ const UA_TEXT: Record<string, string> = {
 
 const TEXT_PROPS = new Set(["font-size", "line-height", "font-family", "font-weight", "color", "letter-spacing"]);
 const INHERITED_OTHER = new Set(["text-rendering", "text-transform", "text-align", "font-style", "white-space", "text-wrap", "text-wrap-mode", "text-wrap-style", "word-break", "overflow-wrap", "hyphens", "text-indent", "word-spacing", "font-variant", "font-variant-numeric", "font-variant-caps", "font-variant-ligatures", "font-variant-east-asian", "font-variant-position", "font-variant-alternates", "font-variant-emoji", "font-kerning", "font-optical-sizing", "font-synthesis", "font-stretch", "line-break", "tab-size", "direction"]);
+/** Initial values of inherited properties (what a box has when nothing above it sets them). */
+const INHERITED_INITIAL: Record<string, string> = { "white-space": "normal", "overflow-wrap": "normal", "word-break": "normal", "text-transform": "none", hyphens: "manual", "word-spacing": "normal", "line-break": "auto", "text-wrap-mode": "wrap", "font-kerning": "auto", "text-rendering": "auto", "font-variant-ligatures": "normal", "font-optical-sizing": "auto", "tab-size": "8", direction: "ltr", "text-indent": "0px" };
 /** Inherited, but only paint: never affect a box. */
 const INHERITED_PAINT = new Set(["-webkit-font-smoothing", "-moz-osx-font-smoothing", "font-feature-settings", "font-variation-settings", "cursor", "visibility", "list-style-type", "list-style-position", "list-style-image", "text-shadow", "caret-color", "accent-color", "fill", "stroke"]);
 
@@ -709,6 +725,7 @@ export abstract class PageLifter {
     this.pseudoElements();
     this.anonymousText();
     this.inlineBlocks();
+    this.anonymousBlocks();
     // A page lifted as stacks (a reset zeroes margins) that floats something: block flow after all,
     // margins collapsing and floats among the blocks, as the browser lays it out.
     if (this.blockFlow === "stack" && this.els.some((el) => this.states.some((_, si) => !!this.floated(el, si)))) this.blockFlow = "flow";
@@ -906,8 +923,37 @@ export abstract class PageLifter {
         else if (pct(attr(el.node, "width"))) hint("width", pct(attr(el.node, "width"))!, `width="${attr(el.node, "width")}" attribute`);
         if (h !== undefined) hint("height", `${h}px`, `height="${attr(el.node, "height")}" attribute`);
         if (vb && vb.length === 4 && vb[2] > 0 && vb[3] > 0 && vb.every(isFinite)) hint("aspect-ratio", `${vb[2]} / ${vb[3]}`, "viewBox attribute");
+        // An image's natural size (from the capture, or the file next to the page): its ratio, and
+        // its width where nothing else sizes it (no width, and its height auto).
+        const nat = el.tag === "img" && (w === undefined || h === undefined) ? this.naturalSize(el) : undefined;
+        if (nat) {
+          const why = `the image's natural size (${nat.width}×${nat.height}, ${nat.from})`;
+          if (w === undefined && h === undefined && !own.has("width") && /^(auto)?$/.test(this.resolve(el, si, own.get("height")?.value ?? "auto") ?? "")) hint("width", `${nat.width}px`, why);
+          hint("aspect-ratio", `${nat.width} / ${nat.height}`, why);
+        }
       });
     }
+  }
+
+  /**
+   * An <img>'s natural size in CSS px: from the capture (data-cadesa-natural="W×H", Chromium's
+   * naturalWidth and naturalHeight), or read from the image file next to the page. Not for an image
+   * that picks its file by width (srcset, a <picture>'s sources): that size changes with the window.
+   */
+  naturalSize(el: El): { width: number; height: number; from: string } | undefined {
+    if (attr(el.node, "srcset") !== undefined || (el.parent?.tag === "picture" && el.parent.children.some((k) => k.tag === "source"))) return undefined;
+    const rec = /^\s*(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*$/.exec(attr(el.node, "data-cadesa-natural") ?? "");
+    if (rec) return parseFloat(rec[1]) > 0 && parseFloat(rec[2]) > 0 ? { width: parseFloat(rec[1]), height: parseFloat(rec[2]), from: "recorded by capture" } : undefined;
+    const src = attr(el.node, "src")?.trim();
+    if (!src || /^[a-z][a-z0-9+.-]*:/i.test(src) || src.startsWith("//")) return undefined;
+    let path: string;
+    try {
+      path = resolvePath(dirname(this.page), decodeURIComponent(src.replace(/[?#].*$/, "")));
+    } catch {
+      return undefined;
+    }
+    const size = imageFileSize(path);
+    return size && { ...size, from: src };
   }
 
   note(el: El, si: number, n: Note) {
@@ -1229,6 +1275,7 @@ export abstract class PageLifter {
   }
 
   cascadeDisplay(el: El, si: number): string {
+    if (el.wrap) return "block";
     const d = el.own[si].get("display");
     const v = d ? this.resolve(el, si, d.value) : undefined;
     if (v) return v;
@@ -1653,10 +1700,20 @@ export abstract class PageLifter {
       a = mt + 21;
     } else if (el.roles[si] === "leaf") {
       // No line boxes: as tall as its height says, its baseline at its bottom margin edge.
-      const h = px("height");
+      let h = px("height");
+      // An image of set width without a height: as tall as its ratio makes it (its natural one),
+      // while nothing caps its width (checked at each width, see dynamic()).
+      if ((!el.own[si].has("height") || /^auto$/.test(res(el, "height") ?? "")) && REPLACED_BLOCK.has(el.tag) && el.own[si].has("width")) {
+        const w = px("width");
+        const arm = /^(?:auto\s+)?([\d.]+)\s*(?:\/\s*([\d.]+))?$/.exec(res(el, "aspect-ratio") ?? "");
+        const ratio = arm ? parseFloat(arm[1]) / (arm[2] ? parseFloat(arm[2]) : 1) : NaN;
+        if (!(w >= 0) || !(ratio > 0) || !isFinite(ratio) || res(el, "box-sizing") === "border-box" && (pt + pb + bt + bb > 0 || px("padding-left") + px("padding-right") + bdr("left") + bdr("right") > 0)) return undefined;
+        h = Math.floor((w / ratio) * 64 + 1e-6) / 64;
+        (el.ratioW ??= [])[si] = w + px("padding-left") + px("padding-right") + bdr("left") + bdr("right");
+      }
       // (An svg's children are its graphics, not boxes.)
-      if (!el.own[si].has("height") || !(h >= 0) || (el.children.length && el.tag !== "svg")) return undefined;
-      const border = res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb;
+      else if (!el.own[si].has("height") || !(h >= 0) || (el.children.length && el.tag !== "svg")) return undefined;
+      const border = el.ratioW?.[si] !== undefined ? h + pt + pb + bt + bb : res(el, "box-sizing") === "border-box" ? Math.max(h, pt + pb + bt + bb) : h + pt + pb + bt + bb;
       hm = mt + border + mb;
       a = hm;
     } else {
@@ -1697,6 +1754,9 @@ export abstract class PageLifter {
       if (shift === undefined || !isFinite(shift)) return undefined;
       a = (Math.round(a * 64) + Math.round(shift * 64)) / 64;
     }
+    // An image sized by its ratio, on its baseline (or raised by a length) and reaching above the
+    // strut: capped narrower, it stays so while its baseline is still above the strut's top.
+    if (el.ratioW?.[si] !== undefined && va !== "middle") (el.ratioTop ??= [])[si] = { dA: a - (hm - mt - mb), sa: strut.sa, ok: a >= strut.sa - 1e-6 };
     return { a, hm, strut };
   }
 
@@ -2572,11 +2632,20 @@ export abstract class PageLifter {
     const empty = !REPLACED_BLOCK.has(k.tag) && !CONTROL.has(k.tag) && !k.children.length && !k.ownText;
     const hv = themed ? `${ctype === "range" ? 16 : 13}px` : (raw("height") ?? (empty ? "0px" : undefined));
     const wv = themed ? `${ctype === "range" ? 129 : 13}px` : (raw("width") ?? "auto");
-    if (!hv || hv === "auto") return undefined;
-    if (["min-width", "max-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(raw(p) ?? ""))) return undefined;
+    // Without a height, a replaced element of set width takes its height from its ratio (an image's natural one).
+    const fromRatio = (!hv || hv === "auto") && REPLACED_BLOCK.has(k.tag) && wv !== "auto";
+    if ((!hv || hv === "auto") && !fromRatio) return undefined;
+    if (["min-width", "min-height", "max-height"].some((p) => !/^(auto|none|0|0px)?$/.test(raw(p) ?? ""))) return undefined;
+    // A percentage max-width (a reset's img { max-width: 100% }) caps it only on a line narrower
+    // than that: checked at each width once the text box is laid out (see dynamic()).
+    const mw = raw("max-width") ?? "none";
+    const cap = /^(auto|none|0|0px)?$/.test(mw) ? undefined : /^\d*\.?\d+%$/.test(mw) ? parseFloat(mw) : NaN;
+    if (Number.isNaN(cap)) return undefined;
+    if (cap !== undefined) (k.maxPct ??= [])[si] = cap;
     const ar = raw("aspect-ratio");
     const arm = ar ? /^(?:auto\s+)?([\d.]+)\s*(?:\/\s*([\d.]+))?$/.exec(ar) : null;
     const ratio = arm ? parseFloat(arm[1]) / (arm[2] ? parseFloat(arm[2]) : 1) : NaN;
+    if (fromRatio && !(ratio > 0 && isFinite(ratio))) return undefined;
     const va = raw("vertical-align") ?? "baseline";
     /** Its margin-box width and how far it reaches above and below the baseline, at a font size. */
     const at = (size: number): { width: number; above: number; below: number; a0: number; hm: number; strut: { sa: number; sd: number; xh2: number } } | undefined => {
@@ -2584,9 +2653,10 @@ export abstract class PageLifter {
       const bdr = (side: string) => (/^(none|hidden)$/.test(raw(`border-${side}-style`) ?? "none") ? 0 : borderPx(px(`border-${side}-width`)));
       const insX = px("padding-left") + px("padding-right") + bdr("left") + bdr("right");
       const insY = px("padding-top") + px("padding-bottom") + bdr("top") + bdr("bottom");
-      const h = lu(lengthPx(hv, size) ?? NaN);
+      const h = fromRatio ? lu((lu(lengthPx(wv, size) ?? NaN) - (border ? insX : 0)) / ratio) : lu(lengthPx(hv!, size) ?? NaN);
       if (!(h >= 0)) return undefined;
-      const bh = border ? Math.max(h, insY) : h + insY;
+      // (From the ratio: its content box's height.)
+      const bh = border && !fromRatio ? Math.max(h, insY) : h + insY;
       let bw: number;
       if (wv !== "auto") {
         const w = lu(lengthPx(wv, size) ?? NaN);
@@ -3206,6 +3276,114 @@ export abstract class PageLifter {
   }
 
   /**
+   * Anonymous blocks (CSS 2.1 §9.2.1.1): in a block container with block-level children, each run of
+   * inline content between them that holds text and inline elements together is wrapped in an anonymous block, laid out as a text box of its own: its lines hold the run's
+   * text, inline boxes and atomic inlines as a paragraph's do. Only where the run is the same at
+   * every width (each child inline-level or block-level wherever it is shown), with no float or
+   * box out of flow in it and no generated content beside it; elsewhere the text is `≈`.
+   */
+  anonymousBlocks() {
+    const shown = (k: El, si: number) => k.anonymous !== undefined || (this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si));
+    /** Inline content all the way down: inline elements of inline content, atomic inlines, text, <br>. */
+    const inlineOnly = (k: El): boolean =>
+      k.anonymous !== undefined ||
+      this.states.every((_, si) => {
+        if (!shown(k, si)) return this.displayOf(k, si) === "none";
+        if (this.floated(k, si) || k.asBlock[si]) return false;
+        const d = this.displayOf(k, si);
+        if (d === "inline") return REPLACED_BLOCK.has(k.tag) || CONTROL.has(k.tag) || k.children.every((c) => !c.pseudo || this.displayOf(c, si) === "none" || this.displayOf(c, si) === "inline" || this.ownDisplay(c, si) === "inline-block" ? inlineOnly(c) : false);
+        return /^(inline-block|inline-flex|inline-grid|inline-flow-root|inline-table)$/.test(d);
+      });
+    const visit = (p: El) => {
+      p.children.forEach((c) => c.anonymous === undefined && visit(c));
+      if (p.pseudo || p.anonymous !== undefined || !p.ownText && p.children.filter((k) => !this.ignorable(k)).length < 3) return;
+      if (!this.states.every((_, si) => p === this.bodyEl || this.displayOf(p, si) === "none" || /^(block|flow-root|list-item|table-cell|table-caption)$/.test(this.displayOf(p, si)))) return;
+      if (p !== this.bodyEl && this.states.some((_, si) => this.isTable(p, si) || /^table-/.test(this.displayOf(p, si)))) return;
+      // (The page's own box holds roots, laid out apart.)
+      if (p === this.bodyEl) return;
+      // Each child: inline-level (or not shown) at every width, or block-level (or not shown) at every width.
+      const kind = p.children.map((k): "inline" | "block" | "none" | "out" | undefined => {
+        if (k.anonymous !== undefined) return "inline";
+        if (this.ignorable(k)) return this.states.every((_, si) => this.displayOf(k, si) === "none") ? "none" : "out";
+        if (k.pseudo) return this.states.every((_, si) => !shown(k, si) || !this.isInlineLevel(k, si)) ? "block" : undefined;
+        if (this.states.some((_, si) => shown(k, si) && this.floated(k, si))) return undefined;
+        if (this.states.some((_, si) => this.displayOf(k, si) !== "none" && this.outOfFlow(k, si))) return this.states.every((_, si) => this.displayOf(k, si) === "none" || this.outOfFlow(k, si)) ? "out" : undefined;
+        const inl = this.states.every((_, si) => !shown(k, si) || ((this.isInlineLevel(k, si) || k.tag === "br") && !k.asBlock[si]));
+        const blk = this.states.every((_, si) => !shown(k, si) || (!this.isInlineLevel(k, si) && k.tag !== "br") || !!k.asBlock[si]);
+        if (inl && blk) return "none";
+        return inl ? (inlineOnly(k) ? "inline" : undefined) : blk ? "block" : undefined;
+      });
+      if (kind.some((x) => x === undefined) || !kind.includes("block")) return;
+      // Runs of inline content (with what isn't shown between its pieces).
+      const runs: [number, number][] = [];
+      for (let i = 0; i < kind.length; i++) {
+        if (kind[i] !== "inline") continue;
+        let j = i;
+        for (let k = i + 1; k < kind.length && kind[k] !== "block"; k++) if (kind[k] === "inline") j = k;
+        runs.push([i, j]);
+        i = j;
+      }
+      const wraps = runs.filter(([i, j]) => {
+        const run = p.children.slice(i, j + 1);
+        // A box out of flow among them would be placed from the anonymous block (not modelled).
+        if (kind.slice(i, j + 1).includes("out")) return false;
+        const text = run.filter((k) => k.anonymous !== undefined).length;
+        const els = run.filter((k) => k.anonymous === undefined && kind[p.children.indexOf(k)] === "inline").length;
+        // (Inline elements without text beside them keep the patterns that lay them out as boxes.)
+        return text > 0 && els > 0;
+      });
+      if (!wraps.length) return;
+      const out: El[] = [];
+      let at = 0;
+      for (const [i, j] of wraps) {
+        out.push(...p.children.slice(at, i));
+        const run = p.children.slice(i, j + 1);
+        const nodes = p.node.childNodes ?? [];
+        const first = nodes.indexOf(run[0].node);
+        const last = nodes.indexOf(run[run.length - 1].node);
+        // (No source location: it has no tag in the page to write a class on.)
+        const node: P5 = { nodeName: "#anonymous-block", childNodes: nodes.slice(first, last + 1) };
+        const text = nodes.slice(first, last + 1).map((n) => (n.nodeName === "#text" ? (n.value ?? "") : "")).join(" ").replace(/[ \t\n\r\f]+/g, " ").trim();
+        const w: El = {
+          node,
+          tag: "#text",
+          classes: [],
+          line: run[0].line,
+          parent: p,
+          children: run,
+          index: -1,
+          siblings: 0,
+          ownText: run.some((k) => k.anonymous !== undefined),
+          roles: [],
+          own: this.states.map(() => new Map()),
+          text: [],
+          decls: [],
+          notes: new Map(),
+          space: [],
+          nowrap: [],
+          rowGap: [],
+          noShrink: [],
+          asBlock: [],
+          alone: [],
+          baselineShift: [],
+          anonymous: text,
+          wrap: true,
+        };
+        for (const k of run) k.parent = w;
+        // Text runs inside it are part of its text, not boxes: they leave the element list.
+        this.els = this.els.filter((e) => !(e.anonymous !== undefined && run.includes(e)));
+        w.children = run.filter((k) => k.anonymous === undefined);
+        this.els.splice(this.els.indexOf(w.children[0] ?? p) + (w.children.length ? 0 : 1), 0, w);
+        out.push(w);
+        at = j + 1;
+      }
+      out.push(...p.children.slice(at));
+      p.children = out;
+    };
+    if (this.bodyEl) visit(this.bodyEl);
+  }
+
+  /**
    * Whether an anonymous text run lays out as a box of its own in state si: in a flex or grid
    * container always (each text run is an item); in block flow only when no inline-level element
    * sits next to it (they'd share its lines).
@@ -3595,7 +3773,9 @@ export abstract class PageLifter {
 
       // A list item's marker inside it (list-style-position: inside) is inline content at the start
       // of its first line, which takes room on it (and a line of its own before a block child).
-      const marker = this.insideMarker(el, si);
+      // (An anonymous block that comes first in its list item has the marker on its first line.)
+      const first = el.wrap && el.parent ? el.parent.children.find((k) => k.anonymous !== undefined || (this.displayOf(k, si) !== "none" && !this.outOfFlow(k, si))) : undefined;
+      const marker = this.insideMarker(el, si) ?? (first === el ? this.insideMarker(el.parent!, si) : undefined);
       if (marker) this.note(el, si, { decl: marker, reason: "a list item's marker inside it (list-style-position: inside) takes room on its first line, which isn't modelled", kind: "geometry" });
 
       // A float in block flow (engine: floats.ts). In a page lifted as stacks (a preflight reset)
@@ -4591,6 +4771,8 @@ export abstract class PageLifter {
         if (c.prop === "font-family" && !famDiff) continue;
         if (c.prop === "font-style" && (synthetic || this.italic(k, si) === this.italic(k.parent!, si))) continue;
         if (c.prop === "line-height" && JSON.stringify(kt.lineHeight) === JSON.stringify(pt.lineHeight)) continue;
+        // Another inherited property at the value its parent has anyway (white-space: normal in normal text).
+        if (INHERITED_OTHER.has(c.prop) && c.prop in INHERITED_INITIAL && (kt.inherited.get(c.prop)?.value ?? INHERITED_INITIAL[c.prop]) === (pt.inherited.get(c.prop)?.value ?? INHERITED_INITIAL[c.prop])) continue;
         this.note(el, si, this.staleFont([k, el], si) ?? { decl: `${c.utility} on ${where} (${c.prop})`, reason: "inline runs in another style aren't measured", kind: c.kind === "visual" ? "visual" : c.kind === "geometry" ? "geometry" : "text" });
       }
       for (const n of k.notes.values()) if (n.states.has(si)) this.note(el, si, n.note);
@@ -4824,6 +5006,13 @@ export abstract class PageLifter {
     };
     const byNodeAll = new Map(this.els.filter((e) => e.anonymous === undefined && !e.pseudo).map((e) => [e.node, e] as const));
     const hasGenerated = this.els.some((e) => e.pseudo);
+    /** An anonymous block around a run of inline content: a text box of the run (see anonymousBlocks). */
+    const wrapNode = (k: El, si: number | undefined): FixtureNode | undefined => {
+      if (!k.className || (si !== undefined && k.roles[si] !== "text")) return undefined;
+      const hidden = si === undefined ? hiddenNodes : hiddenAt[si];
+      const tr = textAndRuns(k.node as unknown as P5Node, (x) => hidden.has(x as unknown as P5), this.inlineInfo(k, si ?? 0, byNodeAll));
+      return { tag: "#text", classes: [k.className], attrs: {}, fixtureId: k.id, line: k.line, ownText: tr.text, children: [], anonymous: true, ...tr };
+    };
     const fixtureFor = (si: number | undefined): Fixture => {
       const keep = (n: FixtureNode): FixtureNode | undefined => {
         const el = n.fixtureId ? byId.get(n.fixtureId) : undefined;
@@ -4844,7 +5033,7 @@ export abstract class PageLifter {
         const children =
           isText || el.tag === "svg"
             ? el.tag === "svg" ? [] : floatsIn ? (flat.map((c) => (c.fixtureId && inText.some((k) => k.id === c.fixtureId) ? keep(c) : c)).filter(Boolean) as FixtureNode[]) : n.children
-            : (el.children.map((k) => (k.anonymous !== undefined ? anonNode(k, si) : k.pseudo ? pseudoNode(k, si) : byEl.has(k) ? keep(byEl.get(k)!) : undefined)).filter(Boolean) as FixtureNode[]);
+            : (el.children.map((k) => (k.wrap ? wrapNode(k, si) : k.anonymous !== undefined ? anonNode(k, si) : k.pseudo ? pseudoNode(k, si) : byEl.has(k) ? keep(byEl.get(k)!) : undefined)).filter(Boolean) as FixtureNode[]);
         if (!isText && el.children.some((k) => k.anonymous !== undefined)) return { ...n, children, ownText: "" };
         // A replaced element or form control has no text box (a textarea's text is its value).
         const textless = si === undefined ? el.roles.every((r) => r !== "text" && r !== "container") : el.roles[si] !== "text" && el.roles[si] !== "container";
@@ -4890,10 +5079,21 @@ export abstract class PageLifter {
             const w = this.atomicLines(k, si) && this.ownDisplay(k, si) === "inline-block" ? this.atomicInline(k, si) : undefined;
             if (typeof w === "number" && w > inner + 1e-6)
               out.push({ file: this.page, line: k.line, selector: sel, decl: "display: inline-block", reason: `an inline-block of several lines is wider than its line at ${layout.width}px, where its content wraps`, kind: "geometry" });
+            // An atomic inline with a percentage max-width, wider than that of its line here.
+            const cap = k.maxPct?.[si];
+            const aw = cap !== undefined ? this.atomicInline(k, si) : undefined;
+            const awPx = typeof aw === "function" ? aw(this.textOf(k, si).size) : aw;
+            if (cap !== undefined && awPx !== undefined && awPx > (inner * cap) / 100 - 1e-6)
+              out.push({ file: this.page, line: k.line, selector: sel, decl: `max-width: ${cap}%`, reason: `an atomic inline is wider than its max-width (${cap}% of its line) at ${layout.width}px, which caps it`, kind: "geometry" });
             else if (this.displayOf(k, si) === "inline") k.children.forEach(visit);
           };
           el.children.forEach(visit);
         }
+        // An image alone on its line, sized by its ratio: its line box was worked out at its own width.
+        const rt = el.ratioTop?.[si];
+        const keeps = rt !== undefined && rt.dA + b.h >= rt.sa - 1e-6 && rt.ok;
+        if (el.alone[si] && el.ratioW?.[si] !== undefined && Math.abs(b.w - el.ratioW[si]!) > 1e-3 && !keeps)
+          out.push({ file: this.page, line: el.line, selector: sel, decl: "max-width", reason: `an image sized by its ratio is ${fmtNum(b.w)}px wide at ${layout.width}px, not its own width: its line box is modelled for that width`, kind: "geometry" });
         if (el.oneLine?.[si] && (el.alone[si] || el.rowLine?.[si]) && b.lines && b.lines.length > (el.lineCount?.[si] ?? 1))
           out.push({ file: this.page, line: el.line, selector: sel, decl: "display: inline-block", reason: `its text takes ${b.lines.length} lines at ${layout.width}px; its line box is modelled for one line`, kind: "geometry" });
         if (el.rowGap[si] && this.lineCount(b) > 1)
